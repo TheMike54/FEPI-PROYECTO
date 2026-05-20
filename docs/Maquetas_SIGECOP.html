@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SIGECOP — Maquetas selectas</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  .sigecop-blue { background-color: #1F4E78; }
+  .sigecop-blue-text { color: #1F4E78; }
+  .sigecop-accent { background-color: #2E75B6; }
+  .sigecop-light { background-color: #DDEBF7; }
+  .sigecop-green { background-color: #0E5E2E; }
+  .nav-link { transition: all 0.2s; }
+  .nav-link:hover { background-color: rgba(255,255,255,0.1); }
+  .nav-link.active { background-color: rgba(255,255,255,0.2); border-left: 4px solid #2E75B6; }
+  .screen { display: none; }
+  .screen.active { display: block; }
+  .badge { display: inline-block; padding: 2px 8px; font-size: 11px; border-radius: 4px; font-weight: 600; }
+  .badge-blue { background: #DDEBF7; color: #1F4E78; }
+  .badge-green { background: #C6E0B4; color: #0E5E2E; }
+  .badge-amber { background: #FFF2CC; color: #B7950B; }
+  .badge-red { background: #F8CBAD; color: #C00000; }
+  .badge-gray { background: #E5E5E5; color: #555; }
+  .nota-criterio { background: #F0FDF4; border-left: 3px solid #0E5E2E; padding: 8px 12px; font-size: 12px; color: #166534; margin-top: 4px; }
+  .field-input { border: 1px solid #BFBFBF; padding: 8px 12px; border-radius: 6px; width: 100%; font-size: 14px; background: white; }
+  .field-input:focus { outline: none; border-color: #2E75B6; box-shadow: 0 0 0 3px rgba(46,117,182,0.15); }
+  .btn-primary { background: #1F4E78; color: white; padding: 8px 20px; border-radius: 6px; font-weight: 600; cursor: pointer; transition: all 0.15s; border: none; font-size: 14px; }
+  .btn-primary:hover { background: #2E75B6; }
+  .btn-secondary { background: white; color: #555; border: 1px solid #BFBFBF; padding: 8px 20px; border-radius: 6px; font-weight: 500; cursor: pointer; font-size: 14px; }
+  .btn-secondary:hover { background: #F5F5F5; }
+  .table-row { border-bottom: 1px solid #E5E5E5; }
+  .table-row:hover { background: #F9FAFB; }
+  .logo-icon { display: inline-flex; align-items: center; justify-content: center; background: white; color: #1F4E78; font-weight: 800; border-radius: 8px; }
+</style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+<!-- ENCABEZADO PRINCIPAL DE LAS MAQUETAS -->
+<div class="sigecop-blue text-white py-3 px-6 shadow-md">
+  <div class="max-w-7xl mx-auto flex items-center justify-between">
+    <div class="flex items-center gap-3">
+      <div class="logo-icon w-10 h-10 text-lg">S</div>
+      <div>
+        <div class="text-xl font-bold">SIGECOP — Maquetas</div>
+        <div class="text-xs opacity-80">Maquetas selectas · 5 historias · Mayo 2026</div>
+      </div>
+    </div>
+    <div class="text-sm opacity-90">
+      Versión 1.0 · Para presentación al profesor
+    </div>
+  </div>
+</div>
+
+<!-- DOS COLUMNAS: NAVEGACIÓN + MAQUETA -->
+<div class="max-w-7xl mx-auto flex">
+
+  <!-- BARRA LATERAL DE NAVEGACIÓN -->
+  <aside class="w-72 sigecop-blue text-white min-h-screen p-4">
+    <div class="text-xs uppercase tracking-wider opacity-60 mb-3 px-3">Historias de usuario</div>
+    <nav>
+      <a class="nav-link active block px-3 py-3 rounded mb-1 cursor-pointer" onclick="mostrar('hu00', this)">
+        <div class="font-semibold">HU-00 · Login</div>
+        <div class="text-xs opacity-75">Inicio de sesión por rol</div>
+      </a>
+      <a class="nav-link block px-3 py-3 rounded mb-1 cursor-pointer" onclick="mostrar('hu01', this)">
+        <div class="font-semibold">HU-01 · Alta contrato</div>
+        <div class="text-xs opacity-75">Captura de contrato nuevo</div>
+      </a>
+      <a class="nav-link block px-3 py-3 rounded mb-1 cursor-pointer" onclick="mostrar('hu08', this)">
+        <div class="font-semibold">HU-08 · Bitácora</div>
+        <div class="text-xs opacity-75">Apertura formal</div>
+      </a>
+      <a class="nav-link block px-3 py-3 rounded mb-1 cursor-pointer" onclick="mostrar('hu02', this)">
+        <div class="font-semibold">HU-02 · Fianzas</div>
+        <div class="text-xs opacity-75">Registro de garantías</div>
+      </a>
+      <a class="nav-link block px-3 py-3 rounded mb-1 cursor-pointer" onclick="mostrar('hu09', this)">
+        <div class="font-semibold">HU-09 · Notas</div>
+        <div class="text-xs opacity-75">Emisión tipificada</div>
+      </a>
+    </nav>
+
+    <div class="mt-6 pt-4 border-t border-white/20 px-3">
+      <div class="text-xs uppercase tracking-wider opacity-60 mb-2">Leyenda</div>
+      <div class="text-xs space-y-1 opacity-90">
+        <div>• Botones azules = acciones primarias</div>
+        <div>• Cajas verdes = criterios de aceptación</div>
+        <div>• Las maquetas son ilustrativas</div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- CONTENIDO PRINCIPAL: MAQUETAS -->
+  <main class="flex-1 p-8 bg-white">
+
+    <!-- ============ HU-00 LOGIN ============ -->
+    <section id="hu00" class="screen active">
+      <header class="mb-6 pb-4 border-b">
+        <div class="flex items-center justify-between mb-2">
+          <h1 class="text-2xl font-bold sigecop-blue-text">HU-00 · Inicio de sesión por rol</h1>
+          <span class="badge badge-green">1 pt · Complejidad Baja</span>
+        </div>
+        <p class="text-sm text-gray-600">
+          <strong>Como</strong> usuario del sistema, <strong>deseo</strong> autenticarme con usuario y
+          contraseña, sin indicar mi rol explícitamente, para acceder a las funciones que
+          el sistema reconoce que me corresponden, <strong>a fin de</strong> proteger la
+          información del contrato.
+        </p>
+      </header>
+
+      <!-- Maqueta de pantalla -->
+      <div class="bg-gradient-to-br from-blue-50 to-blue-100 p-12 rounded-lg flex items-center justify-center min-h-[500px]">
+        <div class="bg-white rounded-xl shadow-xl p-8 w-full max-w-md">
+          <div class="text-center mb-6">
+            <div class="logo-icon w-16 h-16 text-3xl sigecop-blue mx-auto mb-3" style="color:white;">S</div>
+            <h2 class="text-2xl font-bold sigecop-blue-text">SIGECOP</h2>
+            <p class="text-xs text-gray-500">Sistema de Gestión Técnico-Administrativa<br/>de Contratos de Obra Pública</p>
+          </div>
+          <form class="space-y-4">
+            <div>
+              <label class="block text-xs font-semibold text-gray-700 mb-1">USUARIO</label>
+              <input type="text" class="field-input" placeholder="nombre.apellido"/>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-gray-700 mb-1">CONTRASEÑA</label>
+              <input type="password" class="field-input" placeholder="••••••••"/>
+            </div>
+            <button type="button" class="btn-primary w-full">Iniciar sesión</button>
+            <div class="text-center text-xs text-gray-500 mt-3">¿Olvidaste tu contraseña?</div>
+          </form>
+        </div>
+      </div>
+
+      <!-- Criterios de aceptación -->
+      <div class="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="nota-criterio">
+          <strong>CA-1:</strong> El sistema valida usuario y contraseña, bloquea el acceso cuando son inválidos y no permite continuar si los campos usuario o contraseña están vacíos.
+        </div>
+        <div class="nota-criterio">
+          <strong>CA-2:</strong> Las pantallas mostradas tras login corresponden únicamente al rol del usuario.
+        </div>
+        <div class="nota-criterio">
+          <strong>CA-3:</strong> Cada acción registrada queda asociada al nombre y fecha/hora del usuario.
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ HU-01 ALTA DE CONTRATO ============ -->
+    <section id="hu01" class="screen">
+      <header class="mb-6 pb-4 border-b">
+        <div class="flex items-center justify-between mb-2">
+          <h1 class="text-2xl font-bold sigecop-blue-text">HU-01 · Alta de contratos</h1>
+          <span class="badge badge-red">5 pts · Complejidad Alta</span>
+        </div>
+        <p class="text-sm text-gray-600">
+          <strong>Como</strong> residente, <strong>deseo</strong> dar de alta un contrato capturando
+          datos generales, catálogo, programa, jurídicos, garantías, penalizaciones, plan de amortización
+          y PDF firmado, <strong>a fin de</strong> tener el soporte documental completo en línea.
+        </p>
+      </header>
+
+      <!-- Maqueta con sidebar y formulario -->
+      <div class="border border-gray-200 rounded-lg overflow-hidden bg-white">
+        <!-- Barra superior de la app -->
+        <div class="sigecop-blue text-white px-6 py-3 flex items-center justify-between">
+          <div class="flex items-center gap-4">
+            <div class="logo-icon w-8 h-8 text-sm">S</div>
+            <span class="font-semibold">SIGECOP</span>
+            <span class="text-xs opacity-75">› Contratos › Alta de contrato</span>
+          </div>
+          <div class="flex items-center gap-3 text-sm">
+            <span>Ing. Hernández</span>
+            <span class="badge badge-amber">Residente</span>
+          </div>
+        </div>
+
+        <!-- Pestañas del flujo -->
+        <div class="border-b bg-gray-50 px-6 flex gap-1">
+          <div class="px-4 py-3 text-sm font-semibold sigecop-blue-text border-b-2 border-blue-500">1. Datos generales</div>
+          <div class="px-4 py-3 text-sm text-gray-500">2. Catálogo de conceptos</div>
+          <div class="px-4 py-3 text-sm text-gray-500">3. Programa de obra</div>
+          <div class="px-4 py-3 text-sm text-gray-500">4. Datos jurídicos</div>
+          <div class="px-4 py-3 text-sm text-gray-500">5. Garantías, penalizaciones y amortización</div>
+          <div class="px-4 py-3 text-sm text-gray-500">6. PDF firmado</div>
+        </div>
+
+        <!-- Formulario -->
+        <div class="p-6">
+          <h3 class="text-lg font-bold sigecop-blue-text mb-4">Datos generales del contrato</h3>
+
+          <div class="grid grid-cols-2 gap-4 mb-4">
+            <div>
+              <label class="block text-xs font-semibold text-gray-700 mb-1">FOLIO DEL CONTRATO *</label>
+              <input type="text" class="field-input" value="C-2026-0042"/>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-gray-700 mb-1">TIPO DE CONTRATO *</label>
+              <select class="field-input"><option>Obra pública sobre la base de precios unitarios</option></select>
+            </div>
+            <div class="col-span-2">
+              <label class="block text-xs font-semibold text-gray-700 mb-1">OBJETO DEL CONTRATO *</label>
+              <input type="text" class="field-input" value="Construcción de edificio administrativo en av. principal"/>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-gray-700 mb-1">CONTRATISTA *</label>
+              <input type="text" class="field-input" value="Constructora XYZ S.A. de C.V."/>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-gray-700 mb-1">DEPENDENCIA *</label>
+              <input type="text" class="field-input" value="Secretaría de Obras Públicas"/>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-gray-700 mb-1">MONTO CONTRATADO *</label>
+              <input type="text" class="field-input" value="$ 12,450,000.00"/>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-gray-700 mb-1">PLAZO DE EJECUCIÓN *</label>
+              <input type="text" class="field-input" value="180 días naturales"/>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-gray-700 mb-1">FECHA DE INICIO *</label>
+              <input type="date" class="field-input" value="2026-06-01"/>
+            </div>
+            <div>
+              <label class="block text-xs font-semibold text-gray-700 mb-1">FECHA DE TÉRMINO *</label>
+              <input type="date" class="field-input" value="2026-11-28"/>
+            </div>
+          </div>
+
+          <div class="bg-amber-50 border-l-4 border-amber-400 p-3 text-sm text-amber-900 mb-4">
+            <strong>Campos marcados con *</strong> son obligatorios. Si no se completan, el sistema no permite guardar.
+          </div>
+
+          <div class="bg-blue-50 border-l-4 border-blue-400 p-3 text-sm text-blue-900 mb-4">
+            <strong>Tab 5 (Garantías, penalizaciones y amortización):</strong> registra las pólizas de fianza (anticipo, cumplimiento, vicios ocultos) conforme al art. 48 LOPSRM, las penalizaciones y deductivas aplicables (art. 46 Bis LOPSRM) y el <strong>plan de amortización del anticipo</strong> conforme al art. 50 LOPSRM, que se aplicará proporcionalmente al avance en cada estimación.
+          </div>
+
+          <div class="flex justify-between mt-6 pt-4 border-t">
+            <button class="btn-secondary">← Cancelar</button>
+            <div class="flex gap-2">
+              <button class="btn-secondary">Guardar borrador</button>
+              <button class="btn-primary">Siguiente: Catálogo →</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-6 grid grid-cols-3 gap-4">
+        <div class="nota-criterio">
+          <strong>CA-1:</strong> Existe un contrato con folio único que contiene catálogo de conceptos, programa de obra, elementos jurídicos, garantías, penalizaciones, plan de amortización del anticipo y PDF firmado.</div>
+        <div class="nota-criterio">
+          <strong>CA-2:</strong> El sistema valida que los campos obligatorios estén llenos y el folio sea único antes de guardar.</div>
+        <div class="nota-criterio">
+          <strong>CA-3:</strong> Existe un PDF firmado del contrato ligado al expediente, consultable por todos los actores autorizados.</div>
+      </div>
+    </section>
+
+    <!-- ============ HU-08 APERTURA BITÁCORA ============ -->
+    <section id="hu08" class="screen">
+      <header class="mb-6 pb-4 border-b">
+        <div class="flex items-center justify-between mb-2">
+          <h1 class="text-2xl font-bold sigecop-blue-text">HU-08 · Apertura formal de la bitácora del contrato</h1>
+          <span class="badge badge-green">2 pts · Complejidad Baja</span>
+        </div>
+        <p class="text-sm text-gray-600">
+          <strong>Como</strong> residente, <strong>deseo</strong> abrir la bitácora electrónica del contrato
+          ligando a las tres partes con sus firmantes autorizados, <strong>a fin de</strong> habilitar el
+          registro formal conforme al art. 46 último párrafo LOPSRM y arts. 122-123 RLOPSRM.
+        </p>
+      </header>
+
+      <div class="border border-gray-200 rounded-lg overflow-hidden bg-white">
+        <div class="sigecop-blue text-white px-6 py-3 flex items-center justify-between">
+          <div class="flex items-center gap-4">
+            <div class="logo-icon w-8 h-8 text-sm">S</div>
+            <span class="font-semibold">SIGECOP</span>
+            <span class="text-xs opacity-75">› Bitácora › Apertura de bitácora</span>
+          </div>
+          <div class="flex items-center gap-3 text-sm">
+            <span>Ing. Hernández</span>
+            <span class="badge badge-amber">Residente</span>
+          </div>
+        </div>
+
+        <div class="p-6">
+          <div class="bg-blue-50 border-l-4 border-blue-500 p-4 mb-6">
+            <div class="text-sm font-semibold sigecop-blue-text mb-1">Contrato seleccionado</div>
+            <div class="text-sm">C-2026-0042 · Construcción de edificio administrativo · Constructora XYZ S.A. de C.V.</div>
+          </div>
+
+          <h3 class="text-lg font-bold sigecop-blue-text mb-4">Designación de firmantes autorizados</h3>
+
+          <!-- Las tres partes -->
+          <div class="space-y-4">
+            <!-- Contratante / Dependencia -->
+            <div class="border rounded-lg p-4">
+              <div class="flex items-center justify-between mb-3">
+                <div>
+                  <span class="badge badge-blue">PARTE 1</span>
+                  <span class="ml-2 font-semibold">Contratante (Dependencia)</span>
+                </div>
+                <span class="badge badge-green">✓ Designado</span>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-semibold text-gray-700 mb-1">FIRMANTE AUTORIZADO</label>
+                  <input type="text" class="field-input" value="Lic. María Pérez García"/>
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-gray-700 mb-1">CARGO</label>
+                  <input type="text" class="field-input" value="Directora de Obras"/>
+                </div>
+              </div>
+            </div>
+
+            <!-- Supervisión -->
+            <div class="border rounded-lg p-4">
+              <div class="flex items-center justify-between mb-3">
+                <div>
+                  <span class="badge badge-blue">PARTE 2</span>
+                  <span class="ml-2 font-semibold">Supervisión</span>
+                </div>
+                <span class="badge badge-green">✓ Designado</span>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-semibold text-gray-700 mb-1">FIRMANTE AUTORIZADO</label>
+                  <input type="text" class="field-input" value="Ing. Roberto López"/>
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-gray-700 mb-1">EMPRESA</label>
+                  <input type="text" class="field-input" value="Supervisora Especializada S.C."/>
+                </div>
+              </div>
+            </div>
+
+            <!-- Contratista -->
+            <div class="border rounded-lg p-4">
+              <div class="flex items-center justify-between mb-3">
+                <div>
+                  <span class="badge badge-blue">PARTE 3</span>
+                  <span class="ml-2 font-semibold">Contratista (Superintendente)</span>
+                </div>
+                <span class="badge badge-green">✓ Designado</span>
+              </div>
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-xs font-semibold text-gray-700 mb-1">SUPERINTENDENTE</label>
+                  <input type="text" class="field-input" value="Arq. Carlos Mendoza"/>
+                </div>
+                <div>
+                  <label class="block text-xs font-semibold text-gray-700 mb-1">CÉDULA PROFESIONAL</label>
+                  <input type="text" class="field-input" value="8475612"/>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-6 p-4 bg-green-50 border-l-4 border-green-500 rounded">
+            <div class="text-sm font-semibold text-green-900">⚖️ Fundamento legal</div>
+            <div class="text-xs text-green-800 mt-1">
+              La apertura de la bitácora electrónica es obligatoria conforme al art. 46 último
+              párrafo LOPSRM, al art. 122 RLOPSRM (régimen general) y al art. 123 RLOPSRM
+              (apertura, contenido y firmas). Una vez abierta, queda como evento inalterable.
+            </div>
+          </div>
+
+          <div class="flex justify-end gap-2 mt-6 pt-4 border-t">
+            <button class="btn-secondary">Cancelar</button>
+            <button class="btn-primary">Abrir bitácora</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-6 grid grid-cols-2 gap-4">
+        <div class="nota-criterio">
+          <strong>CA-1:</strong> Existe una bitácora única por contrato con las tres partes ligadas y sus firmantes autorizados.
+        </div>
+        <div class="nota-criterio">
+          <strong>CA-2:</strong> La fecha y hora de apertura queda registrada como evento formal inalterable.
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ HU-02 REGISTRO DE FIANZAS ============ -->
+    <section id="hu02" class="screen">
+      <header class="mb-6 pb-4 border-b">
+        <div class="flex items-center justify-between mb-2">
+          <h1 class="text-2xl font-bold sigecop-blue-text">HU-02 · Registro de fianzas y garantías</h1>
+          <span class="badge badge-amber">2 pts · Complejidad Media</span>
+        </div>
+        <p class="text-sm text-gray-600">
+          <strong>Como</strong> dependencia, <strong>deseo</strong> subir las pólizas de fianza
+          del contrato (cumplimiento, vicios ocultos, anticipo) con sus metadatos, <strong>a fin de</strong>
+          contar con el respaldo documental y ser notificado cuando una póliza esté por vencer.
+        </p>
+      </header>
+
+      <div class="border border-gray-200 rounded-lg overflow-hidden bg-white">
+        <div class="sigecop-blue text-white px-6 py-3 flex items-center justify-between">
+          <div class="flex items-center gap-4">
+            <div class="logo-icon w-8 h-8 text-sm">S</div>
+            <span class="font-semibold">SIGECOP</span>
+            <span class="text-xs opacity-75">› Contratos › C-2026-0042 › Fianzas</span>
+          </div>
+          <div class="flex items-center gap-3 text-sm">
+            <span>Lic. Pérez</span>
+            <span class="badge badge-amber">Dependencia</span>
+          </div>
+        </div>
+
+        <div class="p-6">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-lg font-bold sigecop-blue-text">Pólizas de fianza del contrato</h3>
+            <button class="btn-primary">+ Registrar nueva póliza</button>
+          </div>
+
+          <!-- Tabla de fianzas -->
+          <div class="border rounded-lg overflow-hidden">
+            <table class="w-full text-sm">
+              <thead class="bg-gray-50">
+                <tr>
+                  <th class="text-left p-3 font-semibold text-gray-700">Tipo</th>
+                  <th class="text-left p-3 font-semibold text-gray-700">Folio de póliza</th>
+                  <th class="text-left p-3 font-semibold text-gray-700">Afianzadora</th>
+                  <th class="text-right p-3 font-semibold text-gray-700">Monto afianzado</th>
+                  <th class="text-center p-3 font-semibold text-gray-700">Vigencia</th>
+                  <th class="text-center p-3 font-semibold text-gray-700">Estado</th>
+                  <th class="text-center p-3 font-semibold text-gray-700">PDF</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="table-row">
+                  <td class="p-3"><span class="badge badge-blue">Cumplimiento</span></td>
+                  <td class="p-3 font-mono text-xs">F-2026-08745</td>
+                  <td class="p-3">Afianzadora Sofimex</td>
+                  <td class="p-3 text-right">$ 1,245,000.00</td>
+                  <td class="p-3 text-center text-xs">01/06/2026<br/>al 28/11/2026</td>
+                  <td class="p-3 text-center"><span class="badge badge-green">Vigente</span></td>
+                  <td class="p-3 text-center">
+                    <button class="text-blue-600 hover:text-blue-800 font-bold text-lg" title="Ver PDF de la póliza">👁</button>
+                  </td>
+                </tr>
+                <tr class="table-row">
+                  <td class="p-3"><span class="badge badge-blue">Anticipo</span></td>
+                  <td class="p-3 font-mono text-xs">F-2026-08746</td>
+                  <td class="p-3">Afianzadora Sofimex</td>
+                  <td class="p-3 text-right">$ 3,735,000.00</td>
+                  <td class="p-3 text-center text-xs">01/06/2026<br/>al 28/08/2026</td>
+                  <td class="p-3 text-center"><span class="badge badge-amber">Vence pronto</span></td>
+                  <td class="p-3 text-center">
+                    <button class="text-blue-600 hover:text-blue-800 font-bold text-lg" title="Ver PDF de la póliza">👁</button>
+                  </td>
+                </tr>
+                <tr class="table-row">
+                  <td class="p-3"><span class="badge badge-gray">Vicios ocultos</span></td>
+                  <td class="p-3 italic text-gray-400">Por registrar</td>
+                  <td class="p-3 italic text-gray-400">—</td>
+                  <td class="p-3 text-right italic text-gray-400">—</td>
+                  <td class="p-3 text-center italic text-gray-400">—</td>
+                  <td class="p-3 text-center"><span class="badge badge-gray">Pendiente</span></td>
+                  <td class="p-3 text-center">
+                    <span class="text-gray-300 italic text-sm" title="Aún sin PDF cargado">—</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Configuración de alertas -->
+          <div class="mt-6 bg-blue-50 p-4 rounded-lg">
+            <div class="font-semibold sigecop-blue-text mb-3">⏰ Alertas de vencimiento configuradas</div>
+            <div class="grid grid-cols-3 gap-4 text-sm">
+              <div class="bg-white p-3 rounded">
+                <div class="text-xs text-gray-500">A los</div>
+                <div class="text-2xl font-bold sigecop-blue-text">30 días</div>
+                <div class="text-xs">de vencer la póliza</div>
+              </div>
+              <div class="bg-white p-3 rounded">
+                <div class="text-xs text-gray-500">A los</div>
+                <div class="text-2xl font-bold sigecop-blue-text">15 días</div>
+                <div class="text-xs">de vencer la póliza</div>
+              </div>
+              <div class="bg-white p-3 rounded">
+                <div class="text-xs text-gray-500">A los</div>
+                <div class="text-2xl font-bold sigecop-blue-text">5 días</div>
+                <div class="text-xs">de vencer (urgente)</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-4 text-xs text-gray-500">
+            <strong>⚖️ Fundamento:</strong> Art. 48 LOPSRM — Las fianzas se otorgan dentro de los 15 días naturales siguientes a la notificación del fallo.
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-6 grid grid-cols-3 gap-4">
+        <div class="nota-criterio">
+          <strong>CA-1:</strong> La póliza queda ligada al contrato con afianzadora, vigencia y monto registrados.
+        </div>
+        <div class="nota-criterio">
+          <strong>CA-2:</strong> El sistema emite alerta cuando faltan N días configurables para el vencimiento.
+        </div>
+        <div class="nota-criterio">
+          <strong>CA-3:</strong> La póliza registrada puede consultarse en formato PDF desde el listado de fianzas del contrato.
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ HU-09 NOTAS TIPIFICADAS ============ -->
+    <section id="hu09" class="screen">
+      <header class="mb-6 pb-4 border-b">
+        <div class="flex items-center justify-between mb-2">
+          <h1 class="text-2xl font-bold sigecop-blue-text">HU-09 · Emisión y respuesta de notas tipificadas con firma</h1>
+          <span class="badge badge-red">8 pts · Complejidad Alta</span>
+        </div>
+        <p class="text-sm text-gray-600">
+          <strong>Como</strong> residente, supervisión o contratista (según rol autorizado), <strong>deseo</strong> emitir notas
+          tipificadas según mi rol con folio automático y firma electrónica, <strong>a fin de</strong>
+          documentar formalmente los eventos conforme al art. 125 RLOPSRM de manera trazable e inmutable.
+        </p>
+      </header>
+
+      <div class="border border-gray-200 rounded-lg overflow-hidden bg-white">
+        <div class="sigecop-blue text-white px-6 py-3 flex items-center justify-between">
+          <div class="flex items-center gap-4">
+            <div class="logo-icon w-8 h-8 text-sm">S</div>
+            <span class="font-semibold">SIGECOP</span>
+            <span class="text-xs opacity-75">› Bitácora › C-2026-0042 › Emitir nota</span>
+          </div>
+          <div class="flex items-center gap-3 text-sm">
+            <span>Ing. Hernández</span>
+            <span class="badge badge-amber">Residente</span>
+          </div>
+        </div>
+
+        <div class="p-6 grid grid-cols-3 gap-6">
+
+          <!-- Columna izquierda: lista de notas previas -->
+          <div class="col-span-1 border-r pr-6">
+            <h4 class="font-semibold sigecop-blue-text mb-3 text-sm">Notas recientes del contrato</h4>
+            <div class="space-y-2">
+              <div class="border rounded p-2 hover:bg-gray-50 cursor-pointer">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="badge badge-blue text-xs">N-042 · Instrucción</span>
+                  <span class="text-xs text-gray-500">Hoy 10:23</span>
+                </div>
+                <div class="text-xs">Solicitud de aclaración sobre eje 7-B...</div>
+                <div class="text-xs text-gray-500 mt-1">Por: Residencia</div>
+              </div>
+              <div class="border rounded p-2 hover:bg-gray-50 cursor-pointer">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="badge badge-amber text-xs">N-041 · Acuerdo</span>
+                  <span class="text-xs text-gray-500">Ayer 16:45</span>
+                </div>
+                <div class="text-xs">Acuerdo sobre modificación menor del...</div>
+                <div class="text-xs text-gray-500 mt-1">Por: Las tres partes</div>
+              </div>
+              <div class="border rounded p-2 hover:bg-gray-50 cursor-pointer">
+                <div class="flex items-center justify-between mb-1">
+                  <span class="badge badge-green text-xs">N-040 · Confirm.</span>
+                  <span class="text-xs text-gray-500">14/05 11:20</span>
+                </div>
+                <div class="text-xs">Recepción de trabajos del eje 6...</div>
+                <div class="text-xs text-gray-500 mt-1">Por: Supervisión</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Columna central: formulario de nueva nota -->
+          <div class="col-span-2">
+            <h4 class="font-semibold sigecop-blue-text mb-4">Emisión de nueva nota</h4>
+
+            <div class="mb-4">
+              <label class="block text-xs font-semibold text-gray-700 mb-1">TIPO DE NOTA (según rol Residente)</label>
+              <select class="field-input">
+                <option>Instrucción (al contratista)</option>
+                <option>Acuerdo (entre partes)</option>
+                <option>Solicitud (de información o aclaración)</option>
+              </select>
+              <div class="text-xs text-gray-500 mt-1">
+                Solo aparecen los tipos de nota que corresponden a tu rol (art. 125 RLOPSRM).
+              </div>
+            </div>
+
+            <div class="mb-4">
+              <label class="block text-xs font-semibold text-gray-700 mb-1">ASUNTO *</label>
+              <input type="text" class="field-input" value="Solicitud de aclaración sobre cimentación del eje 8-A"/>
+            </div>
+
+            <div class="mb-4">
+              <label class="block text-xs font-semibold text-gray-700 mb-1">CONTENIDO DE LA NOTA *</label>
+              <textarea class="field-input" rows="5">Se requiere al contratista aclarar el procedimiento de cimentación propuesto para el eje 8-A, considerando los hallazgos del estudio de mecánica de suelos del 12/05/2026. La aclaración deberá presentarse en un plazo no mayor a 3 días hábiles para no afectar el programa de obra.</textarea>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <label class="block text-xs font-semibold text-gray-700 mb-1">VINCULAR A NOTA PREVIA</label>
+                <select class="field-input">
+                  <option>— Sin vínculo —</option>
+                  <option>N-041 · Acuerdo sobre modificación</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-semibold text-gray-700 mb-1">FOLIO ASIGNADO</label>
+                <input type="text" class="field-input bg-gray-100" value="N-043 (automático)" readonly/>
+              </div>
+            </div>
+
+            <div class="bg-amber-50 border-l-4 border-amber-400 p-3 text-sm text-amber-900 mb-4">
+              ⚠️ <strong>Una vez firmada, esta nota será inmutable.</strong> Si necesitas corregir
+              algo después, deberás emitir una nueva nota vinculada a ésta.
+            </div>
+
+            <div class="border-t pt-4 flex justify-between items-center">
+              <div class="text-xs text-gray-500">
+                Firmante: <strong>Ing. Carlos Hernández García</strong> · Cédula 7845612
+              </div>
+              <div class="flex gap-2">
+                <button class="btn-secondary">Guardar borrador</button>
+                <button class="btn-primary">🔒 Firmar y emitir</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-6 grid grid-cols-3 gap-4">
+        <div class="nota-criterio">
+          <strong>CA-1:</strong> Solo aparecen los tipos de nota que corresponden al rol del usuario.
+        </div>
+        <div class="nota-criterio">
+          <strong>CA-2:</strong> Una nota firmada queda inmutable y solo puede corregirse emitiendo una nueva nota vinculada.
+        </div>
+        <div class="nota-criterio">
+          <strong>CA-3:</strong> Cada nota queda registrada con folio, fecha, firmante y vínculo opcional a nota previa.
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<!-- Footer -->
+<footer class="bg-gray-100 text-center py-4 text-xs text-gray-500 border-t mt-8">
+  SIGECOP — Sistema de Gestión Técnico-Administrativa de Contratos de Obra Pública · Maquetas selectas · Mayo 2026
+</footer>
+
+<script>
+function mostrar(id, link) {
+  // Ocultar todas las pantallas
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  // Quitar activo de todos los links
+  document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+  // Mostrar la seleccionada
+  document.getElementById(id).classList.add('active');
+  link.classList.add('active');
+  // Scroll arriba
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+</script>
+</body>
+</html>
