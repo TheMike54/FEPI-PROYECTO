@@ -1,0 +1,43 @@
+require('dotenv').config();
+
+const express = require('express');
+const cors = require('cors');
+
+const authRoutes = require('./src/routes/auth.routes');
+const contratosRoutes = require('./src/routes/contratos.routes');
+const bitacoraRoutes = require('./src/routes/bitacora.routes');
+
+const app = express();
+const PORT = process.env.PORT || 4000;
+
+app.use(cors({ origin: process.env.CORS_ORIGIN || 'http://localhost:5173' }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'sigecop-backend',
+    timestamp: new Date().toISOString()
+  });
+});
+
+app.use('/api/auth', authRoutes);
+app.use('/api/contratos', contratosRoutes);
+app.use('/api/bitacora', bitacoraRoutes);
+
+app.use((req, res) => {
+  res.status(404).json({ error: 'Ruta no encontrada' });
+});
+
+app.use((err, req, res, next) => {
+  console.error('[ERROR]', err);
+  res.status(err.status || 500).json({
+    error: err.message || 'Error interno del servidor'
+  });
+});
+
+app.listen(PORT, () => {
+  console.log(`[SIGECOP] Backend escuchando en http://localhost:${PORT}`);
+  console.log(`[SIGECOP] Health: http://localhost:${PORT}/api/health`);
+});
