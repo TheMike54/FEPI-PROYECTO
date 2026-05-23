@@ -7,6 +7,9 @@ import AltaContrato from './pages/AltaContrato.jsx';
 import RegistroFianzas from './pages/RegistroFianzas.jsx';
 import AperturaBitacora from './pages/AperturaBitacora.jsx';
 import EmisionNotas from './pages/EmisionNotas.jsx';
+import ConsultaNotas from './pages/ConsultaNotas.jsx';
+import IntegracionEstimacion from './pages/IntegracionEstimacion.jsx';
+import RegistroPago from './pages/RegistroPago.jsx';
 
 function WithLayout({ children }) {
   return <Layout>{children}</Layout>;
@@ -22,6 +25,9 @@ export default function App() {
         <Route path="/contratos/fianzas" element={<WithLayout><RegistroFianzas /></WithLayout>} />
         <Route path="/bitacora/apertura" element={<WithLayout><AperturaBitacora /></WithLayout>} />
         <Route path="/bitacora/notas" element={<WithLayout><EmisionNotas /></WithLayout>} />
+        <Route path="/bitacora/consulta" element={<WithLayout><ConsultaNotas /></WithLayout>} />
+        <Route path="/estimaciones/integracion" element={<WithLayout><IntegracionEstimacion /></WithLayout>} />
+        <Route path="/pagos/registro" element={<WithLayout><RegistroPago /></WithLayout>} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </ToastProvider>

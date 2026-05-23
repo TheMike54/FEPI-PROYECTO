@@ -133,7 +133,8 @@ export const tiposNotaResidente = [
   'Solicitud (de información o aclaración)'
 ];
 
-// Cinco HU del Sprint 1 visual — usados por la landing y el sidebar.
+// Ocho HU de los Sprints 1-3 visual — usadas por la landing y el sidebar.
+// Orden = flujo lógico (login → contrato → fianzas → bitácora → estimación → pago).
 export const historiasUsuario = [
   {
     codigo: 'HU-00',
@@ -174,5 +175,99 @@ export const historiasUsuario = [
     sprint: 'Sprint 2',
     icono: '✍️',
     ruta: '/bitacora/notas'
+  },
+  {
+    codigo: 'HU-10',
+    titulo: 'Consulta de notas',
+    descripcion: 'Buscar notas de bitácora por tipo, fecha, firmante o tema y adjuntarlas a estimaciones.',
+    sprint: 'Sprint 3',
+    icono: '🔍',
+    ruta: '/bitacora/consulta'
+  },
+  {
+    codigo: 'HU-12',
+    titulo: 'Integración de estimación',
+    descripcion: 'Integrar la estimación del periodo como expediente completo conforme al art. 132 RLOPSRM.',
+    sprint: 'Sprint 3',
+    icono: '🧾',
+    ruta: '/estimaciones/integracion'
+  },
+  {
+    codigo: 'HU-21',
+    titulo: 'Registro de pago',
+    descripcion: 'Registrar el pago de una estimación y cerrar el ciclo de cobro del contrato.',
+    sprint: 'Sprint 2',
+    icono: '💵',
+    ruta: '/pagos/registro'
   }
+];
+
+// HU-21 — Estimaciones disponibles para pago y pagos ya registrados.
+export const estimacionesParaPagoDummy = [
+  { folio: 'EST-2026-003', periodo: 'Mayo 2026', neto: 1285750.00, etiqueta: 'EST-2026-003 — Mayo 2026 — $1,285,750.00 neto' }
+];
+
+export const pagosRegistradosDummy = [
+  { estimacion: 'EST-2026-001', fecha: '15/04/2026', importe: '$ 980,500.00', referencia: 'SPEI-4471', estado: 'Pagada' },
+  { estimacion: 'EST-2026-002', fecha: '14/05/2026', importe: '$ 1,120,300.00', referencia: 'SPEI-5582', estado: 'Pagada' }
+];
+
+// HU-10 — Catálogo completo de tipos de nota (art. 125 RLOPSRM).
+export const tiposNotaCatalogo = [
+  'Instrucción',
+  'Acuerdo',
+  'Solicitud',
+  'Confirmación',
+  'Respuesta'
+];
+
+export const estatusNotaCatalogo = ['Firmada', 'Pendiente respuesta', 'Respondida'];
+
+// HU-10 — Notas para consulta (6 notas con metadatos de búsqueda).
+export const notasConsultaDummy = [
+  { folio: 'NB-2026-0023', tipo: 'Instrucción',  fecha: '2026-05-18', firmante: 'María López',     estatus: 'Firmada',             tema: 'Inicio de obra' },
+  { folio: 'NB-2026-0024', tipo: 'Solicitud',    fecha: '2026-05-19', firmante: 'Juan Pérez',      estatus: 'Pendiente respuesta', tema: 'Aclaración de concepto' },
+  { folio: 'NB-2026-0025', tipo: 'Acuerdo',      fecha: '2026-05-20', firmante: 'Carlos Sánchez',  estatus: 'Firmada',             tema: 'Ajuste de programa' },
+  { folio: 'NB-2026-0026', tipo: 'Respuesta',    fecha: '2026-05-21', firmante: 'María López',     estatus: 'Respondida',          tema: 'Aclaración de concepto' },
+  { folio: 'NB-2026-0027', tipo: 'Confirmación', fecha: '2026-05-22', firmante: 'Juan Pérez',      estatus: 'Firmada',             tema: 'Entrega parcial' },
+  { folio: 'NB-2026-0028', tipo: 'Instrucción',  fecha: '2026-05-23', firmante: 'María López',     estatus: 'Firmada',             tema: 'Corrección de acabados' }
+];
+
+// HU-12 — Carátula de cálculo de la estimación del periodo.
+export const caratulaEstimacionDummy = [
+  { concepto: 'Monto bruto de la estimación',                 importe:  1850000.00, tipo: 'positivo' },
+  { concepto: '(-) Amortización de anticipo (30%)',           importe:  -555000.00, tipo: 'deduccion' },
+  { concepto: '(-) Retención 5 al millar (art. 191 LFD)',     importe:    -9250.00, tipo: 'deduccion' },
+  { concepto: '(-) Deductivas por penalización',              importe:        0.00, tipo: 'deduccion' },
+  { concepto: '(=) Neto a pagar',                             importe:  1285750.00, tipo: 'neto' }
+];
+
+// HU-12 — Números generadores (acumulados del periodo).
+export const generadoresEstimacionDummy = [
+  { concepto: 'Excavación',              unidad: 'm³',  contratado: 1000, periodoDefault: 250, anteriorAcum: 350, avancePct: 60 },
+  { concepto: 'Concreto f\'c=250',       unidad: 'm³',  contratado:  500, periodoDefault:  80, anteriorAcum: 120, avancePct: 40 },
+  { concepto: 'Acero de refuerzo',       unidad: 'ton', contratado:   50, periodoDefault:  12, anteriorAcum:  18, avancePct: 60 },
+  { concepto: 'Muros de block',          unidad: 'm²',  contratado:  800, periodoDefault: 150, anteriorAcum: 200, avancePct: 44 }
+];
+
+// HU-12 — Placeholders del registro fotográfico.
+export const fotosEstimacionDummy = [
+  { id: 1, descripcion: 'Cimentación eje A' },
+  { id: 2, descripcion: 'Armado de columnas' },
+  { id: 3, descripcion: 'Colado de losa nivel 1' },
+  { id: 4, descripcion: 'Avance general del frente' }
+];
+
+// HU-12 — Soportes documentales requeridos.
+export const soportesEstimacionDummy = [
+  { documento: 'Factura del periodo',    estado: 'Pendiente de carga', cargado: false },
+  { documento: 'CFDI',                   estado: 'Pendiente de carga', cargado: false },
+  { documento: 'Reporte de laboratorio', estado: 'Cargado (dummy)',    cargado: true }
+];
+
+// HU-12 — Notas del periodo disponibles para vincular a la estimación.
+export const notasParaVincularDummy = [
+  { folio: 'NB-2026-0023', tipo: 'Instrucción', fecha: '18/05/2026', tema: 'Inicio de obra' },
+  { folio: 'NB-2026-0025', tipo: 'Acuerdo',     fecha: '20/05/2026', tema: 'Ajuste de programa' },
+  { folio: 'NB-2026-0027', tipo: 'Confirmación', fecha: '22/05/2026', tema: 'Entrega parcial' }
 ];
