@@ -133,8 +133,9 @@ export const tiposNotaResidente = [
   'Solicitud (de información o aclaración)'
 ];
 
-// Ocho HU de los Sprints 1-3 visual — usadas por la landing y el sidebar.
-// Orden = flujo lógico (login → contrato → fianzas → bitácora → estimación → pago).
+// Doce HU de los Sprints 1-5 visual — usadas por la landing y el sidebar.
+// Orden = flujo lógico (login → contrato → consulta → fianzas → bitácora →
+// estimación → revisión → historial → tránsito → pago).
 export const historiasUsuario = [
   {
     codigo: 'HU-00',
@@ -151,6 +152,14 @@ export const historiasUsuario = [
     sprint: 'Sprint 1',
     icono: '📋',
     ruta: '/contratos/alta'
+  },
+  {
+    codigo: 'HU-04',
+    titulo: 'Consulta de expediente',
+    descripcion: 'Ver todos los elementos vigentes del contrato en una sola vista con buscador.',
+    sprint: 'Sprint 4',
+    icono: '🗂️',
+    ruta: '/contratos/expediente'
   },
   {
     codigo: 'HU-02',
@@ -193,6 +202,30 @@ export const historiasUsuario = [
     ruta: '/estimaciones/integracion'
   },
   {
+    codigo: 'HU-15',
+    titulo: 'Revisión de estimación',
+    descripcion: 'Supervisión y residencia revisan, observan y autorizan o rechazan la estimación.',
+    sprint: 'Sprint 4',
+    icono: '✅',
+    ruta: '/estimaciones/revision'
+  },
+  {
+    codigo: 'HU-14',
+    titulo: 'Historial de estimaciones',
+    descripcion: 'Trazabilidad completa del ciclo de cobro, incluyendo versiones rechazadas.',
+    sprint: 'Sprint 5',
+    icono: '📊',
+    ruta: '/estimaciones/historial'
+  },
+  {
+    codigo: 'HU-20',
+    titulo: 'Tránsito a pago',
+    descripcion: 'Verificación presupuestal, instrucción de pago y semáforo del plazo de 20 días.',
+    sprint: 'Sprint 5',
+    icono: '💸',
+    ruta: '/pagos/transito'
+  },
+  {
     codigo: 'HU-21',
     titulo: 'Registro de pago',
     descripcion: 'Registrar el pago de una estimación y cerrar el ciclo de cobro del contrato.',
@@ -200,6 +233,57 @@ export const historiasUsuario = [
     icono: '💵',
     ruta: '/pagos/registro'
   }
+];
+
+// HU-14 — Historial completo del ciclo de cobro (incluye versiones rechazadas).
+export const historialEstimacionesDummy = [
+  { estimacion: 'EST-2026-001', periodo: 'Abr 2026', version: 'v1', estado: 'Aceptada',   importe: '$ 980,500.00',   fecha: '10/04/2026' },
+  { estimacion: 'EST-2026-002', periodo: 'May 2026', version: 'v1', estado: 'Rechazada',  importe: '$ 1,150,000.00', fecha: '12/05/2026' },
+  { estimacion: 'EST-2026-002', periodo: 'May 2026', version: 'v2', estado: 'Aceptada',   importe: '$ 1,120,300.00', fecha: '16/05/2026' },
+  { estimacion: 'EST-2026-003', periodo: 'May 2026', version: 'v1', estado: 'En proceso', importe: '$ 1,285,750.00', fecha: '23/05/2026' }
+];
+
+export const periodosHistorialDummy = ['Todos', 'Abr 2026', 'May 2026'];
+export const estadosHistorialDummy = ['Todos', 'Aceptada', 'Rechazada', 'En proceso'];
+
+// HU-04 — Bloques del expediente contractual (CA-1: los 5 bloques en una vista).
+export const bloquesExpedienteDummy = [
+  {
+    id: 'configuracion',
+    titulo: 'Configuración del contrato',
+    icono: '⚙️',
+    contenido: [
+      { label: 'Folio',        valor: 'C-2026-0042' },
+      { label: 'Objeto',       valor: 'Construcción de edificio administrativo en av. principal' },
+      { label: 'Contratista',  valor: 'Constructora XYZ S.A. de C.V.' },
+      { label: 'Dependencia',  valor: 'Secretaría de Obras Públicas' },
+      { label: 'Monto',        valor: '$ 12,450,000.00 MXN' },
+      { label: 'Plazo',        valor: '180 días naturales' },
+      { label: 'Modalidad',    valor: 'Precios unitarios' },
+      { label: 'Vigencia',     valor: '01/06/2026 — 28/11/2026' }
+    ]
+  }
+];
+
+// HU-15 — Pasos del flujo secuencial de revisión (CA-2).
+export const pasosRevisionDummy = [
+  { id: 'supervision', label: 'Supervisión', estado: 'En revisión' },
+  { id: 'residencia',  label: 'Residencia',  estado: 'En espera' },
+  { id: 'resolucion',  label: 'Resolución',  estado: 'Pendiente' }
+];
+
+// HU-20 — Suficiencia presupuestal (art. 24 LOPSRM).
+export const presupuestoDummy = {
+  techo: 15000000,
+  comprometido: 11200000,
+  estimacion: 1285750
+};
+
+// HU-20 — Soportes obligatorios para tránsito a pago.
+export const soportesPagoDummy = [
+  { id: 'factura',     documento: 'Factura del periodo',         cargado: true  },
+  { id: 'cfdi',        documento: 'CFDI',                        cargado: true  },
+  { id: 'fianza',      documento: 'Estado de cuenta de fianza',  cargado: false }
 ];
 
 // HU-21 — Estimaciones disponibles para pago y pagos ya registrados.
