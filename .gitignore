@@ -50,3 +50,6 @@ postgres-data/
 # Archivos temporales del proyecto
 *.tmp
 *.bak
+
+# Scripts personales con rutas absolutas locales
+encenderserver.bat

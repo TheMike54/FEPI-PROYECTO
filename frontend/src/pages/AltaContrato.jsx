@@ -235,7 +235,7 @@ export default function AltaContrato() {
     { label: 'Catálogo de conceptos', content: <TabCatalogo /> },
     { label: 'Programa de obra', content: <TabPrograma /> },
     { label: 'Datos jurídicos', content: <TabJuridicos /> },
-    { label: 'Garantías y amortización', content: <TabGarantias /> },
+    { label: 'Garantías, penalizaciones y amortización', content: <TabGarantias /> },
     { label: 'PDF firmado', content: <TabPdfFirmado /> }
   ];
 
