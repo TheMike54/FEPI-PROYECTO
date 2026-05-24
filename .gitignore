@@ -38,6 +38,13 @@ $RECYCLE.BIN/
 coverage/
 .nyc_output/
 
+# Playwright (E2E)
+test-results/
+playwright-report/
+playwright/.cache/
+**/test-results/
+**/playwright-report/
+
 # Caches
 .cache/
 .parcel-cache/
