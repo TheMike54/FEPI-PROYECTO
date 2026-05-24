@@ -4,8 +4,13 @@ import HeaderVista from '../components/vista/HeaderVista.jsx';
 import BannerContexto from '../components/vista/BannerContexto.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import RegionEditable from '../components/vista/RegionEditable.jsx';
-import { useVistaHU } from '../context/SesionContext.jsx';
-import { notasRecientesDummy, tiposNotaResidente, contratoDummy } from '../data/dummy.js';
+import { useVistaHU, useSesion } from '../context/SesionContext.jsx';
+import {
+  notasRecientesDummy,
+  tiposNotaPorRol,
+  firmantePorRol,
+  contratoDummy
+} from '../data/dummy.js';
 
 function NotaPreviewCard({ nota }) {
   const colorClasses = {
@@ -30,7 +35,14 @@ function NotaPreviewCard({ nota }) {
 export default function EmisionNotas() {
   const { showToast } = useToast();
   const { soloLectura } = useVistaHU('HU-09');
-  const [tipo, setTipo] = useState(tiposNotaResidente[0]);
+  const { rol } = useSesion();
+  // En modo aplicación, los tipos y el firmante se derivan del rol activo. En
+  // modo proyecto (rol === null) se mantiene el catálogo y firmante del
+  // residente por defecto, igual que antes (art. 125 RLOPSRM).
+  const rolEfectivo = rol ?? 'residente';
+  const tiposNota = tiposNotaPorRol[rolEfectivo] ?? tiposNotaPorRol.residente;
+  const firmante = firmantePorRol[rolEfectivo] ?? firmantePorRol.residente;
+  const [tipo, setTipo] = useState(tiposNota[0]);
   const [asunto, setAsunto] = useState('Solicitud de aclaración sobre cimentación del eje 8-A');
   const [contenido, setContenido] = useState(
     'Se requiere al contratista aclarar el procedimiento de cimentación propuesto para el eje 8-A, considerando los hallazgos del estudio de mecánica de suelos del 12/05/2026. La aclaración deberá presentarse en un plazo no mayor a 3 días hábiles para no afectar el programa de obra.'
@@ -86,7 +98,7 @@ export default function EmisionNotas() {
                 value={tipo}
                 onChange={(e) => setTipo(e.target.value)}
               >
-                {tiposNotaResidente.map((t) => (
+                {tiposNota.map((t) => (
                   <option key={t}>{t}</option>
                 ))}
               </select>
@@ -153,7 +165,7 @@ export default function EmisionNotas() {
               <div className="border-2 border-dashed border-slate-300 rounded-md p-6 text-center bg-slate-50">
                 <p className="text-sm text-slate-500">Disponible en Sprint siguiente</p>
                 <p className="text-xs text-slate-400 mt-1">
-                  Firmante: <strong>Ing. Carlos Hernández García</strong> · Cédula 7845612
+                  Firmante: <strong>{firmante}</strong>
                 </p>
               </div>
             </div>

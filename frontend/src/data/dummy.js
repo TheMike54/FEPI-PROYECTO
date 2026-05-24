@@ -133,6 +133,38 @@ export const tiposNotaResidente = [
   'Solicitud (de información o aclaración)'
 ];
 
+// HU-09 — Tipos de nota habilitados por rol (art. 125 RLOPSRM, fraccs. I-III).
+// Residente AUTORIZA/APRUEBA, Contratista SOLICITA/AVISA, Supervisión REGISTRA AVANCE.
+// En modo aplicación se filtra por rol activo; en modo proyecto se usa el catálogo
+// del residente como default (no rompe la vitrina académica).
+export const tiposNotaPorRol = {
+  residente: [
+    'Autorización de estimación',
+    'Autorización de convenio modificatorio',
+    'Aprobación de ajuste de costos',
+    'Autorización de conceptos no previstos y cantidades adicionales'
+  ],
+  contratista: [
+    'Solicitud de aprobación de estimación',
+    'Aviso de atraso en el pago de estimaciones',
+    'Solicitud de convenio modificatorio',
+    'Solicitud de conceptos no previstos y cantidades adicionales'
+  ],
+  supervision: [
+    'Registro de avance físico y financiero',
+    'Observación técnica de calidad',
+    'Registro de incidencia en obra'
+  ]
+};
+
+// HU-09 — Firmante de la nota según rol activo (datos de ejemplo). En modo
+// proyecto (sin rol) se usa el del residente por defecto.
+export const firmantePorRol = {
+  residente:   'Ing. Carlos Hernández García · Cédula 7845612',
+  contratista: 'Ing. Roberto Salas Méndez · Superintendente · Cédula 6610234',
+  supervision: 'Arq. Laura Jiménez Ortiz · Supervisión externa · Cédula 5523109'
+};
+
 // Doce HU de los Sprints 1-5 visual — usadas por la landing y el sidebar.
 // Orden = flujo lógico (login → contrato → consulta → fianzas → bitácora →
 // estimación → revisión → historial → tránsito → pago).

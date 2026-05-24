@@ -21,11 +21,17 @@ export default function HeaderVista({
   descripcion,
   breadcrumb
 }) {
-  const { soloLectura } = useVistaHU(huId);
+  const { soloLectura, mostrarMeta } = useVistaHU(huId);
+
+  // rolAcademico es metadata de la HU (el rol "dueño" en el backlog, no el rol
+  // del usuario). descripcion es texto explicativo de la maqueta. Ambos solo
+  // tienen sentido en modo proyecto; en modo aplicación se ocultan.
+  const mostrarRolAcademico = mostrarMeta && !!rolAcademico;
+  const mostrarDescripcion = mostrarMeta && !!descripcion;
 
   // Cuando hay subtítulo (rol o descripción), el contenedor del título cierra
   // con mb-1 (porque el <p> ya aporta mb-6 abajo). Sin subtítulo, mb-6.
-  const tieneSubtitulo = !!rolAcademico || !!descripcion;
+  const tieneSubtitulo = mostrarRolAcademico || mostrarDescripcion;
   const mbTitulo = tieneSubtitulo ? 'mb-1' : 'mb-6';
 
   return (
@@ -35,10 +41,10 @@ export default function HeaderVista({
         <h1 className="text-2xl font-bold text-sigecop-blue">{titulo}</h1>
         <BadgeSprint codigo={huId} sprint={sprint} />
       </div>
-      {rolAcademico && (
+      {mostrarRolAcademico && (
         <p className="text-sm text-slate-600 mb-6">Rol: {rolAcademico}</p>
       )}
-      {descripcion && (
+      {mostrarDescripcion && (
         <p className="text-sm text-slate-600 mb-6">{descripcion}</p>
       )}
       {soloLectura && <AvisoSoloLectura />}
