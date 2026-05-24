@@ -259,7 +259,9 @@ export default function AltaContrato() {
 
       {soloLectura && <AvisoSoloLectura />}
 
-      <Tabs tabs={tabs} />
+      <fieldset disabled={soloLectura} className="contents">
+        <Tabs tabs={tabs} />
+      </fieldset>
 
       {!soloLectura && (
         <div className="mt-6 flex justify-end gap-3">

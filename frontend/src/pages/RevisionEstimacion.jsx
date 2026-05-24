@@ -357,7 +357,9 @@ export default function RevisionEstimacion() {
       <IndicadorFlujo pasos={pasos} />
       <SemaforoPlazoRevision diaActual={8} diaLimite={15} />
 
-      <Tabs tabs={tabs} />
+      <fieldset disabled={soloLectura} className="contents">
+        <Tabs tabs={tabs} />
+      </fieldset>
 
       {!soloLectura && (
       <div className="mt-6 bg-white border border-slate-200 rounded-md p-5">

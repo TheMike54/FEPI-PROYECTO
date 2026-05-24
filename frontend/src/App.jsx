@@ -16,6 +16,7 @@ import HistorialEstimaciones from './pages/HistorialEstimaciones.jsx';
 import RevisionEstimacion from './pages/RevisionEstimacion.jsx';
 import TransitoPago from './pages/TransitoPago.jsx';
 import SeleccionRol from './pages/SeleccionRol.jsx';
+import SolicitudRegistro from './pages/SolicitudRegistro.jsx';
 
 // Envuelve con Layout. Si está en modo aplicación sin rol, intercepta y muestra
 // la pantalla de selección (HU-00 / login queda fuera de esta lógica porque
@@ -26,6 +27,14 @@ function WithLayout({ children }) {
     return <SeleccionRol />;
   }
   return <Layout>{children}</Layout>;
+}
+
+// Vistas marcadas como Propuesta (fuera del backlog de HU). En modo aplicación
+// se redirige al inicio porque no son parte del flujo operativo por rol.
+function SoloModoProyecto({ children }) {
+  const { modo } = useSesion();
+  if (modo === 'aplicacion') return <Navigate to="/" replace />;
+  return <WithLayout>{children}</WithLayout>;
 }
 
 export default function App() {
@@ -46,6 +55,7 @@ export default function App() {
           <Route path="/estimaciones/historial" element={<WithLayout><HistorialEstimaciones /></WithLayout>} />
           <Route path="/estimaciones/revision" element={<WithLayout><RevisionEstimacion /></WithLayout>} />
           <Route path="/pagos/transito" element={<WithLayout><TransitoPago /></WithLayout>} />
+          <Route path="/solicitud-acceso" element={<SoloModoProyecto><SolicitudRegistro /></SoloModoProyecto>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </ToastProvider>

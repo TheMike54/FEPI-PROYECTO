@@ -85,6 +85,7 @@ export default function EmisionNotas() {
         <div className="lg:col-span-2 bg-white border border-slate-200 rounded-md p-6">
           <h2 className="text-lg font-bold text-sigecop-blue mb-4">Emisión de nueva nota</h2>
 
+          <fieldset disabled={soloLectura} className="contents">
           <div className="space-y-4">
             <div>
               <label className="sg-label">Tipo de nota (según rol)</label>
@@ -184,6 +185,7 @@ export default function EmisionNotas() {
               </div>
             )}
           </div>
+          </fieldset>
         </div>
       </div>
 

@@ -46,6 +46,7 @@ export default function RegistroPago() {
       <div className="bg-white border border-slate-200 rounded-md p-6 mb-6">
         <h2 className="text-lg font-bold text-sigecop-blue mb-4">Datos del pago</h2>
 
+        <fieldset disabled={soloLectura} className="contents">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="md:col-span-2">
             <label className="sg-label">Estimación a pagar *</label>
@@ -109,6 +110,7 @@ export default function RegistroPago() {
             </button>
           </div>
         )}
+        </fieldset>
       </div>
 
       <div className="bg-white border border-slate-200 rounded-md overflow-hidden">

@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { historiasUsuario } from '../data/dummy.js';
+import { historiasUsuario, vistasPropuesta } from '../data/dummy.js';
 import { ROLES, nivelDe } from '../data/permisos.js';
 import { useSesion } from '../context/SesionContext.jsx';
 
@@ -69,6 +69,37 @@ export default function Inicio() {
           </Link>
         ))}
       </div>
+
+      {!enModoApp && (
+        <section className="mt-12 pt-6 border-t border-slate-200">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-purple-700 mb-3">
+            Propuestas (fuera del backlog)
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {vistasPropuesta.map((v) => (
+              <Link
+                key={v.id}
+                to={v.ruta}
+                className="bg-white rounded-lg border border-purple-200 hover:border-purple-500 hover:shadow-md transition-all p-6 group"
+              >
+                <div className="flex items-start justify-between mb-3">
+                  <div className="text-3xl">{v.icono}</div>
+                  <span className="text-xs font-semibold text-purple-700 bg-purple-100 px-2 py-0.5 rounded">
+                    {v.etiqueta}
+                  </span>
+                </div>
+                <h3 className="font-bold text-slate-900 mb-2 group-hover:text-purple-700 transition-colors">
+                  {v.titulo}
+                </h3>
+                <p className="text-sm text-slate-600 leading-relaxed">{v.descripcion}</p>
+                <div className="mt-4 text-xs font-semibold text-purple-700 group-hover:underline">
+                  Ver propuesta →
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       {!enModoApp && (
         <footer className="mt-12 pt-6 border-t border-slate-200 text-xs text-slate-500 text-center">

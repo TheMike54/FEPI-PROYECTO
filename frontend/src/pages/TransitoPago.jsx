@@ -246,9 +246,10 @@ export default function TransitoPago() {
 
       {soloLectura && <AvisoSoloLectura />}
 
-      <SuficienciaPresupuestal montoEstimacion={montoEstimacion} onMontoChange={setMontoEstimacion} />
-
-      <SoportesObligatorios soportes={soportes} onToggle={toggleSoporte} />
+      <fieldset disabled={soloLectura} className="contents">
+        <SuficienciaPresupuestal montoEstimacion={montoEstimacion} onMontoChange={setMontoEstimacion} />
+        <SoportesObligatorios soportes={soportes} onToggle={toggleSoporte} />
+      </fieldset>
 
       <SemaforoPlazoPago diaActual={6} diaLimite={20} />
 

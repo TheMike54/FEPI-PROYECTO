@@ -286,6 +286,18 @@ export const soportesPagoDummy = [
   { id: 'fianza',      documento: 'Estado de cuenta de fianza',  cargado: false }
 ];
 
+// Vistas propuestas — fuera del backlog de 22 HU. Solo se muestran en modo proyecto.
+export const vistasPropuesta = [
+  {
+    id: 'solicitud-acceso',
+    titulo: 'Solicitud de registro',
+    descripcion: 'Inscripción de nuevos usuarios al sistema. Requiere aprobación de la dependencia. Vista propuesta para validación.',
+    icono: '📝',
+    ruta: '/solicitud-acceso',
+    etiqueta: 'Propuesta · a validar'
+  }
+];
+
 // HU-21 — Estimaciones disponibles para pago y pagos ya registrados.
 export const estimacionesParaPagoDummy = [
   { folio: 'EST-2026-003', periodo: 'Mayo 2026', neto: 1285750.00, etiqueta: 'EST-2026-003 — Mayo 2026 — $1,285,750.00 neto' }

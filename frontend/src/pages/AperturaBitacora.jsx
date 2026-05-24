@@ -110,16 +110,18 @@ export default function AperturaBitacora() {
         Designación de firmantes autorizados
       </h2>
 
-      <div className="space-y-4">
-        {partesBitacoraDummy.map((p) => (
-          <ParteCard
-            key={p.num}
-            parte={p}
-            valores={estado[p.num]}
-            onChange={handleChange(p.num)}
-          />
-        ))}
-      </div>
+      <fieldset disabled={soloLectura} className="contents">
+        <div className="space-y-4">
+          {partesBitacoraDummy.map((p) => (
+            <ParteCard
+              key={p.num}
+              parte={p}
+              valores={estado[p.num]}
+              onChange={handleChange(p.num)}
+            />
+          ))}
+        </div>
+      </fieldset>
 
       <div className="mt-6 bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 rounded-r-md">
         <div className="text-sm font-semibold text-sigecop-amber-attention">⚠️ Evento formal inalterable</div>
