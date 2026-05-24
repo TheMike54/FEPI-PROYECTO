@@ -296,6 +296,14 @@ export const historiasUsuario = [
     sprint: 'Sprint 7',
     icono: '🏗️',
     ruta: '/seguimiento/trabajos-terminados'
+  },
+  {
+    codigo: 'HU-11',
+    titulo: 'Minutas y agenda de visitas',
+    descripcion: 'Registro de minutas y visitas del contrato, con consulta de los acuerdos y compromisos derivados, filtrables por periodo.',
+    sprint: 'Sprint 7',
+    icono: '📝',
+    ruta: '/bitacora/minutas'
   }
 ];
 
@@ -493,6 +501,34 @@ export const notasEntregaDummy = [
   'NOTA-2026-015 · Entrega de avance · 22/05/2026',
   'NOTA-2026-016 · Entrega de avance · 28/05/2026'
 ];
+
+// HU-11 — Minutas ya registradas. La columna "acuerdos" es el conteo de los
+// compromisos derivados (se consultan en la pestaña Acuerdos con su detalle).
+export const minutasDummy = [
+  { id: 1, fecha: '15/05/2026', tema: 'Reunión de avance mensual', asistentes: 'Residente, Superintendente, Supervisión', acuerdos: 3 },
+  { id: 2, fecha: '01/05/2026', tema: 'Junta de inicio de obra',   asistentes: 'Residente, Dependencia, Contratista',     acuerdos: 2 }
+];
+
+// HU-11 — Visitas agendadas. El estado conduce el color del badge en la tabla.
+export const visitasDummy = [
+  { id: 1, fecha: '20/05/2026', tipo: 'Inspección',     responsable: 'Supervisión', estado: 'Realizada'  },
+  { id: 2, fecha: '28/05/2026', tipo: 'Visita de obra', responsable: 'Residente',   estado: 'Programada' },
+  { id: 3, fecha: '03/06/2026', tipo: 'Inspección',     responsable: 'Supervisión', estado: 'Programada' }
+];
+
+// HU-11 — Catálogo del select de tipo de visita.
+export const tiposVisitaDummy = ['Visita de obra', 'Inspección'];
+
+// HU-11 — Acuerdos derivados de minutas o visitas. El "periodo" agrupa por mes
+// y conduce el filtro consultativo de la pestaña Acuerdos.
+export const acuerdosDummy = [
+  { id: 1, acuerdo: 'Entregar programa actualizado',  origen: 'Minuta 15/05', responsable: 'Contratista', compromiso: '22/05/2026', estado: 'Cumplido',   periodo: 'Mayo 2026' },
+  { id: 2, acuerdo: 'Reparar acceso provisional',     origen: 'Visita 20/05', responsable: 'Contratista', compromiso: '25/05/2026', estado: 'Pendiente',  periodo: 'Mayo 2026' },
+  { id: 3, acuerdo: 'Enviar fianza de vicios ocultos', origen: 'Minuta 01/05', responsable: 'Contratista', compromiso: '30/05/2026', estado: 'En proceso', periodo: 'Mayo 2026' }
+];
+
+// HU-11 — Catálogo de periodos consultables para el filtro de Acuerdos.
+export const periodosAcuerdosDummy = ['Todos', 'Mayo 2026', 'Junio 2026'];
 
 // HU-07 — Alertas ya configuradas (dummy). El estado define la acción disponible.
 export const alertasConfiguradasDummy = [

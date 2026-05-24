@@ -22,6 +22,7 @@ import ConveniosModificatorios from './pages/ConveniosModificatorios.jsx';
 import AlertasAtraso from './pages/AlertasAtraso.jsx';
 import CurvaAvance from './pages/CurvaAvance.jsx';
 import TrabajosTerminados from './pages/TrabajosTerminados.jsx';
+import MinutasVisitas from './pages/MinutasVisitas.jsx';
 
 // Envuelve con Layout. Si está en modo aplicación sin rol, intercepta y muestra
 // la pantalla de selección (HU-00 / login queda fuera de esta lógica porque
@@ -55,6 +56,7 @@ export default function App() {
             <Route path="/bitacora/apertura" element={<WithLayout><AperturaBitacora /></WithLayout>} />
             <Route path="/bitacora/notas" element={<WithLayout><EmisionNotas /></WithLayout>} />
             <Route path="/bitacora/consulta" element={<WithLayout><ConsultaNotas /></WithLayout>} />
+            <Route path="/bitacora/minutas" element={<WithLayout><MinutasVisitas /></WithLayout>} />
             <Route path="/estimaciones/integracion" element={<WithLayout><IntegracionEstimacion /></WithLayout>} />
             <Route path="/pagos/registro" element={<WithLayout><RegistroPago /></WithLayout>} />
             <Route path="/contratos/expediente" element={<WithLayout><ConsultaExpediente /></WithLayout>} />
