@@ -121,7 +121,7 @@ function TabGeneradores({ filas, onPeriodoChange }) {
   );
 }
 
-function TabFotografico() {
+function TabFotografico({ descripciones, onDescripcionChange }) {
   return (
     <div>
       <h3 className="text-lg font-bold text-sigecop-blue mb-4">Registro fotográfico del periodo</h3>
@@ -136,7 +136,11 @@ function TabFotografico() {
             </div>
             <div className="p-3 bg-white border-t border-slate-200">
               <label className="sg-label">Descripción</label>
-              <input className="sg-input" defaultValue={f.descripcion} />
+              <input
+                className="sg-input"
+                value={descripciones[f.id] ?? ''}
+                onChange={(e) => onDescripcionChange(f.id, e.target.value)}
+              />
             </div>
           </div>
         ))}
@@ -181,7 +185,6 @@ function TabSoportes({ showToast }) {
                     disabled
                     title="Carga real en Sprint siguiente"
                     className="px-3 py-1.5 bg-slate-200 text-slate-400 rounded text-xs cursor-not-allowed"
-                    onClick={() => showToast('Carga real en Sprint siguiente.')}
                   >
                     📤 Cargar soporte
                   </button>
@@ -268,6 +271,18 @@ export default function IntegracionEstimacion() {
 
   const [notasSeleccionadas, setNotasSeleccionadas] = useState(new Set());
 
+  // Estado en el padre — TabFotografico se desmonta al cambiar de pestaña (fix C-02).
+  const [descripcionesFotos, setDescripcionesFotos] = useState(
+    fotosEstimacionDummy.reduce((acc, f) => {
+      acc[f.id] = f.descripcion;
+      return acc;
+    }, {})
+  );
+
+  const handleDescripcionFoto = (id, valor) => {
+    setDescripcionesFotos((prev) => ({ ...prev, [id]: valor }));
+  };
+
   const filasGeneradores = useMemo(() => {
     return generadoresEstimacionDummy.map((g, i) => {
       const periodo = Number(periodos[i]) || 0;
@@ -305,7 +320,10 @@ export default function IntegracionEstimacion() {
       label: 'Números generadores',
       content: wrapTab(<TabGeneradores filas={filasGeneradores} onPeriodoChange={handlePeriodoChange} />)
     },
-    { label: 'Registro fotográfico', content: wrapTab(<TabFotografico />) },
+    {
+      label: 'Registro fotográfico',
+      content: wrapTab(<TabFotografico descripciones={descripcionesFotos} onDescripcionChange={handleDescripcionFoto} />)
+    },
     { label: 'Soportes', content: wrapTab(<TabSoportes showToast={showToast} />) },
     {
       label: 'Notas vinculadas',

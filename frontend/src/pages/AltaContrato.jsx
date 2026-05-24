@@ -20,10 +20,7 @@ function Field({ label, required, children, hint }) {
   );
 }
 
-function TabDatosGenerales() {
-  const [datos, setDatos] = useState(contratoDummy);
-  const set = (k) => (e) => setDatos({ ...datos, [k]: e.target.value });
-
+function TabDatosGenerales({ datos, set }) {
   return (
     <div>
       <h3 className="text-lg font-bold text-sigecop-blue mb-4">Datos generales del contrato</h3>
@@ -142,28 +139,28 @@ function TabPrograma() {
   );
 }
 
-function TabJuridicos() {
+function TabJuridicos({ datos, set }) {
   return (
     <div>
       <h3 className="text-lg font-bold text-sigecop-blue mb-4">Datos jurídicos</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Field label="Firmante autorizado de la dependencia" required>
-          <input className="sg-input" defaultValue="Lic. María Pérez García" />
+          <input className="sg-input" value={datos.firmanteDependencia} onChange={set('firmanteDependencia')} />
         </Field>
         <Field label="Cargo del firmante" required>
-          <input className="sg-input" defaultValue="Directora de Obras" />
+          <input className="sg-input" value={datos.cargoFirmante} onChange={set('cargoFirmante')} />
         </Field>
         <Field label="Representante legal del contratista" required>
-          <input className="sg-input" defaultValue="Lic. Juan Ramírez Soto" />
+          <input className="sg-input" value={datos.representanteLegal} onChange={set('representanteLegal')} />
         </Field>
         <Field label="Cédula profesional del responsable técnico" required hint="Ingresar cédula vigente del DRO">
-          <input className="sg-input" defaultValue="8475612" />
+          <input className="sg-input" value={datos.cedulaProfesional} onChange={set('cedulaProfesional')} />
         </Field>
         <Field label="No. de poder notarial">
-          <input className="sg-input" defaultValue="Escritura Núm. 12,345" />
+          <input className="sg-input" value={datos.poderNotarial} onChange={set('poderNotarial')} />
         </Field>
         <Field label="Notaría">
-          <input className="sg-input" defaultValue="Notaría Pública Núm. 47 — Acapulco, Gro." />
+          <input className="sg-input" value={datos.notaria} onChange={set('notaria')} />
         </Field>
       </div>
     </div>
@@ -233,6 +230,20 @@ export default function AltaContrato() {
   const { showToast } = useToast();
   const { soloLectura, mostrarMeta } = useVistaHU('HU-01');
 
+  // Estado en el padre para que persista al cambiar de pestaña
+  // (Tabs desmonta los inactivos — ver fix C-01).
+  const [datosGenerales, setDatosGenerales] = useState(contratoDummy);
+  const [datosJuridicos, setDatosJuridicos] = useState({
+    firmanteDependencia: 'Lic. María Pérez García',
+    cargoFirmante: 'Directora de Obras',
+    representanteLegal: 'Lic. Juan Ramírez Soto',
+    cedulaProfesional: '8475612',
+    poderNotarial: 'Escritura Núm. 12,345',
+    notaria: 'Notaría Pública Núm. 47 — Acapulco, Gro.'
+  });
+  const setDatosGen = (k) => (e) => setDatosGenerales((prev) => ({ ...prev, [k]: e.target.value }));
+  const setDatosJur = (k) => (e) => setDatosJuridicos((prev) => ({ ...prev, [k]: e.target.value }));
+
   // Envolvemos el contenido de cada tab — NO el componente Tabs — para que en
   // lectura los inputs queden disabled pero la navegación entre pestañas siga viva.
   const wrapTab = (node) => (
@@ -240,10 +251,10 @@ export default function AltaContrato() {
   );
 
   const tabs = [
-    { label: 'Datos generales', content: wrapTab(<TabDatosGenerales />) },
+    { label: 'Datos generales', content: wrapTab(<TabDatosGenerales datos={datosGenerales} set={setDatosGen} />) },
     { label: 'Catálogo de conceptos', content: wrapTab(<TabCatalogo />) },
     { label: 'Programa de obra', content: wrapTab(<TabPrograma />) },
-    { label: 'Datos jurídicos', content: wrapTab(<TabJuridicos />) },
+    { label: 'Datos jurídicos', content: wrapTab(<TabJuridicos datos={datosJuridicos} set={setDatosJur} />) },
     { label: 'Garantías, penalizaciones y amortización', content: wrapTab(<TabGarantias />) },
     { label: 'PDF firmado', content: wrapTab(<TabPdfFirmado />) }
   ];

@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback } from 'react';
+import { createContext, useContext, useState, useCallback, useMemo } from 'react';
 import { nivelDe } from '../data/permisos.js';
 
 // El rol HOY viene del selector de demostración. En el futuro vendrá del login
@@ -17,10 +17,15 @@ export function SesionProvider({ children }) {
     if (nuevoModo === 'proyecto') setRol(null);
   }, []);
 
+  // Memoizamos el value para no causar re-renders innecesarios en todos los
+  // consumidores cuando el Provider se re-renderiza sin cambios en modo/rol.
+  const value = useMemo(
+    () => ({ modo, rol, setModo: cambiarModo, setRol, salirRol }),
+    [modo, rol, cambiarModo, salirRol]
+  );
+
   return (
-    <SesionContext.Provider
-      value={{ modo, rol, setModo: cambiarModo, setRol, salirRol }}
-    >
+    <SesionContext.Provider value={value}>
       {children}
     </SesionContext.Provider>
   );

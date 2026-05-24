@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { ToastProvider } from './components/ui/Toast.jsx';
 import { SesionProvider, useSesion } from './context/SesionContext.jsx';
+import ErrorBoundary from './components/ErrorBoundary.jsx';
 import Layout from './components/layout/Layout.jsx';
 import Inicio from './pages/Inicio.jsx';
 import Login from './pages/Login.jsx';
@@ -41,23 +42,25 @@ export default function App() {
   return (
     <SesionProvider>
       <ToastProvider>
-        <Routes>
-          <Route path="/login" element={<Login />} />
-          <Route path="/" element={<WithLayout><Inicio /></WithLayout>} />
-          <Route path="/contratos/alta" element={<WithLayout><AltaContrato /></WithLayout>} />
-          <Route path="/contratos/fianzas" element={<WithLayout><RegistroFianzas /></WithLayout>} />
-          <Route path="/bitacora/apertura" element={<WithLayout><AperturaBitacora /></WithLayout>} />
-          <Route path="/bitacora/notas" element={<WithLayout><EmisionNotas /></WithLayout>} />
-          <Route path="/bitacora/consulta" element={<WithLayout><ConsultaNotas /></WithLayout>} />
-          <Route path="/estimaciones/integracion" element={<WithLayout><IntegracionEstimacion /></WithLayout>} />
-          <Route path="/pagos/registro" element={<WithLayout><RegistroPago /></WithLayout>} />
-          <Route path="/contratos/expediente" element={<WithLayout><ConsultaExpediente /></WithLayout>} />
-          <Route path="/estimaciones/historial" element={<WithLayout><HistorialEstimaciones /></WithLayout>} />
-          <Route path="/estimaciones/revision" element={<WithLayout><RevisionEstimacion /></WithLayout>} />
-          <Route path="/pagos/transito" element={<WithLayout><TransitoPago /></WithLayout>} />
-          <Route path="/solicitud-acceso" element={<SoloModoProyecto><SolicitudRegistro /></SoloModoProyecto>} />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
+        <ErrorBoundary>
+          <Routes>
+            <Route path="/login" element={<Login />} />
+            <Route path="/" element={<WithLayout><Inicio /></WithLayout>} />
+            <Route path="/contratos/alta" element={<WithLayout><AltaContrato /></WithLayout>} />
+            <Route path="/contratos/fianzas" element={<WithLayout><RegistroFianzas /></WithLayout>} />
+            <Route path="/bitacora/apertura" element={<WithLayout><AperturaBitacora /></WithLayout>} />
+            <Route path="/bitacora/notas" element={<WithLayout><EmisionNotas /></WithLayout>} />
+            <Route path="/bitacora/consulta" element={<WithLayout><ConsultaNotas /></WithLayout>} />
+            <Route path="/estimaciones/integracion" element={<WithLayout><IntegracionEstimacion /></WithLayout>} />
+            <Route path="/pagos/registro" element={<WithLayout><RegistroPago /></WithLayout>} />
+            <Route path="/contratos/expediente" element={<WithLayout><ConsultaExpediente /></WithLayout>} />
+            <Route path="/estimaciones/historial" element={<WithLayout><HistorialEstimaciones /></WithLayout>} />
+            <Route path="/estimaciones/revision" element={<WithLayout><RevisionEstimacion /></WithLayout>} />
+            <Route path="/pagos/transito" element={<WithLayout><TransitoPago /></WithLayout>} />
+            <Route path="/solicitud-acceso" element={<SoloModoProyecto><SolicitudRegistro /></SoloModoProyecto>} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </ErrorBoundary>
       </ToastProvider>
     </SesionProvider>
   );
