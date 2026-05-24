@@ -53,3 +53,6 @@ postgres-data/
 
 # Scripts personales con rutas absolutas locales
 encenderserver.bat
+
+# Archivos lock de Microsoft Office (Excel/Word abiertos)
+~$*

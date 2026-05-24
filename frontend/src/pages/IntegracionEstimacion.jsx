@@ -385,7 +385,7 @@ export default function IntegracionEstimacion() {
           />
           <CardCriterioAceptacion
             numero={3}
-            texto="El sistema bloquea la integración cuando una cantidad por concepto excede la cantidad contratada en el catálogo."
+            texto="El sistema bloquea la integración cuando una cantidad por concepto excede la cantidad contratada en el catálogo (art. 118 RLOPSRM)."
           />
         </div>
       </section>
