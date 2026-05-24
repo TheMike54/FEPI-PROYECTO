@@ -25,6 +25,7 @@ import TrabajosTerminados from './pages/TrabajosTerminados.jsx';
 import MinutasVisitas from './pages/MinutasVisitas.jsx';
 import EnvioEstimacion from './pages/EnvioEstimacion.jsx';
 import ReingresoEstimacion from './pages/ReingresoEstimacion.jsx';
+import TableroEstimaciones from './pages/TableroEstimaciones.jsx';
 
 // Envuelve con Layout. Si está en modo aplicación sin rol, intercepta y muestra
 // la pantalla de selección (HU-00 / login queda fuera de esta lógica porque
@@ -62,6 +63,7 @@ export default function App() {
             <Route path="/estimaciones/integracion" element={<WithLayout><IntegracionEstimacion /></WithLayout>} />
             <Route path="/estimaciones/envio" element={<WithLayout><EnvioEstimacion /></WithLayout>} />
             <Route path="/estimaciones/reingreso" element={<WithLayout><ReingresoEstimacion /></WithLayout>} />
+            <Route path="/estimaciones/tablero" element={<WithLayout><TableroEstimaciones /></WithLayout>} />
             <Route path="/pagos/registro" element={<WithLayout><RegistroPago /></WithLayout>} />
             <Route path="/contratos/expediente" element={<WithLayout><ConsultaExpediente /></WithLayout>} />
             <Route path="/estimaciones/historial" element={<WithLayout><HistorialEstimaciones /></WithLayout>} />

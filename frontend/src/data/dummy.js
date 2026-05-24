@@ -320,6 +320,14 @@ export const historiasUsuario = [
     sprint: 'Sprint 8',
     icono: '↩️',
     ruta: '/estimaciones/reingreso'
+  },
+  {
+    codigo: 'HU-17',
+    titulo: 'Tablero de estimaciones',
+    descripcion: 'Visualización del ciclo de las estimaciones aceptadas y en proceso, con panel de pendientes filtrado por rol.',
+    sprint: 'Sprint 8',
+    icono: '📊',
+    ruta: '/estimaciones/tablero'
   }
 ];
 
@@ -578,6 +586,37 @@ export const historicoVersionesDummy = [
   { version: 'v1', fecha: '02/06/2026',     estado: 'Rechazada' },
   { version: 'v2', fecha: '(en preparación)', estado: 'Borrador'  }
 ];
+
+// HU-17 — Estimaciones en el tablero. Solo aceptadas y en proceso (CA-1: las
+// rechazadas viven en el historial HU-14, no aqui). Los estados validos son
+// 'Presentada' | 'En revisión' | 'Autorizada' | 'En pago' | 'Pagada'.
+export const estimacionesTableroDummy = [
+  { numero: 1, periodo: 'Feb 2026', monto: '$ 1,200,000.00', estado: 'Pagada'      },
+  { numero: 2, periodo: 'Mar 2026', monto: '$ 1,500,000.00', estado: 'En pago'     },
+  { numero: 3, periodo: 'Abr 2026', monto: '$ 1,750,000.00', estado: 'Autorizada'  },
+  { numero: 4, periodo: 'May 2026', monto: '$ 1,850,000.00', estado: 'En revisión' },
+  { numero: 5, periodo: 'May 2026', monto: '$   900,000.00', estado: 'Presentada'  }
+];
+
+// HU-17 — Pendientes por rol para el panel "Mis pendientes". El catalogo usa
+// las mismas claves de ROLES (residente, contratista, supervision, dependencia,
+// finanzas). rol=null (modo proyecto) cae al default 'residente' en la vista.
+export const pendientesEstimacionPorRol = {
+  residente: [
+    'Estimación 3 espera tu autorización',
+    'Estimación 4 requiere tu visto final'
+  ],
+  contratista: [
+    'Estimación 5 presentada, en espera de revisión'
+  ],
+  supervision: [
+    'Estimación 4 espera tu revisión técnica'
+  ],
+  dependencia: [
+    'Estimación 2 lista para programar el pago'
+  ],
+  finanzas: []
+};
 
 // HU-07 — Alertas ya configuradas (dummy). El estado define la acción disponible.
 export const alertasConfiguradasDummy = [
