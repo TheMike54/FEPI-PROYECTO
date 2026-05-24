@@ -264,6 +264,22 @@ export const historiasUsuario = [
     sprint: 'Sprint 2',
     icono: '💵',
     ruta: '/pagos/registro'
+  },
+  {
+    codigo: 'HU-03',
+    titulo: 'Convenios modificatorios',
+    descripcion: 'Registro de modificatorios (monto, plazo o conceptos) con histórico de versiones y aviso del 50% (art. 59 / 59 Bis LOPSRM).',
+    sprint: 'Sprint 6',
+    icono: '📝',
+    ruta: '/contratos/modificatorios'
+  },
+  {
+    codigo: 'HU-07',
+    titulo: 'Configuración de alertas de atraso',
+    descripcion: 'Definir umbrales por concepto del programa y canal de notificación. Las alertas se disparan cuando el avance real cae bajo el umbral.',
+    sprint: 'Sprint 6',
+    icono: '🔔',
+    ruta: '/seguimiento/alertas'
   }
 ];
 
@@ -398,4 +414,40 @@ export const notasParaVincularDummy = [
   { folio: 'NB-2026-0023', tipo: 'Instrucción', fecha: '18/05/2026', tema: 'Inicio de obra' },
   { folio: 'NB-2026-0025', tipo: 'Acuerdo',     fecha: '20/05/2026', tema: 'Ajuste de programa' },
   { folio: 'NB-2026-0027', tipo: 'Confirmación', fecha: '22/05/2026', tema: 'Entrega parcial' }
+];
+
+// HU-03 — Catálogo de tipos de modificatorio (art. 59 LOPSRM).
+export const tiposConvenioModificatorio = ['Monto', 'Plazo', 'Conceptos', 'Mixto'];
+
+// HU-03 — Histórico de versiones del contrato (dummy). El v1 es el contrato
+// original; los siguientes corresponden a modificatorios aplicados.
+export const historicoVersionesContratoDummy = [
+  { version: 'v1 (original)', fecha: '01/06/2026', autor: 'Dependencia', tipo: '—',         motivo: 'Contrato inicial' },
+  { version: 'v2',            fecha: '15/07/2026', autor: 'Dependencia', tipo: 'Conceptos', motivo: 'Ajuste de catálogo por obra adicional en eje 7-B' },
+  { version: 'v3',            fecha: '02/09/2026', autor: 'Dependencia', tipo: 'Plazo',     motivo: 'Ampliación de 20 días por lluvias atípicas' }
+];
+
+// HU-03 — Umbral del 50% del contrato original (art. 59 LOPSRM). Si la
+// modificación lo rebasa, se activa el aviso del art. 59 Bis LOPSRM.
+export const contratoBaseModificatorios = {
+  montoOriginal: 12450000,
+  plazoOriginalDias: 180,
+  umbralMontoExtraordinario: 6225000, // 50% del montoOriginal
+  umbralPlazoExtraordinario: 90       // 50% del plazoOriginalDias
+};
+
+// HU-07 — Catálogo de conceptos vigilables para alertas (dummy del programa).
+export const conceptosAlertaDummy = [
+  'Excavación',
+  'Cimentación',
+  'Estructura',
+  'Albañilería',
+  'Instalaciones'
+];
+
+// HU-07 — Alertas ya configuradas (dummy). El estado define la acción disponible.
+export const alertasConfiguradasDummy = [
+  { id: 1, concepto: 'Cimentación',   umbral: 80, canal: 'Correo',   estado: 'Activa'  },
+  { id: 2, concepto: 'Estructura',    umbral: 90, canal: 'Ambos',    estado: 'Activa'  },
+  { id: 3, concepto: 'Instalaciones', umbral: 75, canal: 'Sistema',  estado: 'Pausada' }
 ];
