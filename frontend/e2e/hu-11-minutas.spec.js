@@ -13,55 +13,23 @@
 //       supervision -> consulta (igual que contratista)
 //       dependencia -> sin acceso (no aparece en Sidebar ni en Inicio)
 //       finanzas    -> sin acceso
-//     Ademas la metadata academica (badge HU/Sprint, "Rol: X", Criterios) se
-//     oculta en modo aplicacion.
 //
-// REGLAS portadas del script Python original (los 3 fixes valiosos):
-//   1. Para asertar la card de Inicio se acota a `main a[href=...]` porque el
-//      Sidebar tambien tiene un enlace al mismo path.
-//   2. El aviso de solo-lectura dice "solo consulta" (no "solo lectura").
-//   3. NUNCA se usa page.goto() para moverse entre vistas; eso provoca un full
-//      reload que resetea SesionContext a (modo='proyecto', rol=null) y los
-//      tests de rol acabarian midiendo modo proyecto. Para navegar entre vistas
-//      se hace click en el NavLink del Sidebar (navegacion SPA).
+// Los helpers comunes (freshHome, enterAppMode, goToViaSidebar, asserts) viven
+// en ./_helpers.js — ver alli el header con los 3 fixes valiosos del port.
 
 import { test, expect } from '@playwright/test';
+import {
+  freshHome,
+  enterAppMode,
+  goToViaSidebar,
+  sidebarLinkFor,
+  cardInInicioFor,
+  expectAvisoSoloConsulta,
+  expectSinAvisoSoloConsulta,
+  expectMetadataAcademicaOculta
+} from './_helpers.js';
 
 const VIEW_PATH = '/bitacora/minutas';
-
-/**
- * Devuelve a "/" con un reload total (deja el contexto limpio: modo=proyecto,
- * rol=null). Solo se usa al inicio de cada test, no para moverse entre vistas.
- */
-async function freshHome(page) {
-  await page.goto('/');
-  await page.waitForLoadState('networkidle');
-}
-
-/**
- * En modo proyecto, cambia a "Modo aplicacion" y elige el rol indicado en
- * SeleccionRol. Todo SPA — sin page.goto entre vistas.
- */
-async function enterAppMode(page, rolNombre) {
-  await page.getByRole('button', { name: 'Modo aplicación' }).first().click();
-  // SeleccionRol intercepta porque rol === null. Cada rol es un <button> que
-  // contiene un <h3> con el nombre.
-  await page
-    .locator('button')
-    .filter({ has: page.locator('h3', { hasText: rolNombre }) })
-    .first()
-    .click();
-  await page.waitForLoadState('networkidle');
-}
-
-/**
- * Click SPA en el enlace del Sidebar para entrar a /bitacora/minutas. Asume
- * que el enlace existe (es decir, el rol tiene permiso).
- */
-async function goToMinutasViaSidebar(page) {
-  await page.locator(`aside a[href="${VIEW_PATH}"]`).first().click();
-  await page.waitForLoadState('networkidle');
-}
 
 // ---------------------------------------------------------------------------
 // MODO PROYECTO
@@ -75,7 +43,7 @@ test.describe('HU-11 — modo proyecto', () => {
   });
 
   test('card de Inicio muestra HU-11 + Sprint 7', async ({ page }) => {
-    const card = page.locator(`main a[href="${VIEW_PATH}"]`).first();
+    const card = cardInInicioFor(page, VIEW_PATH);
     await expect(card).toBeVisible();
     const text = (await card.textContent()) ?? '';
     expect(text).toContain('HU-11');
@@ -84,11 +52,11 @@ test.describe('HU-11 — modo proyecto', () => {
   });
 
   test('sidebar contiene enlace a la vista', async ({ page }) => {
-    await expect(page.locator(`aside a[href="${VIEW_PATH}"]`).first()).toBeVisible();
+    await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
   });
 
   test('la vista carga con badge, subtitulo y 3 pestanas', async ({ page }) => {
-    await goToMinutasViaSidebar(page);
+    await goToViaSidebar(page, VIEW_PATH);
 
     await expect(page.getByRole('heading', { name: 'Minutas y agenda de visitas' })).toBeVisible();
     await expect(page.locator('span', { hasText: 'HU-11' }).first()).toBeVisible();
@@ -101,7 +69,7 @@ test.describe('HU-11 — modo proyecto', () => {
   });
 
   test('estado de cada pestana persiste al cambiar de pestana', async ({ page }) => {
-    await goToMinutasViaSidebar(page);
+    await goToViaSidebar(page, VIEW_PATH);
 
     // Capturar valores en Minutas (pestana activa por defecto).
     const temaMinuta = page.locator('input[placeholder*="Reunión de avance"]').first();
@@ -130,7 +98,7 @@ test.describe('HU-11 — modo proyecto', () => {
   });
 
   test('criterios de aceptacion visibles al pie', async ({ page }) => {
-    await goToMinutasViaSidebar(page);
+    await goToViaSidebar(page, VIEW_PATH);
     // El heading 'Criterios de aceptación' es unico; el Sidebar tiene una
     // mencion en la leyenda que no debe contar como visibility de la seccion.
     await expect(page.getByRole('heading', { name: 'Criterios de aceptación' })).toBeVisible();
@@ -146,22 +114,23 @@ test.describe('HU-11 — modo proyecto', () => {
 test.describe('HU-11 — modo aplicacion (Residente: ejecuta)', () => {
   test.beforeEach(async ({ page }) => {
     await freshHome(page);
-    await enterAppMode(page, 'Residente de obra');
+    await enterAppMode(page, 'residente');
   });
 
   test('sidebar muestra HU-11 y la vista carga sin metadata academica', async ({ page }) => {
-    await expect(page.locator(`aside a[href="${VIEW_PATH}"]`).first()).toBeVisible();
-    await goToMinutasViaSidebar(page);
+    await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
+    await goToViaSidebar(page, VIEW_PATH);
 
     await expect(page.getByRole('heading', { name: 'Minutas y agenda de visitas' })).toBeVisible();
-    await expect(page.locator('span', { hasText: 'HU-11' })).toHaveCount(0);
-    await expect(page.locator('span', { hasText: 'Sprint 7' })).toHaveCount(0);
-    await expect(page.getByText('Criterios de aceptación')).toHaveCount(0);
-    await expect(page.getByText('Rol: Residente')).toHaveCount(0);
+    await expectMetadataAcademicaOculta(page, {
+      huId: 'HU-11',
+      sprintLabel: 'Sprint 7',
+      rolAcademicoLabel: 'Residente'
+    });
   });
 
   test('forms de Minutas y Visitas son editables; sin aviso de solo consulta', async ({ page }) => {
-    await goToMinutasViaSidebar(page);
+    await goToViaSidebar(page, VIEW_PATH);
 
     const temaMinuta = page.locator('input[placeholder*="Reunión de avance"]').first();
     await expect(temaMinuta).toBeEnabled();
@@ -169,25 +138,25 @@ test.describe('HU-11 — modo aplicacion (Residente: ejecuta)', () => {
     await page.locator('button', { hasText: 'Agenda de visitas' }).first().click();
     await expect(page.locator('textarea[placeholder*="Descripción breve"]').first()).toBeEnabled();
 
-    await expect(page.getByText('solo consulta')).toHaveCount(0);
+    await expectSinAvisoSoloConsulta(page);
   });
 });
 
 for (const rol of [
-  { nombre: 'Contratista / Superintendente', alias: 'Contratista' },
-  { nombre: 'Supervisión',                    alias: 'Supervisión' },
+  { id: 'contratista', alias: 'Contratista' },
+  { id: 'supervision', alias: 'Supervisión' }
 ]) {
   test.describe(`HU-11 — modo aplicacion (${rol.alias}: consulta)`, () => {
     test.beforeEach(async ({ page }) => {
       await freshHome(page);
-      await enterAppMode(page, rol.nombre);
+      await enterAppMode(page, rol.id);
     });
 
     test('aviso de solo consulta visible; forms de captura deshabilitados', async ({ page }) => {
-      await expect(page.locator(`aside a[href="${VIEW_PATH}"]`).first()).toBeVisible();
-      await goToMinutasViaSidebar(page);
+      await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
+      await goToViaSidebar(page, VIEW_PATH);
 
-      await expect(page.getByText('solo consulta')).toBeVisible();
+      await expectAvisoSoloConsulta(page);
 
       const temaMinuta = page.locator('input[placeholder*="Reunión de avance"]').first();
       await expect(temaMinuta).toBeDisabled();
@@ -197,7 +166,7 @@ for (const rol of [
     });
 
     test('pestana Acuerdos es consultable: el filtro de periodo sigue editable', async ({ page }) => {
-      await goToMinutasViaSidebar(page);
+      await goToViaSidebar(page, VIEW_PATH);
       await page.locator('button', { hasText: 'Acuerdos' }).first().click();
 
       const periodo = page.locator('select').first();
@@ -213,13 +182,13 @@ for (const rol of [
 }
 
 for (const rol of [
-  { nombre: 'Dependencia / Contratante', alias: 'Dependencia' },
-  { nombre: 'Finanzas',                   alias: 'Finanzas' },
+  { id: 'dependencia', alias: 'Dependencia' },
+  { id: 'finanzas',    alias: 'Finanzas' }
 ]) {
   test.describe(`HU-11 — modo aplicacion (${rol.alias}: sin acceso)`, () => {
     test.beforeEach(async ({ page }) => {
       await freshHome(page);
-      await enterAppMode(page, rol.nombre);
+      await enterAppMode(page, rol.id);
     });
 
     test('HU-11 NO aparece ni en Sidebar ni en Inicio', async ({ page }) => {
