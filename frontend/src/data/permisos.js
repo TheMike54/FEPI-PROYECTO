@@ -21,8 +21,10 @@ export const PERMISOS = {
   'HU-10': { residente:'E', contratista:'C', supervision:'C', dependencia:null, finanzas:null },
   'HU-11': { residente:'E', contratista:'C', supervision:'C', dependencia:null, finanzas:null },
   'HU-12': { residente:'C', contratista:'E', supervision:'C', dependencia:null, finanzas:null },
+  'HU-13': { residente:'C', contratista:'E', supervision:'C', dependencia:null, finanzas:null },
   'HU-14': { residente:'E', contratista:'C', supervision:null, dependencia:'C', finanzas:null },
   'HU-15': { residente:'E', contratista:null, supervision:'E', dependencia:'C', finanzas:null },
+  'HU-16': { residente:'C', contratista:'E', supervision:null, dependencia:null, finanzas:null },
   'HU-20': { residente:'C', contratista:'E', supervision:null, dependencia:'C', finanzas:'E' },
   'HU-21': { residente:'C', contratista:null, supervision:null, dependencia:'C', finanzas:'E' },
 };

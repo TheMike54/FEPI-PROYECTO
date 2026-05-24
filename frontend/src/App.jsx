@@ -23,6 +23,8 @@ import AlertasAtraso from './pages/AlertasAtraso.jsx';
 import CurvaAvance from './pages/CurvaAvance.jsx';
 import TrabajosTerminados from './pages/TrabajosTerminados.jsx';
 import MinutasVisitas from './pages/MinutasVisitas.jsx';
+import EnvioEstimacion from './pages/EnvioEstimacion.jsx';
+import ReingresoEstimacion from './pages/ReingresoEstimacion.jsx';
 
 // Envuelve con Layout. Si está en modo aplicación sin rol, intercepta y muestra
 // la pantalla de selección (HU-00 / login queda fuera de esta lógica porque
@@ -58,6 +60,8 @@ export default function App() {
             <Route path="/bitacora/consulta" element={<WithLayout><ConsultaNotas /></WithLayout>} />
             <Route path="/bitacora/minutas" element={<WithLayout><MinutasVisitas /></WithLayout>} />
             <Route path="/estimaciones/integracion" element={<WithLayout><IntegracionEstimacion /></WithLayout>} />
+            <Route path="/estimaciones/envio" element={<WithLayout><EnvioEstimacion /></WithLayout>} />
+            <Route path="/estimaciones/reingreso" element={<WithLayout><ReingresoEstimacion /></WithLayout>} />
             <Route path="/pagos/registro" element={<WithLayout><RegistroPago /></WithLayout>} />
             <Route path="/contratos/expediente" element={<WithLayout><ConsultaExpediente /></WithLayout>} />
             <Route path="/estimaciones/historial" element={<WithLayout><HistorialEstimaciones /></WithLayout>} />

@@ -304,6 +304,22 @@ export const historiasUsuario = [
     sprint: 'Sprint 7',
     icono: '📝',
     ruta: '/bitacora/minutas'
+  },
+  {
+    codigo: 'HU-13',
+    titulo: 'Envío de la estimación',
+    descripcion: 'Envío formal de la estimación con acuse de fecha y hora, validando el plazo de 6 días naturales del art. 54 LOPSRM.',
+    sprint: 'Sprint 8',
+    icono: '📤',
+    ruta: '/estimaciones/envio'
+  },
+  {
+    codigo: 'HU-16',
+    titulo: 'Reingreso de estimación tras rechazo',
+    descripcion: 'Reingreso como nueva versión independiente con histórico vinculado; observaciones descargables en PDF o Excel.',
+    sprint: 'Sprint 8',
+    icono: '↩️',
+    ruta: '/estimaciones/reingreso'
   }
 ];
 
@@ -529,6 +545,39 @@ export const acuerdosDummy = [
 
 // HU-11 — Catálogo de periodos consultables para el filtro de Acuerdos.
 export const periodosAcuerdosDummy = ['Todos', 'Mayo 2026', 'Junio 2026'];
+
+// HU-13 — Resumen de la estimación a enviar y datos del control de plazo.
+// El usuario edita "diasDefault" desde la vista para alternar dentro/fuera de los
+// 6 dias naturales del art. 54 LOPSRM y ver la doble respuesta.
+export const envioEstimacionDummy = {
+  numero: 3,
+  periodo: 'Mayo 2026',
+  conceptos: 12,
+  monto: '$ 1,850,000.00',
+  fechaCorte: '31/05/2026',
+  diasDefault: 3
+};
+
+// HU-16 — Observaciones de la version rechazada. Cada una con severidad para
+// que la tabla pueda usar el badge de color (alta/media/baja).
+export const observacionesRechazoDummy = [
+  { id: 1, concepto: 'Excavación',  observacion: 'Cantidad no coincide con bitácora',     severidad: 'Alta'  },
+  { id: 2, concepto: 'Cimentación', observacion: 'Falta número generador',                severidad: 'Media' },
+  { id: 3, concepto: 'Estructura',  observacion: 'Precio unitario fuera de catálogo',     severidad: 'Alta'  }
+];
+
+// HU-16 — Datos para el banner de contexto (rechazo de la estimacion en curso).
+export const reingresoBannerDummy = {
+  numero: 3,
+  periodo: 'Mayo 2026'
+};
+
+// HU-16 — Historico de versiones de la estimacion 3. La nueva version se trata
+// como bloque independiente y la rechazada queda vinculada como historico.
+export const historicoVersionesDummy = [
+  { version: 'v1', fecha: '02/06/2026',     estado: 'Rechazada' },
+  { version: 'v2', fecha: '(en preparación)', estado: 'Borrador'  }
+];
 
 // HU-07 — Alertas ya configuradas (dummy). El estado define la acción disponible.
 export const alertasConfiguradasDummy = [
