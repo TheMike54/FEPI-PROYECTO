@@ -3,21 +3,30 @@ import { defineConfig, devices } from '@playwright/test';
 
 // Configuracion base de @playwright/test para la suite E2E de SIGECOP.
 //
-// webServer con reuseExistingServer: true →
-//   - Si el dev server ya esta arriba (caso Docker: `docker compose up frontend`),
-//     reutiliza ese servidor y los tests corren contra el.
-//   - Si no, spawnea `npm run dev` local (caso dev sin Docker).
+// webServer.reuseExistingServer:
+//   - LOCAL (process.env.CI no definido): true → reusa el dev server que ya
+//     este arriba en :5173 (caso Docker: `docker compose up frontend`).
+//   - CI (process.env.CI === 'true', p.ej. GitHub Actions): false → siempre
+//     spawnea `npm run dev` desde cero. En CI no hay Docker ni server previo,
+//     y false evita falsos positivos por algun proceso colgado.
 //
-// Los tests asumen que la app responde en http://localhost:5173 (mapeado por
-// el compose o por vite directamente).
+// reporter:
+//   - LOCAL: 'list' + 'html' (este ultimo con open:'never' para no abrir el
+//     navegador automaticamente).
+//   - CI: 'github' (anotaciones inline en el PR) + 'html' (genera el reporte
+//     que el workflow sube como artifact cuando algo falla).
+
+const isCI = !!process.env.CI;
 
 export default defineConfig({
   testDir: './e2e',
   fullyParallel: false,            // las pruebas comparten un estado de UI (modo/rol); evitar carreras
-  forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 1 : 0,
+  forbidOnly: isCI,
+  retries: isCI ? 1 : 0,
   workers: 1,                      // un solo worker mientras la suite sea pequena
-  reporter: process.env.CI ? 'github' : 'list',
+  reporter: isCI
+    ? [['github'], ['html', { open: 'never' }]]
+    : [['list'],   ['html', { open: 'never' }]],
   use: {
     baseURL: 'http://localhost:5173',
     trace: 'on-first-retry',
@@ -30,7 +39,7 @@ export default defineConfig({
   webServer: {
     command: 'npm run dev',
     url: 'http://localhost:5173',
-    reuseExistingServer: true,
+    reuseExistingServer: !isCI,
     timeout: 120_000,
   },
 });
