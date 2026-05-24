@@ -328,6 +328,22 @@ export const historiasUsuario = [
     sprint: 'Sprint 8',
     icono: '📊',
     ruta: '/estimaciones/tablero'
+  },
+  {
+    codigo: 'HU-18',
+    titulo: 'Portafolio ejecutivo',
+    descripcion: 'Tablero de varios contratos con semáforo por contrato y drill-down de avance físico, financiero y penalizaciones.',
+    sprint: 'Sprint 9',
+    icono: '🚦',
+    ruta: '/portafolio'
+  },
+  {
+    codigo: 'HU-19',
+    titulo: 'Exportación de reportes',
+    descripcion: 'Generación de los 7 reportes del contrato en PDF y Excel, con selector de periodo (mensual, trimestral, acumulado).',
+    sprint: 'Sprint 9',
+    icono: '📥',
+    ruta: '/reportes'
   }
 ];
 
@@ -617,6 +633,52 @@ export const pendientesEstimacionPorRol = {
   ],
   finanzas: []
 };
+
+// HU-18 — Contratos del portafolio. Es la unica vista del backlog que opera
+// sobre multiples contratos. El campo "semaforo" se calcularia a partir de
+// avance fisico + atrasos + pendientes; en la demo viene servido en el dummy.
+export const portafolioContratosDummy = [
+  {
+    folio: 'C-2026-0042', contratista: 'Constructora XYZ',          avance:  90,
+    estado: 'Sin atraso',              semaforo: 'verde',
+    indicadores: { avanceFisico: 90, avanceFinanciero: 88, penalizaciones: 0 }
+  },
+  {
+    folio: 'C-2026-0047', contratista: 'Constructora del Valle',    avance:  78,
+    estado: 'Al corriente',            semaforo: 'verde',
+    indicadores: { avanceFisico: 78, avanceFinanciero: 75, penalizaciones: 0 }
+  },
+  {
+    folio: 'C-2026-0038', contratista: 'Edificaciones del Norte',   avance:  65,
+    estado: 'Atraso leve',             semaforo: 'ambar',
+    indicadores: { avanceFisico: 65, avanceFinanciero: 60, penalizaciones: 25_000 }
+  },
+  {
+    folio: 'C-2026-0029', contratista: 'Obras y Proyectos SA',      avance: 100,
+    estado: 'Finiquito pendiente',     semaforo: 'ambar',
+    indicadores: { avanceFisico: 100, avanceFinanciero: 95, penalizaciones: 0 }
+  },
+  {
+    folio: 'C-2026-0051', contratista: 'Infraestructura del Bajío', avance:  40,
+    estado: 'Atraso crítico + penalización', semaforo: 'rojo',
+    indicadores: { avanceFisico: 40, avanceFinanciero: 35, penalizaciones: 180_000 }
+  }
+];
+
+// HU-19 — Los 7 reportes definidos en el alcance del proyecto. Cada uno con
+// los formatos en que se exporta (PDF, Excel o ambos).
+export const reportesCatalogoDummy = [
+  { id: 1, nombre: 'Avance físico',     descripcion: 'Avance por concepto del catálogo y curva S.',          formatos: ['PDF', 'Excel'] },
+  { id: 2, nombre: 'Avance financiero', descripcion: 'Estimaciones cobradas, retenciones y amortizaciones.', formatos: ['PDF', 'Excel'] },
+  { id: 3, nombre: 'Estimaciones',      descripcion: 'Listado completo de estimaciones y sus versiones.',    formatos: ['Excel']       },
+  { id: 4, nombre: 'Observaciones',     descripcion: 'Observaciones a estimaciones y bitácora.',             formatos: ['PDF', 'Excel'] },
+  { id: 5, nombre: 'Bitácora',          descripcion: 'Notas técnicas, firmas y respuestas del periodo.',     formatos: ['PDF']         },
+  { id: 6, nombre: 'Modificatorios',    descripcion: 'Convenios modificatorios (art. 59 / 59 Bis LOPSRM).',  formatos: ['PDF']         },
+  { id: 7, nombre: 'Penalizaciones',    descripcion: 'Cálculo de penas convencionales por atraso.',          formatos: ['Excel']       }
+];
+
+// HU-19 — Catalogo del selector de periodo (consultativo).
+export const periodosReportesDummy = ['Mensual', 'Trimestral', 'Acumulado'];
 
 // HU-07 — Alertas ya configuradas (dummy). El estado define la acción disponible.
 export const alertasConfiguradasDummy = [
