@@ -20,6 +20,8 @@ import SeleccionRol from './pages/SeleccionRol.jsx';
 import SolicitudRegistro from './pages/SolicitudRegistro.jsx';
 import ConveniosModificatorios from './pages/ConveniosModificatorios.jsx';
 import AlertasAtraso from './pages/AlertasAtraso.jsx';
+import CurvaAvance from './pages/CurvaAvance.jsx';
+import TrabajosTerminados from './pages/TrabajosTerminados.jsx';
 
 // Envuelve con Layout. Si está en modo aplicación sin rol, intercepta y muestra
 // la pantalla de selección (HU-00 / login queda fuera de esta lógica porque
@@ -61,6 +63,8 @@ export default function App() {
             <Route path="/pagos/transito" element={<WithLayout><TransitoPago /></WithLayout>} />
             <Route path="/contratos/modificatorios" element={<WithLayout><ConveniosModificatorios /></WithLayout>} />
             <Route path="/seguimiento/alertas" element={<WithLayout><AlertasAtraso /></WithLayout>} />
+            <Route path="/seguimiento/curva-avance" element={<WithLayout><CurvaAvance /></WithLayout>} />
+            <Route path="/seguimiento/trabajos-terminados" element={<WithLayout><TrabajosTerminados /></WithLayout>} />
             <Route path="/solicitud-acceso" element={<SoloModoProyecto><SolicitudRegistro /></SoloModoProyecto>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

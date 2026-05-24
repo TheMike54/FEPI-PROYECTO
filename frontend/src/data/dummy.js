@@ -280,6 +280,22 @@ export const historiasUsuario = [
     sprint: 'Sprint 6',
     icono: '🔔',
     ruta: '/seguimiento/alertas'
+  },
+  {
+    codigo: 'HU-05',
+    titulo: 'Programa y curva de avance',
+    descripcion: 'Gráfico comparativo de las curvas programado, ejecutado y financiero, con filtros por concepto y periodo.',
+    sprint: 'Sprint 7',
+    icono: '📈',
+    ruta: '/seguimiento/curva-avance'
+  },
+  {
+    codigo: 'HU-06',
+    titulo: 'Registro de trabajos terminados',
+    descripcion: 'Captura del avance del periodo por concepto del catálogo, con vínculo a la nota de bitácora y bloqueo si excede la cantidad contratada.',
+    sprint: 'Sprint 7',
+    icono: '🏗️',
+    ruta: '/seguimiento/trabajos-terminados'
   }
 ];
 
@@ -445,9 +461,42 @@ export const conceptosAlertaDummy = [
   'Instalaciones'
 ];
 
+// HU-05 — Curva S del contrato. % acumulado por mes para las 3 series. En una
+// implementación real estos puntos vendrían del programa contratado, del avance
+// reportado y de las estimaciones cobradas.
+export const curvaAvanceDummy = [
+  { mes: 'Jun', programado:   5, ejecutado:  4, financiero:  3 },
+  { mes: 'Jul', programado:  15, ejecutado: 12, financiero: 10 },
+  { mes: 'Ago', programado:  35, ejecutado: 30, financiero: 25 },
+  { mes: 'Sep', programado:  60, ejecutado: 52, financiero: 45 },
+  { mes: 'Oct', programado:  85, ejecutado: 75, financiero: 68 },
+  { mes: 'Nov', programado: 100, ejecutado: 90, financiero: 82 }
+];
+
+// HU-05 — Catálogos de filtros consultativos (no van en RegionEditable).
+export const conceptosCurvaDummy = ['Todos', 'Excavación', 'Cimentación', 'Estructura', 'Albañilería'];
+export const periodosCurvaDummy = ['Todo el contrato', 'Últimos 3 meses', 'Último mes'];
+
+// HU-06 — Conceptos del catálogo con avance previo, para captura del periodo.
+// La validación de exceso bloquea el guardado si previo + capturado > contratada.
+export const conceptosTrabajosDummy = [
+  { id: 1, concepto: 'Excavación',  unidad: 'm³',  contratada: 1000, acumPrevio: 600 },
+  { id: 2, concepto: 'Cimentación', unidad: 'm³',  contratada:  500, acumPrevio: 300 },
+  { id: 3, concepto: 'Estructura',  unidad: 'ton', contratada:   80, acumPrevio:  40 }
+];
+
+// HU-06 — Notas de bitácora tipo "entrega" disponibles para vincular cada
+// renglón del registro de avance al asiento de bitácora correspondiente.
+export const notasEntregaDummy = [
+  '— Sin vínculo —',
+  'NOTA-2026-014 · Entrega de avance · 18/05/2026',
+  'NOTA-2026-015 · Entrega de avance · 22/05/2026',
+  'NOTA-2026-016 · Entrega de avance · 28/05/2026'
+];
+
 // HU-07 — Alertas ya configuradas (dummy). El estado define la acción disponible.
 export const alertasConfiguradasDummy = [
   { id: 1, concepto: 'Cimentación',   umbral: 80, canal: 'Correo',   estado: 'Activa'  },
   { id: 2, concepto: 'Estructura',    umbral: 90, canal: 'Ambos',    estado: 'Activa'  },
-  { id: 3, concepto: 'Instalaciones', umbral: 75, canal: 'Sistema',  estado: 'Pausada' }
+  { id: 3, concepto: 'Instalaciones', umbral: 75, canal: 'En el sistema', estado: 'Pausada' }
 ];
