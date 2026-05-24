@@ -1,9 +1,7 @@
 import { useState, useMemo } from 'react';
-import Breadcrumb from '../components/ui/Breadcrumb.jsx';
-import BadgeSprint from '../components/ui/BadgeSprint.jsx';
-import CardCriterioAceptacion from '../components/ui/CardCriterioAceptacion.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
-import AvisoSoloLectura from '../components/ui/AvisoSoloLectura.jsx';
+import HeaderVista from '../components/vista/HeaderVista.jsx';
+import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import { useVistaHU } from '../context/SesionContext.jsx';
 import { notasConsultaDummy, tiposNotaCatalogo, estatusNotaCatalogo } from '../data/dummy.js';
 
@@ -31,7 +29,7 @@ function EstatusBadge({ estatus }) {
 
 export default function ConsultaNotas() {
   const { showToast } = useToast();
-  const { soloLectura, mostrarMeta } = useVistaHU('HU-10');
+  const { soloLectura } = useVistaHU('HU-10');
   const [filtrosDraft, setFiltrosDraft] = useState(FILTROS_INICIALES);
   const [filtrosAplicados, setFiltrosAplicados] = useState(FILTROS_INICIALES);
   const [seleccionadas, setSeleccionadas] = useState(new Set());
@@ -81,23 +79,17 @@ export default function ConsultaNotas() {
 
   return (
     <div>
-      <Breadcrumb
-        items={[
+      <HeaderVista
+        huId="HU-10"
+        titulo="Consulta y búsqueda de notas de bitácora"
+        sprint="Sprint 3"
+        rolAcademico="Residente"
+        breadcrumb={[
           { label: 'Inicio', href: '/' },
           { label: 'Bitácora' },
           { label: 'Consulta de notas' }
         ]}
       />
-
-      <div className="flex items-start justify-between mb-1">
-        <h1 className="text-2xl font-bold text-sigecop-blue">
-          Consulta y búsqueda de notas de bitácora
-        </h1>
-        <BadgeSprint codigo="HU-10" sprint="Sprint 3" />
-      </div>
-      <p className="text-sm text-slate-600 mb-6">Rol: Residente</p>
-
-      {soloLectura && <AvisoSoloLectura />}
 
       <form
         onSubmit={aplicarFiltros}
@@ -234,23 +226,13 @@ export default function ConsultaNotas() {
         </div>
       </div>
 
-      {mostrarMeta && (
-        <section className="mt-10">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
-            Criterios de aceptación
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <CardCriterioAceptacion
-              numero={1}
-              texto="La búsqueda devuelve resultados que cumplen todos los filtros aplicados simultáneamente."
-            />
-            <CardCriterioAceptacion
-              numero={2}
-              texto="Se pueden seleccionar varias notas del resultado y exportarlas o adjuntarlas a una estimación."
-            />
-          </div>
-        </section>
-      )}
+      <SeccionCriterios
+        huId="HU-10"
+        criterios={[
+          { numero: 1, texto: 'La búsqueda devuelve resultados que cumplen todos los filtros aplicados simultáneamente.' },
+          { numero: 2, texto: 'Se pueden seleccionar varias notas del resultado y exportarlas o adjuntarlas a una estimación.' }
+        ]}
+      />
     </div>
   );
 }

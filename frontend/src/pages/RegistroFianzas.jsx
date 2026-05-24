@@ -1,8 +1,7 @@
-import Breadcrumb from '../components/ui/Breadcrumb.jsx';
-import BadgeSprint from '../components/ui/BadgeSprint.jsx';
-import CardCriterioAceptacion from '../components/ui/CardCriterioAceptacion.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
-import AvisoSoloLectura from '../components/ui/AvisoSoloLectura.jsx';
+import HeaderVista from '../components/vista/HeaderVista.jsx';
+import BannerContexto from '../components/vista/BannerContexto.jsx';
+import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import { useVistaHU } from '../context/SesionContext.jsx';
 import { fianzasListadoDummy, contratoDummy } from '../data/dummy.js';
 
@@ -21,30 +20,27 @@ function EstadoBadge({ estado, color }) {
 
 export default function RegistroFianzas() {
   const { showToast } = useToast();
-  const { soloLectura, mostrarMeta } = useVistaHU('HU-02');
+  const { soloLectura } = useVistaHU('HU-02');
 
   return (
     <div>
-      <Breadcrumb
-        items={[
+      <HeaderVista
+        huId="HU-02"
+        titulo="Registro de fianzas y garantías"
+        sprint="Sprint 6"
+        breadcrumb={[
           { label: 'Inicio', href: '/' },
           { label: 'Contratos' },
           { label: 'Registro de fianzas' }
         ]}
       />
 
-      <div className="flex items-start justify-between mb-6">
-        <h1 className="text-2xl font-bold text-sigecop-blue">Registro de fianzas y garantías</h1>
-        <BadgeSprint codigo="HU-02" sprint="Sprint 6" />
-      </div>
-
-      {soloLectura && <AvisoSoloLectura />}
-
-      <div className="bg-blue-50 border-l-4 border-sigecop-blue px-4 py-3 mb-6 rounded-r-md">
-        <div className="text-xs font-semibold text-sigecop-blue uppercase">Contrato</div>
-        <div className="font-bold text-slate-900 mt-1">{contratoDummy.folio} · {contratoDummy.objeto}</div>
-        <div className="text-xs text-slate-600 mt-0.5">{contratoDummy.contratista}</div>
-      </div>
+      <BannerContexto
+        variant="blue"
+        folio={contratoDummy.folio}
+        contratista={contratoDummy.contratista}
+        extra={[{ value: contratoDummy.objeto }]}
+      />
 
       <div className="bg-white border border-slate-200 rounded-md overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
@@ -174,27 +170,14 @@ export default function RegistroFianzas() {
         <strong>⚖️ Fundamento:</strong> Art. 48 LOPSRM — las fianzas se otorgan dentro de los 15 días naturales siguientes a la notificación del fallo.
       </p>
 
-      {mostrarMeta && (
-        <section className="mt-10">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
-            Criterios de aceptación
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <CardCriterioAceptacion
-              numero={1}
-              texto="La póliza queda ligada al contrato con afianzadora, vigencia y monto registrados."
-            />
-            <CardCriterioAceptacion
-              numero={2}
-              texto="El sistema emite alerta cuando faltan N días configurables para el vencimiento."
-            />
-            <CardCriterioAceptacion
-              numero={3}
-              texto="La póliza registrada puede consultarse en formato PDF desde el listado de fianzas del contrato."
-            />
-          </div>
-        </section>
-      )}
+      <SeccionCriterios
+        huId="HU-02"
+        criterios={[
+          { numero: 1, texto: 'La póliza queda ligada al contrato con afianzadora, vigencia y monto registrados.' },
+          { numero: 2, texto: 'El sistema emite alerta cuando faltan N días configurables para el vencimiento.' },
+          { numero: 3, texto: 'La póliza registrada puede consultarse en formato PDF desde el listado de fianzas del contrato.' }
+        ]}
+      />
     </div>
   );
 }

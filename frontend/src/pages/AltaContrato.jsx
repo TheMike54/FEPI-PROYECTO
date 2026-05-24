@@ -1,10 +1,9 @@
 import { useState } from 'react';
-import Breadcrumb from '../components/ui/Breadcrumb.jsx';
-import BadgeSprint from '../components/ui/BadgeSprint.jsx';
-import CardCriterioAceptacion from '../components/ui/CardCriterioAceptacion.jsx';
 import Tabs from '../components/ui/Tab.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
-import AvisoSoloLectura from '../components/ui/AvisoSoloLectura.jsx';
+import HeaderVista from '../components/vista/HeaderVista.jsx';
+import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
+import RegionEditable from '../components/vista/RegionEditable.jsx';
 import { useVistaHU } from '../context/SesionContext.jsx';
 import { contratoDummy, conceptosDummy, programaObraDummy, polizasGarantiaDummy } from '../data/dummy.js';
 
@@ -228,7 +227,7 @@ function TabPdfFirmado() {
 
 export default function AltaContrato() {
   const { showToast } = useToast();
-  const { soloLectura, mostrarMeta } = useVistaHU('HU-01');
+  const { soloLectura } = useVistaHU('HU-01');
 
   // Estado en el padre para que persista al cambiar de pestaña
   // (Tabs desmonta los inactivos — ver fix C-01).
@@ -247,7 +246,7 @@ export default function AltaContrato() {
   // Envolvemos el contenido de cada tab — NO el componente Tabs — para que en
   // lectura los inputs queden disabled pero la navegación entre pestañas siga viva.
   const wrapTab = (node) => (
-    <fieldset disabled={soloLectura} className="contents">{node}</fieldset>
+    <RegionEditable disabled={soloLectura}>{node}</RegionEditable>
   );
 
   const tabs = [
@@ -261,20 +260,16 @@ export default function AltaContrato() {
 
   return (
     <div>
-      <Breadcrumb
-        items={[
+      <HeaderVista
+        huId="HU-01"
+        titulo="Alta de contratos"
+        sprint="Sprint 1"
+        breadcrumb={[
           { label: 'Inicio', href: '/' },
           { label: 'Contratos' },
           { label: 'Alta de contratos' }
         ]}
       />
-
-      <div className="flex items-start justify-between mb-6">
-        <h1 className="text-2xl font-bold text-sigecop-blue">Alta de contratos</h1>
-        <BadgeSprint codigo="HU-01" sprint="Sprint 1" />
-      </div>
-
-      {soloLectura && <AvisoSoloLectura />}
 
       <Tabs tabs={tabs} />
 
@@ -300,27 +295,14 @@ export default function AltaContrato() {
         </div>
       )}
 
-      {mostrarMeta && (
-        <section className="mt-10">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
-            Criterios de aceptación
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <CardCriterioAceptacion
-              numero={1}
-              texto="Existe un contrato con folio único que contiene catálogo de conceptos, programa de obra, elementos jurídicos, garantías, penalizaciones, plan de amortización del anticipo y PDF firmado."
-            />
-            <CardCriterioAceptacion
-              numero={2}
-              texto="El sistema valida que los campos obligatorios estén llenos y el folio sea único antes de guardar."
-            />
-            <CardCriterioAceptacion
-              numero={3}
-              texto="Existe un PDF firmado del contrato ligado al expediente, consultable por todos los actores autorizados."
-            />
-          </div>
-        </section>
-      )}
+      <SeccionCriterios
+        huId="HU-01"
+        criterios={[
+          { numero: 1, texto: 'Existe un contrato con folio único que contiene catálogo de conceptos, programa de obra, elementos jurídicos, garantías, penalizaciones, plan de amortización del anticipo y PDF firmado.' },
+          { numero: 2, texto: 'El sistema valida que los campos obligatorios estén llenos y el folio sea único antes de guardar.' },
+          { numero: 3, texto: 'Existe un PDF firmado del contrato ligado al expediente, consultable por todos los actores autorizados.' }
+        ]}
+      />
     </div>
   );
 }
