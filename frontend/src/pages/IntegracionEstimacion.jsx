@@ -293,17 +293,23 @@ export default function IntegracionEstimacion() {
     });
   };
 
+  // Envolvemos el contenido de cada tab — NO el componente Tabs — para que en
+  // lectura los inputs queden disabled pero la navegación entre pestañas siga viva.
+  const wrapTab = (node) => (
+    <fieldset disabled={soloLectura} className="contents">{node}</fieldset>
+  );
+
   const tabs = [
-    { label: 'Carátula', content: <TabCaratula /> },
+    { label: 'Carátula', content: wrapTab(<TabCaratula />) },
     {
       label: 'Números generadores',
-      content: <TabGeneradores filas={filasGeneradores} onPeriodoChange={handlePeriodoChange} />
+      content: wrapTab(<TabGeneradores filas={filasGeneradores} onPeriodoChange={handlePeriodoChange} />)
     },
-    { label: 'Registro fotográfico', content: <TabFotografico /> },
-    { label: 'Soportes', content: <TabSoportes showToast={showToast} /> },
+    { label: 'Registro fotográfico', content: wrapTab(<TabFotografico />) },
+    { label: 'Soportes', content: wrapTab(<TabSoportes showToast={showToast} />) },
     {
       label: 'Notas vinculadas',
-      content: (
+      content: wrapTab(
         <TabNotasVinculadas
           seleccionadas={notasSeleccionadas}
           toggle={toggleNota}
@@ -354,9 +360,7 @@ export default function IntegracionEstimacion() {
         </div>
       )}
 
-      <fieldset disabled={soloLectura} className="contents">
-        <Tabs tabs={tabs} />
-      </fieldset>
+      <Tabs tabs={tabs} />
 
       {!soloLectura && (
         <div className="mt-6 flex justify-end gap-3">

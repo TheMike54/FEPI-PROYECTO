@@ -233,13 +233,19 @@ export default function AltaContrato() {
   const { showToast } = useToast();
   const { soloLectura, mostrarMeta } = useVistaHU('HU-01');
 
+  // Envolvemos el contenido de cada tab — NO el componente Tabs — para que en
+  // lectura los inputs queden disabled pero la navegación entre pestañas siga viva.
+  const wrapTab = (node) => (
+    <fieldset disabled={soloLectura} className="contents">{node}</fieldset>
+  );
+
   const tabs = [
-    { label: 'Datos generales', content: <TabDatosGenerales /> },
-    { label: 'Catálogo de conceptos', content: <TabCatalogo /> },
-    { label: 'Programa de obra', content: <TabPrograma /> },
-    { label: 'Datos jurídicos', content: <TabJuridicos /> },
-    { label: 'Garantías, penalizaciones y amortización', content: <TabGarantias /> },
-    { label: 'PDF firmado', content: <TabPdfFirmado /> }
+    { label: 'Datos generales', content: wrapTab(<TabDatosGenerales />) },
+    { label: 'Catálogo de conceptos', content: wrapTab(<TabCatalogo />) },
+    { label: 'Programa de obra', content: wrapTab(<TabPrograma />) },
+    { label: 'Datos jurídicos', content: wrapTab(<TabJuridicos />) },
+    { label: 'Garantías, penalizaciones y amortización', content: wrapTab(<TabGarantias />) },
+    { label: 'PDF firmado', content: wrapTab(<TabPdfFirmado />) }
   ];
 
   return (
@@ -259,9 +265,7 @@ export default function AltaContrato() {
 
       {soloLectura && <AvisoSoloLectura />}
 
-      <fieldset disabled={soloLectura} className="contents">
-        <Tabs tabs={tabs} />
-      </fieldset>
+      <Tabs tabs={tabs} />
 
       {!soloLectura && (
         <div className="mt-6 flex justify-end gap-3">

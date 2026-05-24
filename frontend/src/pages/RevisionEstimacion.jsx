@@ -317,12 +317,18 @@ export default function RevisionEstimacion() {
   const enSupervision = pasoActivo === 'supervision';
   const enResidencia  = pasoActivo === 'residencia';
 
+  // Envolvemos el contenido de cada tab — NO el componente Tabs — para que en
+  // lectura los inputs queden disabled pero la navegación entre pestañas siga viva.
+  const wrapTab = (node) => (
+    <fieldset disabled={soloLectura} className="contents">{node}</fieldset>
+  );
+
   const tabs = [
-    { label: 'Carátula',             content: <TabCaratulaRevision    observacion={obs.caratula}    onObsChange={setObsKey('caratula')} /> },
-    { label: 'Números generadores',  content: <TabGeneradoresRevision observacion={obs.generadores} onObsChange={setObsKey('generadores')} /> },
-    { label: 'Registro fotográfico', content: <TabFotosRevision       observacion={obs.fotos}       onObsChange={setObsKey('fotos')} /> },
-    { label: 'Soportes',             content: <TabSoportesRevision    observacion={obs.soportes}    onObsChange={setObsKey('soportes')} /> },
-    { label: 'Notas vinculadas',     content: <TabNotasRevision       observacion={obs.notas}       onObsChange={setObsKey('notas')} /> }
+    { label: 'Carátula',             content: wrapTab(<TabCaratulaRevision    observacion={obs.caratula}    onObsChange={setObsKey('caratula')} />) },
+    { label: 'Números generadores',  content: wrapTab(<TabGeneradoresRevision observacion={obs.generadores} onObsChange={setObsKey('generadores')} />) },
+    { label: 'Registro fotográfico', content: wrapTab(<TabFotosRevision       observacion={obs.fotos}       onObsChange={setObsKey('fotos')} />) },
+    { label: 'Soportes',             content: wrapTab(<TabSoportesRevision    observacion={obs.soportes}    onObsChange={setObsKey('soportes')} />) },
+    { label: 'Notas vinculadas',     content: wrapTab(<TabNotasRevision       observacion={obs.notas}       onObsChange={setObsKey('notas')} />) }
   ];
 
   return (
@@ -357,9 +363,7 @@ export default function RevisionEstimacion() {
       <IndicadorFlujo pasos={pasos} />
       <SemaforoPlazoRevision diaActual={8} diaLimite={15} />
 
-      <fieldset disabled={soloLectura} className="contents">
-        <Tabs tabs={tabs} />
-      </fieldset>
+      <Tabs tabs={tabs} />
 
       {!soloLectura && (
       <div className="mt-6 bg-white border border-slate-200 rounded-md p-5">
