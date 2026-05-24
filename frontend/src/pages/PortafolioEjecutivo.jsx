@@ -10,9 +10,9 @@ import { portafolioContratosDummy } from '../data/dummy.js';
 // El semaforo se calcularia a partir del avance fisico, atrasos acumulados y
 // pendientes operativos. En esta demo el color viene servido en el dummy.
 const SEMAFORO = {
-  verde: { dot: 'bg-sigecop-green-validation', badge: 'bg-green-100 text-sigecop-green-validation', label: 'Verde' },
-  ambar: { dot: 'bg-sigecop-amber-attention',  badge: 'bg-amber-100 text-sigecop-amber-attention', label: 'Ámbar' },
-  rojo:  { dot: 'bg-red-500',                  badge: 'bg-red-100 text-red-700',                   label: 'Rojo'  }
+  verde:    { dot: 'bg-sigecop-green-validation', badge: 'bg-green-100 text-sigecop-green-validation', label: 'Verde'    },
+  amarillo: { dot: 'bg-sigecop-amber-attention',  badge: 'bg-amber-100 text-sigecop-amber-attention',  label: 'Amarillo' },
+  rojo:     { dot: 'bg-red-500',                  badge: 'bg-red-100 text-red-700',                    label: 'Rojo'     }
 };
 
 function Contadores({ contratos }) {
@@ -26,7 +26,7 @@ function Contadores({ contratos }) {
         </div>
         <div className="text-2xl font-bold text-sigecop-blue mt-1">{total}</div>
       </div>
-      {['verde', 'ambar', 'rojo'].map((c) => (
+      {['verde', 'amarillo', 'rojo'].map((c) => (
         <div key={c} className="bg-white border border-slate-200 rounded-md p-3 text-center">
           <div className="flex items-center justify-center gap-2">
             <span className={`inline-block w-2.5 h-2.5 rounded-full ${SEMAFORO[c].dot}`} />

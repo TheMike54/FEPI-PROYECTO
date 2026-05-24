@@ -650,12 +650,12 @@ export const portafolioContratosDummy = [
   },
   {
     folio: 'C-2026-0038', contratista: 'Edificaciones del Norte',   avance:  65,
-    estado: 'Atraso leve',             semaforo: 'ambar',
+    estado: 'Atraso leve',             semaforo: 'amarillo',
     indicadores: { avanceFisico: 65, avanceFinanciero: 60, penalizaciones: 25_000 }
   },
   {
     folio: 'C-2026-0029', contratista: 'Obras y Proyectos SA',      avance: 100,
-    estado: 'Finiquito pendiente',     semaforo: 'ambar',
+    estado: 'Finiquito pendiente',     semaforo: 'amarillo',
     indicadores: { avanceFisico: 100, avanceFinanciero: 95, penalizaciones: 0 }
   },
   {

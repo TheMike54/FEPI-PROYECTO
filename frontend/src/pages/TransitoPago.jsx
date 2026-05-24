@@ -154,7 +154,7 @@ function SemaforoPlazoPago({ diaActual = 6, diaLimite = 20 }) {
     : ambar ? 'bg-sigecop-amber-attention'
     : 'bg-red-500';
   const etiqueta = verde ? 'Verde (en tiempo)'
-    : ambar ? 'Ámbar (próximo a vencer)'
+    : ambar ? 'Amarillo (próximo a vencer)'
     : 'Rojo (vencido)';
   const pct = Math.min(100, (diaActual / diaLimite) * 100);
 
@@ -180,12 +180,12 @@ function SemaforoPlazoPago({ diaActual = 6, diaLimite = 20 }) {
 
       <div className="mt-2 grid grid-cols-3 text-[10px] text-slate-500">
         <div>0-12 d · Verde</div>
-        <div className="text-center">13-17 d · Ámbar</div>
+        <div className="text-center">13-17 d · Amarillo</div>
         <div className="text-right">18-20 d · Rojo</div>
       </div>
 
       <p className="text-xs text-slate-500 mt-3">
-        El sistema notifica a Finanzas y Dependencia automáticamente al entrar en ámbar.
+        El sistema notifica a Finanzas y Dependencia automáticamente al entrar en amarillo.
       </p>
     </div>
   );
@@ -285,7 +285,7 @@ export default function TransitoPago() {
         huId="HU-20"
         criterios={[
           { numero: 1, texto: 'El sistema verifica suficiencia presupuestal contra el techo anual y bloquea la generación de la instrucción de pago si el monto excede lo disponible (art. 24 LOPSRM).' },
-          { numero: 2, texto: 'Un semáforo muestra el avance del plazo de 20 días naturales para pago (art. 54 LOPSRM) y emite alertas al entrar en ámbar.' },
+          { numero: 2, texto: 'Un semáforo muestra el avance del plazo de 20 días naturales para pago (art. 54 LOPSRM) y emite alertas al entrar en amarillo.' },
           { numero: 3, texto: 'La instrucción de pago solo puede generarse cuando todos los soportes obligatorios (factura, CFDI, estado de fianza) están cargados.' }
         ]}
       />
