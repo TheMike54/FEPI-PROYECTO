@@ -3,6 +3,8 @@ import Breadcrumb from '../components/ui/Breadcrumb.jsx';
 import BadgeSprint from '../components/ui/BadgeSprint.jsx';
 import CardCriterioAceptacion from '../components/ui/CardCriterioAceptacion.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
+import AvisoSoloLectura from '../components/ui/AvisoSoloLectura.jsx';
+import { useVistaHU } from '../context/SesionContext.jsx';
 import {
   contratoDummy,
   historialEstimacionesDummy,
@@ -25,6 +27,7 @@ function EstadoBadge({ estado }) {
 
 export default function HistorialEstimaciones() {
   const { showToast } = useToast();
+  const { soloLectura, mostrarMeta } = useVistaHU('HU-14');
   const [periodo, setPeriodo] = useState('Todos');
   const [estado, setEstado] = useState('Todos');
 
@@ -53,6 +56,8 @@ export default function HistorialEstimaciones() {
         <BadgeSprint codigo="HU-14" sprint="Sprint 5" />
       </div>
       <p className="text-sm text-slate-600 mb-6">Rol: Residente</p>
+
+      {soloLectura && <AvisoSoloLectura />}
 
       <div className="bg-slate-100 border-l-4 border-slate-400 px-4 py-3 mb-6 rounded-r-md">
         <div className="text-xs font-semibold text-slate-600 uppercase">Contrato</div>
@@ -132,21 +137,23 @@ export default function HistorialEstimaciones() {
         El historial conserva todas las versiones del ciclo de cobro, incluyendo las rechazadas, para fiscalización y trazabilidad.
       </p>
 
-      <section className="mt-10">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
-          Criterios de aceptación
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <CardCriterioAceptacion
-            numero={1}
-            texto="El historial muestra todas las estimaciones del contrato, incluyendo las versiones rechazadas."
-          />
-          <CardCriterioAceptacion
-            numero={2}
-            texto="Por cada periodo solo puede haber una estimación aceptada; las versiones previas quedan marcadas como rechazadas."
-          />
-        </div>
-      </section>
+      {mostrarMeta && (
+        <section className="mt-10">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
+            Criterios de aceptación
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <CardCriterioAceptacion
+              numero={1}
+              texto="El historial muestra todas las estimaciones del contrato, incluyendo las versiones rechazadas."
+            />
+            <CardCriterioAceptacion
+              numero={2}
+              texto="Por cada periodo solo puede haber una estimación aceptada; las versiones previas quedan marcadas como rechazadas."
+            />
+          </div>
+        </section>
+      )}
     </div>
   );
 }

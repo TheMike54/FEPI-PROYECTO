@@ -4,6 +4,8 @@ import BadgeSprint from '../components/ui/BadgeSprint.jsx';
 import CardCriterioAceptacion from '../components/ui/CardCriterioAceptacion.jsx';
 import Tabs from '../components/ui/Tab.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
+import AvisoSoloLectura from '../components/ui/AvisoSoloLectura.jsx';
+import { useVistaHU } from '../context/SesionContext.jsx';
 import {
   contratoDummy,
   caratulaEstimacionDummy,
@@ -262,6 +264,7 @@ function SemaforoPlazoRevision({ diaActual, diaLimite }) {
 
 export default function RevisionEstimacion() {
   const { showToast } = useToast();
+  const { soloLectura, mostrarMeta } = useVistaHU('HU-15');
 
   // Observaciones por sección — viven en el padre para no perderse al cambiar de tab.
   const [obs, setObs] = useState({
@@ -349,11 +352,14 @@ export default function RevisionEstimacion() {
         </div>
       </div>
 
+      {soloLectura && <AvisoSoloLectura />}
+
       <IndicadorFlujo pasos={pasos} />
       <SemaforoPlazoRevision diaActual={8} diaLimite={15} />
 
       <Tabs tabs={tabs} />
 
+      {!soloLectura && (
       <div className="mt-6 bg-white border border-slate-200 rounded-md p-5">
         <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
           Panel de resolución
@@ -413,26 +419,29 @@ export default function RevisionEstimacion() {
           </p>
         )}
       </div>
+      )}
 
-      <section className="mt-10">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
-          Criterios de aceptación
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <CardCriterioAceptacion
-            numero={1}
-            texto="La revisión permite revisar sección por sección y dejar observaciones puntuales en cada una (carátula, generadores, registro fotográfico, soportes y notas)."
-          />
-          <CardCriterioAceptacion
-            numero={2}
-            texto="La autorización queda condicionada al turnado secuencial: primero supervisión, luego residencia; residencia no puede resolver antes del turnado."
-          />
-          <CardCriterioAceptacion
-            numero={3}
-            texto="El sistema controla el plazo de 15 días naturales de revisión conforme al art. 54 LOPSRM mediante un semáforo visible para los actores."
-          />
-        </div>
-      </section>
+      {mostrarMeta && (
+        <section className="mt-10">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
+            Criterios de aceptación
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <CardCriterioAceptacion
+              numero={1}
+              texto="La revisión permite revisar sección por sección y dejar observaciones puntuales en cada una (carátula, generadores, registro fotográfico, soportes y notas)."
+            />
+            <CardCriterioAceptacion
+              numero={2}
+              texto="La autorización queda condicionada al turnado secuencial: primero supervisión, luego residencia; residencia no puede resolver antes del turnado."
+            />
+            <CardCriterioAceptacion
+              numero={3}
+              texto="El sistema controla el plazo de 15 días naturales de revisión conforme al art. 54 LOPSRM mediante un semáforo visible para los actores."
+            />
+          </div>
+        </section>
+      )}
     </div>
   );
 }

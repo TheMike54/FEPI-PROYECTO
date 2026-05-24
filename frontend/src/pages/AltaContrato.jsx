@@ -4,6 +4,8 @@ import BadgeSprint from '../components/ui/BadgeSprint.jsx';
 import CardCriterioAceptacion from '../components/ui/CardCriterioAceptacion.jsx';
 import Tabs from '../components/ui/Tab.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
+import AvisoSoloLectura from '../components/ui/AvisoSoloLectura.jsx';
+import { useVistaHU } from '../context/SesionContext.jsx';
 import { contratoDummy, conceptosDummy, programaObraDummy, polizasGarantiaDummy } from '../data/dummy.js';
 
 function Field({ label, required, children, hint }) {
@@ -229,6 +231,7 @@ function TabPdfFirmado() {
 
 export default function AltaContrato() {
   const { showToast } = useToast();
+  const { soloLectura, mostrarMeta } = useVistaHU('HU-01');
 
   const tabs = [
     { label: 'Datos generales', content: <TabDatosGenerales /> },
@@ -254,47 +257,53 @@ export default function AltaContrato() {
         <BadgeSprint codigo="HU-01" sprint="Sprint 1" />
       </div>
 
+      {soloLectura && <AvisoSoloLectura />}
+
       <Tabs tabs={tabs} />
 
-      <div className="mt-6 flex justify-end gap-3">
-        <button type="button" className="px-4 py-2 text-slate-600 hover:text-slate-900">
-          Cancelar
-        </button>
-        <button
-          type="button"
-          className="sg-btn-secondary"
-          onClick={() => showToast('Pendiente para Sprint siguiente.')}
-        >
-          Guardar borrador
-        </button>
-        <button
-          type="button"
-          className="sg-btn-primary"
-          onClick={() => showToast('Pendiente para Sprint siguiente.')}
-        >
-          Guardar contrato
-        </button>
-      </div>
-
-      <section className="mt-10">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
-          Criterios de aceptación
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <CardCriterioAceptacion
-            numero={1}
-            texto="Existe un contrato con folio único que contiene catálogo de conceptos, programa de obra, elementos jurídicos, garantías, penalizaciones, plan de amortización del anticipo y PDF firmado."
-          />
-          <CardCriterioAceptacion
-            numero={2}
-            texto="El sistema valida que los campos obligatorios estén llenos y el folio sea único antes de guardar."
-          />
-          <CardCriterioAceptacion
-            numero={3}
-            texto="Existe un PDF firmado del contrato ligado al expediente, consultable por todos los actores autorizados."
-          />
+      {!soloLectura && (
+        <div className="mt-6 flex justify-end gap-3">
+          <button type="button" className="px-4 py-2 text-slate-600 hover:text-slate-900">
+            Cancelar
+          </button>
+          <button
+            type="button"
+            className="sg-btn-secondary"
+            onClick={() => showToast('Pendiente para Sprint siguiente.')}
+          >
+            Guardar borrador
+          </button>
+          <button
+            type="button"
+            className="sg-btn-primary"
+            onClick={() => showToast('Pendiente para Sprint siguiente.')}
+          >
+            Guardar contrato
+          </button>
         </div>
-      </section>
+      )}
+
+      {mostrarMeta && (
+        <section className="mt-10">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
+            Criterios de aceptación
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <CardCriterioAceptacion
+              numero={1}
+              texto="Existe un contrato con folio único que contiene catálogo de conceptos, programa de obra, elementos jurídicos, garantías, penalizaciones, plan de amortización del anticipo y PDF firmado."
+            />
+            <CardCriterioAceptacion
+              numero={2}
+              texto="El sistema valida que los campos obligatorios estén llenos y el folio sea único antes de guardar."
+            />
+            <CardCriterioAceptacion
+              numero={3}
+              texto="Existe un PDF firmado del contrato ligado al expediente, consultable por todos los actores autorizados."
+            />
+          </div>
+        </section>
+      )}
     </div>
   );
 }

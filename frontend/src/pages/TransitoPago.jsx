@@ -3,6 +3,8 @@ import Breadcrumb from '../components/ui/Breadcrumb.jsx';
 import BadgeSprint from '../components/ui/BadgeSprint.jsx';
 import CardCriterioAceptacion from '../components/ui/CardCriterioAceptacion.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
+import AvisoSoloLectura from '../components/ui/AvisoSoloLectura.jsx';
+import { useVistaHU } from '../context/SesionContext.jsx';
 import { contratoDummy, presupuestoDummy, soportesPagoDummy } from '../data/dummy.js';
 
 const moneda = (n) => `$ ${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -191,6 +193,7 @@ function SemaforoPlazoPago({ diaActual = 6, diaLimite = 20 }) {
 
 export default function TransitoPago() {
   const { showToast } = useToast();
+  const { soloLectura, mostrarMeta } = useVistaHU('HU-20');
 
   const [montoEstimacion, setMontoEstimacion] = useState(String(presupuestoDummy.estimacion));
   const [soportes, setSoportes] = useState(soportesPagoDummy);
@@ -241,6 +244,8 @@ export default function TransitoPago() {
         </div>
       </div>
 
+      {soloLectura && <AvisoSoloLectura />}
+
       <SuficienciaPresupuestal montoEstimacion={montoEstimacion} onMontoChange={setMontoEstimacion} />
 
       <SoportesObligatorios soportes={soportes} onToggle={toggleSoporte} />
@@ -257,44 +262,48 @@ export default function TransitoPago() {
         </div>
       )}
 
-      <div className="flex justify-end gap-3">
-        <button
-          type="button"
-          className="sg-btn-secondary"
-          onClick={() => showToast('Pendiente para Sprint siguiente.')}
-        >
-          Guardar borrador
-        </button>
-        <button
-          type="button"
-          className="sg-btn-primary"
-          disabled={!puedeGenerar}
-          onClick={handleGenerar}
-          title={!puedeGenerar ? 'Hay bloqueos pendientes — revisa los avisos arriba' : ''}
-        >
-          💸 Generar instrucción de pago
-        </button>
-      </div>
-
-      <section className="mt-10">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
-          Criterios de aceptación
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <CardCriterioAceptacion
-            numero={1}
-            texto="El sistema verifica suficiencia presupuestal contra el techo anual y bloquea la generación de la instrucción de pago si el monto excede lo disponible (art. 24 LOPSRM)."
-          />
-          <CardCriterioAceptacion
-            numero={2}
-            texto="Un semáforo muestra el avance del plazo de 20 días naturales para pago (art. 54 LOPSRM) y emite alertas al entrar en ámbar."
-          />
-          <CardCriterioAceptacion
-            numero={3}
-            texto="La instrucción de pago solo puede generarse cuando todos los soportes obligatorios (factura, CFDI, estado de fianza) están cargados."
-          />
+      {!soloLectura && (
+        <div className="flex justify-end gap-3">
+          <button
+            type="button"
+            className="sg-btn-secondary"
+            onClick={() => showToast('Pendiente para Sprint siguiente.')}
+          >
+            Guardar borrador
+          </button>
+          <button
+            type="button"
+            className="sg-btn-primary"
+            disabled={!puedeGenerar}
+            onClick={handleGenerar}
+            title={!puedeGenerar ? 'Hay bloqueos pendientes — revisa los avisos arriba' : ''}
+          >
+            💸 Generar instrucción de pago
+          </button>
         </div>
-      </section>
+      )}
+
+      {mostrarMeta && (
+        <section className="mt-10">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
+            Criterios de aceptación
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <CardCriterioAceptacion
+              numero={1}
+              texto="El sistema verifica suficiencia presupuestal contra el techo anual y bloquea la generación de la instrucción de pago si el monto excede lo disponible (art. 24 LOPSRM)."
+            />
+            <CardCriterioAceptacion
+              numero={2}
+              texto="Un semáforo muestra el avance del plazo de 20 días naturales para pago (art. 54 LOPSRM) y emite alertas al entrar en ámbar."
+            />
+            <CardCriterioAceptacion
+              numero={3}
+              texto="La instrucción de pago solo puede generarse cuando todos los soportes obligatorios (factura, CFDI, estado de fianza) están cargados."
+            />
+          </div>
+        </section>
+      )}
     </div>
   );
 }

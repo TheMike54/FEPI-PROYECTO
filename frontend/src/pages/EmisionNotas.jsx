@@ -3,6 +3,8 @@ import Breadcrumb from '../components/ui/Breadcrumb.jsx';
 import BadgeSprint from '../components/ui/BadgeSprint.jsx';
 import CardCriterioAceptacion from '../components/ui/CardCriterioAceptacion.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
+import AvisoSoloLectura from '../components/ui/AvisoSoloLectura.jsx';
+import { useVistaHU } from '../context/SesionContext.jsx';
 import { notasRecientesDummy, tiposNotaResidente, contratoDummy } from '../data/dummy.js';
 
 function NotaPreviewCard({ nota }) {
@@ -27,6 +29,7 @@ function NotaPreviewCard({ nota }) {
 
 export default function EmisionNotas() {
   const { showToast } = useToast();
+  const { soloLectura, mostrarMeta } = useVistaHU('HU-09');
   const [tipo, setTipo] = useState(tiposNotaResidente[0]);
   const [asunto, setAsunto] = useState('Solicitud de aclaración sobre cimentación del eje 8-A');
   const [contenido, setContenido] = useState(
@@ -55,6 +58,8 @@ export default function EmisionNotas() {
       <p className="text-sm text-slate-600 mb-6">
         Tipo de nota disponible según rol autorizado (art. 125 RLOPSRM).
       </p>
+
+      {soloLectura && <AvisoSoloLectura />}
 
       <div className="bg-blue-50 border-l-4 border-sigecop-blue px-4 py-3 mb-6 rounded-r-md">
         <div className="text-xs font-semibold text-sigecop-blue uppercase">Contrato · Bitácora</div>
@@ -160,45 +165,49 @@ export default function EmisionNotas() {
               </div>
             </div>
 
-            <div className="flex justify-end gap-3 pt-2">
-              <button
-                type="button"
-                className="sg-btn-secondary"
-                onClick={() => showToast('Pendiente para Sprint siguiente.')}
-              >
-                Guardar borrador
-              </button>
-              <button
-                type="button"
-                className="sg-btn-primary"
-                onClick={() => showToast('Pendiente para Sprint siguiente.')}
-              >
-                🔒 Firmar y emitir nota
-              </button>
-            </div>
+            {!soloLectura && (
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  className="sg-btn-secondary"
+                  onClick={() => showToast('Pendiente para Sprint siguiente.')}
+                >
+                  Guardar borrador
+                </button>
+                <button
+                  type="button"
+                  className="sg-btn-primary"
+                  onClick={() => showToast('Pendiente para Sprint siguiente.')}
+                >
+                  🔒 Firmar y emitir nota
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
 
-      <section className="mt-10">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
-          Criterios de aceptación
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <CardCriterioAceptacion
-            numero={1}
-            texto="Solo aparecen los tipos de nota que corresponden al rol del usuario."
-          />
-          <CardCriterioAceptacion
-            numero={2}
-            texto="Una nota firmada queda inmutable y solo puede corregirse emitiendo una nueva nota vinculada."
-          />
-          <CardCriterioAceptacion
-            numero={3}
-            texto="Cada nota queda registrada con folio, fecha, firmante y vínculo opcional a nota previa."
-          />
-        </div>
-      </section>
+      {mostrarMeta && (
+        <section className="mt-10">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
+            Criterios de aceptación
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <CardCriterioAceptacion
+              numero={1}
+              texto="Solo aparecen los tipos de nota que corresponden al rol del usuario."
+            />
+            <CardCriterioAceptacion
+              numero={2}
+              texto="Una nota firmada queda inmutable y solo puede corregirse emitiendo una nueva nota vinculada."
+            />
+            <CardCriterioAceptacion
+              numero={3}
+              texto="Cada nota queda registrada con folio, fecha, firmante y vínculo opcional a nota previa."
+            />
+          </div>
+        </section>
+      )}
     </div>
   );
 }

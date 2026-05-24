@@ -3,10 +3,13 @@ import Breadcrumb from '../components/ui/Breadcrumb.jsx';
 import BadgeSprint from '../components/ui/BadgeSprint.jsx';
 import CardCriterioAceptacion from '../components/ui/CardCriterioAceptacion.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
+import AvisoSoloLectura from '../components/ui/AvisoSoloLectura.jsx';
+import { useVistaHU } from '../context/SesionContext.jsx';
 import { contratoDummy, estimacionesParaPagoDummy, pagosRegistradosDummy } from '../data/dummy.js';
 
 export default function RegistroPago() {
   const { showToast } = useToast();
+  const { soloLectura, mostrarMeta } = useVistaHU('HU-21');
   const hoy = new Date().toISOString().slice(0, 10);
 
   const [estimacion, setEstimacion] = useState(estimacionesParaPagoDummy[0].etiqueta);
@@ -30,6 +33,8 @@ export default function RegistroPago() {
         <BadgeSprint codigo="HU-21" sprint="Sprint 2" />
       </div>
       <p className="text-sm text-slate-600 mb-6">Rol: Finanzas</p>
+
+      {soloLectura && <AvisoSoloLectura />}
 
       <div className="bg-slate-100 border-l-4 border-slate-400 px-4 py-3 mb-6 rounded-r-md">
         <div className="text-xs font-semibold text-slate-600 uppercase">Contexto</div>
@@ -90,18 +95,20 @@ export default function RegistroPago() {
           </div>
         </div>
 
-        <div className="mt-6 flex justify-end gap-3">
-          <button type="button" className="px-4 py-2 text-slate-600 hover:text-slate-900">
-            Cancelar
-          </button>
-          <button
-            type="button"
-            className="sg-btn-primary"
-            onClick={() => showToast('Pendiente para Sprint siguiente.')}
-          >
-            Registrar pago
-          </button>
-        </div>
+        {!soloLectura && (
+          <div className="mt-6 flex justify-end gap-3">
+            <button type="button" className="px-4 py-2 text-slate-600 hover:text-slate-900">
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="sg-btn-primary"
+              onClick={() => showToast('Pendiente para Sprint siguiente.')}
+            >
+              Registrar pago
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="bg-white border border-slate-200 rounded-md overflow-hidden">
@@ -138,21 +145,23 @@ export default function RegistroPago() {
         </div>
       </div>
 
-      <section className="mt-10">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
-          Criterios de aceptación
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <CardCriterioAceptacion
-            numero={1}
-            texto="El registro del pago marca la estimación como pagada y actualiza el avance financiero del contrato."
-          />
-          <CardCriterioAceptacion
-            numero={2}
-            texto="Quedan capturados fecha, importe, referencia bancaria y usuario que realizó el registro."
-          />
-        </div>
-      </section>
+      {mostrarMeta && (
+        <section className="mt-10">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
+            Criterios de aceptación
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <CardCriterioAceptacion
+              numero={1}
+              texto="El registro del pago marca la estimación como pagada y actualiza el avance financiero del contrato."
+            />
+            <CardCriterioAceptacion
+              numero={2}
+              texto="Quedan capturados fecha, importe, referencia bancaria y usuario que realizó el registro."
+            />
+          </div>
+        </section>
+      )}
     </div>
   );
 }

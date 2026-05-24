@@ -4,6 +4,8 @@ import BadgeSprint from '../components/ui/BadgeSprint.jsx';
 import CardCriterioAceptacion from '../components/ui/CardCriterioAceptacion.jsx';
 import Tabs from '../components/ui/Tab.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
+import AvisoSoloLectura from '../components/ui/AvisoSoloLectura.jsx';
+import { useVistaHU } from '../context/SesionContext.jsx';
 import {
   contratoDummy,
   caratulaEstimacionDummy,
@@ -254,6 +256,7 @@ function TabNotasVinculadas({ seleccionadas, toggle, showToast }) {
 
 export default function IntegracionEstimacion() {
   const { showToast } = useToast();
+  const { soloLectura, mostrarMeta } = useVistaHU('HU-12');
 
   // Estado de cantidades por periodo — vive en el padre para no perderse al cambiar de tab.
   const [periodos, setPeriodos] = useState(
@@ -343,6 +346,8 @@ export default function IntegracionEstimacion() {
         </div>
       </div>
 
+      {soloLectura && <AvisoSoloLectura />}
+
       {hayExceso && (
         <div className="bg-red-50 border-l-4 border-red-500 px-4 py-3 mb-4 text-sm text-red-800 rounded-r-md">
           <strong>⚠ Integración bloqueada:</strong> uno o más conceptos en "Números generadores" exceden lo contratado. Ajusta las cantidades en ese tab o tramita un convenio modificatorio.
@@ -351,44 +356,48 @@ export default function IntegracionEstimacion() {
 
       <Tabs tabs={tabs} />
 
-      <div className="mt-6 flex justify-end gap-3">
-        <button
-          type="button"
-          className="sg-btn-secondary"
-          onClick={() => showToast('Pendiente para Sprint siguiente.')}
-        >
-          Guardar borrador
-        </button>
-        <button
-          type="button"
-          className="sg-btn-primary"
-          onClick={handleIntegrar}
-          disabled={hayExceso}
-          title={hayExceso ? 'Hay conceptos que exceden lo contratado' : ''}
-        >
-          Integrar estimación
-        </button>
-      </div>
-
-      <section className="mt-10">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
-          Criterios de aceptación
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <CardCriterioAceptacion
-            numero={1}
-            texto="La estimación se guarda como una sola entidad que contiene carátula, generadores, registro fotográfico, soportes y notas vinculadas."
-          />
-          <CardCriterioAceptacion
-            numero={2}
-            texto="La carátula calcula automáticamente anticipo amortizado, retenciones legales (5 al millar) y deductivas por penalizaciones según el contrato."
-          />
-          <CardCriterioAceptacion
-            numero={3}
-            texto="El sistema bloquea la integración cuando una cantidad por concepto excede la cantidad contratada en el catálogo (art. 118 RLOPSRM)."
-          />
+      {!soloLectura && (
+        <div className="mt-6 flex justify-end gap-3">
+          <button
+            type="button"
+            className="sg-btn-secondary"
+            onClick={() => showToast('Pendiente para Sprint siguiente.')}
+          >
+            Guardar borrador
+          </button>
+          <button
+            type="button"
+            className="sg-btn-primary"
+            onClick={handleIntegrar}
+            disabled={hayExceso}
+            title={hayExceso ? 'Hay conceptos que exceden lo contratado' : ''}
+          >
+            Integrar estimación
+          </button>
         </div>
-      </section>
+      )}
+
+      {mostrarMeta && (
+        <section className="mt-10">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
+            Criterios de aceptación
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <CardCriterioAceptacion
+              numero={1}
+              texto="La estimación se guarda como una sola entidad que contiene carátula, generadores, registro fotográfico, soportes y notas vinculadas."
+            />
+            <CardCriterioAceptacion
+              numero={2}
+              texto="La carátula calcula automáticamente anticipo amortizado, retenciones legales (5 al millar) y deductivas por penalizaciones según el contrato."
+            />
+            <CardCriterioAceptacion
+              numero={3}
+              texto="El sistema bloquea la integración cuando una cantidad por concepto excede la cantidad contratada en el catálogo (art. 118 RLOPSRM)."
+            />
+          </div>
+        </section>
+      )}
     </div>
   );
 }

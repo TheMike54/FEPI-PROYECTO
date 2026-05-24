@@ -3,6 +3,8 @@ import Breadcrumb from '../components/ui/Breadcrumb.jsx';
 import BadgeSprint from '../components/ui/BadgeSprint.jsx';
 import CardCriterioAceptacion from '../components/ui/CardCriterioAceptacion.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
+import AvisoSoloLectura from '../components/ui/AvisoSoloLectura.jsx';
+import { useVistaHU } from '../context/SesionContext.jsx';
 import { partesBitacoraDummy, contratoDummy } from '../data/dummy.js';
 
 function ParteCard({ parte, valores, onChange }) {
@@ -65,6 +67,7 @@ function ParteCard({ parte, valores, onChange }) {
 
 export default function AperturaBitacora() {
   const { showToast } = useToast();
+  const { soloLectura, mostrarMeta } = useVistaHU('HU-08');
   const [estado, setEstado] = useState(
     partesBitacoraDummy.reduce((acc, p) => {
       acc[p.num] = { firmante: p.firmante, cargo: p.cargo, correo: p.correo };
@@ -92,6 +95,8 @@ export default function AperturaBitacora() {
         </h1>
         <BadgeSprint codigo="HU-08" sprint="Sprint 1" />
       </div>
+
+      {soloLectura && <AvisoSoloLectura />}
 
       <div className="bg-blue-50 border-l-4 border-sigecop-blue px-4 py-3 mb-6 rounded-r-md">
         <div className="text-xs font-semibold text-sigecop-blue uppercase">Contrato seleccionado</div>
@@ -125,34 +130,38 @@ export default function AperturaBitacora() {
         </p>
       </div>
 
-      <div className="mt-6 flex justify-end gap-3">
-        <button type="button" className="px-4 py-2 text-slate-600 hover:text-slate-900">
-          Cancelar
-        </button>
-        <button
-          type="button"
-          className="sg-btn-primary"
-          onClick={() => showToast('Pendiente para Sprint siguiente.')}
-        >
-          Abrir bitácora
-        </button>
-      </div>
-
-      <section className="mt-10">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
-          Criterios de aceptación
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <CardCriterioAceptacion
-            numero={1}
-            texto="Existe una bitácora única por contrato con las tres partes ligadas y sus firmantes autorizados."
-          />
-          <CardCriterioAceptacion
-            numero={2}
-            texto="La fecha y hora de apertura queda registrada como evento formal inalterable."
-          />
+      {!soloLectura && (
+        <div className="mt-6 flex justify-end gap-3">
+          <button type="button" className="px-4 py-2 text-slate-600 hover:text-slate-900">
+            Cancelar
+          </button>
+          <button
+            type="button"
+            className="sg-btn-primary"
+            onClick={() => showToast('Pendiente para Sprint siguiente.')}
+          >
+            Abrir bitácora
+          </button>
         </div>
-      </section>
+      )}
+
+      {mostrarMeta && (
+        <section className="mt-10">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
+            Criterios de aceptación
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <CardCriterioAceptacion
+              numero={1}
+              texto="Existe una bitácora única por contrato con las tres partes ligadas y sus firmantes autorizados."
+            />
+            <CardCriterioAceptacion
+              numero={2}
+              texto="La fecha y hora de apertura queda registrada como evento formal inalterable."
+            />
+          </div>
+        </section>
+      )}
     </div>
   );
 }

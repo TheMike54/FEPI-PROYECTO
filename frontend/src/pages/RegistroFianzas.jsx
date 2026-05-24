@@ -2,6 +2,8 @@ import Breadcrumb from '../components/ui/Breadcrumb.jsx';
 import BadgeSprint from '../components/ui/BadgeSprint.jsx';
 import CardCriterioAceptacion from '../components/ui/CardCriterioAceptacion.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
+import AvisoSoloLectura from '../components/ui/AvisoSoloLectura.jsx';
+import { useVistaHU } from '../context/SesionContext.jsx';
 import { fianzasListadoDummy, contratoDummy } from '../data/dummy.js';
 
 function EstadoBadge({ estado, color }) {
@@ -19,6 +21,7 @@ function EstadoBadge({ estado, color }) {
 
 export default function RegistroFianzas() {
   const { showToast } = useToast();
+  const { soloLectura, mostrarMeta } = useVistaHU('HU-02');
 
   return (
     <div>
@@ -35,6 +38,8 @@ export default function RegistroFianzas() {
         <BadgeSprint codigo="HU-02" sprint="Sprint 6" />
       </div>
 
+      {soloLectura && <AvisoSoloLectura />}
+
       <div className="bg-blue-50 border-l-4 border-sigecop-blue px-4 py-3 mb-6 rounded-r-md">
         <div className="text-xs font-semibold text-sigecop-blue uppercase">Contrato</div>
         <div className="font-bold text-slate-900 mt-1">{contratoDummy.folio} · {contratoDummy.objeto}</div>
@@ -44,13 +49,15 @@ export default function RegistroFianzas() {
       <div className="bg-white border border-slate-200 rounded-md overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
           <h2 className="text-lg font-bold text-sigecop-blue">Pólizas de fianza del contrato</h2>
-          <button
-            type="button"
-            className="sg-btn-primary"
-            onClick={() => showToast('Pendiente para Sprint siguiente.')}
-          >
-            + Agregar nueva póliza
-          </button>
+          {!soloLectura && (
+            <button
+              type="button"
+              className="sg-btn-primary"
+              onClick={() => showToast('Pendiente para Sprint siguiente.')}
+            >
+              + Agregar nueva póliza
+            </button>
+          )}
         </div>
 
         <div className="overflow-x-auto">
@@ -113,23 +120,29 @@ export default function RegistroFianzas() {
                           >
                             👁
                           </button>
-                          <button
-                            type="button"
-                            title="Editar póliza"
-                            className="text-slate-500 hover:text-sigecop-blue"
-                            onClick={() => showToast('Pendiente para Sprint siguiente.')}
-                          >
-                            ✏️
-                          </button>
+                          {!soloLectura && (
+                            <button
+                              type="button"
+                              title="Editar póliza"
+                              className="text-slate-500 hover:text-sigecop-blue"
+                              onClick={() => showToast('Pendiente para Sprint siguiente.')}
+                            >
+                              ✏️
+                            </button>
+                          )}
                         </>
                       ) : (
-                        <button
-                          type="button"
-                          className="text-xs px-2 py-1 bg-sigecop-blue-light text-sigecop-blue rounded hover:bg-sigecop-blue hover:text-white transition-colors"
-                          onClick={() => showToast('Pendiente para Sprint siguiente.')}
-                        >
-                          📤 Cargar póliza
-                        </button>
+                        !soloLectura ? (
+                          <button
+                            type="button"
+                            className="text-xs px-2 py-1 bg-sigecop-blue-light text-sigecop-blue rounded hover:bg-sigecop-blue hover:text-white transition-colors"
+                            onClick={() => showToast('Pendiente para Sprint siguiente.')}
+                          >
+                            📤 Cargar póliza
+                          </button>
+                        ) : (
+                          <span className="text-xs italic text-slate-400">—</span>
+                        )
                       )}
                     </div>
                   </td>
@@ -161,25 +174,27 @@ export default function RegistroFianzas() {
         <strong>⚖️ Fundamento:</strong> Art. 48 LOPSRM — las fianzas se otorgan dentro de los 15 días naturales siguientes a la notificación del fallo.
       </p>
 
-      <section className="mt-10">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
-          Criterios de aceptación
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <CardCriterioAceptacion
-            numero={1}
-            texto="La póliza queda ligada al contrato con afianzadora, vigencia y monto registrados."
-          />
-          <CardCriterioAceptacion
-            numero={2}
-            texto="El sistema emite alerta cuando faltan N días configurables para el vencimiento."
-          />
-          <CardCriterioAceptacion
-            numero={3}
-            texto="La póliza registrada puede consultarse en formato PDF desde el listado de fianzas del contrato."
-          />
-        </div>
-      </section>
+      {mostrarMeta && (
+        <section className="mt-10">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
+            Criterios de aceptación
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <CardCriterioAceptacion
+              numero={1}
+              texto="La póliza queda ligada al contrato con afianzadora, vigencia y monto registrados."
+            />
+            <CardCriterioAceptacion
+              numero={2}
+              texto="El sistema emite alerta cuando faltan N días configurables para el vencimiento."
+            />
+            <CardCriterioAceptacion
+              numero={3}
+              texto="La póliza registrada puede consultarse en formato PDF desde el listado de fianzas del contrato."
+            />
+          </div>
+        </section>
+      )}
     </div>
   );
 }

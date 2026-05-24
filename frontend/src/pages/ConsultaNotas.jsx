@@ -3,6 +3,8 @@ import Breadcrumb from '../components/ui/Breadcrumb.jsx';
 import BadgeSprint from '../components/ui/BadgeSprint.jsx';
 import CardCriterioAceptacion from '../components/ui/CardCriterioAceptacion.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
+import AvisoSoloLectura from '../components/ui/AvisoSoloLectura.jsx';
+import { useVistaHU } from '../context/SesionContext.jsx';
 import { notasConsultaDummy, tiposNotaCatalogo, estatusNotaCatalogo } from '../data/dummy.js';
 
 const FILTROS_INICIALES = {
@@ -29,6 +31,7 @@ function EstatusBadge({ estatus }) {
 
 export default function ConsultaNotas() {
   const { showToast } = useToast();
+  const { soloLectura, mostrarMeta } = useVistaHU('HU-10');
   const [filtrosDraft, setFiltrosDraft] = useState(FILTROS_INICIALES);
   const [filtrosAplicados, setFiltrosAplicados] = useState(FILTROS_INICIALES);
   const [seleccionadas, setSeleccionadas] = useState(new Set());
@@ -94,6 +97,8 @@ export default function ConsultaNotas() {
       </div>
       <p className="text-sm text-slate-600 mb-6">Rol: Residente</p>
 
+      {soloLectura && <AvisoSoloLectura />}
+
       <form
         onSubmit={aplicarFiltros}
         className="bg-white border border-slate-200 rounded-md p-5 mb-6"
@@ -149,13 +154,15 @@ export default function ConsultaNotas() {
             {seleccionadas.size} {seleccionadas.size === 1 ? 'nota seleccionada' : 'notas seleccionadas'}
           </div>
           <div className="flex gap-2">
-            <button
-              type="button"
-              className="sg-btn-secondary"
-              onClick={() => showToast('Pendiente para Sprint siguiente.')}
-            >
-              📎 Adjuntar a estimación
-            </button>
+            {!soloLectura && (
+              <button
+                type="button"
+                className="sg-btn-secondary"
+                onClick={() => showToast('Pendiente para Sprint siguiente.')}
+              >
+                📎 Adjuntar a estimación
+              </button>
+            )}
             <button
               type="button"
               className="sg-btn-secondary"
@@ -227,21 +234,23 @@ export default function ConsultaNotas() {
         </div>
       </div>
 
-      <section className="mt-10">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
-          Criterios de aceptación
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <CardCriterioAceptacion
-            numero={1}
-            texto="La búsqueda devuelve resultados que cumplen todos los filtros aplicados simultáneamente."
-          />
-          <CardCriterioAceptacion
-            numero={2}
-            texto="Se pueden seleccionar varias notas del resultado y exportarlas o adjuntarlas a una estimación."
-          />
-        </div>
-      </section>
+      {mostrarMeta && (
+        <section className="mt-10">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
+            Criterios de aceptación
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <CardCriterioAceptacion
+              numero={1}
+              texto="La búsqueda devuelve resultados que cumplen todos los filtros aplicados simultáneamente."
+            />
+            <CardCriterioAceptacion
+              numero={2}
+              texto="Se pueden seleccionar varias notas del resultado y exportarlas o adjuntarlas a una estimación."
+            />
+          </div>
+        </section>
+      )}
     </div>
   );
 }
