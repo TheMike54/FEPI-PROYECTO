@@ -1,10 +1,8 @@
 import { useState, useMemo } from 'react';
-import Breadcrumb from '../components/ui/Breadcrumb.jsx';
-import BadgeSprint from '../components/ui/BadgeSprint.jsx';
-import CardCriterioAceptacion from '../components/ui/CardCriterioAceptacion.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
-import AvisoSoloLectura from '../components/ui/AvisoSoloLectura.jsx';
-import { useVistaHU } from '../context/SesionContext.jsx';
+import HeaderVista from '../components/vista/HeaderVista.jsx';
+import BannerContexto from '../components/vista/BannerContexto.jsx';
+import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import {
   contratoDummy,
   historialEstimacionesDummy,
@@ -27,7 +25,7 @@ function EstadoBadge({ estado }) {
 
 export default function HistorialEstimaciones() {
   const { showToast } = useToast();
-  const { soloLectura, mostrarMeta } = useVistaHU('HU-14');
+  // Vista consultativa: HeaderVista y SeccionCriterios leen el modo internamente.
   const [periodo, setPeriodo] = useState('Todos');
   const [estado, setEstado] = useState('Todos');
 
@@ -41,30 +39,24 @@ export default function HistorialEstimaciones() {
 
   return (
     <div>
-      <Breadcrumb
-        items={[
+      <HeaderVista
+        huId="HU-14"
+        titulo="Historial de estimaciones del contrato"
+        sprint="Sprint 5"
+        rolAcademico="Residente"
+        breadcrumb={[
           { label: 'Inicio', href: '/' },
           { label: 'Estimaciones' },
           { label: 'Historial' }
         ]}
       />
 
-      <div className="flex items-start justify-between mb-1">
-        <h1 className="text-2xl font-bold text-sigecop-blue">
-          Historial de estimaciones del contrato
-        </h1>
-        <BadgeSprint codigo="HU-14" sprint="Sprint 5" />
-      </div>
-      <p className="text-sm text-slate-600 mb-6">Rol: Residente</p>
-
-      {soloLectura && <AvisoSoloLectura />}
-
-      <div className="bg-slate-100 border-l-4 border-slate-400 px-4 py-3 mb-6 rounded-r-md">
-        <div className="text-xs font-semibold text-slate-600 uppercase">Contrato</div>
-        <div className="text-sm text-slate-800 mt-1">
-          <strong>{contratoDummy.folio}</strong> · {contratoDummy.contratista}
-        </div>
-      </div>
+      <BannerContexto
+        variant="slate"
+        titulo="Contrato"
+        folio={contratoDummy.folio}
+        extra={[{ value: contratoDummy.contratista }]}
+      />
 
       <div className="bg-white border border-slate-200 rounded-md p-5 mb-6">
         <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">Filtros</h2>
@@ -137,23 +129,13 @@ export default function HistorialEstimaciones() {
         El historial conserva todas las versiones del ciclo de cobro, incluyendo las rechazadas, para fiscalización y trazabilidad.
       </p>
 
-      {mostrarMeta && (
-        <section className="mt-10">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
-            Criterios de aceptación
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <CardCriterioAceptacion
-              numero={1}
-              texto="El historial muestra todas las estimaciones del contrato, incluyendo las versiones rechazadas."
-            />
-            <CardCriterioAceptacion
-              numero={2}
-              texto="Por cada periodo solo puede haber una estimación aceptada; las versiones previas quedan marcadas como rechazadas."
-            />
-          </div>
-        </section>
-      )}
+      <SeccionCriterios
+        huId="HU-14"
+        criterios={[
+          { numero: 1, texto: 'El historial muestra todas las estimaciones del contrato, incluyendo las versiones rechazadas.' },
+          { numero: 2, texto: 'Por cada periodo solo puede haber una estimación aceptada; las versiones previas quedan marcadas como rechazadas.' }
+        ]}
+      />
     </div>
   );
 }

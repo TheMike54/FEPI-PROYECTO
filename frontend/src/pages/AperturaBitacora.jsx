@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import Breadcrumb from '../components/ui/Breadcrumb.jsx';
-import BadgeSprint from '../components/ui/BadgeSprint.jsx';
-import CardCriterioAceptacion from '../components/ui/CardCriterioAceptacion.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
-import AvisoSoloLectura from '../components/ui/AvisoSoloLectura.jsx';
+import HeaderVista from '../components/vista/HeaderVista.jsx';
+import BannerContexto from '../components/vista/BannerContexto.jsx';
+import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
+import RegionEditable from '../components/vista/RegionEditable.jsx';
 import { useVistaHU } from '../context/SesionContext.jsx';
 import { partesBitacoraDummy, contratoDummy } from '../data/dummy.js';
 
@@ -67,7 +67,7 @@ function ParteCard({ parte, valores, onChange }) {
 
 export default function AperturaBitacora() {
   const { showToast } = useToast();
-  const { soloLectura, mostrarMeta } = useVistaHU('HU-08');
+  const { soloLectura } = useVistaHU('HU-08');
   const [estado, setEstado] = useState(
     partesBitacoraDummy.reduce((acc, p) => {
       acc[p.num] = { firmante: p.firmante, cargo: p.cargo, correo: p.correo };
@@ -81,36 +81,30 @@ export default function AperturaBitacora() {
 
   return (
     <div>
-      <Breadcrumb
-        items={[
+      <HeaderVista
+        huId="HU-08"
+        titulo="Apertura formal de la bitácora del contrato"
+        sprint="Sprint 1"
+        breadcrumb={[
           { label: 'Inicio', href: '/' },
           { label: 'Bitácora' },
           { label: 'Apertura' }
         ]}
       />
 
-      <div className="flex items-start justify-between mb-6">
-        <h1 className="text-2xl font-bold text-sigecop-blue">
-          Apertura formal de la bitácora del contrato
-        </h1>
-        <BadgeSprint codigo="HU-08" sprint="Sprint 1" />
-      </div>
-
-      {soloLectura && <AvisoSoloLectura />}
-
-      <div className="bg-blue-50 border-l-4 border-sigecop-blue px-4 py-3 mb-6 rounded-r-md">
-        <div className="text-xs font-semibold text-sigecop-blue uppercase">Contrato seleccionado</div>
-        <div className="font-bold text-slate-900 mt-1">
-          {contratoDummy.folio} · {contratoDummy.objeto}
-        </div>
-        <div className="text-xs text-slate-600 mt-0.5">{contratoDummy.contratista}</div>
-      </div>
+      <BannerContexto
+        variant="blue"
+        titulo="Contrato seleccionado"
+        folio={contratoDummy.folio}
+        contratista={contratoDummy.contratista}
+        extra={[{ value: contratoDummy.objeto }]}
+      />
 
       <h2 className="text-lg font-bold text-sigecop-blue mb-4">
         Designación de firmantes autorizados
       </h2>
 
-      <fieldset disabled={soloLectura} className="contents">
+      <RegionEditable disabled={soloLectura}>
         <div className="space-y-4">
           {partesBitacoraDummy.map((p) => (
             <ParteCard
@@ -121,7 +115,7 @@ export default function AperturaBitacora() {
             />
           ))}
         </div>
-      </fieldset>
+      </RegionEditable>
 
       <div className="mt-6 bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 rounded-r-md">
         <div className="text-sm font-semibold text-sigecop-amber-attention">⚠️ Evento formal inalterable</div>
@@ -147,23 +141,13 @@ export default function AperturaBitacora() {
         </div>
       )}
 
-      {mostrarMeta && (
-        <section className="mt-10">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
-            Criterios de aceptación
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <CardCriterioAceptacion
-              numero={1}
-              texto="Existe una bitácora única por contrato con las tres partes ligadas y sus firmantes autorizados."
-            />
-            <CardCriterioAceptacion
-              numero={2}
-              texto="La fecha y hora de apertura queda registrada como evento formal inalterable."
-            />
-          </div>
-        </section>
-      )}
+      <SeccionCriterios
+        huId="HU-08"
+        criterios={[
+          { numero: 1, texto: 'Existe una bitácora única por contrato con las tres partes ligadas y sus firmantes autorizados.' },
+          { numero: 2, texto: 'La fecha y hora de apertura queda registrada como evento formal inalterable.' }
+        ]}
+      />
     </div>
   );
 }

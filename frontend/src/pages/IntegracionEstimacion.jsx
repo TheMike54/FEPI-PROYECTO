@@ -1,10 +1,10 @@
 import { useState, useMemo } from 'react';
-import Breadcrumb from '../components/ui/Breadcrumb.jsx';
-import BadgeSprint from '../components/ui/BadgeSprint.jsx';
-import CardCriterioAceptacion from '../components/ui/CardCriterioAceptacion.jsx';
 import Tabs from '../components/ui/Tab.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
-import AvisoSoloLectura from '../components/ui/AvisoSoloLectura.jsx';
+import HeaderVista from '../components/vista/HeaderVista.jsx';
+import BannerContexto from '../components/vista/BannerContexto.jsx';
+import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
+import RegionEditable from '../components/vista/RegionEditable.jsx';
 import { useVistaHU } from '../context/SesionContext.jsx';
 import {
   contratoDummy,
@@ -259,7 +259,7 @@ function TabNotasVinculadas({ seleccionadas, toggle, showToast }) {
 
 export default function IntegracionEstimacion() {
   const { showToast } = useToast();
-  const { soloLectura, mostrarMeta } = useVistaHU('HU-12');
+  const { soloLectura } = useVistaHU('HU-12');
 
   // Estado de cantidades por periodo — vive en el padre para no perderse al cambiar de tab.
   const [periodos, setPeriodos] = useState(
@@ -311,7 +311,7 @@ export default function IntegracionEstimacion() {
   // Envolvemos el contenido de cada tab — NO el componente Tabs — para que en
   // lectura los inputs queden disabled pero la navegación entre pestañas siga viva.
   const wrapTab = (node) => (
-    <fieldset disabled={soloLectura} className="contents">{node}</fieldset>
+    <RegionEditable disabled={soloLectura}>{node}</RegionEditable>
   );
 
   const tabs = [
@@ -347,30 +347,27 @@ export default function IntegracionEstimacion() {
 
   return (
     <div>
-      <Breadcrumb
-        items={[
+      <HeaderVista
+        huId="HU-12"
+        titulo="Apertura del periodo e integración de la estimación"
+        sprint="Sprint 3"
+        rolAcademico="Contratista"
+        breadcrumb={[
           { label: 'Inicio', href: '/' },
           { label: 'Estimaciones' },
           { label: 'Integración del periodo' }
         ]}
       />
 
-      <div className="flex items-start justify-between mb-1">
-        <h1 className="text-2xl font-bold text-sigecop-blue">
-          Apertura del periodo e integración de la estimación
-        </h1>
-        <BadgeSprint codigo="HU-12" sprint="Sprint 3" />
-      </div>
-      <p className="text-sm text-slate-600 mb-6">Rol: Contratista</p>
-
-      <div className="bg-slate-100 border-l-4 border-slate-400 px-4 py-3 mb-6 rounded-r-md">
-        <div className="text-xs font-semibold text-slate-600 uppercase">Contexto</div>
-        <div className="text-sm text-slate-800 mt-1">
-          Contrato <strong>{contratoDummy.folio}</strong> · Periodo: <strong>Mayo 2026</strong> · Estimación <strong>EST-2026-003</strong>
-        </div>
-      </div>
-
-      {soloLectura && <AvisoSoloLectura />}
+      <BannerContexto
+        variant="slate"
+        folio={contratoDummy.folio}
+        folioLabel="Contrato"
+        extra={[
+          { label: 'Periodo:', value: 'Mayo 2026', resaltado: true },
+          { label: 'Estimación', value: 'EST-2026-003', resaltado: true }
+        ]}
+      />
 
       {hayExceso && (
         <div className="bg-red-50 border-l-4 border-red-500 px-4 py-3 mb-4 text-sm text-red-800 rounded-r-md">
@@ -401,27 +398,14 @@ export default function IntegracionEstimacion() {
         </div>
       )}
 
-      {mostrarMeta && (
-        <section className="mt-10">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
-            Criterios de aceptación
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <CardCriterioAceptacion
-              numero={1}
-              texto="La estimación se guarda como una sola entidad que contiene carátula, generadores, registro fotográfico, soportes y notas vinculadas."
-            />
-            <CardCriterioAceptacion
-              numero={2}
-              texto="La carátula calcula automáticamente anticipo amortizado, retenciones legales (5 al millar) y deductivas por penalizaciones según el contrato."
-            />
-            <CardCriterioAceptacion
-              numero={3}
-              texto="El sistema bloquea la integración cuando una cantidad por concepto excede la cantidad contratada en el catálogo (art. 118 RLOPSRM)."
-            />
-          </div>
-        </section>
-      )}
+      <SeccionCriterios
+        huId="HU-12"
+        criterios={[
+          { numero: 1, texto: 'La estimación se guarda como una sola entidad que contiene carátula, generadores, registro fotográfico, soportes y notas vinculadas.' },
+          { numero: 2, texto: 'La carátula calcula automáticamente anticipo amortizado, retenciones legales (5 al millar) y deductivas por penalizaciones según el contrato.' },
+          { numero: 3, texto: 'El sistema bloquea la integración cuando una cantidad por concepto excede la cantidad contratada en el catálogo (art. 118 RLOPSRM).' }
+        ]}
+      />
     </div>
   );
 }

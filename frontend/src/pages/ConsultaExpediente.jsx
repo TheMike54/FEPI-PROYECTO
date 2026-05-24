@@ -1,10 +1,8 @@
 import { useState, useMemo } from 'react';
-import Breadcrumb from '../components/ui/Breadcrumb.jsx';
-import BadgeSprint from '../components/ui/BadgeSprint.jsx';
-import CardCriterioAceptacion from '../components/ui/CardCriterioAceptacion.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
-import AvisoSoloLectura from '../components/ui/AvisoSoloLectura.jsx';
-import { useVistaHU } from '../context/SesionContext.jsx';
+import HeaderVista from '../components/vista/HeaderVista.jsx';
+import BannerContexto from '../components/vista/BannerContexto.jsx';
+import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import {
   contratoDummy,
   conceptosDummy,
@@ -242,7 +240,9 @@ const BLOQUE_BODY = {
 
 export default function ConsultaExpediente() {
   const { showToast } = useToast();
-  const { soloLectura, mostrarMeta } = useVistaHU('HU-04');
+  // soloLectura no se aplica a los filtros (decisión consciente: vistas
+  // consultativas siguen funcionando en lectura). HeaderVista y SeccionCriterios
+  // leen el modo internamente, no se necesita useVistaHU acá.
   const [query, setQuery] = useState('');
   const [campo, setCampo] = useState('folio');
 
@@ -254,30 +254,24 @@ export default function ConsultaExpediente() {
 
   return (
     <div>
-      <Breadcrumb
-        items={[
+      <HeaderVista
+        huId="HU-04"
+        titulo="Consulta integrada del expediente contractual"
+        sprint="Sprint 4"
+        rolAcademico="Residente"
+        breadcrumb={[
           { label: 'Inicio', href: '/' },
           { label: 'Contratos' },
           { label: 'Expediente' }
         ]}
       />
 
-      <div className="flex items-start justify-between mb-1">
-        <h1 className="text-2xl font-bold text-sigecop-blue">
-          Consulta integrada del expediente contractual
-        </h1>
-        <BadgeSprint codigo="HU-04" sprint="Sprint 4" />
-      </div>
-      <p className="text-sm text-slate-600 mb-6">Rol: Residente</p>
-
-      {soloLectura && <AvisoSoloLectura />}
-
-      <div className="bg-slate-100 border-l-4 border-slate-400 px-4 py-3 mb-6 rounded-r-md">
-        <div className="text-xs font-semibold text-slate-600 uppercase">Contrato</div>
-        <div className="text-sm text-slate-800 mt-1">
-          <strong>{contratoDummy.folio}</strong> · {contratoDummy.contratista}
-        </div>
-      </div>
+      <BannerContexto
+        variant="slate"
+        titulo="Contrato"
+        folio={contratoDummy.folio}
+        extra={[{ value: contratoDummy.contratista }]}
+      />
 
       <div className="bg-white border border-slate-200 rounded-md p-4 mb-6">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -332,23 +326,13 @@ export default function ConsultaExpediente() {
         </button>
       </div>
 
-      {mostrarMeta && (
-        <section className="mt-10">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
-            Criterios de aceptación
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <CardCriterioAceptacion
-              numero={1}
-              texto="El expediente muestra en una sola vista los 5 bloques: configuración, catálogo, programa, fianzas y documentos jurídicos."
-            />
-            <CardCriterioAceptacion
-              numero={2}
-              texto="El buscador filtra los bloques por folio, contratista, objeto, periodo o tipo de documento."
-            />
-          </div>
-        </section>
-      )}
+      <SeccionCriterios
+        huId="HU-04"
+        criterios={[
+          { numero: 1, texto: 'El expediente muestra en una sola vista los 5 bloques: configuración, catálogo, programa, fianzas y documentos jurídicos.' },
+          { numero: 2, texto: 'El buscador filtra los bloques por folio, contratista, objeto, periodo o tipo de documento.' }
+        ]}
+      />
     </div>
   );
 }

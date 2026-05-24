@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import Breadcrumb from '../components/ui/Breadcrumb.jsx';
-import BadgeSprint from '../components/ui/BadgeSprint.jsx';
-import CardCriterioAceptacion from '../components/ui/CardCriterioAceptacion.jsx';
 import Tabs from '../components/ui/Tab.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
-import AvisoSoloLectura from '../components/ui/AvisoSoloLectura.jsx';
+import HeaderVista from '../components/vista/HeaderVista.jsx';
+import BannerContexto from '../components/vista/BannerContexto.jsx';
+import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
+import RegionEditable from '../components/vista/RegionEditable.jsx';
 import { useVistaHU } from '../context/SesionContext.jsx';
 import {
   contratoDummy,
@@ -264,7 +264,7 @@ function SemaforoPlazoRevision({ diaActual, diaLimite }) {
 
 export default function RevisionEstimacion() {
   const { showToast } = useToast();
-  const { soloLectura, mostrarMeta } = useVistaHU('HU-15');
+  const { soloLectura } = useVistaHU('HU-15');
 
   // Observaciones por sección — viven en el padre para no perderse al cambiar de tab.
   const [obs, setObs] = useState({
@@ -320,7 +320,7 @@ export default function RevisionEstimacion() {
   // Envolvemos el contenido de cada tab — NO el componente Tabs — para que en
   // lectura los inputs queden disabled pero la navegación entre pestañas siga viva.
   const wrapTab = (node) => (
-    <fieldset disabled={soloLectura} className="contents">{node}</fieldset>
+    <RegionEditable disabled={soloLectura}>{node}</RegionEditable>
   );
 
   const tabs = [
@@ -333,32 +333,28 @@ export default function RevisionEstimacion() {
 
   return (
     <div>
-      <Breadcrumb
-        items={[
+      <HeaderVista
+        huId="HU-15"
+        titulo="Recepción, revisión técnica y autorización de la estimación"
+        sprint="Sprint 4"
+        rolAcademico="Supervisión y residencia (revisión secuencial)"
+        breadcrumb={[
           { label: 'Inicio', href: '/' },
           { label: 'Estimaciones' },
           { label: 'Revisión' }
         ]}
       />
 
-      <div className="flex items-start justify-between mb-1">
-        <h1 className="text-2xl font-bold text-sigecop-blue">
-          Recepción, revisión técnica y autorización de la estimación
-        </h1>
-        <BadgeSprint codigo="HU-15" sprint="Sprint 4" />
-      </div>
-      <p className="text-sm text-slate-600 mb-6">
-        Rol: Supervisión y residencia (revisión secuencial)
-      </p>
-
-      <div className="bg-slate-100 border-l-4 border-slate-400 px-4 py-3 mb-4 rounded-r-md">
-        <div className="text-xs font-semibold text-slate-600 uppercase">Contexto</div>
-        <div className="text-sm text-slate-800 mt-1">
-          Contrato <strong>{contratoDummy.folio}</strong> · Estimación <strong>EST-2026-003</strong> · Recibida el <strong>23/05/2026</strong>
-        </div>
-      </div>
-
-      {soloLectura && <AvisoSoloLectura />}
+      <BannerContexto
+        variant="slate"
+        folio={contratoDummy.folio}
+        folioLabel="Contrato"
+        extra={[
+          { label: 'Estimación', value: 'EST-2026-003', resaltado: true },
+          { label: 'Recibida el', value: '23/05/2026', resaltado: true }
+        ]}
+        margenAbajo="mb-4"
+      />
 
       <IndicadorFlujo pasos={pasos} />
       <SemaforoPlazoRevision diaActual={8} diaLimite={15} />
@@ -427,27 +423,14 @@ export default function RevisionEstimacion() {
       </div>
       )}
 
-      {mostrarMeta && (
-        <section className="mt-10">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
-            Criterios de aceptación
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <CardCriterioAceptacion
-              numero={1}
-              texto="La revisión permite revisar sección por sección y dejar observaciones puntuales en cada una (carátula, generadores, registro fotográfico, soportes y notas)."
-            />
-            <CardCriterioAceptacion
-              numero={2}
-              texto="La autorización queda condicionada al turnado secuencial: primero supervisión, luego residencia; residencia no puede resolver antes del turnado."
-            />
-            <CardCriterioAceptacion
-              numero={3}
-              texto="El sistema controla el plazo de 15 días naturales de revisión conforme al art. 54 LOPSRM mediante un semáforo visible para los actores."
-            />
-          </div>
-        </section>
-      )}
+      <SeccionCriterios
+        huId="HU-15"
+        criterios={[
+          { numero: 1, texto: 'La revisión permite revisar sección por sección y dejar observaciones puntuales en cada una (carátula, generadores, registro fotográfico, soportes y notas).' },
+          { numero: 2, texto: 'La autorización queda condicionada al turnado secuencial: primero supervisión, luego residencia; residencia no puede resolver antes del turnado.' },
+          { numero: 3, texto: 'El sistema controla el plazo de 15 días naturales de revisión conforme al art. 54 LOPSRM mediante un semáforo visible para los actores.' }
+        ]}
+      />
     </div>
   );
 }

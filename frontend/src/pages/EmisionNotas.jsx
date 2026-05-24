@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import Breadcrumb from '../components/ui/Breadcrumb.jsx';
-import BadgeSprint from '../components/ui/BadgeSprint.jsx';
-import CardCriterioAceptacion from '../components/ui/CardCriterioAceptacion.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
-import AvisoSoloLectura from '../components/ui/AvisoSoloLectura.jsx';
+import HeaderVista from '../components/vista/HeaderVista.jsx';
+import BannerContexto from '../components/vista/BannerContexto.jsx';
+import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
+import RegionEditable from '../components/vista/RegionEditable.jsx';
 import { useVistaHU } from '../context/SesionContext.jsx';
 import { notasRecientesDummy, tiposNotaResidente, contratoDummy } from '../data/dummy.js';
 
@@ -29,7 +29,7 @@ function NotaPreviewCard({ nota }) {
 
 export default function EmisionNotas() {
   const { showToast } = useToast();
-  const { soloLectura, mostrarMeta } = useVistaHU('HU-09');
+  const { soloLectura } = useVistaHU('HU-09');
   const [tipo, setTipo] = useState(tiposNotaResidente[0]);
   const [asunto, setAsunto] = useState('Solicitud de aclaración sobre cimentación del eje 8-A');
   const [contenido, setContenido] = useState(
@@ -41,32 +41,24 @@ export default function EmisionNotas() {
 
   return (
     <div>
-      <Breadcrumb
-        items={[
+      <HeaderVista
+        huId="HU-09"
+        titulo="Emisión y respuesta de notas tipificadas con firma"
+        sprint="Sprint 2"
+        descripcion="Tipo de nota disponible según rol autorizado (art. 125 RLOPSRM)."
+        breadcrumb={[
           { label: 'Inicio', href: '/' },
           { label: 'Bitácora' },
           { label: 'Emisión de notas' }
         ]}
       />
 
-      <div className="flex items-start justify-between mb-1">
-        <h1 className="text-2xl font-bold text-sigecop-blue">
-          Emisión y respuesta de notas tipificadas con firma
-        </h1>
-        <BadgeSprint codigo="HU-09" sprint="Sprint 2" />
-      </div>
-      <p className="text-sm text-slate-600 mb-6">
-        Tipo de nota disponible según rol autorizado (art. 125 RLOPSRM).
-      </p>
-
-      {soloLectura && <AvisoSoloLectura />}
-
-      <div className="bg-blue-50 border-l-4 border-sigecop-blue px-4 py-3 mb-6 rounded-r-md">
-        <div className="text-xs font-semibold text-sigecop-blue uppercase">Contrato · Bitácora</div>
-        <div className="font-bold text-slate-900 mt-1">
-          {contratoDummy.folio} · {contratoDummy.objeto}
-        </div>
-      </div>
+      <BannerContexto
+        variant="blue"
+        titulo="Contrato · Bitácora"
+        folio={contratoDummy.folio}
+        extra={[{ value: contratoDummy.objeto }]}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Columna izquierda: notas recientes */}
@@ -85,7 +77,7 @@ export default function EmisionNotas() {
         <div className="lg:col-span-2 bg-white border border-slate-200 rounded-md p-6">
           <h2 className="text-lg font-bold text-sigecop-blue mb-4">Emisión de nueva nota</h2>
 
-          <fieldset disabled={soloLectura} className="contents">
+          <RegionEditable disabled={soloLectura}>
           <div className="space-y-4">
             <div>
               <label className="sg-label">Tipo de nota (según rol)</label>
@@ -185,31 +177,18 @@ export default function EmisionNotas() {
               </div>
             )}
           </div>
-          </fieldset>
+          </RegionEditable>
         </div>
       </div>
 
-      {mostrarMeta && (
-        <section className="mt-10">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
-            Criterios de aceptación
-          </h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <CardCriterioAceptacion
-              numero={1}
-              texto="Solo aparecen los tipos de nota que corresponden al rol del usuario."
-            />
-            <CardCriterioAceptacion
-              numero={2}
-              texto="Una nota firmada queda inmutable y solo puede corregirse emitiendo una nueva nota vinculada."
-            />
-            <CardCriterioAceptacion
-              numero={3}
-              texto="Cada nota queda registrada con folio, fecha, firmante y vínculo opcional a nota previa."
-            />
-          </div>
-        </section>
-      )}
+      <SeccionCriterios
+        huId="HU-09"
+        criterios={[
+          { numero: 1, texto: 'Solo aparecen los tipos de nota que corresponden al rol del usuario.' },
+          { numero: 2, texto: 'Una nota firmada queda inmutable y solo puede corregirse emitiendo una nueva nota vinculada.' },
+          { numero: 3, texto: 'Cada nota queda registrada con folio, fecha, firmante y vínculo opcional a nota previa.' }
+        ]}
+      />
     </div>
   );
 }

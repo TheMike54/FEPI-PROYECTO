@@ -1,39 +1,93 @@
-// Banner de contexto del contrato (folio · contratista + datos extra opcionales).
-// Replica el markup actual; variant elige el esquema de color.
+import { Fragment } from 'react';
+
+// Banner de contexto del contrato.
 //
 // Props:
-//   folio        — texto del folio del contrato (obligatorio).
-//   contratista  — línea secundaria pequeña (opcional).
-//   extra        — array de { label?, value } que se concatenan a la línea
-//                  principal con separador " · ". Si label viene, se renderiza
-//                  como "label: value", si no, solo el value.
-//   variant      — 'slate' | 'blue' (default 'slate').
+//   folio        — string del folio del contrato (opcional; si se omite, todo va
+//                  en extra). En variant='blue' aparece sin <strong> (la línea
+//                  principal ya está en font-bold). En variant='slate' aparece
+//                  envuelto en <strong>.
+//   folioLabel   — prefijo opcional antes del folio (ej. "Contrato"). Sólo aplica
+//                  en variant='slate' (en blue se ignora).
+//   contratista  — línea secundaria pequeña debajo (opcional). Pensada para
+//                  variant='blue'; para slate el contratista suele ir como item
+//                  de extra para que quede en la línea principal.
+//   extra        — array de items que se concatenan a la línea principal con
+//                  separador " · ". Cada item puede ser un string o un objeto
+//                  { label?, value, resaltado?, sufijo? }:
+//                    · label: texto que precede al valor (incluir ":" si se
+//                      quiere mostrar dos puntos — ej. label: "Periodo:").
+//                    · value: el valor (string o ReactNode).
+//                    · resaltado: si true, value se renderiza en <strong>.
+//                    · sufijo: texto que va después del value (ej. "autorizada",
+//                      "(mayo 2026)").
+//   variant      — 'slate' (default) | 'blue'.
 //   titulo       — encabezado pequeño en mayúsculas (default según variant).
+//   margenAbajo  — clase Tailwind del margen inferior (default 'mb-6';
+//                  RevisionEstimacion usa 'mb-4').
 export default function BannerContexto({
   folio,
+  folioLabel,
   contratista,
   extra = [],
   variant = 'slate',
-  titulo
+  titulo,
+  margenAbajo = 'mb-6'
 }) {
   const styles = variant === 'blue'
-    ? { bg: 'bg-blue-50',    border: 'border-sigecop-blue', label: 'text-sigecop-blue' }
-    : { bg: 'bg-slate-100',  border: 'border-slate-400',     label: 'text-slate-600' };
+    ? { bg: 'bg-blue-50',   border: 'border-sigecop-blue', label: 'text-sigecop-blue' }
+    : { bg: 'bg-slate-100', border: 'border-slate-400',    label: 'text-slate-600' };
 
   const tituloFinal = titulo ?? (variant === 'blue' ? 'Contrato' : 'Contexto');
 
-  const partesPrincipal = [
-    folio,
-    ...extra.map((e) => (e.label ? `${e.label}: ${e.value}` : e.value))
-  ].filter(Boolean);
+  const lineClass = variant === 'blue'
+    ? 'font-bold text-slate-900 mt-1'
+    : 'text-sm text-slate-800 mt-1';
+
+  // Construir items de la línea principal.
+  const items = [];
+
+  if (folio) {
+    if (variant === 'blue') {
+      items.push(folio);
+    } else {
+      // slate: "<strong>folio</strong>" o "folioLabel <strong>folio</strong>"
+      items.push(
+        <>
+          {folioLabel && <>{folioLabel} </>}
+          <strong>{folio}</strong>
+        </>
+      );
+    }
+  }
+
+  for (const item of extra) {
+    if (typeof item === 'string') {
+      items.push(item);
+      continue;
+    }
+    const valor = item.resaltado ? <strong>{item.value}</strong> : item.value;
+    items.push(
+      <>
+        {item.label && <>{item.label} </>}
+        {valor}
+        {item.sufijo && <> {item.sufijo}</>}
+      </>
+    );
+  }
 
   return (
-    <div className={`${styles.bg} border-l-4 ${styles.border} px-4 py-3 mb-6 rounded-r-md`}>
+    <div className={`${styles.bg} border-l-4 ${styles.border} px-4 py-3 ${margenAbajo} rounded-r-md`}>
       <div className={`text-xs font-semibold uppercase ${styles.label}`}>
         {tituloFinal}
       </div>
-      <div className="font-bold text-slate-900 mt-1">
-        {partesPrincipal.join(' · ')}
+      <div className={lineClass}>
+        {items.map((item, i) => (
+          <Fragment key={i}>
+            {i > 0 && ' · '}
+            {item}
+          </Fragment>
+        ))}
       </div>
       {contratista && (
         <div className="text-xs text-slate-600 mt-0.5">{contratista}</div>
