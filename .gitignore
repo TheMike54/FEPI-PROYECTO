@@ -61,5 +61,8 @@ postgres-data/
 # Scripts personales con rutas absolutas locales
 encenderserver.bat
 
+# Claude Code — estado local del CLI
+.claude/
+
 # Archivos lock de Microsoft Office (Excel/Word abiertos)
 ~$*
