@@ -491,14 +491,18 @@ export const historicoVersionesContratoDummy = [
   { version: 'v3',            fecha: '02/09/2026', autor: 'Dependencia', tipo: 'Plazo',     motivo: 'Ampliación de 20 días por lluvias atípicas' }
 ];
 
-// HU-03 — Umbral del 50% del contrato original (art. 59 LOPSRM). Si la
+// HU-03 — Umbral del 50% del contrato original (art. 59 Bis LOPSRM). Si la
 // modificación lo rebasa, se activa el aviso del art. 59 Bis LOPSRM.
-export const contratoBaseModificatorios = {
-  montoOriginal: 12450000,
-  plazoOriginalDias: 180,
-  umbralMontoExtraordinario: 6225000, // 50% del montoOriginal
-  umbralPlazoExtraordinario: 90       // 50% del plazoOriginalDias
-};
+export const contratoBaseModificatorios = (() => {
+  const montoOriginal = 12450000;
+  const plazoOriginalDias = 180;
+  return {
+    montoOriginal,
+    plazoOriginalDias,
+    umbralMontoExtraordinario: montoOriginal * 0.5,
+    umbralPlazoExtraordinario: plazoOriginalDias * 0.5,
+  };
+})();
 
 // HU-07 — Catálogo de conceptos vigilables para alertas (dummy del programa).
 export const conceptosAlertaDummy = [

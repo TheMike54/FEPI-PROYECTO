@@ -145,8 +145,9 @@ export default function ConveniosModificatorios() {
                 </div>
               ) : (
                 <div className="bg-green-50 border-l-4 border-sigecop-green-validation px-4 py-3 text-sm text-slate-800 rounded-r-md">
-                  ✅ Modificación dentro del límite ordinario del art. 59 LOPSRM
-                  (≤ {formatoMoneda.format(umbralMontoExtraordinario)} y ≤ {umbralPlazoExtraordinario} días).
+                  ✅ Modificación conforme al art. 59 LOPSRM. Al no superar el 50% del contrato
+                  original (≤ {formatoMoneda.format(umbralMontoExtraordinario)} y ≤ {umbralPlazoExtraordinario} días),
+                  no se activa el ajuste de costos del art. 59 Bis.
                 </div>
               )}
             </div>
