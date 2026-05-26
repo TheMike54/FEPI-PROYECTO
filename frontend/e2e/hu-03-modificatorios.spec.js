@@ -70,18 +70,18 @@ test.describe('HU-03 — modo proyecto', () => {
     const montoInput = page.locator('input[type="number"]').nth(0);
 
     // Estado inicial (monto=0, dias=0): dentro del limite — art. 59.
-    await expect(page.getByText('dentro del límite ordinario del art. 59 LOPSRM')).toBeVisible();
+    await expect(page.getByText('Modificación conforme al art. 59 LOPSRM')).toBeVisible();
     await expect(page.getByText('supera el 50%')).toHaveCount(0);
 
     // Sube monto por encima del umbral (6,225,000) — debe disparar 59 Bis.
     await montoInput.fill('7000000');
     await expect(page.getByText('supera el 50%')).toBeVisible();
     await expect(page.getByText('art. 59 Bis')).toBeVisible();
-    await expect(page.getByText('dentro del límite ordinario del art. 59 LOPSRM')).toHaveCount(0);
+    await expect(page.getByText('Modificación conforme al art. 59 LOPSRM')).toHaveCount(0);
 
     // Baja el monto a uno dentro del limite — vuelve a 59.
     await montoInput.fill('1000000');
-    await expect(page.getByText('dentro del límite ordinario del art. 59 LOPSRM')).toBeVisible();
+    await expect(page.getByText('Modificación conforme al art. 59 LOPSRM')).toBeVisible();
     await expect(page.getByText('supera el 50%')).toHaveCount(0);
   });
 });
