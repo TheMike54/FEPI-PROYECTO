@@ -6,6 +6,7 @@ const cors = require('cors');
 const authRoutes = require('./src/routes/auth.routes');
 const contratosRoutes = require('./src/routes/contratos.routes');
 const bitacoraRoutes = require('./src/routes/bitacora.routes');
+const { initDb } = require('./src/db/init');
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -37,7 +38,20 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`[SIGECOP] Backend escuchando en http://localhost:${PORT}`);
-  console.log(`[SIGECOP] Health: http://localhost:${PORT}/api/health`);
-});
+async function start() {
+  if (process.env.RUN_MIGRATIONS === 'true') {
+    try {
+      await initDb();
+    } catch (err) {
+      console.error('[DB] Error aplicando schema:', err);
+      process.exit(1);
+    }
+  }
+
+  app.listen(PORT, () => {
+    console.log(`[SIGECOP] Backend escuchando en http://localhost:${PORT}`);
+    console.log(`[SIGECOP] Health: http://localhost:${PORT}/api/health`);
+  });
+}
+
+start();
