@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import Header from '../components/layout/Header.jsx';
 import { ROLES } from '../data/permisos.js';
 import { useSesion } from '../context/SesionContext.jsx';
@@ -20,12 +21,23 @@ const DESCRIPCIONES = {
 };
 
 export default function SeleccionRol() {
-  const { setRol } = useSesion();
+  const { setRol, login } = useSesion();
   const { showToast } = useToast();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleLoginDemo = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    showToast('Demostración sin backend — elige un rol abajo para explorar.');
+    if (loading) return;
+    setLoading(true);
+    try {
+      await login(email, password);
+    } catch (err) {
+      showToast('Credenciales inválidas');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -49,15 +61,18 @@ export default function SeleccionRol() {
             <h2 className="text-lg font-semibold text-slate-800 mb-4 text-center">
               Iniciar sesión
             </h2>
-            <form className="space-y-4" onSubmit={handleLoginDemo}>
+            <form className="space-y-4" onSubmit={handleSubmit}>
               <div>
-                <label className="sg-label" htmlFor="login-usuario">Usuario</label>
+                <label className="sg-label" htmlFor="login-usuario">Correo</label>
                 <input
                   id="login-usuario"
-                  type="text"
+                  type="email"
                   className="sg-input"
                   placeholder="usuario@dependencia.gob.mx"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
                   autoComplete="username"
+                  disabled={loading}
                 />
               </div>
               <div>
@@ -67,11 +82,14 @@ export default function SeleccionRol() {
                   type="password"
                   className="sg-input"
                   placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
                   autoComplete="current-password"
+                  disabled={loading}
                 />
               </div>
-              <button type="submit" className="sg-btn-primary w-full">
-                Iniciar sesión
+              <button type="submit" className="sg-btn-primary w-full" disabled={loading}>
+                {loading ? 'Iniciando sesión…' : 'Iniciar sesión'}
               </button>
             </form>
             <p className="mt-4 text-center text-xs text-slate-500">
@@ -84,7 +102,7 @@ export default function SeleccionRol() {
           <div className="flex items-center gap-4 my-8">
             <div className="flex-1 h-px bg-slate-300" />
             <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-              — Modo demostración —
+              — o entra en modo demostración —
             </span>
             <div className="flex-1 h-px bg-slate-300" />
           </div>
@@ -92,10 +110,10 @@ export default function SeleccionRol() {
           {/* Bloque demo */}
           <div className="bg-blue-50 border border-sigecop-accent/30 rounded-xl p-6">
             <p className="text-sm text-slate-700 mb-5">
-              Como esta versión no tiene backend, elige el rol con el que quieres
-              explorar el sistema. En el sistema final escribirías tu usuario y
-              contraseña, y el sistema deduciría tu rol automáticamente
-              (<strong>HU-00</strong>) — sin este selector.
+              Atajo para explorar el sistema sin credenciales reales. Elige el rol
+              con el que quieres entrar; este selector existe solo en modo
+              demostración (<strong>HU-00</strong>) — en producción el rol se
+              deduce del usuario autenticado.
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

@@ -4,7 +4,6 @@ import { SesionProvider, useSesion } from './context/SesionContext.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import Layout from './components/layout/Layout.jsx';
 import Inicio from './pages/Inicio.jsx';
-import Login from './pages/Login.jsx';
 import AltaContrato from './pages/AltaContrato.jsx';
 import RegistroFianzas from './pages/RegistroFianzas.jsx';
 import AperturaBitacora from './pages/AperturaBitacora.jsx';
@@ -30,8 +29,8 @@ import PortafolioEjecutivo from './pages/PortafolioEjecutivo.jsx';
 import ExportacionReportes from './pages/ExportacionReportes.jsx';
 
 // Envuelve con Layout. Si está en modo aplicación sin rol, intercepta y muestra
-// la pantalla de selección (HU-00 / login queda fuera de esta lógica porque
-// se monta por su propia ruta sin Layout).
+// la pantalla de login + selector demo (HU-00). El login real vive ahí dentro;
+// no hay ruta /login dedicada.
 function WithLayout({ children }) {
   const { modo, rol } = useSesion();
   if (modo === 'aplicacion' && !rol) {
@@ -54,7 +53,6 @@ export default function App() {
       <ToastProvider>
         <ErrorBoundary>
           <Routes>
-            <Route path="/login" element={<Login />} />
             <Route path="/" element={<WithLayout><Inicio /></WithLayout>} />
             <Route path="/contratos/alta" element={<WithLayout><AltaContrato /></WithLayout>} />
             <Route path="/contratos/fianzas" element={<WithLayout><RegistroFianzas /></WithLayout>} />

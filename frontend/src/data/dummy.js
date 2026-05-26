@@ -175,7 +175,7 @@ export const historiasUsuario = [
     descripcion: 'Acceso al sistema sin selector de rol — el sistema lo deduce internamente.',
     sprint: 'Sprint 1',
     icono: '🔐',
-    ruta: '/login'
+    ruta: '/'
   },
   {
     codigo: 'HU-01',
