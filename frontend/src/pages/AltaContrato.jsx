@@ -1,11 +1,18 @@
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Tabs from '../components/ui/Tab.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import RegionEditable from '../components/vista/RegionEditable.jsx';
-import { useVistaHU } from '../context/SesionContext.jsx';
-import { contratoDummy, conceptosDummy, programaObraDummy, polizasGarantiaDummy } from '../data/dummy.js';
+import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
+import { api } from '../services/api.js';
+import { conceptosDummy, programaObraDummy, polizasGarantiaDummy } from '../data/dummy.js';
+
+const formatoMXN = new Intl.NumberFormat('es-MX', {
+  style: 'currency',
+  currency: 'MXN',
+  maximumFractionDigits: 2
+});
 
 function Field({ label, required, children, hint }) {
   return (
@@ -45,11 +52,11 @@ function TabDatosGenerales({ datos, set }) {
         <Field label="Dependencia" required>
           <input className="sg-input" value={datos.dependencia} onChange={set('dependencia')} />
         </Field>
-        <Field label="Monto contratado" required>
-          <input className="sg-input" value={datos.monto} onChange={set('monto')} />
+        <Field label="Monto (MXN)" required>
+          <input type="number" min="0" step="0.01" className="sg-input" value={datos.monto} onChange={set('monto')} />
         </Field>
-        <Field label="Plazo de ejecución" required>
-          <input className="sg-input" value={datos.plazo} onChange={set('plazo')} />
+        <Field label="Plazo (días naturales)" required>
+          <input type="number" min="1" step="1" className="sg-input" value={datos.plazoDias} onChange={set('plazoDias')} />
         </Field>
         <Field label="Fecha de inicio" required>
           <input type="date" className="sg-input" value={datos.fechaInicio} onChange={set('fechaInicio')} />
@@ -225,13 +232,81 @@ function TabPdfFirmado() {
   );
 }
 
+function TabRegistrados({ contratos, loading, errorMsg, sinSesion, onRecargar }) {
+  if (sinSesion) {
+    return (
+      <div>
+        <h3 className="text-lg font-bold text-sigecop-blue mb-4">Contratos registrados</h3>
+        <p className="text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-md px-4 py-6 text-center">
+          Inicia sesión en modo aplicación para ver los contratos guardados.
+        </p>
+      </div>
+    );
+  }
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-lg font-bold text-sigecop-blue">Contratos registrados</h3>
+        <button type="button" onClick={onRecargar} className="text-sm text-sigecop-accent hover:underline" disabled={loading}>
+          ↻ Recargar
+        </button>
+      </div>
+      {loading && <p className="text-sm text-slate-500">Cargando…</p>}
+      {!loading && errorMsg && (
+        <p className="text-sm text-slate-700 bg-red-50 border border-red-200 rounded-md px-4 py-3">{errorMsg}</p>
+      )}
+      {!loading && !errorMsg && contratos.length === 0 && (
+        <p className="text-sm text-slate-500">No hay contratos registrados todavía.</p>
+      )}
+      {!loading && !errorMsg && contratos.length > 0 && (
+        <div className="overflow-x-auto border border-slate-200 rounded-md">
+          <table className="w-full text-sm">
+            <thead className="bg-sigecop-blue-light text-sigecop-blue">
+              <tr>
+                <th className="text-left px-3 py-2">Folio</th>
+                <th className="text-left px-3 py-2">Objeto</th>
+                <th className="text-left px-3 py-2">Contratista</th>
+                <th className="text-right px-3 py-2 w-36">Monto</th>
+                <th className="text-right px-3 py-2 w-24">Plazo</th>
+                <th className="text-left px-3 py-2 w-32">Inicio</th>
+              </tr>
+            </thead>
+            <tbody>
+              {contratos.map((c) => (
+                <tr key={c.id} className="border-t border-slate-200 hover:bg-slate-50">
+                  <td className="px-3 py-2 font-mono text-xs">{c.folio}</td>
+                  <td className="px-3 py-2">{c.objeto}</td>
+                  <td className="px-3 py-2">{c.contratista}</td>
+                  <td className="px-3 py-2 text-right">{formatoMXN.format(Number(c.monto))}</td>
+                  <td className="px-3 py-2 text-right">{c.plazo_dias} d</td>
+                  <td className="px-3 py-2">{c.fecha_inicio?.slice(0, 10)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AltaContrato() {
   const { showToast } = useToast();
   const { soloLectura } = useVistaHU('HU-01');
+  const { token } = useSesion();
+  const sinSesion = !token;
 
-  // Estado en el padre para que persista al cambiar de pestaña
-  // (Tabs desmonta los inactivos — ver fix C-01).
-  const [datosGenerales, setDatosGenerales] = useState(contratoDummy);
+  const [datosGenerales, setDatosGenerales] = useState({
+    folio: 'C-2026-0042',
+    tipo: 'Obra pública sobre la base de precios unitarios',
+    objeto: 'Construcción de edificio administrativo en av. principal',
+    contratista: 'Constructora XYZ S.A. de C.V.',
+    dependencia: 'Secretaría de Obras Públicas',
+    monto: 12450000,
+    plazoDias: 180,
+    fechaInicio: '2026-06-01',
+    fechaTermino: '2026-11-28'
+  });
   const [datosJuridicos, setDatosJuridicos] = useState({
     firmanteDependencia: 'Lic. María Pérez García',
     cargoFirmante: 'Directora de Obras',
@@ -243,8 +318,65 @@ export default function AltaContrato() {
   const setDatosGen = (k) => (e) => setDatosGenerales((prev) => ({ ...prev, [k]: e.target.value }));
   const setDatosJur = (k) => (e) => setDatosJuridicos((prev) => ({ ...prev, [k]: e.target.value }));
 
-  // Envolvemos el contenido de cada tab — NO el componente Tabs — para que en
-  // lectura los inputs queden disabled pero la navegación entre pestañas siga viva.
+  const [contratos, setContratos] = useState([]);
+  const [loadingLista, setLoadingLista] = useState(false);
+  const [errorLista, setErrorLista] = useState(null);
+  const [guardando, setGuardando] = useState(false);
+
+  const cargarContratos = useCallback(async () => {
+    if (sinSesion) return;
+    setLoadingLista(true);
+    setErrorLista(null);
+    try {
+      const lista = await api.listarContratos();
+      setContratos(Array.isArray(lista) ? lista : []);
+    } catch (err) {
+      setErrorLista('No se pudieron cargar los contratos');
+    } finally {
+      setLoadingLista(false);
+    }
+  }, [sinSesion]);
+
+  useEffect(() => {
+    cargarContratos();
+  }, [cargarContratos]);
+
+  const handleGuardar = async () => {
+    if (guardando || soloLectura) return;
+    setGuardando(true);
+    try {
+      const payload = {
+        folio: datosGenerales.folio,
+        tipo: datosGenerales.tipo,
+        objeto: datosGenerales.objeto,
+        contratista: datosGenerales.contratista,
+        dependencia: datosGenerales.dependencia,
+        monto: Number(datosGenerales.monto),
+        plazoDias: Number(datosGenerales.plazoDias),
+        fechaInicio: datosGenerales.fechaInicio,
+        fechaTermino: datosGenerales.fechaTermino
+      };
+      await api.crearContrato(payload);
+      showToast('Contrato guardado: ' + payload.folio);
+      cargarContratos();
+    } catch (err) {
+      if (err.status === 409) {
+        showToast('El folio ya existe');
+      } else if (err.status === 400) {
+        const f = err.payload?.faltantes?.join(', ');
+        showToast(f ? `Faltan campos: ${f}` : 'Faltan campos');
+      } else if (err.status === 403) {
+        showToast('Solo el residente puede crear contratos');
+      } else if (err.status === 401) {
+        showToast('Tu sesión expiró. Vuelve a iniciar sesión.');
+      } else {
+        showToast('No se pudo guardar el contrato');
+      }
+    } finally {
+      setGuardando(false);
+    }
+  };
+
   const wrapTab = (node) => (
     <RegionEditable disabled={soloLectura}>{node}</RegionEditable>
   );
@@ -255,7 +387,16 @@ export default function AltaContrato() {
     { label: 'Programa de obra', content: wrapTab(<TabPrograma />) },
     { label: 'Datos jurídicos', content: wrapTab(<TabJuridicos datos={datosJuridicos} set={setDatosJur} />) },
     { label: 'Garantías, penalizaciones y amortización', content: wrapTab(<TabGarantias />) },
-    { label: 'PDF firmado', content: wrapTab(<TabPdfFirmado />) }
+    { label: 'PDF firmado', content: wrapTab(<TabPdfFirmado />) },
+    { label: 'Registrados', content: (
+      <TabRegistrados
+        contratos={contratos}
+        loading={loadingLista}
+        errorMsg={errorLista}
+        sinSesion={sinSesion}
+        onRecargar={cargarContratos}
+      />
+    ) }
   ];
 
   return (
@@ -273,27 +414,27 @@ export default function AltaContrato() {
 
       <Tabs tabs={tabs} />
 
-      {!soloLectura && (
-        <div className="mt-6 flex justify-end gap-3">
-          <button type="button" className="px-4 py-2 text-slate-600 hover:text-slate-900">
-            Cancelar
-          </button>
-          <button
-            type="button"
-            className="sg-btn-secondary"
-            onClick={() => showToast('Pendiente para Sprint siguiente.')}
-          >
-            Guardar borrador
-          </button>
-          <button
-            type="button"
-            className="sg-btn-primary"
-            onClick={() => showToast('Pendiente para Sprint siguiente.')}
-          >
-            Guardar contrato
-          </button>
-        </div>
-      )}
+      <div className="mt-6 flex justify-end gap-3">
+        <button type="button" className="px-4 py-2 text-slate-600 hover:text-slate-900">
+          Cancelar
+        </button>
+        <button
+          type="button"
+          className="sg-btn-secondary"
+          disabled={soloLectura || guardando}
+          onClick={() => showToast('Pendiente para Sprint siguiente.')}
+        >
+          Guardar borrador
+        </button>
+        <button
+          type="button"
+          className="sg-btn-primary"
+          disabled={soloLectura || guardando}
+          onClick={handleGuardar}
+        >
+          {guardando ? 'Guardando…' : 'Guardar contrato'}
+        </button>
+      </div>
 
       <SeccionCriterios
         huId="HU-01"
