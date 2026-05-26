@@ -73,13 +73,14 @@ CREATE INDEX IF NOT EXISTS idx_bitacora_notas_tipo ON bitacora_notas(tipo);
 
 -- =====================================================================
 -- SEED MÍNIMO PARA TESTING
--- password_hash es un placeholder; el Sprint 1 implementará bcrypt real
+-- Contraseña común de los 3 usuarios demo: Sigecop2026!
+-- Hashes bcrypt reales (algoritmo $2a$, cost 10) generados con bcryptjs.
 -- =====================================================================
 
 INSERT INTO usuarios (nombre, email, password_hash, rol) VALUES
-  ('Ing. Residente Demo', 'residente@sigecop.test', '$2a$10$PLACEHOLDER_HASH_RESIDENTE', 'residente'),
-  ('Contratista Demo S.A.', 'contratista@sigecop.test', '$2a$10$PLACEHOLDER_HASH_CONTRATISTA', 'contratista'),
-  ('Supervisión Externa Demo', 'supervision@sigecop.test', '$2a$10$PLACEHOLDER_HASH_SUPERVISION', 'supervision')
+  ('Ing. Residente Demo', 'residente@sigecop.test', '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'residente'),
+  ('Contratista Demo S.A.', 'contratista@sigecop.test', '$2a$10$h7eLpWBwF5O3smp/egT3wupSylCFRXlwQQIeHbnvCdJOmM5xAhdgK', 'contratista'),
+  ('Supervisión Externa Demo', 'supervision@sigecop.test', '$2a$10$zpUoEVcL3IZhAtpS4kexoemneAaX93X7.A3kbLPYOBwgw51eZC33e', 'supervision')
 ON CONFLICT (email) DO NOTHING;
 
 INSERT INTO contratos (folio, tipo, objeto, contratista, dependencia, monto, plazo_dias, fecha_inicio, fecha_termino, created_by)
