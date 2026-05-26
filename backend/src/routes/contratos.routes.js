@@ -1,5 +1,5 @@
 const express = require('express');
-const { authMiddleware } = require('../middlewares/auth.middleware');
+const { authMiddleware, requireRole } = require('../middlewares/auth.middleware');
 const {
   crearContrato,
   listarContratos,
@@ -10,7 +10,7 @@ const router = express.Router();
 
 router.use(authMiddleware);
 
-router.post('/', crearContrato);
+router.post('/', requireRole('residente'), crearContrato);
 router.get('/', listarContratos);
 router.get('/:id', detalleContrato);
 
