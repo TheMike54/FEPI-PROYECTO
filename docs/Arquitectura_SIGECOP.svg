@@ -1,0 +1,77 @@
+<svg viewBox="0 0 920 760" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L6,3 L0,6 Z" fill="#0D2F5A"/>
+    </marker>
+    <marker id="arrowUp" markerWidth="10" markerHeight="10" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M6,0 L0,3 L6,6 Z" fill="#64748b"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="920" height="760" fill="#f8fafc"/>
+  <text x="460" y="38" text-anchor="middle" font-size="22" font-weight="700" fill="#0D2F5A">Arquitectura SIGECOP — Vista de bloques</text>
+  <text x="460" y="60" text-anchor="middle" font-size="13" fill="#64748b">Arquitectura de 3 capas · la Vista nunca toca la base de datos · Control de Accesos transversal</text>
+
+  <!-- CAPA DE INTERFAZ -->
+  <rect x="60" y="80" width="800" height="105" rx="10" fill="#e8f0fe" stroke="#2563eb" stroke-width="2"/>
+  <text x="80" y="106" font-size="15" font-weight="700" fill="#0D2F5A">Capa de Interfaz (React + Vite)</text>
+  <text x="80" y="124" font-size="11" fill="#64748b">Lo que ve el usuario. Solo presenta y captura; no contiene lógica de negocio ni accede a datos.</text>
+  <g font-size="12" fill="#1e3a8a" font-weight="600">
+    <rect x="80" y="138" width="135" height="34" rx="6" fill="#fff" stroke="#93c5fd"/><text x="147" y="159" text-anchor="middle">Residente</text>
+    <rect x="227" y="138" width="135" height="34" rx="6" fill="#fff" stroke="#93c5fd"/><text x="294" y="159" text-anchor="middle">Contratista</text>
+    <rect x="374" y="138" width="135" height="34" rx="6" fill="#fff" stroke="#93c5fd"/><text x="441" y="159" text-anchor="middle">Supervisión</text>
+    <rect x="521" y="138" width="135" height="34" rx="6" fill="#fff" stroke="#93c5fd"/><text x="588" y="159" text-anchor="middle">Dependencia</text>
+    <rect x="668" y="138" width="135" height="34" rx="6" fill="#fff" stroke="#93c5fd"/><text x="735" y="159" text-anchor="middle">Finanzas</text>
+  </g>
+
+  <!-- Flecha API REST -->
+  <line x1="460" y1="185" x2="460" y2="222" stroke="#0D2F5A" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="460" y1="300" x2="460" y2="263" stroke="#64748b" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#arrowUp)"/>
+  <rect x="500" y="195" width="220" height="24" rx="12" fill="#0D2F5A"/>
+  <text x="610" y="211" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">API REST (JSON sobre HTTPS)</text>
+
+  <!-- CONTROL DE ACCESOS (transversal) -->
+  <rect x="60" y="228" width="800" height="48" rx="10" fill="#fef3c7" stroke="#f59e0b" stroke-width="2"/>
+  <text x="80" y="251" font-size="14" font-weight="700" fill="#92400e">🔒 Control de Accesos (transversal)</text>
+  <text x="80" y="268" font-size="11" fill="#92400e">bcrypt + JWT (8 h) · valida sesión y rol en CADA petición antes de ejecutar cualquier servicio.</text>
+
+  <!-- LÓGICA / SERVICIOS -->
+  <rect x="60" y="300" width="800" height="135" rx="10" fill="#e7f5ee" stroke="#10b981" stroke-width="2"/>
+  <text x="80" y="326" font-size="15" font-weight="700" fill="#065f46">Lógica de Negocio — Orquestador (Node + Express)</text>
+  <text x="80" y="344" font-size="11" fill="#047857">Recibe la petición, aplica las reglas (LOPSRM/RLOPSRM) y coordina los servicios. Único punto que decide qué se hace.</text>
+  <g font-size="11.5" fill="#065f46" font-weight="600">
+    <rect x="80" y="358" width="118" height="60" rx="6" fill="#fff" stroke="#6ee7b7"/><text x="139" y="384" text-anchor="middle">Contratos</text><text x="139" y="400" text-anchor="middle" font-size="9" fill="#64748b">HU-01,02,03,04</text>
+    <rect x="210" y="358" width="118" height="60" rx="6" fill="#fff" stroke="#6ee7b7"/><text x="269" y="384" text-anchor="middle">Bitácora</text><text x="269" y="400" text-anchor="middle" font-size="9" fill="#64748b">HU-08,09,10,11</text>
+    <rect x="340" y="358" width="118" height="60" rx="6" fill="#fff" stroke="#6ee7b7"/><text x="399" y="384" text-anchor="middle">Seguimiento</text><text x="399" y="400" text-anchor="middle" font-size="9" fill="#64748b">HU-05,06,07</text>
+    <rect x="470" y="358" width="118" height="60" rx="6" fill="#fff" stroke="#6ee7b7"/><text x="529" y="384" text-anchor="middle">Estimaciones</text><text x="529" y="400" text-anchor="middle" font-size="9" fill="#64748b">HU-12 a HU-17</text>
+    <rect x="600" y="358" width="118" height="60" rx="6" fill="#fff" stroke="#6ee7b7"/><text x="659" y="384" text-anchor="middle">Pagos</text><text x="659" y="400" text-anchor="middle" font-size="9" fill="#64748b">HU-20,21</text>
+    <rect x="730" y="358" width="113" height="60" rx="6" fill="#fff" stroke="#6ee7b7"/><text x="786" y="384" text-anchor="middle">Reportes</text><text x="786" y="400" text-anchor="middle" font-size="9" fill="#64748b">HU-18,19</text>
+  </g>
+
+  <!-- Flecha a datos -->
+  <line x1="460" y1="435" x2="460" y2="472" stroke="#0D2F5A" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- SERVICIO DE DATOS -->
+  <rect x="210" y="478" width="500" height="52" rx="10" fill="#ede9fe" stroke="#7c3aed" stroke-width="2"/>
+  <text x="460" y="500" text-anchor="middle" font-size="14" font-weight="700" fill="#5b21b6">Servicio de Datos (capa de acceso · pool pg)</text>
+  <text x="460" y="518" text-anchor="middle" font-size="11" fill="#6d28d9">Traduce las operaciones de negocio a consultas SQL. Maneja transacciones (ACID).</text>
+
+  <!-- Flecha a BD -->
+  <line x1="460" y1="530" x2="460" y2="567" stroke="#0D2F5A" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- REPOSITORIO CENTRAL -->
+  <rect x="210" y="573" width="500" height="105" rx="10" fill="#0D2F5A"/>
+  <text x="460" y="599" text-anchor="middle" font-size="15" font-weight="700" fill="#fff">Repositorio Central — PostgreSQL 16</text>
+  <g font-size="11" fill="#fff" font-weight="600">
+    <rect x="232" y="614" width="100" height="48" rx="6" fill="#1e40af"/><text x="282" y="635" text-anchor="middle">usuarios</text><text x="282" y="650" text-anchor="middle" font-size="8.5" fill="#bfdbfe">hash · rol</text>
+    <rect x="344" y="614" width="100" height="48" rx="6" fill="#1e40af"/><text x="394" y="635" text-anchor="middle">contratos</text><text x="394" y="650" text-anchor="middle" font-size="8.5" fill="#bfdbfe">catálogo · prog.</text>
+    <rect x="456" y="614" width="100" height="48" rx="6" fill="#1e40af"/><text x="506" y="635" text-anchor="middle">bitácora</text><text x="506" y="650" text-anchor="middle" font-size="8.5" fill="#bfdbfe">aperturas · notas</text>
+    <rect x="568" y="614" width="120" height="48" rx="6" fill="#1e40af"/><text x="628" y="635" text-anchor="middle">estimaciones</text><text x="628" y="650" text-anchor="middle" font-size="8.5" fill="#bfdbfe">pagos</text>
+  </g>
+
+  <!-- Nota despliegue -->
+  <rect x="60" y="700" width="800" height="40" rx="8" fill="#f1f5f9" stroke="#cbd5e1"/>
+  <text x="80" y="718" font-size="11.5" font-weight="700" fill="#334155">Despliegue:</text>
+  <text x="150" y="718" font-size="11.5" fill="#475569">Render (frontend estático + backend en Docker + PostgreSQL) · CI con GitHub Actions corre los 305 tests E2E en cada push.</text>
+  <text x="80" y="733" font-size="10.5" fill="#94a3b8">Flujo de una petición: Vista → API REST → Control de Accesos (valida sesión y rol) → Servicio → Servicio de Datos → PostgreSQL → respuesta de vuelta.</text>
+</svg>
