@@ -8,9 +8,19 @@ export const contratoDummy = {
   contratista: 'Constructora XYZ S.A. de C.V.',
   dependencia: 'Secretaría de Obras Públicas',
   monto: '$ 12,450,000.00',
+  anticipo: '$ 3,735,000.00 (30%)',
+  // HU-12 — Versiones numéricas para los cálculos en vivo de la carátula
+  // (porcentaje del anticipo y deductivas por penalización). El texto humano
+  // queda en `anticipo` para los formularios que sólo lo despliegan.
+  anticipoPct: 30,
+  deductivasPenalizacion: 0,
   plazo: '180 días naturales',
   fechaInicio: '2026-06-01',
-  fechaTermino: '2026-11-28'
+  fechaTermino: '2026-11-28',
+  // HU-08 — La fecha de entrega del sitio es el evento que dispara la apertura
+  // formal de la bitácora (art. 122 RLOPSRM). Coincide con fechaInicio para el
+  // contrato dummy, pero conceptualmente es un dato distinto.
+  fechaEntregaSitio: '2026-06-01'
 };
 
 export const conceptosDummy = [
@@ -69,31 +79,37 @@ export const fianzasListadoDummy = [
   }
 ];
 
-// HU-08 — Tres partes para apertura de bitácora.
+// HU-08 — Tres firmantes autorizados para la apertura formal (art. 122 RLOPSRM):
+// residente de obra, supervisor externo (opcional — puede no existir en el
+// contrato) y superintendente. La parte 2 lleva `opcional: true` para que la
+// vista permita marcarla "no aplica".
 export const partesBitacoraDummy = [
   {
     num: 1,
-    titulo: 'Contratante (Dependencia)',
-    firmante: 'Lic. María Pérez García',
-    cargoLabel: 'Cargo',
-    cargo: 'Directora de Obras',
-    correo: 'mperez@sop.gob.mx'
+    titulo: 'Residente de obra',
+    firmante: 'Ing. Carlos Hernández García',
+    cargoLabel: 'Cédula profesional',
+    cargo: '7845612',
+    correo: 'chernandez@sop.gob.mx',
+    opcional: false
   },
   {
     num: 2,
-    titulo: 'Supervisión',
+    titulo: 'Supervisor externo',
     firmante: 'Ing. Roberto López',
     cargoLabel: 'Empresa',
     cargo: 'Supervisora Especializada S.C.',
-    correo: 'rlopez@supervisora.mx'
+    correo: 'rlopez@supervisora.mx',
+    opcional: true
   },
   {
     num: 3,
-    titulo: 'Contratista (Superintendente)',
+    titulo: 'Superintendente (Contratista)',
     firmante: 'Arq. Carlos Mendoza',
     cargoLabel: 'Cédula profesional',
     cargo: '8475612',
-    correo: 'cmendoza@constructora-xyz.mx'
+    correo: 'cmendoza@constructora-xyz.mx',
+    opcional: false
   }
 ];
 
@@ -450,12 +466,13 @@ export const caratulaEstimacionDummy = [
   { concepto: '(=) Neto a pagar',                             importe:  1285750.00, tipo: 'neto' }
 ];
 
-// HU-12 — Números generadores (acumulados del periodo).
+// HU-12 — Números generadores (acumulados del periodo). El campo `pu` (precio
+// unitario en MXN) alimenta el cálculo en vivo del subtotal de la carátula.
 export const generadoresEstimacionDummy = [
-  { concepto: 'Excavación',              unidad: 'm³',  contratado: 1000, periodoDefault: 250, anteriorAcum: 350, avancePct: 60 },
-  { concepto: 'Concreto f\'c=250',       unidad: 'm³',  contratado:  500, periodoDefault:  80, anteriorAcum: 120, avancePct: 40 },
-  { concepto: 'Acero de refuerzo',       unidad: 'ton', contratado:   50, periodoDefault:  12, anteriorAcum:  18, avancePct: 60 },
-  { concepto: 'Muros de block',          unidad: 'm²',  contratado:  800, periodoDefault: 150, anteriorAcum: 200, avancePct: 44 }
+  { concepto: 'Excavación',        unidad: 'm³',  contratado: 1000, periodoDefault: 250, anteriorAcum: 350, avancePct: 60, pu:   185.50 },
+  { concepto: 'Concreto f\'c=250', unidad: 'm³',  contratado:  500, periodoDefault:  80, anteriorAcum: 120, avancePct: 40, pu:  2150.00 },
+  { concepto: 'Acero de refuerzo', unidad: 'ton', contratado:   50, periodoDefault:  12, anteriorAcum:  18, avancePct: 60, pu: 28750.00 },
+  { concepto: 'Muros de block',    unidad: 'm²',  contratado:  800, periodoDefault: 150, anteriorAcum: 200, avancePct: 44, pu:   245.00 }
 ];
 
 // HU-12 — Placeholders del registro fotográfico.
@@ -528,6 +545,30 @@ export const curvaAvanceDummy = [
 // HU-05 — Catálogos de filtros consultativos (no van en RegionEditable).
 export const conceptosCurvaDummy = ['Todos', 'Excavación', 'Cimentación', 'Estructura', 'Albañilería'];
 export const periodosCurvaDummy = ['Todo el contrato', 'Últimos 3 meses', 'Último mes'];
+
+// HU-05 — Catálogo de conceptos del programa (descripción, unidad, cantidad
+// contratada). Las claves "concepto" coinciden con los filtros y con las filas
+// del Gantt (programaObraGanttDummy).
+export const catalogoConceptosCurvaDummy = [
+  { concepto: 'Excavación',  descripcion: 'Excavación a cielo abierto, material tipo II',          unidad: 'm³',  cantidadContratada: 1250 },
+  { concepto: 'Cimentación', descripcion: 'Concreto premezclado f\'c=250 kg/cm² en zapatas',       unidad: 'm³',  cantidadContratada:  420 },
+  { concepto: 'Estructura',  descripcion: 'Acero de refuerzo fy=4200 kg/cm² y cimbra de muros',    unidad: 'ton', cantidadContratada:   80 },
+  { concepto: 'Albañilería', descripcion: 'Muros de block y acabados de albañilería',              unidad: 'm²',  cantidadContratada:  980 }
+];
+
+// HU-05 — Matriz tipo Gantt: por cada concepto y mes del contrato, el estado.
+// Estados:
+//   'ejecutado'     → mes con avance real registrado (verde).
+//   'programado'    → mes programado sin ejecutar todavía (ámbar — atraso o por venir).
+//   'no-programado' → fuera del programa para ese concepto (gris claro).
+// Los meses coinciden con curvaAvanceDummy para que el filtro de periodo recorte
+// ambos (curva y Gantt) de forma consistente.
+export const programaObraGanttDummy = [
+  { concepto: 'Excavación',  porMes: { Jun: 'ejecutado',     Jul: 'ejecutado',     Ago: 'no-programado', Sep: 'no-programado', Oct: 'no-programado', Nov: 'no-programado' } },
+  { concepto: 'Cimentación', porMes: { Jun: 'no-programado', Jul: 'ejecutado',     Ago: 'ejecutado',     Sep: 'programado',    Oct: 'no-programado', Nov: 'no-programado' } },
+  { concepto: 'Estructura',  porMes: { Jun: 'no-programado', Jul: 'no-programado', Ago: 'ejecutado',     Sep: 'ejecutado',     Oct: 'programado',    Nov: 'no-programado' } },
+  { concepto: 'Albañilería', porMes: { Jun: 'no-programado', Jul: 'no-programado', Ago: 'no-programado', Sep: 'ejecutado',     Oct: 'programado',    Nov: 'programado'    } }
+];
 
 // HU-06 — Conceptos del catálogo con avance previo, para captura del periodo.
 // La validación de exceso bloquea el guardado si previo + capturado > contratada.
@@ -689,4 +730,26 @@ export const alertasConfiguradasDummy = [
   { id: 1, concepto: 'Cimentación',   umbral: 80, canal: 'Correo',   estado: 'Activa'  },
   { id: 2, concepto: 'Estructura',    umbral: 90, canal: 'Ambos',    estado: 'Activa'  },
   { id: 3, concepto: 'Instalaciones', umbral: 75, canal: 'En el sistema', estado: 'Pausada' }
+];
+
+// HU-09 / HU-10 / HU-12 — Libro de bitácora unificado. Cada nota lleva folio
+// correlativo `BIT-XXXX`, fecha ISO, tipo (catálogo de art. 125 RLOPSRM),
+// firmante, rol del firmante, asunto + contenido (para búsqueda por palabra
+// clave), y `vinculadaA` (folio de una nota previa o null). Las vistas:
+//   · HU-09 lo lee para mostrar el libro y deriva el próximo folio.
+//   · HU-10 lo filtra por tipo, fecha, firmante, vínculo y palabra clave.
+//   · HU-12 lo expone en el buscador modal para vincular notas a la estimación.
+export const notasBitacoraDummy = [
+  { folio: 'BIT-0001', tipo: 'Instrucción',  fecha: '2026-05-02', firmante: 'Ing. Carlos Hernández García', rol: 'residente',   asunto: 'Inicio de obra y entrega del sitio',                          contenido: 'Se da formalmente inicio a la obra el día 01/06/2026 conforme al contrato C-2026-0042. Las firmas de la apertura quedan asentadas en este libro.',                vinculadaA: null,        color: 'blue'  },
+  { folio: 'BIT-0002', tipo: 'Solicitud',    fecha: '2026-05-05', firmante: 'Arq. Carlos Mendoza',          rol: 'contratista', asunto: 'Solicitud de aclaración sobre cimentación del eje 7-B',       contenido: 'Se solicita aclaración sobre el procedimiento constructivo del eje 7-B considerando el estudio de mecánica de suelos del 12/05/2026.',                          vinculadaA: null,        color: 'amber' },
+  { folio: 'BIT-0003', tipo: 'Respuesta',    fecha: '2026-05-06', firmante: 'Ing. Carlos Hernández García', rol: 'residente',   asunto: 'Respuesta a BIT-0002 — procedimiento de cimentación',         contenido: 'Atendiendo BIT-0002, se autoriza el procedimiento propuesto con ajuste menor en profundidad de zapatas para el eje 7-B.',                                       vinculadaA: 'BIT-0002',  color: 'green' },
+  { folio: 'BIT-0004', tipo: 'Acuerdo',      fecha: '2026-05-10', firmante: 'Ing. Roberto López',           rol: 'supervision', asunto: 'Acuerdo sobre control de calidad del concreto',               contenido: 'Las tres partes acuerdan realizar pruebas de revenimiento y resistencia por cada colado, con muestreo conforme a la NMX-C-156.',                                  vinculadaA: null,        color: 'amber' },
+  { folio: 'BIT-0005', tipo: 'Instrucción',  fecha: '2026-05-12', firmante: 'Ing. Carlos Hernández García', rol: 'residente',   asunto: 'Excavación zona norte',                                       contenido: 'Se instruye al contratista iniciar la excavación de la zona norte del predio conforme al programa de obra y al estudio topográfico vigente.',                     vinculadaA: null,        color: 'blue'  },
+  { folio: 'BIT-0006', tipo: 'Confirmación', fecha: '2026-05-14', firmante: 'Ing. Roberto López',           rol: 'supervision', asunto: 'Recepción de armado de columnas eje A',                       contenido: 'La supervisión confirma la correcta ejecución del armado de columnas del eje A, conforme a planos estructurales y especificaciones técnicas.',                   vinculadaA: null,        color: 'green' },
+  { folio: 'BIT-0007', tipo: 'Solicitud',    fecha: '2026-05-18', firmante: 'Arq. Carlos Mendoza',          rol: 'contratista', asunto: 'Solicitud de autorización para colado de losa nivel 1',      contenido: 'Se solicita autorización para el colado de la losa del nivel 1 programado para el 20/05/2026, anexando bitácora de armado.',                                    vinculadaA: null,        color: 'amber' },
+  { folio: 'BIT-0008', tipo: 'Respuesta',    fecha: '2026-05-19', firmante: 'Ing. Carlos Hernández García', rol: 'residente',   asunto: 'Autorización de colado de losa nivel 1',                      contenido: 'Atendiendo BIT-0007, queda autorizado el colado de la losa del nivel 1 para el 20/05/2026, condicionado a la presencia del laboratorio de control.',             vinculadaA: 'BIT-0007',  color: 'green' },
+  { folio: 'BIT-0009', tipo: 'Acuerdo',      fecha: '2026-05-22', firmante: 'Ing. Roberto López',           rol: 'supervision', asunto: 'Acuerdo sobre modificación menor en muros',                   contenido: 'Las tres partes acuerdan un ajuste menor en el espesor de muros del nivel 1 sin impacto en el alcance ni en el monto del contrato.',                              vinculadaA: null,        color: 'amber' },
+  { folio: 'BIT-0010', tipo: 'Instrucción',  fecha: '2026-05-25', firmante: 'Ing. Carlos Hernández García', rol: 'residente',   asunto: 'Reanudación de trabajos tras lluvia',                         contenido: 'Se instruye al contratista la reanudación de actividades tras la suspensión por lluvia atípica del 24/05/2026, sin afectación al programa.',                      vinculadaA: null,        color: 'blue'  },
+  { folio: 'BIT-0011', tipo: 'Confirmación', fecha: '2026-05-28', firmante: 'Ing. Roberto López',           rol: 'supervision', asunto: 'Recepción de trabajos del eje 6',                              contenido: 'Se confirma la recepción de los trabajos del eje 6 conforme a especificaciones, dando paso a la estimación del periodo.',                                          vinculadaA: null,        color: 'green' },
+  { folio: 'BIT-0012', tipo: 'Solicitud',    fecha: '2026-06-02', firmante: 'Arq. Carlos Mendoza',          rol: 'contratista', asunto: 'Solicitud de aprobación de estimación EST-2026-003',          contenido: 'Se solicita la aprobación de la estimación EST-2026-003 correspondiente al periodo de mayo 2026, anexando números generadores y soportes documentales.',          vinculadaA: null,        color: 'amber' }
 ];

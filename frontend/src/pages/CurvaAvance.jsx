@@ -6,8 +6,34 @@ import {
   contratoDummy,
   curvaAvanceDummy,
   conceptosCurvaDummy,
-  periodosCurvaDummy
+  periodosCurvaDummy,
+  catalogoConceptosCurvaDummy,
+  programaObraGanttDummy
 } from '../data/dummy.js';
+
+// Avance por concepto: ejecutadas / (ejecutadas + programadas) sobre los meses
+// visibles. Devuelve null si el concepto no tiene celdas en ese periodo, para
+// distinguir "sin dato" de "0% real".
+function avancePorConcepto(fila, mesesVisibles) {
+  let ejec = 0;
+  let prog = 0;
+  for (const m of mesesVisibles) {
+    const e = fila.porMes[m];
+    if (e === 'ejecutado') ejec++;
+    else if (e === 'programado') prog++;
+  }
+  const denom = ejec + prog;
+  if (denom === 0) return null;
+  return Math.round((ejec / denom) * 100);
+}
+
+// Colores de celda Gantt — alineados a la paleta SIGECOP (verde validación,
+// ámbar atención, slate-200 para no-programado).
+const COLOR_CELDA_GANTT = {
+  ejecutado:        'bg-sigecop-green-validation',
+  programado:       'bg-sigecop-amber-attention',
+  'no-programado':  'bg-slate-200'
+};
 
 // Curva S en SVG inline — sin dependencias extra. Las 3 series comparten ejes;
 // el SVG es responsivo (viewBox + preserveAspectRatio).
@@ -170,6 +196,54 @@ export default function CurvaAvance() {
   const ultimo = datos[datos.length - 1] || { programado: 0, ejecutado: 0, financiero: 0 };
   const desviacion = ultimo.ejecutado - ultimo.programado;
 
+  // Gantt — meses visibles espejan el filtro de periodo. Filas filtradas si el
+  // usuario elige un concepto específico (las demás se ocultan).
+  const mesesVisibles = useMemo(() => {
+    const todos = curvaAvanceDummy.map((d) => d.mes);
+    if (periodo === 'Últimos 3 meses') return todos.slice(-3);
+    if (periodo === 'Último mes') return todos.slice(-1);
+    return todos;
+  }, [periodo]);
+
+  const filasGantt = useMemo(() => {
+    if (concepto === 'Todos') return programaObraGanttDummy;
+    return programaObraGanttDummy.filter((f) => f.concepto === concepto);
+  }, [concepto]);
+
+  const filasConAvance = useMemo(
+    () => filasGantt.map((f) => ({ ...f, avance: avancePorConcepto(f, mesesVisibles) })),
+    [filasGantt, mesesVisibles]
+  );
+
+  // Avance global = suma de celdas ejecutadas / total de celdas programadas
+  // (ejec. + prog.) sobre el subconjunto visible. Sigue el mismo recorte que la
+  // curva para que los porcentajes sean coherentes con el filtro.
+  const avanceGlobal = useMemo(() => {
+    let ejec = 0;
+    let prog = 0;
+    for (const f of filasGantt) {
+      for (const m of mesesVisibles) {
+        const e = f.porMes[m];
+        if (e === 'ejecutado') ejec++;
+        else if (e === 'programado') prog++;
+      }
+    }
+    const denom = ejec + prog;
+    if (denom === 0) return null;
+    return Math.round((ejec / denom) * 100);
+  }, [filasGantt, mesesVisibles]);
+
+  // Mapa concepto -> % de avance para la columna de la tabla catálogo. Se
+  // calcula sobre el catálogo completo (no sobre filasGantt) para que la tabla
+  // siempre liste todos los conceptos aunque el filtro elija solo uno.
+  const avancePorConceptoMap = useMemo(() => {
+    const map = {};
+    for (const f of programaObraGanttDummy) {
+      map[f.concepto] = avancePorConcepto(f, mesesVisibles);
+    }
+    return map;
+  }, [mesesVisibles]);
+
   return (
     <div>
       <HeaderVista
@@ -218,6 +292,48 @@ export default function CurvaAvance() {
         </div>
       </div>
 
+      {/* Catálogo de conceptos — tabla con descripción, unidad, cantidad
+          contratada y % de avance por concepto. El concepto filtrado se resalta
+          con fondo azul claro. */}
+      <div className="bg-white border border-slate-200 rounded-md p-5 mb-6">
+        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
+          Catálogo de conceptos
+        </h2>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 text-slate-600 uppercase tracking-wider text-xs">
+              <tr>
+                <th className="px-3 py-2 text-left">Concepto</th>
+                <th className="px-3 py-2 text-left">Descripción</th>
+                <th className="px-3 py-2 text-left">Unidad</th>
+                <th className="px-3 py-2 text-right">Cant. contratada</th>
+                <th className="px-3 py-2 text-right">% Avance</th>
+              </tr>
+            </thead>
+            <tbody>
+              {catalogoConceptosCurvaDummy.map((c) => {
+                const resaltado = concepto !== 'Todos' && c.concepto === concepto;
+                const avance = avancePorConceptoMap[c.concepto];
+                return (
+                  <tr
+                    key={c.concepto}
+                    className={`border-t border-slate-100 ${resaltado ? 'bg-sigecop-blue-light' : ''}`}
+                  >
+                    <td className="px-3 py-2 font-semibold text-slate-700">{c.concepto}</td>
+                    <td className="px-3 py-2 text-slate-600">{c.descripcion}</td>
+                    <td className="px-3 py-2 text-slate-600">{c.unidad}</td>
+                    <td className="px-3 py-2 text-right text-slate-700">{c.cantidadContratada.toLocaleString('es-MX')}</td>
+                    <td className="px-3 py-2 text-right font-semibold text-sigecop-blue">
+                      {avance == null ? '—' : `${avance}%`}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {/* KPIs */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <KPI label="Programado (acum.)" valor={`${ultimo.programado}%`} tono="base" />
@@ -239,11 +355,100 @@ export default function CurvaAvance() {
         <CurvaSVG datos={datos} />
       </div>
 
+      {/* Programa de obra — matriz tipo Gantt: filas = concepto del catálogo,
+          columnas = meses del contrato (acotadas por filtro de periodo). El
+          color de cada celda distingue ejecutado/programado/no-programado. */}
+      <div
+        className="bg-white border border-slate-200 rounded-md p-5 mb-6"
+        data-testid="seccion-gantt"
+      >
+        <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
+            Programa de obra — concepto × periodo
+          </h2>
+          <div className="text-xs text-slate-600">
+            Avance físico global:{' '}
+            <span
+              className="font-bold text-sigecop-blue text-base"
+              data-testid="avance-global"
+            >
+              {avanceGlobal == null ? '—' : `${avanceGlobal}%`}
+            </span>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs" style={{ borderSpacing: 0 }}>
+            <thead>
+              <tr className="text-slate-600 uppercase tracking-wider">
+                <th className="px-2 py-2 text-left">Concepto</th>
+                {mesesVisibles.map((m) => (
+                  <th key={m} className="px-2 py-2 text-center">{m}</th>
+                ))}
+                <th className="px-2 py-2 text-right">% Avance</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filasConAvance.map((f) => (
+                <tr key={f.concepto} className="border-t border-slate-100">
+                  <td className="px-2 py-2 font-semibold text-slate-700 whitespace-nowrap">
+                    {f.concepto}
+                  </td>
+                  {mesesVisibles.map((m) => {
+                    const estado = f.porMes[m] || 'no-programado';
+                    return (
+                      <td key={m} className="px-1 py-1">
+                        <div
+                          className={`h-6 rounded ${COLOR_CELDA_GANTT[estado]}`}
+                          title={`${f.concepto} · ${m}: ${estado}`}
+                          aria-label={`${f.concepto} ${m} ${estado}`}
+                          data-estado={estado}
+                        />
+                      </td>
+                    );
+                  })}
+                  <td className="px-2 py-2 text-right font-semibold text-sigecop-blue">
+                    {f.avance == null ? '—' : `${f.avance}%`}
+                  </td>
+                </tr>
+              ))}
+              {filasConAvance.length === 0 && (
+                <tr>
+                  <td
+                    className="px-2 py-4 text-slate-400 italic text-center"
+                    colSpan={mesesVisibles.length + 2}
+                  >
+                    Sin filas para el concepto seleccionado.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Leyenda de colores */}
+        <div className="flex flex-wrap gap-x-5 gap-y-2 mt-4 text-xs text-slate-700">
+          <div className="flex items-center gap-2">
+            <span className="inline-block w-4 h-3 rounded bg-sigecop-green-validation" />
+            <span>Ejecutado</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="inline-block w-4 h-3 rounded bg-sigecop-amber-attention" />
+            <span>Programado sin ejecutar (atraso o por venir)</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="inline-block w-4 h-3 rounded bg-slate-200" />
+            <span>No programado</span>
+          </div>
+        </div>
+      </div>
+
       <SeccionCriterios
         huId="HU-05"
         criterios={[
-          { numero: 1, texto: 'La pantalla grafica las tres curvas (programado, ejecutado, financiero) en un solo gráfico.' },
-          { numero: 2, texto: 'Los filtros por concepto y periodo modifican la gráfica y los porcentajes calculados.' }
+          { numero: 1, texto: 'La vista muestra el programa de obra como matriz concepto × periodo (tipo Gantt), con el catálogo de conceptos y un código de color que distingue lo ejecutado de lo no ejecutado.' },
+          { numero: 2, texto: 'La vista grafica las tres curvas (programado, ejecutado, financiero) y los filtros por concepto y periodo recalculan tanto la matriz como las curvas.' },
+          { numero: 3, texto: 'El sistema calcula y muestra el porcentaje de avance global y por concepto.' }
         ]}
       />
     </div>
