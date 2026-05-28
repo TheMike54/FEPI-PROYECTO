@@ -66,3 +66,6 @@ encenderserver.bat
 
 # Archivos lock de Microsoft Office (Excel/Word abiertos)
 ~$*
+
+# Artefactos antiguos fuera del scope del repo
+FEPI/
