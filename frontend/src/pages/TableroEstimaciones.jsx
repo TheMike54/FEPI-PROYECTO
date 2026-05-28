@@ -1,3 +1,4 @@
+import { useMemo, useState } from 'react';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import BannerContexto from '../components/vista/BannerContexto.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
@@ -5,6 +6,10 @@ import { useSesion } from '../context/SesionContext.jsx';
 import {
   contratoDummy,
   estimacionesTableroDummy,
+  indicadoresContratoTableroDummy,
+  filtroEstadosTableroDummy,
+  filtroPeriodosTableroDummy,
+  filtroResponsablesTableroDummy,
   pendientesEstimacionPorRol
 } from '../data/dummy.js';
 
@@ -22,6 +27,16 @@ const COLOR_ESTADO = {
   'En pago':     'bg-sigecop-blue-light text-sigecop-blue',
   'Pagada':      'bg-green-100 text-sigecop-green-validation'
 };
+
+const NOMBRE_ROL = {
+  residente:   'Residente',
+  contratista: 'Contratista',
+  supervision: 'Supervisión',
+  dependencia: 'Dependencia',
+  finanzas:    'Finanzas'
+};
+
+const moneda = (n) => `$ ${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 
 function EstadoBadge({ estado }) {
   return (
@@ -59,6 +74,69 @@ function MiniStepper({ estado }) {
   );
 }
 
+function IndicadoresAgregados({ indicadores, estimaciones }) {
+  const diasPromPorEstado = useMemo(() => {
+    const agg = {};
+    FASES.forEach((f) => {
+      const subset = estimaciones.filter((e) => e.estado === f);
+      if (subset.length === 0) return;
+      const sum = subset.reduce((acc, e) => acc + (e.diasEnEstado ?? 0), 0);
+      agg[f] = Math.round((sum / subset.length) * 10) / 10;
+    });
+    return agg;
+  }, [estimaciones]);
+
+  return (
+    <div className="bg-white border border-slate-200 rounded-md p-5 mb-6" data-testid="indicadores-agregados">
+      <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
+        Indicadores agregados del contrato
+      </h2>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        <div className="bg-slate-50 border border-slate-200 rounded-md p-3" data-testid="kpi-avance-fisico">
+          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+            Avance físico
+          </div>
+          <div className="text-2xl font-bold text-sigecop-blue mt-1">{indicadores.avanceFisicoPct}%</div>
+        </div>
+        <div className="bg-slate-50 border border-slate-200 rounded-md p-3" data-testid="kpi-monto-total">
+          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+            Monto total estimado
+          </div>
+          <div className="text-lg font-bold text-sigecop-blue mt-1 font-mono">{moneda(indicadores.montoTotalEstimado)}</div>
+        </div>
+        <div className="bg-slate-50 border border-slate-200 rounded-md p-3" data-testid="kpi-monto-pagado">
+          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+            Monto pagado
+          </div>
+          <div className="text-lg font-bold text-sigecop-green-validation mt-1 font-mono">{moneda(indicadores.montoPagado)}</div>
+        </div>
+        <div className="bg-slate-50 border border-slate-200 rounded-md p-3" data-testid="kpi-monto-pendiente">
+          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+            Monto pendiente
+          </div>
+          <div className="text-lg font-bold text-sigecop-amber-attention mt-1 font-mono">{moneda(indicadores.montoPendiente)}</div>
+        </div>
+      </div>
+
+      <div className="border-t border-slate-200 pt-3" data-testid="dias-promedio-estado">
+        <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-2">
+          Días promedio en cada estado
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+          {FASES.map((f) => (
+            <div key={f} className="text-center bg-slate-50 border border-slate-200 rounded p-2">
+              <div className="text-[10px] uppercase tracking-wider text-slate-500">{f}</div>
+              <div className="text-sm font-bold text-sigecop-blue">
+                {diasPromPorEstado[f] != null ? `${diasPromPorEstado[f]} d` : '—'}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ContadoresFases({ estimaciones }) {
   const cuenta = FASES.map((fase) => ({
     fase,
@@ -80,7 +158,10 @@ function ContadoresFases({ estimaciones }) {
 
 function TarjetaEstimacion({ est }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-md p-4 hover:shadow-sm transition-shadow">
+    <div
+      className="bg-white border border-slate-200 rounded-md p-4 hover:shadow-sm transition-shadow"
+      data-testid={`tarjeta-est-${est.numero}`}
+    >
       <div className="flex items-start justify-between gap-3 mb-2">
         <div>
           <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
@@ -94,6 +175,9 @@ function TarjetaEstimacion({ est }) {
         Periodo <strong>{est.periodo}</strong>
       </div>
       <div className="text-sm text-slate-700 font-mono mt-0.5">{est.monto}</div>
+      <div className="text-xs text-slate-500 mt-0.5">
+        Responsable: <strong>{NOMBRE_ROL[est.responsable] ?? est.responsable}</strong>
+      </div>
       <MiniStepper estado={est.estado} />
     </div>
   );
@@ -106,6 +190,19 @@ export default function TableroEstimaciones() {
   // residente por defecto.
   const rolEfectivo = rol ?? 'residente';
   const pendientes = pendientesEstimacionPorRol[rolEfectivo] ?? [];
+
+  const [fEstado, setFEstado] = useState('Todos');
+  const [fPeriodo, setFPeriodo] = useState('Todos');
+  const [fResponsable, setFResponsable] = useState('Todos');
+
+  const filtradas = useMemo(() => {
+    return estimacionesTableroDummy.filter((e) => {
+      if (fEstado !== 'Todos' && e.estado !== fEstado) return false;
+      if (fPeriodo !== 'Todos' && e.periodo !== fPeriodo) return false;
+      if (fResponsable !== 'Todos' && e.responsable !== fResponsable) return false;
+      return true;
+    });
+  }, [fEstado, fPeriodo, fResponsable]);
 
   return (
     <div>
@@ -128,20 +225,75 @@ export default function TableroEstimaciones() {
         extra={[{ value: contratoDummy.contratista }]}
       />
 
+      <IndicadoresAgregados
+        indicadores={indicadoresContratoTableroDummy}
+        estimaciones={estimacionesTableroDummy}
+      />
+
       <ContadoresFases estimaciones={estimacionesTableroDummy} />
+
+      {/* Filtros del tablero — consultativos, fuera de RegionEditable. */}
+      <div className="bg-white border border-slate-200 rounded-md p-5 mb-6" data-testid="filtros-tablero">
+        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
+          Filtros
+        </h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className="sg-label">Estado</label>
+            <select
+              className="sg-input"
+              value={fEstado}
+              onChange={(e) => setFEstado(e.target.value)}
+              data-testid="filtro-estado"
+            >
+              {filtroEstadosTableroDummy.map((s) => <option key={s}>{s}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="sg-label">Periodo</label>
+            <select
+              className="sg-input"
+              value={fPeriodo}
+              onChange={(e) => setFPeriodo(e.target.value)}
+              data-testid="filtro-periodo"
+            >
+              {filtroPeriodosTableroDummy.map((p) => <option key={p}>{p}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="sg-label">Responsable</label>
+            <select
+              className="sg-input"
+              value={fResponsable}
+              onChange={(e) => setFResponsable(e.target.value)}
+              data-testid="filtro-responsable"
+            >
+              {filtroResponsablesTableroDummy.map((r) => (
+                <option key={r} value={r}>{r === 'Todos' ? 'Todos' : (NOMBRE_ROL[r] ?? r)}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
 
       <div className="bg-white border border-slate-200 rounded-md p-5 mb-6">
         <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-1">
-          Estimaciones aceptadas y en proceso
+          Estimaciones aceptadas y en proceso ({filtradas.length})
         </h2>
         <p className="text-xs text-slate-500 mb-4">
           No se muestran las rechazadas — su historial está en HU-14.
         </p>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {estimacionesTableroDummy.map((est) => (
-            <TarjetaEstimacion key={est.numero} est={est} />
-          ))}
-        </div>
+        {filtradas.length === 0 ? (
+          <div className="text-sm text-slate-400 italic" data-testid="tablero-vacio">
+            Sin estimaciones con los filtros aplicados.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="grid-estimaciones">
+            {filtradas.map((est) => (
+              <TarjetaEstimacion key={est.numero} est={est} />
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="bg-white border border-slate-200 rounded-md p-5 mb-6">
@@ -174,7 +326,8 @@ export default function TableroEstimaciones() {
         huId="HU-17"
         criterios={[
           { numero: 1, texto: 'El tablero muestra solo estimaciones aceptadas y en proceso (no las rechazadas, que viven en el historial).' },
-          { numero: 2, texto: 'El panel "Mis pendientes" filtra los pendientes según el rol del usuario autenticado.' }
+          { numero: 2, texto: 'Cada estimación muestra su línea de tiempo de estado, y el tablero da indicadores agregados del contrato (avance, montos, días en cada estado).' },
+          { numero: 3, texto: 'El panel "Mis pendientes" filtra los pendientes según el rol del usuario autenticado.' }
         ]}
       />
     </div>

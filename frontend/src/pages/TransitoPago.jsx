@@ -1,13 +1,23 @@
-import { useState, useMemo } from 'react';
-import { useToast } from '../components/ui/Toast.jsx';
+import { useMemo, useState } from 'react';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import BannerContexto from '../components/vista/BannerContexto.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import RegionEditable from '../components/vista/RegionEditable.jsx';
 import { useVistaHU } from '../context/SesionContext.jsx';
-import { contratoDummy, presupuestoDummy, soportesPagoDummy } from '../data/dummy.js';
+import {
+  contratoDummy,
+  presupuestoDummy,
+  soportesPagoDummy,
+  fechaAutorizacionOffsetDias
+} from '../data/dummy.js';
 
 const moneda = (n) => `$ ${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+function diasEntre(desdeISO, hastaDate) {
+  const desde = new Date(desdeISO + 'T00:00:00');
+  const ms = hastaDate.getTime() - desde.getTime();
+  return Math.floor(ms / (1000 * 60 * 60 * 24));
+}
 
 function SuficienciaPresupuestal({ montoEstimacion, onMontoChange }) {
   const monto = Number(montoEstimacion) || 0;
@@ -26,7 +36,7 @@ function SuficienciaPresupuestal({ montoEstimacion, onMontoChange }) {
           Verificación de suficiencia presupuestal
         </h2>
         {excede ? (
-          <span className="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700">
+          <span className="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-700" data-testid="badge-excede">
             ⚠ Excede el techo disponible
           </span>
         ) : (
@@ -63,6 +73,7 @@ function SuficienciaPresupuestal({ montoEstimacion, onMontoChange }) {
                     className={`sg-input text-right max-w-[200px] ${excede ? 'border-red-500 ring-2 ring-red-200' : ''}`}
                     value={montoEstimacion}
                     onChange={(e) => onMontoChange(e.target.value)}
+                    data-testid="input-monto-estimacion"
                   />
                 </div>
               </td>
@@ -129,6 +140,7 @@ function SoportesObligatorios({ soportes, onToggle }) {
                     type="button"
                     className="text-xs px-3 py-1 rounded border border-sigecop-accent text-sigecop-accent hover:bg-sigecop-blue-light transition-colors"
                     onClick={() => onToggle(s.id)}
+                    data-testid={`btn-toggle-${s.id}`}
                   >
                     {s.cargado ? 'Marcar pendiente' : 'Marcar como cargado'}
                   </button>
@@ -142,9 +154,10 @@ function SoportesObligatorios({ soportes, onToggle }) {
   );
 }
 
-function SemaforoPlazoPago({ diaActual = 6, diaLimite = 20 }) {
-  const verde = diaActual <= 12;
-  const ambar = diaActual > 12 && diaActual <= 17;
+function SemaforoPlazoPago({ diaActual, diaLimite = 20 }) {
+  // Reglas del usuario: verde ≤10, ámbar 11-17, rojo >17.
+  const verde = diaActual <= 10;
+  const ambar = diaActual > 10 && diaActual <= 17;
   const rojo  = diaActual > 17;
 
   const colorBadge = verde ? 'bg-green-100 text-sigecop-green-validation'
@@ -164,7 +177,11 @@ function SemaforoPlazoPago({ diaActual = 6, diaLimite = 20 }) {
         <h2 className="text-lg font-bold text-sigecop-blue">
           Semáforo del plazo de pago (art. 54 LOPSRM)
         </h2>
-        <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${colorBadge}`}>
+        <span
+          className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${colorBadge}`}
+          data-testid="semaforo-pago-badge"
+          data-color={verde ? 'verde' : ambar ? 'ambar' : 'rojo'}
+        >
           Día {diaActual} de {diaLimite} — {etiqueta}
         </span>
       </div>
@@ -172,15 +189,15 @@ function SemaforoPlazoPago({ diaActual = 6, diaLimite = 20 }) {
       <div className="h-3 bg-slate-200 rounded-full overflow-hidden relative">
         <div className={`h-full ${colorBarra} transition-all`} style={{ width: `${pct}%` }} />
         <div className="absolute inset-0 flex">
-          <div className="border-r border-white/60" style={{ width: '60%' }} />
-          <div className="border-r border-white/60" style={{ width: '25%' }} />
+          <div className="border-r border-white/60" style={{ width: '50%' }} />
+          <div className="border-r border-white/60" style={{ width: '35%' }} />
           <div style={{ width: '15%' }} />
         </div>
       </div>
 
       <div className="mt-2 grid grid-cols-3 text-[10px] text-slate-500">
-        <div>0-12 d · Verde</div>
-        <div className="text-center">13-17 d · Amarillo</div>
+        <div>0-10 d · Verde</div>
+        <div className="text-center">11-17 d · Amarillo</div>
         <div className="text-right">18-20 d · Rojo</div>
       </div>
 
@@ -191,12 +208,63 @@ function SemaforoPlazoPago({ diaActual = 6, diaLimite = 20 }) {
   );
 }
 
+function AvisoInstruccionGenerada({ fecha, monto }) {
+  return (
+    <div
+      className="bg-green-50 border-l-4 border-sigecop-green-validation px-4 py-3 mb-4 text-sm text-slate-800 rounded-r-md"
+      data-testid="aviso-instruccion-generada"
+    >
+      <strong>✓ Instrucción de pago generada el {fecha}.</strong>{' '}
+      Notificación enviada a Finanzas. Plazo de pago: 20 días naturales (art. 54 LOPSRM).
+      <div className="text-xs text-slate-600 mt-1">Monto: {monto}</div>
+    </div>
+  );
+}
+
+function NotificacionFinanzas({ fechaHora, monto }) {
+  return (
+    <div className="bg-white border border-slate-200 rounded-md p-5 mb-6" data-testid="notificacion-finanzas">
+      <h2 className="text-lg font-bold text-sigecop-blue mb-3">Notificación a Finanzas</h2>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+            Destinatario
+          </div>
+          <div className="text-slate-900 mt-0.5">Finanzas · {contratoDummy.dependencia}</div>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+            Fecha y hora
+          </div>
+          <div className="text-slate-900 mt-0.5 font-mono">{fechaHora}</div>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">
+            Monto
+          </div>
+          <div className="text-slate-900 mt-0.5 font-mono">{monto}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function TransitoPago() {
-  const { showToast } = useToast();
   const { soloLectura } = useVistaHU('HU-20');
 
   const [montoEstimacion, setMontoEstimacion] = useState(String(presupuestoDummy.estimacion));
   const [soportes, setSoportes] = useState(soportesPagoDummy);
+  const [instruccion, setInstruccion] = useState(null); // { fechaHora, monto }
+
+  // Calculo del dia actual del plazo a partir de la fecha de autorizacion.
+  // fechaAutorizacion = HOY - fechaAutorizacionOffsetDias.
+  const { fechaAutorizacionISO, diaActual } = useMemo(() => {
+    const hoy = new Date();
+    const fa = new Date(hoy);
+    fa.setDate(hoy.getDate() - fechaAutorizacionOffsetDias);
+    const iso = fa.toISOString().slice(0, 10);
+    return { fechaAutorizacionISO: iso, diaActual: diasEntre(iso, hoy) };
+  }, []);
 
   const toggleSoporte = (id) => {
     setSoportes((prev) => prev.map((s) => s.id === id ? { ...s, cargado: !s.cargado } : s));
@@ -205,18 +273,15 @@ export default function TransitoPago() {
   const todosCargados = useMemo(() => soportes.every((s) => s.cargado), [soportes]);
   const disponibleAntes = presupuestoDummy.techo - presupuestoDummy.comprometido;
   const excedePresupuesto = Number(montoEstimacion) > disponibleAntes;
-  const puedeGenerar = todosCargados && !excedePresupuesto;
+  const puedeGenerar = todosCargados && !excedePresupuesto && !instruccion;
 
   const handleGenerar = () => {
-    if (excedePresupuesto) {
-      showToast('Bloqueado: excede el techo presupuestal disponible (art. 24 LOPSRM).');
-      return;
-    }
-    if (!todosCargados) {
-      showToast('Bloqueado: faltan soportes obligatorios por cargar.');
-      return;
-    }
-    showToast('Pendiente para Sprint siguiente.');
+    const ahora = new Date();
+    const fechaHora = ahora.toLocaleString('es-MX', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit'
+    });
+    setInstruccion({ fechaHora, monto: moneda(Number(montoEstimacion)) });
   };
 
   return (
@@ -238,20 +303,27 @@ export default function TransitoPago() {
         folio={contratoDummy.folio}
         folioLabel="Contrato"
         extra={[
-          { label: 'Estimación', value: 'EST-2026-003', resaltado: true, sufijo: 'autorizada' },
+          { label: 'Estimación', value: 'EST-2026-003', resaltado: true, sufijo: `autorizada el ${fechaAutorizacionISO}` },
           { label: 'Neto', value: '$ 1,285,750.00', resaltado: true }
         ]}
       />
 
-      <RegionEditable disabled={soloLectura}>
+      {instruccion && (
+        <>
+          <AvisoInstruccionGenerada fecha={instruccion.fechaHora} monto={instruccion.monto} />
+          <NotificacionFinanzas fechaHora={instruccion.fechaHora} monto={instruccion.monto} />
+        </>
+      )}
+
+      <RegionEditable disabled={soloLectura || !!instruccion}>
         <SuficienciaPresupuestal montoEstimacion={montoEstimacion} onMontoChange={setMontoEstimacion} />
         <SoportesObligatorios soportes={soportes} onToggle={toggleSoporte} />
       </RegionEditable>
 
-      <SemaforoPlazoPago diaActual={6} diaLimite={20} />
+      <SemaforoPlazoPago diaActual={diaActual} diaLimite={20} />
 
-      {!puedeGenerar && (
-        <div className="bg-amber-50 border-l-4 border-sigecop-amber-attention px-4 py-3 mb-4 text-sm text-slate-800 rounded-r-md">
+      {!puedeGenerar && !instruccion && (
+        <div className="bg-amber-50 border-l-4 border-sigecop-amber-attention px-4 py-3 mb-4 text-sm text-slate-800 rounded-r-md" data-testid="aviso-bloqueo">
           <strong>⚠ Generación de instrucción de pago bloqueada.</strong>
           <ul className="list-disc list-inside mt-1 text-xs text-slate-700">
             {excedePresupuesto && <li>El monto excede el techo presupuestal disponible (art. 24 LOPSRM).</li>}
@@ -264,17 +336,11 @@ export default function TransitoPago() {
         <div className="flex justify-end gap-3">
           <button
             type="button"
-            className="sg-btn-secondary"
-            onClick={() => showToast('Pendiente para Sprint siguiente.')}
-          >
-            Guardar borrador
-          </button>
-          <button
-            type="button"
             className="sg-btn-primary"
             disabled={!puedeGenerar}
             onClick={handleGenerar}
             title={!puedeGenerar ? 'Hay bloqueos pendientes — revisa los avisos arriba' : ''}
+            data-testid="btn-generar-instruccion"
           >
             💸 Generar instrucción de pago
           </button>
@@ -285,8 +351,8 @@ export default function TransitoPago() {
         huId="HU-20"
         criterios={[
           { numero: 1, texto: 'El sistema verifica suficiencia presupuestal contra el techo anual y bloquea la generación de la instrucción de pago si el monto excede lo disponible (art. 24 LOPSRM).' },
-          { numero: 2, texto: 'Un semáforo muestra el avance del plazo de 20 días naturales para pago (art. 54 LOPSRM) y emite alertas al entrar en amarillo.' },
-          { numero: 3, texto: 'La instrucción de pago solo puede generarse cuando todos los soportes obligatorios (factura, CFDI, estado de fianza) están cargados.' }
+          { numero: 2, texto: 'Un semáforo muestra el avance del plazo de 20 días naturales para pago (art. 54 LOPSRM), basado en la fecha de autorización, y avisa al entrar en amarillo.' },
+          { numero: 3, texto: 'La instrucción de pago solo puede generarse cuando todos los soportes obligatorios (factura, CFDI, estado de fianza de cumplimiento cuando el contrato lo exija) están cargados.' }
         ]}
       />
     </div>

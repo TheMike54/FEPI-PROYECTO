@@ -1,6 +1,5 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import Tabs from '../components/ui/Tab.jsx';
-import { useToast } from '../components/ui/Toast.jsx';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import BannerContexto from '../components/vista/BannerContexto.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
@@ -12,30 +11,116 @@ import {
   generadoresEstimacionDummy,
   fotosEstimacionDummy,
   soportesEstimacionDummy,
-  notasParaVincularDummy
+  notasParaVincularDummy,
+  fechaRecepcionEstimacionISO,
+  tiposObservacionRevision,
+  severidadesObservacionRevision
 } from '../data/dummy.js';
+
+const PLAZO_REVISION_DIAS = 15;
 
 const moneda = (n) => {
   const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   return n < 0 ? `-$ ${abs}` : `$ ${abs}`;
 };
 
-function ObservacionInput({ valor, onChange }) {
+const formatoFechaMx = (iso) => {
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+};
+
+const hoyLabel = () => {
+  const d = new Date();
+  return d.toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' });
+};
+
+// Lista de observaciones de una sección, con + Agregar y eliminar por entrada.
+function ListaObservaciones({ seccionKey, observaciones, onChange, onAdd, onRemove, soloLectura }) {
   return (
-    <div className="mt-4">
-      <label className="sg-label">Observación de esta sección</label>
-      <textarea
-        className="sg-input"
-        rows={3}
-        placeholder="Notas, observaciones o pendientes para esta sección..."
-        value={valor}
-        onChange={(e) => onChange(e.target.value)}
-      />
+    <div className="mt-4 border-t border-slate-200 pt-4">
+      <div className="flex items-center justify-between mb-2">
+        <h4 className="text-sm font-bold uppercase tracking-wider text-slate-700">
+          Observaciones de esta sección ({observaciones.length})
+        </h4>
+        {!soloLectura && (
+          <button
+            type="button"
+            className="text-xs text-sigecop-accent hover:underline"
+            onClick={onAdd}
+            data-testid={`btn-agregar-obs-${seccionKey}`}
+          >
+            + Agregar observación
+          </button>
+        )}
+      </div>
+
+      {observaciones.length === 0 ? (
+        <p className="text-xs text-slate-500 italic">
+          Sin observaciones registradas en esta sección.
+        </p>
+      ) : (
+        <ul className="space-y-3">
+          {observaciones.map((o, i) => (
+            <li
+              key={o.id}
+              className="border border-slate-200 rounded-md p-3"
+              data-testid={`obs-${seccionKey}-${i}`}
+            >
+              <textarea
+                className="sg-input"
+                rows={2}
+                placeholder="Describe la observación…"
+                value={o.texto}
+                onChange={(e) => onChange(o.id, 'texto', e.target.value)}
+                data-testid={`obs-${seccionKey}-${i}-texto`}
+              />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2 items-end">
+                <div>
+                  <label className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold block mb-0.5">
+                    Tipo
+                  </label>
+                  <select
+                    className="sg-input"
+                    value={o.tipo}
+                    onChange={(e) => onChange(o.id, 'tipo', e.target.value)}
+                    data-testid={`obs-${seccionKey}-${i}-tipo`}
+                  >
+                    {tiposObservacionRevision.map((t) => <option key={t}>{t}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold block mb-0.5">
+                    Severidad
+                  </label>
+                  <select
+                    className="sg-input"
+                    value={o.severidad}
+                    onChange={(e) => onChange(o.id, 'severidad', e.target.value)}
+                    data-testid={`obs-${seccionKey}-${i}-severidad`}
+                  >
+                    {severidadesObservacionRevision.map((s) => <option key={s}>{s}</option>)}
+                  </select>
+                </div>
+                {!soloLectura && (
+                  <button
+                    type="button"
+                    className="text-xs text-red-600 hover:underline justify-self-end self-center"
+                    onClick={() => onRemove(o.id)}
+                    data-testid={`obs-${seccionKey}-${i}-eliminar`}
+                  >
+                    Eliminar
+                  </button>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
 
-function TabCaratulaRevision({ observacion, onObsChange }) {
+function TabCaratulaRevision({ seccionKey, observaciones, onChange, onAdd, onRemove, soloLectura }) {
   return (
     <div>
       <h3 className="text-lg font-bold text-sigecop-blue mb-4">Carátula de la estimación</h3>
@@ -56,12 +141,19 @@ function TabCaratulaRevision({ observacion, onObsChange }) {
           </tbody>
         </table>
       </div>
-      <ObservacionInput valor={observacion} onChange={onObsChange} />
+      <ListaObservaciones
+        seccionKey={seccionKey}
+        observaciones={observaciones}
+        onChange={onChange}
+        onAdd={onAdd}
+        onRemove={onRemove}
+        soloLectura={soloLectura}
+      />
     </div>
   );
 }
 
-function TabGeneradoresRevision({ observacion, onObsChange }) {
+function TabGeneradoresRevision({ seccionKey, observaciones, onChange, onAdd, onRemove, soloLectura }) {
   return (
     <div>
       <h3 className="text-lg font-bold text-sigecop-blue mb-4">Números generadores (revisión)</h3>
@@ -97,12 +189,19 @@ function TabGeneradoresRevision({ observacion, onObsChange }) {
           </tbody>
         </table>
       </div>
-      <ObservacionInput valor={observacion} onChange={onObsChange} />
+      <ListaObservaciones
+        seccionKey={seccionKey}
+        observaciones={observaciones}
+        onChange={onChange}
+        onAdd={onAdd}
+        onRemove={onRemove}
+        soloLectura={soloLectura}
+      />
     </div>
   );
 }
 
-function TabFotosRevision({ observacion, onObsChange }) {
+function TabFotosRevision({ seccionKey, observaciones, onChange, onAdd, onRemove, soloLectura }) {
   return (
     <div>
       <h3 className="text-lg font-bold text-sigecop-blue mb-4">Registro fotográfico</h3>
@@ -119,12 +218,19 @@ function TabFotosRevision({ observacion, onObsChange }) {
           </div>
         ))}
       </div>
-      <ObservacionInput valor={observacion} onChange={onObsChange} />
+      <ListaObservaciones
+        seccionKey={seccionKey}
+        observaciones={observaciones}
+        onChange={onChange}
+        onAdd={onAdd}
+        onRemove={onRemove}
+        soloLectura={soloLectura}
+      />
     </div>
   );
 }
 
-function TabSoportesRevision({ observacion, onObsChange }) {
+function TabSoportesRevision({ seccionKey, observaciones, onChange, onAdd, onRemove, soloLectura }) {
   return (
     <div>
       <h3 className="text-lg font-bold text-sigecop-blue mb-4">Soportes documentales</h3>
@@ -150,12 +256,19 @@ function TabSoportesRevision({ observacion, onObsChange }) {
           </tbody>
         </table>
       </div>
-      <ObservacionInput valor={observacion} onChange={onObsChange} />
+      <ListaObservaciones
+        seccionKey={seccionKey}
+        observaciones={observaciones}
+        onChange={onChange}
+        onAdd={onAdd}
+        onRemove={onRemove}
+        soloLectura={soloLectura}
+      />
     </div>
   );
 }
 
-function TabNotasRevision({ observacion, onObsChange }) {
+function TabNotasRevision({ seccionKey, observaciones, onChange, onAdd, onRemove, soloLectura }) {
   return (
     <div>
       <h3 className="text-lg font-bold text-sigecop-blue mb-4">Notas vinculadas al periodo</h3>
@@ -185,7 +298,14 @@ function TabNotasRevision({ observacion, onObsChange }) {
           </tbody>
         </table>
       </div>
-      <ObservacionInput valor={observacion} onChange={onObsChange} />
+      <ListaObservaciones
+        seccionKey={seccionKey}
+        observaciones={observaciones}
+        onChange={onChange}
+        onAdd={onAdd}
+        onRemove={onRemove}
+        soloLectura={soloLectura}
+      />
     </div>
   );
 }
@@ -222,13 +342,14 @@ function IndicadorFlujo({ pasos }) {
   );
 }
 
-// Semáforo del plazo de revisión (CA-3 — art. 54 LOPSRM).
+// Semáforo del plazo de revisión (CA-3 — art. 54 LOPSRM). diaActual se calcula
+// en vivo a partir de la fecha de recepción.
 function SemaforoPlazoRevision({ diaActual, diaLimite }) {
-  const pct = Math.min(100, (diaActual / diaLimite) * 100);
-  const verde = pct < 60;
-  const ambar = pct >= 60 && pct < 90;
-  const rojo = pct >= 90;
-  const color = rojo ? 'red' : ambar ? 'amber' : 'green';
+  const diaSeguro = Math.max(0, diaActual);
+  const pctRaw = (diaSeguro / diaLimite) * 100;
+  const pct = Math.min(100, pctRaw);
+  // Reglas de color exigidas: ≤7 verde, 8-12 amarillo, >12 rojo.
+  const color = diaSeguro > 12 ? 'red' : diaSeguro >= 8 ? 'amber' : 'green';
 
   const colorBadge = color === 'green' ? 'bg-green-100 text-sigecop-green-validation'
     : color === 'amber' ? 'bg-amber-100 text-sigecop-amber-attention'
@@ -243,92 +364,228 @@ function SemaforoPlazoRevision({ diaActual, diaLimite }) {
     : 'Vencido';
 
   return (
-    <div className="bg-white border border-slate-200 rounded-md p-4 mb-4">
+    <div className="bg-white border border-slate-200 rounded-md p-4 mb-4" data-testid="semaforo-revision">
       <div className="flex items-center justify-between mb-2">
         <div className="text-sm font-semibold text-slate-700">
           Plazo de revisión (art. 54 LOPSRM)
         </div>
-        <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${colorBadge}`}>
-          Día {diaActual} de {diaLimite} — {etiqueta}
+        <span
+          className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${colorBadge}`}
+          data-testid="semaforo-revision-badge"
+          data-color={color}
+        >
+          Día {diaSeguro} de {diaLimite} — {etiqueta}
         </span>
       </div>
       <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
         <div className={`h-full ${colorBarra}`} style={{ width: `${pct}%` }} />
       </div>
       <p className="text-xs text-slate-500 mt-2">
-        Plazo de revisión: 15 días naturales. Si se excede, se notifica a las partes y se libera la presunción de aceptación.
+        Plazo de revisión: 15 días naturales desde la recepción de la estimación
+        ({formatoFechaMx(fechaRecepcionEstimacionISO)}). El semáforo se calcula en vivo.
       </p>
     </div>
   );
 }
 
+const SECCIONES_KEYS = ['caratula', 'generadores', 'fotos', 'soportes', 'notas'];
+
+function obsInicial() {
+  return Object.fromEntries(SECCIONES_KEYS.map((k) => [k, []]));
+}
+
 export default function RevisionEstimacion() {
-  const { showToast } = useToast();
   const { soloLectura } = useVistaHU('HU-15');
 
-  // Observaciones por sección — viven en el padre para no perderse al cambiar de tab.
-  const [obs, setObs] = useState({
-    caratula: '',
-    generadores: '',
-    fotos: '',
-    soportes: '',
-    notas: ''
-  });
-  const setObsKey = (k) => (v) => setObs((prev) => ({ ...prev, [k]: v }));
+  // Observaciones por sección. Cada una con id local creciente.
+  const [obs, setObs] = useState(obsInicial);
+  const [nextId, setNextId] = useState(1);
+  const [sinObservaciones, setSinObservaciones] = useState(false);
 
-  // Pasos del flujo (CA-2). Avanzan al turnar y al resolver.
-  const [pasoActivo, setPasoActivo] = useState('supervision');
+  // Flujo del proceso. estado controla qué bloque del panel de resolución se
+  // habilita y el banner que se muestra al pie.
+  // estado: 'en-revision' → 'turnada' → 'autorizada' | 'rechazada'
+  const [estado, setEstado] = useState('en-revision');
+  const [fechaTurnado, setFechaTurnado] = useState(null);
+  const [fechaResolucion, setFechaResolucion] = useState(null);
+
+  // Semáforo: diaActual se calcula en vivo respecto a la fecha de recepción.
+  const diaActual = useMemo(() => {
+    const recepcion = new Date(`${fechaRecepcionEstimacionISO}T00:00:00`);
+    const diff = Date.now() - recepcion.getTime();
+    return Math.floor(diff / (1000 * 60 * 60 * 24));
+  }, []);
+
+  // Helpers de manipulación de observaciones.
+  const addObs = (seccionKey) => () => {
+    setObs((prev) => ({
+      ...prev,
+      [seccionKey]: [...prev[seccionKey], {
+        id: nextId,
+        texto: '',
+        tipo: tiposObservacionRevision[0],
+        severidad: severidadesObservacionRevision[0]
+      }]
+    }));
+    setNextId((n) => n + 1);
+  };
+
+  const changeObs = (seccionKey) => (obsId, campo, valor) => {
+    setObs((prev) => ({
+      ...prev,
+      [seccionKey]: prev[seccionKey].map((o) => o.id === obsId ? { ...o, [campo]: valor } : o)
+    }));
+  };
+
+  const removeObs = (seccionKey) => (obsId) => {
+    setObs((prev) => ({
+      ...prev,
+      [seccionKey]: prev[seccionKey].filter((o) => o.id !== obsId)
+    }));
+  };
+
+  // Conteos derivados.
+  const totalObs = useMemo(
+    () => SECCIONES_KEYS.reduce((acc, k) => acc + obs[k].length, 0),
+    [obs]
+  );
+
+  // Pasos del flujo.
   const pasos = [
     {
       id: 'supervision',
       label: 'Supervisión',
-      estado: pasoActivo === 'supervision' ? 'En revisión' : 'Turnado ✓',
-      activo: pasoActivo === 'supervision',
-      completado: pasoActivo !== 'supervision'
+      estado: estado === 'en-revision' ? 'En revisión' : 'Turnado ✓',
+      activo: estado === 'en-revision',
+      completado: estado !== 'en-revision'
     },
     {
       id: 'residencia',
       label: 'Residencia',
-      estado: pasoActivo === 'supervision' ? 'En espera'
-        : pasoActivo === 'residencia' ? 'En revisión'
+      estado: estado === 'en-revision' ? 'En espera'
+        : estado === 'turnada' ? 'En revisión'
         : 'Resuelto ✓',
-      activo: pasoActivo === 'residencia',
-      completado: pasoActivo === 'resolucion'
+      activo: estado === 'turnada',
+      completado: estado === 'autorizada' || estado === 'rechazada'
     },
     {
       id: 'resolucion',
       label: 'Resolución',
-      estado: pasoActivo === 'resolucion' ? 'Emitida' : 'Pendiente',
-      activo: pasoActivo === 'resolucion',
+      estado: estado === 'autorizada' ? 'Autorizada'
+        : estado === 'rechazada' ? 'Rechazada'
+        : 'Pendiente',
+      activo: estado === 'autorizada' || estado === 'rechazada',
       completado: false
     }
   ];
 
-  const turnarASupervision = () => {
-    setPasoActivo('residencia');
-    showToast('Estimación turnada a residencia. Pendiente para Sprint siguiente.');
+  // Botones del panel de resolución.
+  const puedeTurnar = estado === 'en-revision' && (totalObs > 0 || sinObservaciones);
+  const puedeAutorizar = estado === 'turnada';
+  const puedeRechazar  = estado === 'turnada';
+
+  const turnar = () => {
+    if (!puedeTurnar) return;
+    setEstado('turnada');
+    setFechaTurnado(hoyLabel());
+  };
+  const autorizar = () => {
+    if (!puedeAutorizar) return;
+    setEstado('autorizada');
+    setFechaResolucion(hoyLabel());
+  };
+  const rechazar = () => {
+    if (!puedeRechazar) return;
+    setEstado('rechazada');
+    setFechaResolucion(hoyLabel());
   };
 
-  const resolver = (decision) => {
-    setPasoActivo('resolucion');
-    showToast(`Estimación ${decision}. Pendiente para Sprint siguiente.`);
-  };
+  // Edición efectiva: bloqueada por soloLectura O por estado fuera de revisión.
+  const editableObs = !soloLectura && estado === 'en-revision';
 
-  const enSupervision = pasoActivo === 'supervision';
-  const enResidencia  = pasoActivo === 'residencia';
-
-  // Envolvemos el contenido de cada tab — NO el componente Tabs — para que en
-  // lectura los inputs queden disabled pero la navegación entre pestañas siga viva.
+  // Cada tab envuelve su contenido en RegionEditable para deshabilitar inputs
+  // en lectura / tras turnar.
   const wrapTab = (node) => (
-    <RegionEditable disabled={soloLectura}>{node}</RegionEditable>
+    <RegionEditable disabled={!editableObs}>{node}</RegionEditable>
   );
 
+  // Plana de observaciones para el banner de rechazo.
+  const observacionesPlanas = useMemo(() => {
+    const lista = [];
+    for (const k of SECCIONES_KEYS) {
+      for (const o of obs[k]) {
+        if (o.texto.trim()) lista.push({ ...o, seccion: k });
+      }
+    }
+    return lista;
+  }, [obs]);
+
   const tabs = [
-    { label: 'Carátula',             content: wrapTab(<TabCaratulaRevision    observacion={obs.caratula}    onObsChange={setObsKey('caratula')} />) },
-    { label: 'Números generadores',  content: wrapTab(<TabGeneradoresRevision observacion={obs.generadores} onObsChange={setObsKey('generadores')} />) },
-    { label: 'Registro fotográfico', content: wrapTab(<TabFotosRevision       observacion={obs.fotos}       onObsChange={setObsKey('fotos')} />) },
-    { label: 'Soportes',             content: wrapTab(<TabSoportesRevision    observacion={obs.soportes}    onObsChange={setObsKey('soportes')} />) },
-    { label: 'Notas vinculadas',     content: wrapTab(<TabNotasRevision       observacion={obs.notas}       onObsChange={setObsKey('notas')} />) }
+    {
+      label: 'Carátula',
+      content: wrapTab(
+        <TabCaratulaRevision
+          seccionKey="caratula"
+          observaciones={obs.caratula}
+          onChange={changeObs('caratula')}
+          onAdd={addObs('caratula')}
+          onRemove={removeObs('caratula')}
+          soloLectura={!editableObs}
+        />
+      )
+    },
+    {
+      label: 'Números generadores',
+      content: wrapTab(
+        <TabGeneradoresRevision
+          seccionKey="generadores"
+          observaciones={obs.generadores}
+          onChange={changeObs('generadores')}
+          onAdd={addObs('generadores')}
+          onRemove={removeObs('generadores')}
+          soloLectura={!editableObs}
+        />
+      )
+    },
+    {
+      label: 'Registro fotográfico',
+      content: wrapTab(
+        <TabFotosRevision
+          seccionKey="fotos"
+          observaciones={obs.fotos}
+          onChange={changeObs('fotos')}
+          onAdd={addObs('fotos')}
+          onRemove={removeObs('fotos')}
+          soloLectura={!editableObs}
+        />
+      )
+    },
+    {
+      label: 'Soportes',
+      content: wrapTab(
+        <TabSoportesRevision
+          seccionKey="soportes"
+          observaciones={obs.soportes}
+          onChange={changeObs('soportes')}
+          onAdd={addObs('soportes')}
+          onRemove={removeObs('soportes')}
+          soloLectura={!editableObs}
+        />
+      )
+    },
+    {
+      label: 'Notas vinculadas',
+      content: wrapTab(
+        <TabNotasRevision
+          seccionKey="notas"
+          observaciones={obs.notas}
+          onChange={changeObs('notas')}
+          onAdd={addObs('notas')}
+          onRemove={removeObs('notas')}
+          soloLectura={!editableObs}
+        />
+      )
+    }
   ];
 
   return (
@@ -351,84 +608,149 @@ export default function RevisionEstimacion() {
         folioLabel="Contrato"
         extra={[
           { label: 'Estimación', value: 'EST-2026-003', resaltado: true },
-          { label: 'Recibida el', value: '23/05/2026', resaltado: true }
+          { label: 'Recibida el', value: formatoFechaMx(fechaRecepcionEstimacionISO), resaltado: true }
         ]}
         margenAbajo="mb-4"
       />
 
       <IndicadorFlujo pasos={pasos} />
-      <SemaforoPlazoRevision diaActual={8} diaLimite={15} />
+      <SemaforoPlazoRevision diaActual={diaActual} diaLimite={PLAZO_REVISION_DIAS} />
+
+      {/* Banners de cambio de estado. */}
+      {estado === 'turnada' && (
+        <div
+          className="bg-sigecop-green-bg border-l-4 border-sigecop-green-validation px-4 py-3 mb-4 rounded-r-md"
+          data-testid="banner-turnada"
+        >
+          <div className="text-sm font-semibold text-sigecop-green-validation">
+            ✓ Turnada a residencia el {fechaTurnado}.
+          </div>
+          <p className="text-sm text-slate-800 mt-1">
+            Supervisión queda en lectura. Residencia puede autorizar o rechazar.
+          </p>
+        </div>
+      )}
+      {estado === 'autorizada' && (
+        <div
+          className="bg-sigecop-green-bg border-l-4 border-sigecop-green-validation px-4 py-3 mb-4 rounded-r-md"
+          data-testid="banner-autorizada"
+        >
+          <div className="text-sm font-semibold text-sigecop-green-validation">
+            ✓ Estimación autorizada el {fechaResolucion}.
+          </div>
+          <p className="text-sm text-slate-800 mt-1">
+            La estimación queda en lectura total. Continúa el ciclo en tránsito a pago (HU-20).
+          </p>
+        </div>
+      )}
+      {estado === 'rechazada' && (
+        <div
+          className="bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 mb-4 rounded-r-md"
+          data-testid="banner-rechazada"
+        >
+          <div className="text-sm font-semibold text-sigecop-amber-attention">
+            ⚠ Estimación rechazada — debe ser reingresada (HU-16).
+          </div>
+          {observacionesPlanas.length > 0 ? (
+            <>
+              <p className="text-sm text-slate-800 mt-1">
+                Observaciones a resolver ({observacionesPlanas.length}):
+              </p>
+              <ul className="list-disc list-inside text-sm text-slate-800 mt-1 space-y-0.5">
+                {observacionesPlanas.map((o) => (
+                  <li key={o.id}>
+                    <strong className="capitalize">{o.seccion}</strong> · {o.tipo} · {o.severidad}: {o.texto}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p className="text-sm text-slate-800 mt-1">
+              Sin observaciones registradas explícitamente — se rechaza por dictamen de residencia.
+            </p>
+          )}
+        </div>
+      )}
 
       <Tabs tabs={tabs} />
 
-      {!soloLectura && (
-      <div className="mt-6 bg-white border border-slate-200 rounded-md p-5">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
-          Panel de resolución
-        </h2>
+      {!soloLectura && estado !== 'autorizada' && estado !== 'rechazada' && (
+        <div className="mt-6 bg-white border border-slate-200 rounded-md p-5">
+          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
+            Panel de resolución
+          </h2>
 
-        {enSupervision && (
-          <p className="text-sm text-slate-700 mb-3">
-            Supervisión está revisando la estimación. Al turnar, la responsabilidad pasa a residencia.
-          </p>
-        )}
-        {enResidencia && (
-          <p className="text-sm text-slate-700 mb-3">
-            Estimación turnada por supervisión. Residencia puede autorizar o rechazar.
-          </p>
-        )}
-        {pasoActivo === 'resolucion' && (
-          <div className="bg-green-50 border-l-4 border-sigecop-green-validation px-4 py-2 mb-3 text-sm text-sigecop-green-validation rounded-r-md">
-            ✓ Resolución emitida. El historial conserva la decisión y los soportes.
+          {estado === 'en-revision' && (
+            <>
+              <p className="text-sm text-slate-700 mb-3">
+                Supervisión está revisando la estimación. Para turnar a residencia debe haber
+                al menos una observación registrada o marcar la estimación sin observaciones.
+              </p>
+              <label className="flex items-center gap-2 text-sm text-slate-800 mb-3">
+                <input
+                  type="checkbox"
+                  checked={sinObservaciones}
+                  onChange={(e) => setSinObservaciones(e.target.checked)}
+                  data-testid="chk-sin-observaciones"
+                />
+                Marcar la estimación sin observaciones (apta para autorización).
+              </label>
+              <p className="text-xs text-slate-500 mb-3">
+                Total de observaciones registradas: <strong>{totalObs}</strong>.
+              </p>
+            </>
+          )}
+          {estado === 'turnada' && (
+            <p className="text-sm text-slate-700 mb-3">
+              Estimación turnada por supervisión. Residencia puede autorizar o rechazar.
+            </p>
+          )}
+
+          <div className="flex flex-wrap justify-end gap-3">
+            <button
+              type="button"
+              className="sg-btn-secondary disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!puedeTurnar}
+              onClick={turnar}
+              data-testid="btn-turnar"
+              title={!puedeTurnar && estado === 'en-revision'
+                ? 'Registra al menos una observación o marca "Sin observaciones".'
+                : ''}
+            >
+              ➡ Turnar a residencia
+            </button>
+
+            <button
+              type="button"
+              className="px-4 py-2 rounded-md border border-red-500 text-red-700 font-medium hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
+              disabled={!puedeRechazar}
+              onClick={rechazar}
+              data-testid="btn-rechazar"
+              title={!puedeRechazar ? 'Disponible para residencia tras el turnado de supervisión.' : ''}
+            >
+              ✗ Rechazar
+            </button>
+
+            <button
+              type="button"
+              className="sg-btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!puedeAutorizar}
+              onClick={autorizar}
+              data-testid="btn-autorizar"
+              title={!puedeAutorizar ? 'Disponible para residencia tras el turnado de supervisión.' : ''}
+            >
+              ✓ Autorizar
+            </button>
           </div>
-        )}
-
-        <div className="flex flex-wrap justify-end gap-3">
-          <button
-            type="button"
-            className="sg-btn-secondary"
-            disabled={!enSupervision}
-            onClick={turnarASupervision}
-            title={!enSupervision ? 'Supervisión ya turnó la estimación' : ''}
-          >
-            ➡ Turnar a residencia
-          </button>
-
-          <button
-            type="button"
-            className="px-4 py-2 rounded-md border border-red-500 text-red-700 font-medium hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white"
-            disabled={!enResidencia}
-            title={enSupervision ? 'Disponible para residencia tras el turnado de supervisión' : ''}
-            onClick={() => resolver('rechazada')}
-          >
-            ✗ Rechazar
-          </button>
-
-          <button
-            type="button"
-            className="sg-btn-primary"
-            disabled={!enResidencia}
-            title={enSupervision ? 'Disponible para residencia tras el turnado de supervisión' : ''}
-            onClick={() => resolver('autorizada')}
-          >
-            ✓ Autorizar
-          </button>
         </div>
-
-        {enSupervision && (
-          <p className="text-xs text-slate-500 mt-3 text-right">
-            "Autorizar" y "Rechazar" se habilitan solo cuando supervisión ha turnado a residencia.
-          </p>
-        )}
-      </div>
       )}
 
       <SeccionCriterios
         huId="HU-15"
         criterios={[
-          { numero: 1, texto: 'La revisión permite revisar sección por sección y dejar observaciones puntuales en cada una (carátula, generadores, registro fotográfico, soportes y notas).' },
+          { numero: 1, texto: 'La revisión permite ir sección por sección (carátula, generadores, registro fotográfico, soportes y notas) y registrar observaciones con tipo y severidad por concepto.' },
           { numero: 2, texto: 'La autorización queda condicionada al turnado secuencial: primero supervisión, luego residencia; residencia no puede resolver antes del turnado.' },
-          { numero: 3, texto: 'El sistema controla el plazo de 15 días naturales de revisión conforme al art. 54 LOPSRM mediante un semáforo visible para los actores.' }
+          { numero: 3, texto: 'El sistema controla el plazo de 15 días naturales de revisión conforme al art. 54 LOPSRM mediante un semáforo basado en la fecha real de recepción.' }
         ]}
       />
     </div>

@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react';
-import { useToast } from '../components/ui/Toast.jsx';
+import jsPDF from 'jspdf';
+import * as XLSX from 'xlsx';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import BannerContexto from '../components/vista/BannerContexto.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
@@ -18,6 +19,37 @@ const CAMPOS_BUSQUEDA = [
   { id: 'periodo',     label: 'Periodo' },
   { id: 'documento',   label: 'Tipo de documento' }
 ];
+
+const moneda = (n) =>
+  `$ ${(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+// Genera un PDF placeholder de 1 página con jsPDF y dispara la descarga.
+function descargarPDFPlaceholder(documento, folio) {
+  const doc = new jsPDF();
+  doc.setFontSize(18);
+  doc.text(documento, 20, 30);
+  doc.setFontSize(12);
+  doc.text(`Contrato: ${folio}`, 20, 50);
+  doc.text(`Fecha de descarga: ${new Date().toLocaleDateString('es-MX')}`, 20, 60);
+  doc.setFontSize(10);
+  doc.text('— Placeholder PDF generado en cliente —', 20, 80);
+  doc.text('SIGECOP — prototipo de descarga real (sin backend).', 20, 88);
+  const slug = documento
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_|_$/g, '');
+  doc.save(`${slug}_${folio}.pdf`);
+}
+
+// Descarga un .xlsx con SheetJS a partir de filas {col: valor}.
+function descargarExcel(filas, nombreHoja, nombreArchivo) {
+  const ws = XLSX.utils.json_to_sheet(filas);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, nombreHoja);
+  XLSX.writeFile(wb, nombreArchivo);
+}
 
 // Cada bloque expone qué campos hace match con el buscador.
 const BLOQUES = [
@@ -79,6 +111,26 @@ const BLOQUES = [
   }
 ];
 
+const JURIDICOS_DOCS = [
+  { id: 'representacion', label: 'Escritura de representación legal' },
+  { id: 'designacion',    label: 'Oficio de designación de firmante' },
+  { id: 'clausulas',      label: 'Clausulado vigente del contrato' }
+];
+
+// Botón pequeño de descarga, reutilizable en todos los bloques.
+function BtnDescargar({ etiqueta, onClick, testid }) {
+  return (
+    <button
+      type="button"
+      className="inline-flex items-center gap-1 text-xs px-2 py-1 bg-sigecop-blue-light text-sigecop-blue rounded hover:bg-sigecop-blue hover:text-white transition-colors"
+      onClick={onClick}
+      data-testid={testid}
+    >
+      ⬇ {etiqueta}
+    </button>
+  );
+}
+
 function BloqueExpediente({ bloque, children, abiertoDefault = true }) {
   const [abierto, setAbierto] = useState(abiertoDefault);
   return (
@@ -101,71 +153,117 @@ function BloqueExpediente({ bloque, children, abiertoDefault = true }) {
 
 function BloqueConfiguracion() {
   return (
-    <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-      {bloquesExpedienteDummy[0].contenido.map((c) => (
-        <div key={c.label}>
-          <dt className="text-xs uppercase font-semibold text-slate-500">{c.label}</dt>
-          <dd className="text-sm text-slate-800 mt-0.5">{c.valor}</dd>
-        </div>
-      ))}
-    </dl>
+    <div>
+      <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {bloquesExpedienteDummy[0].contenido.map((c) => (
+          <div key={c.label}>
+            <dt className="text-xs uppercase font-semibold text-slate-500">{c.label}</dt>
+            <dd className="text-sm text-slate-800 mt-0.5">{c.valor}</dd>
+          </div>
+        ))}
+      </dl>
+      <div className="mt-4 flex justify-end gap-2">
+        <BtnDescargar
+          etiqueta="Contrato firmado (PDF)"
+          onClick={() => descargarPDFPlaceholder('Contrato firmado', contratoDummy.folio)}
+          testid="btn-descargar-configuracion-0"
+        />
+      </div>
+    </div>
   );
 }
 
 function BloqueCatalogo() {
+  const handleExcel = () => {
+    const filas = conceptosDummy.map((c) => ({
+      Concepto: c.concepto,
+      Unidad: c.unidad,
+      Cantidad: c.cantidad,
+      'Precio unitario': c.pu,
+      Importe: c.cantidad * c.pu
+    }));
+    descargarExcel(filas, 'Catálogo', `catalogo_${contratoDummy.folio}.xlsx`);
+  };
   return (
-    <div className="overflow-x-auto border border-slate-200 rounded-md">
-      <table className="w-full text-sm">
-        <thead className="bg-sigecop-blue-light text-sigecop-blue">
-          <tr>
-            <th className="text-left px-3 py-2">Concepto</th>
-            <th className="text-left px-3 py-2 w-20">Unidad</th>
-            <th className="text-right px-3 py-2 w-28">Cantidad</th>
-            <th className="text-right px-3 py-2 w-32">P.U.</th>
-            <th className="text-right px-3 py-2 w-36">Importe</th>
-          </tr>
-        </thead>
-        <tbody>
-          {conceptosDummy.map((c, i) => (
-            <tr key={i} className="border-t border-slate-200 hover:bg-slate-50">
-              <td className="px-3 py-2">{c.concepto}</td>
-              <td className="px-3 py-2 text-slate-600">{c.unidad}</td>
-              <td className="px-3 py-2 text-right">{c.cantidad.toLocaleString()}</td>
-              <td className="px-3 py-2 text-right">${c.pu.toFixed(2)}</td>
-              <td className="px-3 py-2 text-right font-semibold">
-                ${(c.cantidad * c.pu).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-              </td>
+    <div>
+      <div className="overflow-x-auto border border-slate-200 rounded-md">
+        <table className="w-full text-sm">
+          <thead className="bg-sigecop-blue-light text-sigecop-blue">
+            <tr>
+              <th className="text-left px-3 py-2">Concepto</th>
+              <th className="text-left px-3 py-2 w-20">Unidad</th>
+              <th className="text-right px-3 py-2 w-28">Cantidad</th>
+              <th className="text-right px-3 py-2 w-32">P.U.</th>
+              <th className="text-right px-3 py-2 w-36">Importe</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {conceptosDummy.map((c, i) => (
+              <tr key={i} className="border-t border-slate-200 hover:bg-slate-50">
+                <td className="px-3 py-2">{c.concepto}</td>
+                <td className="px-3 py-2 text-slate-600">{c.unidad}</td>
+                <td className="px-3 py-2 text-right">{c.cantidad.toLocaleString()}</td>
+                <td className="px-3 py-2 text-right">${c.pu.toFixed(2)}</td>
+                <td className="px-3 py-2 text-right font-semibold">
+                  ${(c.cantidad * c.pu).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-4 flex justify-end gap-2">
+        <BtnDescargar
+          etiqueta="Catálogo (Excel)"
+          onClick={handleExcel}
+          testid="btn-descargar-catalogo-0"
+        />
+      </div>
     </div>
   );
 }
 
 function BloquePrograma() {
+  const handleExcel = () => {
+    const filas = programaObraDummy.map((p) => ({
+      Actividad: p.actividad,
+      Inicio: p.inicio,
+      Término: p.termino,
+      '% peso': p.peso
+    }));
+    descargarExcel(filas, 'Programa', `programa_${contratoDummy.folio}.xlsx`);
+  };
   return (
-    <div className="overflow-x-auto border border-slate-200 rounded-md">
-      <table className="w-full text-sm">
-        <thead className="bg-sigecop-blue-light text-sigecop-blue">
-          <tr>
-            <th className="text-left px-3 py-2">Actividad</th>
-            <th className="text-left px-3 py-2 w-36">Inicio</th>
-            <th className="text-left px-3 py-2 w-36">Término</th>
-            <th className="text-right px-3 py-2 w-24">% peso</th>
-          </tr>
-        </thead>
-        <tbody>
-          {programaObraDummy.map((p, i) => (
-            <tr key={i} className="border-t border-slate-200 hover:bg-slate-50">
-              <td className="px-3 py-2">{p.actividad}</td>
-              <td className="px-3 py-2">{p.inicio}</td>
-              <td className="px-3 py-2">{p.termino}</td>
-              <td className="px-3 py-2 text-right font-semibold">{p.peso}%</td>
+    <div>
+      <div className="overflow-x-auto border border-slate-200 rounded-md">
+        <table className="w-full text-sm">
+          <thead className="bg-sigecop-blue-light text-sigecop-blue">
+            <tr>
+              <th className="text-left px-3 py-2">Actividad</th>
+              <th className="text-left px-3 py-2 w-36">Inicio</th>
+              <th className="text-left px-3 py-2 w-36">Término</th>
+              <th className="text-right px-3 py-2 w-24">% peso</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {programaObraDummy.map((p, i) => (
+              <tr key={i} className="border-t border-slate-200 hover:bg-slate-50">
+                <td className="px-3 py-2">{p.actividad}</td>
+                <td className="px-3 py-2">{p.inicio}</td>
+                <td className="px-3 py-2">{p.termino}</td>
+                <td className="px-3 py-2 text-right font-semibold">{p.peso}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-4 flex justify-end gap-2">
+        <BtnDescargar
+          etiqueta="Programa (Excel)"
+          onClick={handleExcel}
+          testid="btn-descargar-programa-0"
+        />
+      </div>
     </div>
   );
 }
@@ -180,22 +278,24 @@ function BloqueFianzas() {
             <th className="text-left px-3 py-2">Afianzadora</th>
             <th className="text-left px-3 py-2 w-36">Folio</th>
             <th className="text-right px-3 py-2 w-36">Monto</th>
-            <th className="text-center px-3 py-2 w-32">Estado</th>
+            <th className="text-center px-3 py-2 w-44">Descargar</th>
           </tr>
         </thead>
         <tbody>
           {fianzasListadoDummy.map((f, i) => (
-            <tr key={i} className="border-t border-slate-200 hover:bg-slate-50">
+            <tr key={f.folio} className="border-t border-slate-200 hover:bg-slate-50">
               <td className="px-3 py-2 font-medium">{f.tipo}</td>
-              <td className="px-3 py-2">{f.afianzadora === '—' ? <span className="italic text-slate-400">—</span> : f.afianzadora}</td>
+              <td className="px-3 py-2">{f.afianzadora}</td>
               <td className="px-3 py-2 font-mono text-xs">{f.folio}</td>
-              <td className="px-3 py-2 text-right">{f.monto}</td>
+              <td className="px-3 py-2 text-right font-mono text-xs">{moneda(f.monto)}</td>
               <td className="px-3 py-2 text-center">
-                <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${
-                  f.estadoColor === 'green' ? 'bg-green-100 text-sigecop-green-validation'
-                  : f.estadoColor === 'amber' ? 'bg-amber-100 text-sigecop-amber-attention'
-                  : 'bg-slate-200 text-slate-600'
-                }`}>{f.estado}</span>
+                <BtnDescargar
+                  etiqueta="PDF"
+                  onClick={() =>
+                    descargarPDFPlaceholder(`Póliza ${f.tipo} ${f.folio}`, contratoDummy.folio)
+                  }
+                  testid={`btn-descargar-fianzas-${i}`}
+                />
               </td>
             </tr>
           ))}
@@ -207,13 +307,17 @@ function BloqueFianzas() {
 
 function BloqueJuridicos() {
   return (
-    <div className="space-y-3 text-sm text-slate-800">
+    <div className="space-y-4 text-sm text-slate-800">
       <div>
-        <div className="text-xs uppercase font-semibold text-slate-500 mb-1">Firmante autorizado (dependencia)</div>
+        <div className="text-xs uppercase font-semibold text-slate-500 mb-1">
+          Firmante autorizado (dependencia)
+        </div>
         <div>Lic. María Pérez García — Directora de Obras</div>
       </div>
       <div>
-        <div className="text-xs uppercase font-semibold text-slate-500 mb-1">Representante legal (contratista)</div>
+        <div className="text-xs uppercase font-semibold text-slate-500 mb-1">
+          Representante legal (contratista)
+        </div>
         <div>Lic. Juan Ramírez Soto — Escritura Núm. 12,345, Notaría Pública Núm. 47, Acapulco, Gro.</div>
       </div>
       <div>
@@ -225,6 +329,21 @@ function BloqueJuridicos() {
           <li>Cláusula décima — Penas convencionales (art. 46 Bis LOPSRM)</li>
           <li>Cláusula décima cuarta — Convenios modificatorios</li>
         </ul>
+      </div>
+      <div className="border-t border-slate-200 pt-3">
+        <div className="text-xs uppercase font-semibold text-slate-500 mb-2">
+          Documentos jurídicos descargables
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {JURIDICOS_DOCS.map((d, i) => (
+            <BtnDescargar
+              key={d.id}
+              etiqueta={`${d.label} (PDF)`}
+              onClick={() => descargarPDFPlaceholder(d.label, contratoDummy.folio)}
+              testid={`btn-descargar-juridicos-${i}`}
+            />
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -239,10 +358,6 @@ const BLOQUE_BODY = {
 };
 
 export default function ConsultaExpediente() {
-  const { showToast } = useToast();
-  // soloLectura no se aplica a los filtros (decisión consciente: vistas
-  // consultativas siguen funcionando en lectura). HeaderVista y SeccionCriterios
-  // leen el modo internamente, no se necesita useVistaHU acá.
   const [query, setQuery] = useState('');
   const [campo, setCampo] = useState('folio');
 
@@ -319,8 +434,9 @@ export default function ConsultaExpediente() {
       <div className="mt-6 flex justify-end">
         <button
           type="button"
-          className="sg-btn-secondary"
-          onClick={() => showToast('Pendiente para Sprint siguiente.')}
+          className="sg-btn-secondary disabled:opacity-60 disabled:cursor-not-allowed"
+          disabled
+          title="Disponible en SRV-06-03"
         >
           ⬇ Exportar expediente
         </button>
@@ -329,8 +445,9 @@ export default function ConsultaExpediente() {
       <SeccionCriterios
         huId="HU-04"
         criterios={[
-          { numero: 1, texto: 'El expediente muestra en una sola vista los 5 bloques: configuración, catálogo, programa, fianzas y documentos jurídicos.' },
-          { numero: 2, texto: 'El buscador filtra los bloques por folio, contratista, objeto, periodo o tipo de documento.' }
+          { numero: 1, texto: 'El expediente muestra en una sola vista los 5 bloques del contrato: configuración, catálogo, programa, fianzas y documentos jurídicos.' },
+          { numero: 2, texto: 'El buscador filtra los bloques por folio, contratista, objeto, periodo o tipo de documento, con lógica Y.' },
+          { numero: 3, texto: 'Cada documento del expediente puede descargarse individualmente desde su bloque.' }
         ]}
       />
     </div>

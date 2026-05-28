@@ -42,40 +42,71 @@ export const polizasGarantiaDummy = [
   { tipo: 'Vicios ocultos', afianzadora: '', poliza: '', monto: 0, vigencia: '' }
 ];
 
-// HU-02 — Tabla de fianzas (formato del listado, no captura).
+// HU-02 — Pólizas de fianza. El campo clave es `diasOffset`: días desde HOY
+// hasta el vencimiento (positivo = futuro, negativo = vencida). El componente
+// calcula la fecha real con today + diasOffset y el badge de color por rango.
+// Esto hace que el cálculo de alertas sea determinista en el dummy sin atarse
+// a fechas absolutas que envejecen.
 export const fianzasListadoDummy = [
   {
-    tipo: 'Cumplimiento',
     folio: 'F-2026-08745',
+    tipo: 'Cumplimiento',
     afianzadora: 'Afianzadora Sofimex',
-    monto: '$ 1,245,000.00',
-    vigenciaInicio: '01/06/2026',
-    vigenciaFin: '28/11/2026',
-    estado: 'Vigente',
-    estadoColor: 'green',
+    monto: 1245000,
+    fechaEmisionLabel: '01/06/2026',
+    diasOffset: 185,          // > 30 → verde
+    archivoPdf: 'cumplimiento_F-2026-08745.pdf',
     tienePdf: true
   },
   {
-    tipo: 'Anticipo',
     folio: 'F-2026-08746',
+    tipo: 'Anticipo',
     afianzadora: 'Afianzadora Sofimex',
-    monto: '$ 3,735,000.00',
-    vigenciaInicio: '01/06/2026',
-    vigenciaFin: '28/08/2026',
-    estado: 'Vence pronto',
-    estadoColor: 'amber',
+    monto: 3735000,
+    fechaEmisionLabel: '01/06/2026',
+    diasOffset: 93,           // > 30 → verde
+    archivoPdf: 'anticipo_F-2026-08746.pdf',
     tienePdf: true
   },
   {
+    folio: 'F-2026-09001',
+    tipo: 'Cumplimiento',
+    afianzadora: 'Afianzadora Aserta',
+    monto: 980000,
+    fechaEmisionLabel: '12/03/2026',
+    diasOffset: 30,           // ≤ 30 → amarillo claro
+    archivoPdf: 'cumplimiento_F-2026-09001.pdf',
+    tienePdf: true
+  },
+  {
+    folio: 'F-2026-09014',
+    tipo: 'Anticipo',
+    afianzadora: 'Afianzadora Atlas',
+    monto: 425000,
+    fechaEmisionLabel: '14/12/2025',
+    diasOffset: 15,           // ≤ 15 → ámbar
+    archivoPdf: 'anticipo_F-2026-09014.pdf',
+    tienePdf: true
+  },
+  {
+    folio: 'F-2026-09027',
     tipo: 'Vicios ocultos',
-    folio: 'Por registrar',
-    afianzadora: '—',
-    monto: '—',
-    vigenciaInicio: '',
-    vigenciaFin: '—',
-    estado: 'Pendiente',
-    estadoColor: 'gray',
-    tienePdf: false
+    afianzadora: 'Afianzadora Insurgentes',
+    monto: 125000,
+    fechaEmisionLabel: '02/11/2025',
+    diasOffset: 4,            // ≤ 5 → rojo (vence en días)
+    archivoPdf: 'vicios_F-2026-09027.pdf',
+    tienePdf: true
+  },
+  {
+    folio: 'F-2026-08501',
+    tipo: 'Cumplimiento',
+    afianzadora: 'Afianzadora Sofimex',
+    monto: 550000,
+    fechaEmisionLabel: '20/10/2025',
+    diasOffset: -7,           // < 0 → rojo (ya venció)
+    archivoPdf: 'cumplimiento_F-2026-08501.pdf',
+    tienePdf: true
   }
 ];
 
@@ -364,11 +395,62 @@ export const historiasUsuario = [
 ];
 
 // HU-14 — Historial completo del ciclo de cobro (incluye versiones rechazadas).
+// Cada fila lleva `id` único (folio+versión) para anclar el drawer del detalle.
+// Las fechas de revisión y pago son null cuando aún no aplican; observaciones
+// es lista vacía salvo en rechazadas.
 export const historialEstimacionesDummy = [
-  { estimacion: 'EST-2026-001', periodo: 'Abr 2026', version: 'v1', estado: 'Aceptada',   importe: '$ 980,500.00',   fecha: '10/04/2026' },
-  { estimacion: 'EST-2026-002', periodo: 'May 2026', version: 'v1', estado: 'Rechazada',  importe: '$ 1,150,000.00', fecha: '12/05/2026' },
-  { estimacion: 'EST-2026-002', periodo: 'May 2026', version: 'v2', estado: 'Aceptada',   importe: '$ 1,120,300.00', fecha: '16/05/2026' },
-  { estimacion: 'EST-2026-003', periodo: 'May 2026', version: 'v1', estado: 'En proceso', importe: '$ 1,285,750.00', fecha: '23/05/2026' }
+  {
+    id: 'EST-2026-001-v1',
+    estimacion: 'EST-2026-001',
+    periodo: 'Abr 2026',
+    version: 'v1',
+    estado: 'Aceptada',
+    importe: '$ 980,500.00',
+    fechaPresentacion: '10/04/2026',
+    fechaRevision: '12/04/2026',
+    fechaPago: '15/04/2026',
+    observaciones: []
+  },
+  {
+    id: 'EST-2026-002-v1',
+    estimacion: 'EST-2026-002',
+    periodo: 'May 2026',
+    version: 'v1',
+    estado: 'Rechazada',
+    importe: '$ 1,150,000.00',
+    fechaPresentacion: '12/05/2026',
+    fechaRevision: '14/05/2026',
+    fechaPago: null,
+    observaciones: [
+      'Diferencia en números generadores del concepto Excavación.',
+      'Falta soporte fotográfico del armado del eje 7-B.',
+      'Precio unitario fuera de catálogo en Acero de refuerzo.'
+    ]
+  },
+  {
+    id: 'EST-2026-002-v2',
+    estimacion: 'EST-2026-002',
+    periodo: 'May 2026',
+    version: 'v2',
+    estado: 'Aceptada',
+    importe: '$ 1,120,300.00',
+    fechaPresentacion: '16/05/2026',
+    fechaRevision: '18/05/2026',
+    fechaPago: '22/05/2026',
+    observaciones: []
+  },
+  {
+    id: 'EST-2026-003-v1',
+    estimacion: 'EST-2026-003',
+    periodo: 'May 2026',
+    version: 'v1',
+    estado: 'En proceso',
+    importe: '$ 1,285,750.00',
+    fechaPresentacion: '23/05/2026',
+    fechaRevision: null,
+    fechaPago: null,
+    observaciones: []
+  }
 ];
 
 export const periodosHistorialDummy = ['Todos', 'Abr 2026', 'May 2026'];
@@ -400,6 +482,16 @@ export const pasosRevisionDummy = [
   { id: 'resolucion',  label: 'Resolución',  estado: 'Pendiente' }
 ];
 
+// HU-15 — Fecha de recepción de la estimación (inicio del plazo de revisión de
+// 15 días naturales del art. 54 LOPSRM). El componente calcula `diaActual` en
+// vivo restando esta fecha a Date.now(). Está fija en el dummy para no atarse
+// al envío real (HU-13 lo dispararía en producción).
+export const fechaRecepcionEstimacionISO = '2026-05-15';
+
+// HU-15 — Catálogos de los selects pequeños por observación.
+export const tiposObservacionRevision = ['Aclaración', 'Corrección', 'Rechazo'];
+export const severidadesObservacionRevision = ['Menor', 'Mayor', 'Crítica'];
+
 // HU-20 — Suficiencia presupuestal (art. 24 LOPSRM).
 export const presupuestoDummy = {
   techo: 15000000,
@@ -413,6 +505,12 @@ export const soportesPagoDummy = [
   { id: 'cfdi',        documento: 'CFDI',                        cargado: true  },
   { id: 'fianza',      documento: 'Estado de cuenta de fianza',  cargado: false }
 ];
+
+// HU-20 — Offset (en dias) desde la fecha de autorizacion hasta HOY. Se usa
+// asi (en lugar de una fecha ISO fija) para que el calculo siempre arroje un
+// valor estable que cae en zona ambar (11-17). El componente computa la fecha
+// real con today - diasDesdeAutorizacion y muestra "Dia X de 20".
+export const fechaAutorizacionOffsetDias = 13;
 
 // Vistas propuestas — fuera del backlog de 22 HU. Solo se muestran en modo proyecto.
 export const vistasPropuesta = [
@@ -587,22 +685,22 @@ export const notasEntregaDummy = [
   'NOTA-2026-016 · Entrega de avance · 28/05/2026'
 ];
 
-// HU-11 — Minutas ya registradas. La columna "acuerdos" es el conteo de los
-// compromisos derivados (se consultan en la pestaña Acuerdos con su detalle).
+// HU-11 — Minutas ya registradas. Folio MIN-NNN correlativo. archivoPdf simula
+// el nombre del archivo cargado (sin subirlo a ningún lado). La columna
+// "acuerdos" es el conteo de compromisos derivados (se ven en la pestaña
+// Acuerdos con su detalle).
 export const minutasDummy = [
-  { id: 1, fecha: '15/05/2026', tema: 'Reunión de avance mensual', asistentes: 'Residente, Superintendente, Supervisión', acuerdos: 3 },
-  { id: 2, fecha: '01/05/2026', tema: 'Junta de inicio de obra',   asistentes: 'Residente, Dependencia, Contratista',     acuerdos: 2 }
+  { folio: 'MIN-001', fecha: '15/05/2026', lugar: 'Sala de juntas — Residencia', participantes: 'Residente, Superintendente, Supervisión', asunto: 'Reunión de avance mensual', archivoPdf: 'minuta_avance_mayo.pdf', acuerdos: 3 },
+  { folio: 'MIN-002', fecha: '01/05/2026', lugar: 'Oficina de la Dependencia',   participantes: 'Residente, Dependencia, Contratista',     asunto: 'Junta de inicio de obra',   archivoPdf: 'minuta_inicio_obra.pdf', acuerdos: 2 }
 ];
 
-// HU-11 — Visitas agendadas. El estado conduce el color del badge en la tabla.
+// HU-11 — Visitas agendadas. Folio VIS-NNN correlativo. El estado conduce el
+// color del badge en la tabla (Realizada / Programada / Cancelada).
 export const visitasDummy = [
-  { id: 1, fecha: '20/05/2026', tipo: 'Inspección',     responsable: 'Supervisión', estado: 'Realizada'  },
-  { id: 2, fecha: '28/05/2026', tipo: 'Visita de obra', responsable: 'Residente',   estado: 'Programada' },
-  { id: 3, fecha: '03/06/2026', tipo: 'Inspección',     responsable: 'Supervisión', estado: 'Programada' }
+  { folio: 'VIS-001', fecha: '20/05/2026', lugar: 'Frente de obra norte', responsable: 'Supervisión', proposito: 'Inspección del armado de columnas',   estado: 'Realizada'  },
+  { folio: 'VIS-002', fecha: '28/05/2026', lugar: 'Frente de obra norte', responsable: 'Residente',   proposito: 'Visita técnica conjunta del periodo', estado: 'Programada' },
+  { folio: 'VIS-003', fecha: '03/06/2026', lugar: 'Frente de obra sur',   responsable: 'Supervisión', proposito: 'Inspección de cimentación',           estado: 'Programada' }
 ];
-
-// HU-11 — Catálogo del select de tipo de visita.
-export const tiposVisitaDummy = ['Visita de obra', 'Inspección'];
 
 // HU-11 — Acuerdos derivados de minutas o visitas. El "periodo" agrupa por mes
 // y conduce el filtro consultativo de la pestaña Acuerdos.
@@ -651,13 +749,34 @@ export const historicoVersionesDummy = [
 // HU-17 — Estimaciones en el tablero. Solo aceptadas y en proceso (CA-1: las
 // rechazadas viven en el historial HU-14, no aqui). Los estados validos son
 // 'Presentada' | 'En revisión' | 'Autorizada' | 'En pago' | 'Pagada'.
+//
+// Campos auxiliares (para filtros, montos agregados y "días en estado"):
+//   · montoNum   — importe numérico (sin formato) para sumas y agregados.
+//   · responsable — rol responsable del siguiente paso (driver del filtro).
+//   · diasEnEstado — días transcurridos en el estado actual (alimenta el cálculo
+//     del KPI "días promedio en cada estado" del tablero).
 export const estimacionesTableroDummy = [
-  { numero: 1, periodo: 'Feb 2026', monto: '$ 1,200,000.00', estado: 'Pagada'      },
-  { numero: 2, periodo: 'Mar 2026', monto: '$ 1,500,000.00', estado: 'En pago'     },
-  { numero: 3, periodo: 'Abr 2026', monto: '$ 1,750,000.00', estado: 'Autorizada'  },
-  { numero: 4, periodo: 'May 2026', monto: '$ 1,850,000.00', estado: 'En revisión' },
-  { numero: 5, periodo: 'May 2026', monto: '$   900,000.00', estado: 'Presentada'  }
+  { numero: 1, periodo: 'Feb 2026', monto: '$ 1,200,000.00', montoNum: 1200000, estado: 'Pagada',      responsable: 'finanzas',   diasEnEstado:  3 },
+  { numero: 2, periodo: 'Mar 2026', monto: '$ 1,500,000.00', montoNum: 1500000, estado: 'En pago',     responsable: 'finanzas',   diasEnEstado:  8 },
+  { numero: 3, periodo: 'Abr 2026', monto: '$ 1,750,000.00', montoNum: 1750000, estado: 'Autorizada',  responsable: 'dependencia', diasEnEstado:  2 },
+  { numero: 4, periodo: 'May 2026', monto: '$ 1,850,000.00', montoNum: 1850000, estado: 'En revisión', responsable: 'supervision', diasEnEstado:  4 },
+  { numero: 5, periodo: 'May 2026', monto: '$   900,000.00', montoNum:  900000, estado: 'Presentada',  responsable: 'residente',   diasEnEstado:  1 }
 ];
+
+// HU-17 — Indicadores agregados del contrato (parte alta del tablero). El
+// avance físico viene de la curva real (HU-05) y los días promedio en cada
+// estado se computan en el componente a partir de diasEnEstado.
+export const indicadoresContratoTableroDummy = {
+  avanceFisicoPct: 78,
+  montoTotalEstimado: 7200000,
+  montoPagado: 1200000,
+  montoPendiente: 6000000
+};
+
+// HU-17 — Catalogos de filtros del tablero (consultativos).
+export const filtroEstadosTableroDummy = ['Todos', 'Presentada', 'En revisión', 'Autorizada', 'En pago', 'Pagada'];
+export const filtroPeriodosTableroDummy = ['Todos', 'Feb 2026', 'Mar 2026', 'Abr 2026', 'May 2026'];
+export const filtroResponsablesTableroDummy = ['Todos', 'residente', 'contratista', 'supervision', 'dependencia', 'finanzas'];
 
 // HU-17 — Pendientes por rol para el panel "Mis pendientes". El catalogo usa
 // las mismas claves de ROLES (residente, contratista, supervision, dependencia,
@@ -680,57 +799,105 @@ export const pendientesEstimacionPorRol = {
 };
 
 // HU-18 — Contratos del portafolio. Es la unica vista del backlog que opera
-// sobre multiples contratos. El campo "semaforo" se calcularia a partir de
-// avance fisico + atrasos + pendientes; en la demo viene servido en el dummy.
+// sobre multiples contratos. El semaforo se DERIVA en el componente a partir
+// de los tres factores crudos del campo `factores`:
+//   · desviacionAvance — programado - real (positivo = atraso).
+//   · diasVencidos     — dias vencidos en estimaciones/pagos.
+//   · pendientesSinAtender — conteo de tareas sin cierre.
+// Cada factor aporta 0/1/2 puntos; suma -> verde (0-1), amarillo (2-3), rojo (≥4).
+// avanceMesAnterior alimenta el badge "vs mes anterior" del CA-3.
 export const portafolioContratosDummy = [
   {
     folio: 'C-2026-0042', contratista: 'Constructora XYZ',          avance:  90,
-    estado: 'Sin atraso',              semaforo: 'verde',
+    estado: 'Sin atraso',
+    avanceMesAnterior: 85,
+    ejercicioFiscal: '2026',
+    tipoContratacion: 'Licitación pública',
+    factores: { desviacionAvance:  -2, diasVencidos:  0, pendientesSinAtender: 0 },
     indicadores: { avanceFisico: 90, avanceFinanciero: 88, penalizaciones: 0 }
   },
   {
     folio: 'C-2026-0047', contratista: 'Constructora del Valle',    avance:  78,
-    estado: 'Al corriente',            semaforo: 'verde',
+    estado: 'Al corriente',
+    avanceMesAnterior: 70,
+    ejercicioFiscal: '2026',
+    tipoContratacion: 'Invitación a 3',
+    factores: { desviacionAvance:   3, diasVencidos:  0, pendientesSinAtender: 1 },
     indicadores: { avanceFisico: 78, avanceFinanciero: 75, penalizaciones: 0 }
   },
   {
     folio: 'C-2026-0038', contratista: 'Edificaciones del Norte',   avance:  65,
-    estado: 'Atraso leve',             semaforo: 'amarillo',
+    estado: 'Atraso leve',
+    avanceMesAnterior: 65,
+    ejercicioFiscal: '2025',
+    tipoContratacion: 'Licitación pública',
+    factores: { desviacionAvance:  10, diasVencidos:  5, pendientesSinAtender: 1 },
     indicadores: { avanceFisico: 65, avanceFinanciero: 60, penalizaciones: 25_000 }
   },
   {
     folio: 'C-2026-0029', contratista: 'Obras y Proyectos SA',      avance: 100,
-    estado: 'Finiquito pendiente',     semaforo: 'amarillo',
+    estado: 'Finiquito pendiente',
+    avanceMesAnterior: 100,
+    ejercicioFiscal: '2025',
+    tipoContratacion: 'Adjudicación directa',
+    factores: { desviacionAvance:   0, diasVencidos:  3, pendientesSinAtender: 2 },
     indicadores: { avanceFisico: 100, avanceFinanciero: 95, penalizaciones: 0 }
   },
   {
     folio: 'C-2026-0051', contratista: 'Infraestructura del Bajío', avance:  40,
-    estado: 'Atraso crítico + penalización', semaforo: 'rojo',
+    estado: 'Atraso crítico + penalización',
+    avanceMesAnterior: 38,
+    ejercicioFiscal: '2026',
+    tipoContratacion: 'Licitación pública',
+    factores: { desviacionAvance:  25, diasVencidos: 18, pendientesSinAtender: 4 },
     indicadores: { avanceFisico: 40, avanceFinanciero: 35, penalizaciones: 180_000 }
   }
 ];
 
+// HU-18 — Catalogo de opciones del control "Agrupar por".
+export const agruparPorPortafolioDummy = ['Ninguno', 'Contratista', 'Ejercicio fiscal', 'Tipo de contratación'];
+
 // HU-19 — Los 7 reportes definidos en el alcance del proyecto. Cada uno con
-// los formatos en que se exporta (PDF, Excel o ambos).
+// los formatos en que se exporta (PDF, Excel o ambos). El catalogo cuadra con
+// los handlers reales del componente (jsPDF/SheetJS).
 export const reportesCatalogoDummy = [
-  { id: 1, nombre: 'Avance físico',     descripcion: 'Avance por concepto del catálogo y curva S.',          formatos: ['PDF', 'Excel'] },
-  { id: 2, nombre: 'Avance financiero', descripcion: 'Estimaciones cobradas, retenciones y amortizaciones.', formatos: ['PDF', 'Excel'] },
-  { id: 3, nombre: 'Estimaciones',      descripcion: 'Listado completo de estimaciones y sus versiones.',    formatos: ['Excel']       },
-  { id: 4, nombre: 'Observaciones',     descripcion: 'Observaciones a estimaciones y bitácora.',             formatos: ['PDF', 'Excel'] },
-  { id: 5, nombre: 'Bitácora',          descripcion: 'Notas técnicas, firmas y respuestas del periodo.',     formatos: ['PDF']         },
-  { id: 6, nombre: 'Modificatorios',    descripcion: 'Convenios modificatorios (art. 59 / 59 Bis LOPSRM).',  formatos: ['PDF']         },
-  { id: 7, nombre: 'Penalizaciones',    descripcion: 'Cálculo de penas convencionales por atraso.',          formatos: ['Excel']       }
+  { id: 1, nombre: 'Avance físico vs programado', descripcion: 'Curva S + concepto × periodo (HU-05).',                 formatos: ['PDF', 'Excel'] },
+  { id: 2, nombre: 'Avance financiero',           descripcion: 'Comprometido, autorizado, pagado y disponible por mes.',formatos: ['Excel']        },
+  { id: 3, nombre: 'Listado de estimaciones',     descripcion: 'Una fila por estimación con versión, estado y fechas.', formatos: ['Excel']        },
+  { id: 4, nombre: 'Listado de observaciones',    descripcion: 'Observaciones de la última versión rechazada.',         formatos: ['Excel']        },
+  { id: 5, nombre: 'Bitácora completa',           descripcion: 'Notas cronológicas con folio, fecha, tipo, firmas.',    formatos: ['PDF']          },
+  { id: 6, nombre: 'Histórico de modificatorios', descripcion: 'Versiones del contrato (art. 59 / 59 Bis LOPSRM).',     formatos: ['Excel']        },
+  { id: 7, nombre: 'Penalizaciones y deductivas', descripcion: 'Penas convencionales por atraso por contrato.',         formatos: ['Excel']        }
 ];
 
 // HU-19 — Catalogo del selector de periodo (consultativo).
 export const periodosReportesDummy = ['Mensual', 'Trimestral', 'Acumulado'];
 
-// HU-07 — Alertas ya configuradas (dummy). El estado define la acción disponible.
+// HU-07 — Alertas ya configuradas (dummy). El folio A-NNN es correlativo y se
+// usa para derivar el siguiente correlativo al crear una nueva alerta. El estado
+// define la acción disponible (Activa → "Pausar"; Pausada → "Reanudar").
 export const alertasConfiguradasDummy = [
-  { id: 1, concepto: 'Cimentación',   umbral: 80, canal: 'Correo',   estado: 'Activa'  },
-  { id: 2, concepto: 'Estructura',    umbral: 90, canal: 'Ambos',    estado: 'Activa'  },
-  { id: 3, concepto: 'Instalaciones', umbral: 75, canal: 'En el sistema', estado: 'Pausada' }
+  { folio: 'A-001', concepto: 'Cimentación',   umbral: 80, canal: 'Correo',   estado: 'Activa'  },
+  { folio: 'A-002', concepto: 'Estructura',    umbral: 90, canal: 'Sistema',  estado: 'Activa'  },
+  { folio: 'A-003', concepto: 'Instalaciones', umbral: 75, canal: 'Sistema',  estado: 'Pausada' }
 ];
+
+// HU-07 — Avance simulado por concepto del programa (el "equivalente" al
+// porcentaje que en una implementación real vendría de la curva ejecutada o de
+// programaObraGanttDummy). Conduce la sección "Alertas disparadas": si el
+// avance real es menor al umbral configurado, la alerta entra al timeline.
+//
+// Diseñado a propósito para que con las alertas de fábrica al menos una activa
+// dispare (Cimentación 65% < umbral 80%) y una activa NO (Estructura 50%? con
+// umbral 90 también dispara; la única no disparada es la pausada de
+// Instalaciones — por estar Pausada se filtra del timeline).
+export const avanceConceptoAlertaDummy = {
+  'Excavación':    100,
+  'Cimentación':    65,
+  'Estructura':     50,
+  'Albañilería':    30,
+  'Instalaciones':  70
+};
 
 // HU-09 / HU-10 / HU-12 — Libro de bitácora unificado. Cada nota lleva folio
 // correlativo `BIT-XXXX`, fecha ISO, tipo (catálogo de art. 125 RLOPSRM),
@@ -745,11 +912,11 @@ export const notasBitacoraDummy = [
   { folio: 'BIT-0003', tipo: 'Respuesta',    fecha: '2026-05-06', firmante: 'Ing. Carlos Hernández García', rol: 'residente',   asunto: 'Respuesta a BIT-0002 — procedimiento de cimentación',         contenido: 'Atendiendo BIT-0002, se autoriza el procedimiento propuesto con ajuste menor en profundidad de zapatas para el eje 7-B.',                                       vinculadaA: 'BIT-0002',  color: 'green' },
   { folio: 'BIT-0004', tipo: 'Acuerdo',      fecha: '2026-05-10', firmante: 'Ing. Roberto López',           rol: 'supervision', asunto: 'Acuerdo sobre control de calidad del concreto',               contenido: 'Las tres partes acuerdan realizar pruebas de revenimiento y resistencia por cada colado, con muestreo conforme a la NMX-C-156.',                                  vinculadaA: null,        color: 'amber' },
   { folio: 'BIT-0005', tipo: 'Instrucción',  fecha: '2026-05-12', firmante: 'Ing. Carlos Hernández García', rol: 'residente',   asunto: 'Excavación zona norte',                                       contenido: 'Se instruye al contratista iniciar la excavación de la zona norte del predio conforme al programa de obra y al estudio topográfico vigente.',                     vinculadaA: null,        color: 'blue'  },
-  { folio: 'BIT-0006', tipo: 'Confirmación', fecha: '2026-05-14', firmante: 'Ing. Roberto López',           rol: 'supervision', asunto: 'Recepción de armado de columnas eje A',                       contenido: 'La supervisión confirma la correcta ejecución del armado de columnas del eje A, conforme a planos estructurales y especificaciones técnicas.',                   vinculadaA: null,        color: 'green' },
+  { folio: 'BIT-0006', tipo: 'Avance',       fecha: '2026-05-14', firmante: 'Ing. Roberto López',           rol: 'supervision', asunto: 'Avance: armado de columnas eje A',                            contenido: 'La supervisión confirma la correcta ejecución del armado de columnas del eje A, conforme a planos estructurales y especificaciones técnicas.',                   vinculadaA: null,        color: 'green' },
   { folio: 'BIT-0007', tipo: 'Solicitud',    fecha: '2026-05-18', firmante: 'Arq. Carlos Mendoza',          rol: 'contratista', asunto: 'Solicitud de autorización para colado de losa nivel 1',      contenido: 'Se solicita autorización para el colado de la losa del nivel 1 programado para el 20/05/2026, anexando bitácora de armado.',                                    vinculadaA: null,        color: 'amber' },
   { folio: 'BIT-0008', tipo: 'Respuesta',    fecha: '2026-05-19', firmante: 'Ing. Carlos Hernández García', rol: 'residente',   asunto: 'Autorización de colado de losa nivel 1',                      contenido: 'Atendiendo BIT-0007, queda autorizado el colado de la losa del nivel 1 para el 20/05/2026, condicionado a la presencia del laboratorio de control.',             vinculadaA: 'BIT-0007',  color: 'green' },
   { folio: 'BIT-0009', tipo: 'Acuerdo',      fecha: '2026-05-22', firmante: 'Ing. Roberto López',           rol: 'supervision', asunto: 'Acuerdo sobre modificación menor en muros',                   contenido: 'Las tres partes acuerdan un ajuste menor en el espesor de muros del nivel 1 sin impacto en el alcance ni en el monto del contrato.',                              vinculadaA: null,        color: 'amber' },
   { folio: 'BIT-0010', tipo: 'Instrucción',  fecha: '2026-05-25', firmante: 'Ing. Carlos Hernández García', rol: 'residente',   asunto: 'Reanudación de trabajos tras lluvia',                         contenido: 'Se instruye al contratista la reanudación de actividades tras la suspensión por lluvia atípica del 24/05/2026, sin afectación al programa.',                      vinculadaA: null,        color: 'blue'  },
-  { folio: 'BIT-0011', tipo: 'Confirmación', fecha: '2026-05-28', firmante: 'Ing. Roberto López',           rol: 'supervision', asunto: 'Recepción de trabajos del eje 6',                              contenido: 'Se confirma la recepción de los trabajos del eje 6 conforme a especificaciones, dando paso a la estimación del periodo.',                                          vinculadaA: null,        color: 'green' },
+  { folio: 'BIT-0011', tipo: 'Entrega de obra', fecha: '2026-05-28', firmante: 'Ing. Roberto López',        rol: 'supervision', asunto: 'Entrega: trabajos del eje 6',                                  contenido: 'Se confirma la recepción de los trabajos del eje 6 conforme a especificaciones, dando paso a la estimación del periodo.',                                          vinculadaA: null,        color: 'green' },
   { folio: 'BIT-0012', tipo: 'Solicitud',    fecha: '2026-06-02', firmante: 'Arq. Carlos Mendoza',          rol: 'contratista', asunto: 'Solicitud de aprobación de estimación EST-2026-003',          contenido: 'Se solicita la aprobación de la estimación EST-2026-003 correspondiente al periodo de mayo 2026, anexando números generadores y soportes documentales.',          vinculadaA: null,        color: 'amber' }
 ];

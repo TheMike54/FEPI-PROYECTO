@@ -69,26 +69,56 @@ test.describe('HU-06 — modo proyecto', () => {
     await expect(page.getByText('bloquea el registro cuando la cantidad acumulada excede')).toBeVisible();
   });
 
-  // CHECK DISTINTIVO: validacion de exceso por concepto (CA-2).
-  test('validacion de exceso: capturado que supera lo contratado bloquea el guardado', async ({ page }) => {
+  // CHECK DISTINTIVO 1: el botón Guardar queda disabled hasta tener al menos
+  // una cantidad capturada con nota seleccionada y sin exceso.
+  test('Guardar disabled: requiere cantidad + nota + sin exceso', async ({ page }) => {
     await goToViaSidebar(page, VIEW_PATH);
 
-    const inputExcav = inputDeFila(page, 'Excavación');
-    const btnGuardar = page.getByRole('button', { name: 'Guardar avance del periodo' });
+    const cap = inputDeFila(page, 'Excavación');
+    const btn = page.getByTestId('btn-guardar-avance');
 
-    // Estado inicial: cantidades=0, sin exceso, boton habilitado.
-    await expect(btnGuardar).toBeEnabled();
-    await expect(page.getByText('Corrige los renglones marcados en rojo')).toHaveCount(0);
+    // Inicial: 0 capturado, nota placeholder → disabled.
+    await expect(btn).toBeDisabled();
 
-    // 500 sobre acumulado previo de 600 -> acumNuevo=1100 > contratada=1000.
-    await inputExcav.fill('500');
-    await expect(page.getByText('Corrige los renglones marcados en rojo')).toBeVisible();
-    await expect(btnGuardar).toBeDisabled();
+    // 500 sobre acumPrevio=600 → 1100 > 1000 → exceso, sigue disabled.
+    await cap.fill('500');
+    await expect(page.getByText(/La cantidad acumulada excede la contratada/)).toBeVisible();
+    await expect(btn).toBeDisabled();
 
-    // 100 sobre acumulado previo de 600 -> acumNuevo=700 <= 1000, vuelve a OK.
-    await inputExcav.fill('100');
-    await expect(page.getByText('Corrige los renglones marcados en rojo')).toHaveCount(0);
-    await expect(btnGuardar).toBeEnabled();
+    // 100 sobre 600 → 700, sin exceso, falta nota → aviso amarillo y disabled.
+    await cap.fill('100');
+    await expect(page.getByText(/Falta seleccionar la nota/)).toBeVisible();
+    await expect(btn).toBeDisabled();
+
+    // Seleccionar nota válida → habilitado.
+    const notaSel = page.locator('tr', { hasText: 'Excavación' }).locator('select');
+    await notaSel.selectOption({ index: 1 });
+    await expect(btn).toBeEnabled();
+  });
+
+  // CHECK DISTINTIVO 2: al guardar aparece el banner verde y el botón
+  // desaparece (el periodo queda en lectura).
+  test('al guardar: aviso-avance-guardado visible y boton oculto', async ({ page }) => {
+    await goToViaSidebar(page, VIEW_PATH);
+
+    await inputDeFila(page, 'Excavación').fill('100');
+    await page
+      .locator('tr', { hasText: 'Excavación' })
+      .locator('select')
+      .selectOption({ index: 1 });
+
+    await page.getByTestId('btn-guardar-avance').click();
+
+    const aviso = page.getByTestId('aviso-avance-guardado');
+    await expect(aviso).toBeVisible();
+    await expect(aviso).toContainText('Avance del periodo Mayo 2026 guardado');
+
+    await expect(page.getByTestId('btn-guardar-avance')).toHaveCount(0);
+  });
+
+  test('fundamento art. 118 RLOPSRM visible al pie', async ({ page }) => {
+    await goToViaSidebar(page, VIEW_PATH);
+    await expect(page.getByText(/Fundamento: art\. 118 RLOPSRM/)).toBeVisible();
   });
 });
 
