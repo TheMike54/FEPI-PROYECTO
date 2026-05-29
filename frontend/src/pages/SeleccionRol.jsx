@@ -2,7 +2,7 @@ import { useState } from 'react';
 import Header from '../components/layout/Header.jsx';
 import { ROLES } from '../data/permisos.js';
 import { useSesion } from '../context/SesionContext.jsx';
-import { useToast } from '../components/ui/Toast.jsx';
+import { api } from '../services/api.js';
 
 const ICONOS = {
   residente:   '👷',
@@ -20,9 +20,26 @@ const DESCRIPCIONES = {
   finanzas:    'Verifica suficiencia presupuestal y registra los pagos efectuados.'
 };
 
-export default function SeleccionRol() {
-  const { setRol, login } = useSesion();
-  const { showToast } = useToast();
+// Banner inline reutilizable para mensajes de error/éxito de autenticación.
+function MensajeAuth({ mensaje }) {
+  if (!mensaje) return null;
+  const esError = mensaje.tipo === 'error';
+  const clases = esError
+    ? 'bg-red-50 border-red-300 text-red-800'
+    : 'bg-green-50 border-green-300 text-green-800';
+  return (
+    <div
+      data-testid="auth-mensaje"
+      data-tipo={mensaje.tipo}
+      className={`mb-4 rounded-md border px-4 py-3 text-sm ${clases}`}
+    >
+      {mensaje.texto}
+    </div>
+  );
+}
+
+function FormLogin({ onIrRegistro, mensaje, setMensaje }) {
+  const { login } = useSesion();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -31,14 +48,222 @@ export default function SeleccionRol() {
     e.preventDefault();
     if (loading) return;
     setLoading(true);
+    setMensaje(null);
     try {
       await login(email, password);
     } catch (err) {
-      showToast('Credenciales inválidas');
+      // El backend devuelve un mensaje claro (403 pendiente/rechazada, 401 credenciales).
+      setMensaje({ tipo: 'error', texto: err.message || 'No se pudo iniciar sesión' });
     } finally {
       setLoading(false);
     }
   };
+
+  return (
+    <div className="bg-white rounded-xl shadow-md p-8 mb-8">
+      <h2 className="text-lg font-semibold text-slate-800 mb-4 text-center">
+        Iniciar sesión
+      </h2>
+      <MensajeAuth mensaje={mensaje} />
+      <form className="space-y-4" onSubmit={handleSubmit}>
+        <div>
+          <label className="sg-label" htmlFor="login-usuario">Correo</label>
+          <input
+            id="login-usuario"
+            type="email"
+            className="sg-input"
+            placeholder="usuario@dependencia.gob.mx"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="username"
+            disabled={loading}
+          />
+        </div>
+        <div>
+          <label className="sg-label" htmlFor="login-password">Contraseña</label>
+          <input
+            id="login-password"
+            type="password"
+            className="sg-input"
+            placeholder="••••••••"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+            disabled={loading}
+          />
+        </div>
+        <button type="submit" className="sg-btn-primary w-full" disabled={loading}>
+          {loading ? 'Iniciando sesión…' : 'Iniciar sesión'}
+        </button>
+      </form>
+      <p className="mt-4 text-center text-sm text-slate-600">
+        ¿Eres nuevo?{' '}
+        <button
+          type="button"
+          data-testid="link-registro"
+          onClick={onIrRegistro}
+          className="font-semibold text-sigecop-accent hover:underline"
+        >
+          Regístrate
+        </button>
+      </p>
+    </div>
+  );
+}
+
+function FormRegistro({ onIrLogin, setMensaje }) {
+  const [nombre, setNombre] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [password2, setPassword2] = useState('');
+  const [rolSolicitado, setRolSolicitado] = useState(ROLES[0].id);
+  const [loading, setLoading] = useState(false);
+  const [errorLocal, setErrorLocal] = useState(null);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (loading) return;
+    setErrorLocal(null);
+
+    if (!nombre.trim() || !email.trim() || !password) {
+      setErrorLocal('Completa todos los campos.');
+      return;
+    }
+    if (password.length < 8) {
+      setErrorLocal('La contraseña debe tener al menos 8 caracteres.');
+      return;
+    }
+    if (password !== password2) {
+      setErrorLocal('Las contraseñas no coinciden.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await api.register({ nombre: nombre.trim(), email: email.trim(), password, rolSolicitado });
+      // Vuelve al login mostrando el mensaje de cuenta pendiente.
+      setMensaje({
+        tipo: 'exito',
+        texto: 'Tu cuenta quedó pendiente de aprobación por la dependencia. Te avisaremos cuando puedas iniciar sesión.'
+      });
+      onIrLogin();
+    } catch (err) {
+      setErrorLocal(err.message || 'No se pudo completar el registro.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl shadow-md p-8 mb-8">
+      <h2 className="text-lg font-semibold text-slate-800 mb-1 text-center">
+        Crear cuenta
+      </h2>
+      <p className="text-center text-xs text-slate-500 mb-4">
+        Tu acceso queda pendiente hasta que la dependencia lo apruebe.
+      </p>
+      {errorLocal && (
+        <div data-testid="registro-error" className="mb-4 rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {errorLocal}
+        </div>
+      )}
+      <form className="space-y-4" data-testid="form-registro" onSubmit={handleSubmit}>
+        <div>
+          <label className="sg-label" htmlFor="reg-nombre">Nombre completo</label>
+          <input
+            id="reg-nombre"
+            data-testid="reg-nombre"
+            type="text"
+            className="sg-input"
+            placeholder="Ej. Ing. María López Hernández"
+            value={nombre}
+            onChange={(e) => setNombre(e.target.value)}
+            disabled={loading}
+          />
+        </div>
+        <div>
+          <label className="sg-label" htmlFor="reg-email">Correo</label>
+          <input
+            id="reg-email"
+            data-testid="reg-email"
+            type="email"
+            className="sg-input"
+            placeholder="nombre@dependencia.gob.mx"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="username"
+            disabled={loading}
+          />
+        </div>
+        <div>
+          <label className="sg-label" htmlFor="reg-rol">Rol que solicita</label>
+          <select
+            id="reg-rol"
+            data-testid="reg-rol"
+            className="sg-input"
+            value={rolSolicitado}
+            onChange={(e) => setRolSolicitado(e.target.value)}
+            disabled={loading}
+          >
+            {ROLES.map((r) => (
+              <option key={r.id} value={r.id}>{r.nombre}</option>
+            ))}
+          </select>
+          <p className="text-xs text-slate-500 mt-1">
+            Informativo: la dependencia confirma el rol definitivo al aprobar.
+          </p>
+        </div>
+        <div>
+          <label className="sg-label" htmlFor="reg-password">Contraseña (mín. 8 caracteres)</label>
+          <input
+            id="reg-password"
+            data-testid="reg-password"
+            type="password"
+            className="sg-input"
+            placeholder="••••••••"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="new-password"
+            disabled={loading}
+          />
+        </div>
+        <div>
+          <label className="sg-label" htmlFor="reg-password2">Confirmar contraseña</label>
+          <input
+            id="reg-password2"
+            data-testid="reg-password2"
+            type="password"
+            className="sg-input"
+            placeholder="••••••••"
+            value={password2}
+            onChange={(e) => setPassword2(e.target.value)}
+            autoComplete="new-password"
+            disabled={loading}
+          />
+        </div>
+        <button type="submit" data-testid="reg-submit" className="sg-btn-primary w-full" disabled={loading}>
+          {loading ? 'Enviando…' : 'Crear cuenta'}
+        </button>
+      </form>
+      <p className="mt-4 text-center text-sm text-slate-600">
+        ¿Ya tienes cuenta?{' '}
+        <button
+          type="button"
+          data-testid="link-login"
+          onClick={onIrLogin}
+          className="font-semibold text-sigecop-accent hover:underline"
+        >
+          Inicia sesión
+        </button>
+      </p>
+    </div>
+  );
+}
+
+export default function SeleccionRol() {
+  const { setRol } = useSesion();
+  const [vista, setVista] = useState('login'); // 'login' | 'registro'
+  const [mensaje, setMensaje] = useState(null);
 
   return (
     <div className="min-h-screen flex flex-col bg-slate-50">
@@ -56,47 +281,18 @@ export default function SeleccionRol() {
             </p>
           </div>
 
-          {/* Card login real */}
-          <div className="bg-white rounded-xl shadow-md p-8 mb-8">
-            <h2 className="text-lg font-semibold text-slate-800 mb-4 text-center">
-              Iniciar sesión
-            </h2>
-            <form className="space-y-4" onSubmit={handleSubmit}>
-              <div>
-                <label className="sg-label" htmlFor="login-usuario">Correo</label>
-                <input
-                  id="login-usuario"
-                  type="email"
-                  className="sg-input"
-                  placeholder="usuario@dependencia.gob.mx"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  autoComplete="username"
-                  disabled={loading}
-                />
-              </div>
-              <div>
-                <label className="sg-label" htmlFor="login-password">Contraseña</label>
-                <input
-                  id="login-password"
-                  type="password"
-                  className="sg-input"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  autoComplete="current-password"
-                  disabled={loading}
-                />
-              </div>
-              <button type="submit" className="sg-btn-primary w-full" disabled={loading}>
-                {loading ? 'Iniciando sesión…' : 'Iniciar sesión'}
-              </button>
-            </form>
-            <p className="mt-4 text-center text-xs text-slate-500">
-              ¿No tienes acceso al sistema? Solicítalo a tu dependencia o al
-              administrador del contrato.
-            </p>
-          </div>
+          {vista === 'login' ? (
+            <FormLogin
+              onIrRegistro={() => { setMensaje(null); setVista('registro'); }}
+              mensaje={mensaje}
+              setMensaje={setMensaje}
+            />
+          ) : (
+            <FormRegistro
+              onIrLogin={() => setVista('login')}
+              setMensaje={setMensaje}
+            />
+          )}
 
           {/* Separador */}
           <div className="flex items-center gap-4 my-8">

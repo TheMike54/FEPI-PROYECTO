@@ -2,6 +2,11 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { query } = require('../db/pool');
 
+const ROLES_VALIDOS = ['residente', 'contratista', 'supervision', 'dependencia', 'finanzas'];
+
+const MSG_PENDIENTE = 'Tu cuenta está pendiente de aprobación por la dependencia';
+const MSG_RECHAZADA = 'Tu solicitud de acceso fue rechazada. Contacta a la dependencia';
+
 async function login(req, res) {
   const { email, password } = req.body || {};
 
@@ -10,7 +15,7 @@ async function login(req, res) {
   }
 
   const result = await query(
-    'SELECT id, nombre, email, password_hash, rol FROM usuarios WHERE email = $1 LIMIT 1',
+    'SELECT id, nombre, email, password_hash, rol, estado FROM usuarios WHERE email = $1 LIMIT 1',
     [email]
   );
   const usuario = result.rows[0];
@@ -22,6 +27,14 @@ async function login(req, res) {
   const passwordOk = await bcrypt.compare(password, usuario.password_hash);
   if (!passwordOk) {
     return res.status(401).json({ error: 'Credenciales inválidas' });
+  }
+
+  // La cuenta debe estar activa para entrar. Los usuarios existentes son 'activo'
+  // por el DEFAULT de la columna, así que este chequeo no los afecta. Solo frena a
+  // las altas nuevas que aún no aprueba la dependencia (pendiente / rechazada).
+  if (usuario.estado !== 'activo') {
+    const error = usuario.estado === 'rechazado' ? MSG_RECHAZADA : MSG_PENDIENTE;
+    return res.status(403).json({ error, estado: usuario.estado });
   }
 
   const token = jwt.sign(
@@ -36,4 +49,42 @@ async function login(req, res) {
   });
 }
 
-module.exports = { login };
+// Auto-registro público. Crea la cuenta en estado 'pendiente': NO devuelve token
+// y el usuario no puede entrar hasta que la dependencia lo apruebe. El rol enviado
+// es solo el "rol solicitado" (informativo); la dependencia fija el definitivo al aprobar.
+async function register(req, res) {
+  try {
+    const { nombre, email, password, rolSolicitado } = req.body || {};
+
+    if (!nombre || !email || !password) {
+      return res.status(400).json({ error: 'nombre, email y password son requeridos' });
+    }
+    if (String(password).length < 8) {
+      return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
+    }
+    const rol = ROLES_VALIDOS.includes(rolSolicitado) ? rolSolicitado : 'residente';
+    const emailNorm = String(email).trim().toLowerCase();
+
+    const hash = await bcrypt.hash(password, 10);
+
+    const result = await query(
+      `INSERT INTO usuarios (nombre, email, password_hash, rol, estado)
+       VALUES ($1, $2, $3, $4, 'pendiente')
+       RETURNING id, nombre, email, rol, estado, created_at`,
+      [String(nombre).trim(), emailNorm, hash, rol]
+    );
+
+    return res.status(201).json({
+      mensaje: 'Tu cuenta quedó pendiente de aprobación por la dependencia',
+      usuario: result.rows[0]
+    });
+  } catch (err) {
+    if (err.code === '23505') {
+      return res.status(409).json({ error: 'Ese correo ya está registrado' });
+    }
+    console.error('[register]', err);
+    return res.status(500).json({ error: 'Error interno' });
+  }
+}
+
+module.exports = { login, register };

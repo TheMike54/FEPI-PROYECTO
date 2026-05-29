@@ -12,6 +12,12 @@ DO $$ BEGIN
   CREATE TYPE tipo_nota_bitacora AS ENUM ('instruccion', 'acuerdo', 'solicitud', 'confirmacion', 'respuesta');
 EXCEPTION WHEN duplicate_object THEN NULL; END $$;
 
+-- Estado de la cuenta: las altas por auto-registro nacen 'pendiente' y no
+-- pueden iniciar sesión hasta que la dependencia las aprueba ('activo').
+DO $$ BEGIN
+  CREATE TYPE usuario_estado AS ENUM ('pendiente', 'activo', 'rechazado');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
 -- Tabla: usuarios ------------------------------------------------------
 CREATE TABLE IF NOT EXISTS usuarios (
   id SERIAL PRIMARY KEY,
@@ -22,7 +28,14 @@ CREATE TABLE IF NOT EXISTS usuarios (
   created_at TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
+-- Columna de estado: idempotente y NO destructiva. El DEFAULT 'activo' hace que
+-- TODOS los usuarios ya existentes (los demo + cualquier alta previa) queden
+-- 'activo' y sigan logueando sin cambios. Solo los registros NUEVOS creados por
+-- /api/auth/register nacen 'pendiente' (lo fijan explícitamente en el INSERT).
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS estado usuario_estado NOT NULL DEFAULT 'activo';
+
 CREATE INDEX IF NOT EXISTS idx_usuarios_email ON usuarios(email);
+CREATE INDEX IF NOT EXISTS idx_usuarios_estado ON usuarios(estado);
 
 -- Tabla: contratos -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS contratos (
@@ -77,10 +90,14 @@ CREATE INDEX IF NOT EXISTS idx_bitacora_notas_tipo ON bitacora_notas(tipo);
 -- Hashes bcrypt reales (algoritmo $2a$, cost 10) generados con bcryptjs.
 -- =====================================================================
 
+-- El hash de los 4 usuarios demo corresponde a la contraseña Sigecop2026!
+-- (algoritmo $2a$, cost 10, bcryptjs). El usuario 'dependencia' es el que aprueba
+-- las solicitudes de registro; nace 'activo' por el DEFAULT de la columna estado.
 INSERT INTO usuarios (nombre, email, password_hash, rol) VALUES
   ('Ing. Residente Demo', 'residente@sigecop.test', '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'residente'),
   ('Contratista Demo S.A.', 'contratista@sigecop.test', '$2a$10$h7eLpWBwF5O3smp/egT3wupSylCFRXlwQQIeHbnvCdJOmM5xAhdgK', 'contratista'),
-  ('Supervisión Externa Demo', 'supervision@sigecop.test', '$2a$10$zpUoEVcL3IZhAtpS4kexoemneAaX93X7.A3kbLPYOBwgw51eZC33e', 'supervision')
+  ('Supervisión Externa Demo', 'supervision@sigecop.test', '$2a$10$zpUoEVcL3IZhAtpS4kexoemneAaX93X7.A3kbLPYOBwgw51eZC33e', 'supervision'),
+  ('Dependencia Demo', 'dependencia@sigecop.test', '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'dependencia')
 ON CONFLICT (email) DO NOTHING;
 
 INSERT INTO contratos (folio, tipo, objeto, contratista, dependencia, monto, plazo_dias, fecha_inicio, fecha_termino, created_by)

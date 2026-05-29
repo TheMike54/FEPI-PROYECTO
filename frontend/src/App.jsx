@@ -17,6 +17,7 @@ import RevisionEstimacion from './pages/RevisionEstimacion.jsx';
 import TransitoPago from './pages/TransitoPago.jsx';
 import SeleccionRol from './pages/SeleccionRol.jsx';
 import SolicitudRegistro from './pages/SolicitudRegistro.jsx';
+import SolicitudesRegistro from './pages/SolicitudesRegistro.jsx';
 import ConveniosModificatorios from './pages/ConveniosModificatorios.jsx';
 import AlertasAtraso from './pages/AlertasAtraso.jsx';
 import CurvaAvance from './pages/CurvaAvance.jsx';
@@ -76,6 +77,7 @@ export default function App() {
             <Route path="/seguimiento/curva-avance" element={<WithLayout><CurvaAvance /></WithLayout>} />
             <Route path="/seguimiento/trabajos-terminados" element={<WithLayout><TrabajosTerminados /></WithLayout>} />
             <Route path="/solicitud-acceso" element={<SoloModoProyecto><SolicitudRegistro /></SoloModoProyecto>} />
+            <Route path="/usuarios/solicitudes" element={<WithLayout><SolicitudesRegistro /></WithLayout>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </ErrorBoundary>

@@ -26,6 +26,10 @@ async function request(path, options = {}) {
 export const api = {
   health: () => request('/health'),
   login: (credenciales) => request('/auth/login', { method: 'POST', body: JSON.stringify(credenciales) }),
+  register: (payload) => request('/auth/register', { method: 'POST', body: JSON.stringify(payload) }),
+  listarUsuarios: (estado) => request(`/usuarios${estado ? `?estado=${encodeURIComponent(estado)}` : ''}`),
+  aprobarUsuario: (id, rol) => request(`/usuarios/${id}/aprobar`, { method: 'PATCH', body: JSON.stringify({ rol }) }),
+  rechazarUsuario: (id) => request(`/usuarios/${id}/rechazar`, { method: 'PATCH' }),
   crearContrato: (payload) => request('/contratos', { method: 'POST', body: JSON.stringify(payload) }),
   listarContratos: () => request('/contratos'),
   detalleContrato: (id) => request(`/contratos/${id}`),

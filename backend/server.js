@@ -4,6 +4,7 @@ const express = require('express');
 const cors = require('cors');
 
 const authRoutes = require('./src/routes/auth.routes');
+const usuariosRoutes = require('./src/routes/usuarios.routes');
 const contratosRoutes = require('./src/routes/contratos.routes');
 const bitacoraRoutes = require('./src/routes/bitacora.routes');
 const { initDb } = require('./src/db/init');
@@ -24,6 +25,7 @@ app.get('/api/health', (req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api/usuarios', usuariosRoutes);
 app.use('/api/contratos', contratosRoutes);
 app.use('/api/bitacora', bitacoraRoutes);
 
