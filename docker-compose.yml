@@ -35,6 +35,11 @@ services:
       DB_USER: ${POSTGRES_USER:-sigecop}
       DB_PASSWORD: ${POSTGRES_PASSWORD:-sigecop_dev_2026}
       DB_NAME: ${POSTGRES_DB:-sigecop_db}
+      # Blindaje: el volumen ./backend:/app monta backend/.env (Render) dentro del
+      # contenedor. server.js hace dotenv.config(), asi que sin esto el backend
+      # local se conectaria a Render al reiniciar. Definir DATABASE_URL="" hace que
+      # dotenv NO la sobreescriba (la clave ya existe) -> pool.js usa la rama DB_* local.
+      DATABASE_URL: ""
       JWT_SECRET: ${JWT_SECRET:-cambiar_este_secreto_en_produccion}
     ports:
       - "${BACKEND_PORT:-4000}:4000"
