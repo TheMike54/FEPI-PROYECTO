@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import jsPDF from 'jspdf';
-import * as XLSX from 'xlsx';
+import { descargarExcelHoja, descargarExcelMultihoja } from '../services/excelExport.js';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import BannerContexto from '../components/vista/BannerContexto.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
@@ -77,22 +77,19 @@ function generarAvanceFisicoPDF(periodo) {
 function generarAvanceFisicoExcel(periodo) {
   const meses = recortarMeses(curvaAvanceDummy.map((c) => c.mes), periodo);
   const curva = curvaAvanceDummy.filter((c) => meses.includes(c.mes));
-
-  const wsCurva = XLSX.utils.json_to_sheet(curva);
-  const wsGantt = XLSX.utils.json_to_sheet(
-    programaObraGanttDummy.map((p) => {
-      const row = { Concepto: p.concepto };
-      meses.forEach((m) => { row[m] = p.porMes[m] ?? ''; });
-      return row;
-    })
+  const gantt = programaObraGanttDummy.map((p) => {
+    const row = { Concepto: p.concepto };
+    meses.forEach((m) => { row[m] = p.porMes[m] ?? ''; });
+    return row;
+  });
+  descargarExcelMultihoja(
+    `${baseName(1, 'avance-fisico', periodo)}.xlsx`,
+    [
+      { nombre: 'Curva S',             filas: curva },
+      { nombre: 'Concepto x periodo',  filas: gantt },
+      { nombre: 'Catalogo conceptos',  filas: catalogoConceptosCurvaDummy }
+    ]
   );
-  const wsCatalogo = XLSX.utils.json_to_sheet(catalogoConceptosCurvaDummy);
-
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, wsCurva,    'Curva S');
-  XLSX.utils.book_append_sheet(wb, wsGantt,    'Concepto x periodo');
-  XLSX.utils.book_append_sheet(wb, wsCatalogo, 'Catalogo conceptos');
-  XLSX.writeFile(wb, `${baseName(1, 'avance-fisico', periodo)}.xlsx`);
 }
 
 // ---------------------------------------------------------------------------
@@ -117,10 +114,7 @@ function generarAvanceFinancieroExcel(periodo) {
         Disponible: montoContrato - comprometido
       };
     });
-  const ws = XLSX.utils.json_to_sheet(filas);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Avance financiero');
-  XLSX.writeFile(wb, `${baseName(2, 'avance-financiero', periodo)}.xlsx`);
+  descargarExcelHoja(`${baseName(2, 'avance-financiero', periodo)}.xlsx`, 'Avance financiero', filas);
 }
 
 // ---------------------------------------------------------------------------
@@ -140,10 +134,7 @@ function generarListadoEstimacionesExcel(periodo) {
     'Fecha pago':         h.fechaPago         ?? '',
     Observaciones: (h.observaciones || []).join(' · ')
   }));
-  const ws = XLSX.utils.json_to_sheet(filas);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Estimaciones');
-  XLSX.writeFile(wb, `${baseName(3, 'estimaciones', periodo)}.xlsx`);
+  descargarExcelHoja(`${baseName(3, 'estimaciones', periodo)}.xlsx`, 'Estimaciones', filas);
 }
 
 // ---------------------------------------------------------------------------
@@ -156,10 +147,7 @@ function generarObservacionesExcel(periodo) {
     Observacion: o.observacion,
     Severidad: o.severidad
   }));
-  const ws = XLSX.utils.json_to_sheet(filas);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Observaciones');
-  XLSX.writeFile(wb, `${baseName(4, 'observaciones', periodo)}.xlsx`);
+  descargarExcelHoja(`${baseName(4, 'observaciones', periodo)}.xlsx`, 'Observaciones', filas);
 }
 
 // ---------------------------------------------------------------------------
@@ -204,10 +192,7 @@ function generarModificatoriosExcel(periodo) {
     Tipo: v.tipo,
     Motivo: v.motivo
   }));
-  const ws = XLSX.utils.json_to_sheet(filas);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Modificatorios');
-  XLSX.writeFile(wb, `${baseName(6, 'modificatorios', periodo)}.xlsx`);
+  descargarExcelHoja(`${baseName(6, 'modificatorios', periodo)}.xlsx`, 'Modificatorios', filas);
 }
 
 // ---------------------------------------------------------------------------
@@ -221,10 +206,7 @@ function generarPenalizacionesExcel(periodo) {
     'Pendientes sin atender': c.factores.pendientesSinAtender,
     'Penalizacion ($MXN)': c.indicadores.penalizaciones
   }));
-  const ws = XLSX.utils.json_to_sheet(filas);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Penalizaciones');
-  XLSX.writeFile(wb, `${baseName(7, 'penalizaciones', periodo)}.xlsx`);
+  descargarExcelHoja(`${baseName(7, 'penalizaciones', periodo)}.xlsx`, 'Penalizaciones', filas);
 }
 
 // Mapa id reporte -> handler por formato.

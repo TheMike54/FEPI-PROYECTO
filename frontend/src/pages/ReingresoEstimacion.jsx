@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import jsPDF from 'jspdf';
-import * as XLSX from 'xlsx';
+import { descargarExcelHoja } from '../services/excelExport.js';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import BannerContexto from '../components/vista/BannerContexto.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
@@ -75,7 +75,7 @@ function exportarObservacionesPdf(observaciones, folioContrato, numEstimacion) {
   doc.save(`observaciones_EST-${numEstimacion}_${folioContrato}_${stamp}.pdf`);
 }
 
-// Genera el Excel de observaciones de la version rechazada con SheetJS.
+// Genera el Excel de observaciones de la version rechazada con exceljs.
 function exportarObservacionesExcel(observaciones, folioContrato, numEstimacion) {
   const datos = observaciones.map((o, i) => ({
     '#': i + 1,
@@ -83,11 +83,12 @@ function exportarObservacionesExcel(observaciones, folioContrato, numEstimacion)
     Observacion: o.observacion,
     Severidad: o.severidad
   }));
-  const ws = XLSX.utils.json_to_sheet(datos);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Observaciones');
   const stamp = new Date().toISOString().slice(0, 10);
-  XLSX.writeFile(wb, `observaciones_EST-${numEstimacion}_${folioContrato}_${stamp}.xlsx`);
+  descargarExcelHoja(
+    `observaciones_EST-${numEstimacion}_${folioContrato}_${stamp}.xlsx`,
+    'Observaciones',
+    datos
+  );
 }
 
 export default function ReingresoEstimacion() {

@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import * as XLSX from 'xlsx';
+import { descargarExcelHoja } from '../services/excelExport.js';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import BannerContexto from '../components/vista/BannerContexto.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
@@ -97,7 +97,7 @@ function PanelDetalle({ estimacion, onCerrar }) {
   );
 }
 
-// Exporta las filas filtradas a un .xlsx real usando SheetJS.
+// Exporta las filas filtradas a un .xlsx real usando exceljs.
 function exportarHistorialExcel(filas, folioContrato) {
   const datos = filas.map((f) => ({
     Estimación: f.estimacion,
@@ -109,10 +109,7 @@ function exportarHistorialExcel(filas, folioContrato) {
     'Fecha revisión':     f.fechaRevision     ?? '',
     'Fecha pago':         f.fechaPago         ?? ''
   }));
-  const ws = XLSX.utils.json_to_sheet(datos);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Historial');
-  XLSX.writeFile(wb, `historial_${folioContrato}.xlsx`);
+  descargarExcelHoja(`historial_${folioContrato}.xlsx`, 'Historial', datos);
 }
 
 export default function HistorialEstimaciones() {

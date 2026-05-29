@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import { useVistaHU } from '../context/SesionContext.jsx';
@@ -93,28 +93,44 @@ export default function ConsultaNotas() {
     }
   };
 
-  // Exporta las notas seleccionadas a un .xlsx con SheetJS. El archivo se
-  // descarga directamente desde el navegador (sin backend).
-  const handleExportar = () => {
+  // Exporta las notas seleccionadas a un .xlsx con exceljs. El archivo se
+  // descarga directamente desde el navegador (sin backend). Esta vista usa
+  // anchos de columna personalizados, asi que escribe exceljs directo en
+  // lugar del helper genérico de services/excelExport.
+  const handleExportar = async () => {
     if (seleccionadas.size === 0) return;
     const notas = resultados.filter((n) => seleccionadas.has(n.folio));
-    const filas = notas.map((n) => ({
-      Folio: n.folio,
-      Fecha: n.fecha,
-      Tipo: n.tipo,
-      Firmante: n.firmante,
-      'Vinculada a': n.vinculadaA || '',
-      Contenido: n.contenido || ''
-    }));
-    const ws = XLSX.utils.json_to_sheet(filas);
-    // Ancho aproximado de cada columna — cómodo para lectura.
-    ws['!cols'] = [
-      { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 32 }, { wch: 14 }, { wch: 80 }
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Notas');
+    ws.columns = [
+      { header: 'Folio',        key: 'folio',       width: 12 },
+      { header: 'Fecha',        key: 'fecha',       width: 12 },
+      { header: 'Tipo',         key: 'tipo',        width: 14 },
+      { header: 'Firmante',     key: 'firmante',    width: 32 },
+      { header: 'Vinculada a',  key: 'vinculadaA',  width: 14 },
+      { header: 'Contenido',    key: 'contenido',   width: 80 }
     ];
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Notas');
+    ws.addRows(notas.map((n) => ({
+      folio: n.folio,
+      fecha: n.fecha,
+      tipo: n.tipo,
+      firmante: n.firmante,
+      vinculadaA: n.vinculadaA || '',
+      contenido: n.contenido || ''
+    })));
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
     const fecha = new Date().toISOString().slice(0, 10);
-    XLSX.writeFile(wb, `notas_busqueda_${fecha}.xlsx`);
+    a.href = url;
+    a.download = `notas_busqueda_${fecha}.xlsx`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   };
 
   return (

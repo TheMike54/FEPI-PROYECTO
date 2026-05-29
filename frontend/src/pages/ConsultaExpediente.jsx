@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import jsPDF from 'jspdf';
-import * as XLSX from 'xlsx';
+import { descargarExcelHoja } from '../services/excelExport.js';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import BannerContexto from '../components/vista/BannerContexto.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
@@ -43,12 +43,12 @@ function descargarPDFPlaceholder(documento, folio) {
   doc.save(`${slug}_${folio}.pdf`);
 }
 
-// Descarga un .xlsx con SheetJS a partir de filas {col: valor}.
+// Descarga un .xlsx con exceljs a partir de filas {col: valor}. Mantiene la
+// firma del helper local previo para no romper los call sites del componente.
 function descargarExcel(filas, nombreHoja, nombreArchivo) {
-  const ws = XLSX.utils.json_to_sheet(filas);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, nombreHoja);
-  XLSX.writeFile(wb, nombreArchivo);
+  // El componente no espera promesa; lanzamos sin await porque la salida es
+  // un download del navegador y los errores se muestran en consola.
+  descargarExcelHoja(nombreArchivo, nombreHoja, filas);
 }
 
 // Cada bloque expone qué campos hace match con el buscador.
