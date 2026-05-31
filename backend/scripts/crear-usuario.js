@@ -2,7 +2,10 @@
 // Uso: node scripts/crear-usuario.js "Nombre" correo contraseña rol
 require('dotenv').config();
 const bcrypt = require('bcryptjs');
-const { Pool } = require('pg');
+// Reutiliza la MISMA logica de conexion que el backend (src/db/pool.js):
+// con DATABASE_URL -> Render con SSL; sin ella -> DB_HOST/DB_PORT/... locales.
+// El require va despues de dotenv.config() para que el pool lea el .env ya cargado.
+const { pool } = require('../src/db/pool');
 
 const [, , nombre, email, password, rol] = process.argv;
 
@@ -17,14 +20,6 @@ if (!ROLES.includes(rol)) {
   console.error(`Rol invalido: "${rol}". Debe ser uno de: ${ROLES.join(', ')}`);
   process.exit(1);
 }
-
-// Auto-detectar SSL: la BD de Render requiere SSL; local no.
-const url = process.env.DATABASE_URL || '';
-const isRemote = !/(localhost|127\.0\.0\.1)/.test(url);
-const pool = new Pool({
-  connectionString: url,
-  ssl: isRemote ? { rejectUnauthorized: false } : false,
-});
 
 (async () => {
   try {
