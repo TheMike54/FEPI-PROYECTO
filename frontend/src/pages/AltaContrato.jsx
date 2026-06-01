@@ -30,6 +30,21 @@ function derivarTermino(inicioISO, plazoDias) {
   return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
 }
 
+// Fecha ISO (yyyy-mm-dd) -> dd/mm/aaaa (es-MX), sin corrimiento de zona horaria.
+const fmtFechaES = (iso) => {
+  if (!iso) return '';
+  const [y, m, d] = String(iso).slice(0, 10).split('-');
+  return y && m && d ? `${d}/${m}/${y}` : String(iso).slice(0, 10);
+};
+
+// Una fila de garantía está "vacía" si no tiene NINGÚN dato capturado. Si tiene
+// cualquier dato, debe estar completa (al menos monto > 0); a medias se bloquea.
+const garantiaVacia = (g) => !(
+  String(g.tipo || '').trim() || String(g.afianzadora || '').trim() ||
+  String(g.poliza || '').trim() || (g.monto !== '' && g.monto != null) ||
+  String(g.vigencia || '').trim()
+);
+
 const ERR0 = { campos: {}, conceptoIdx: null, actividadIdx: null, garantiaIdx: null, catalogoMonto: false };
 
 // Valores iniciales (también usados por "Cancelar"). Consistentes con las reglas:
@@ -67,8 +82,9 @@ function Field({ label, required, children, hint }) {
   );
 }
 
-function TabDatosGenerales({ datos, set, err }) {
+function TabDatosGenerales({ datos, set, err, equipo }) {
   const e = err || {};
+  const eq = equipo || {};
   const montoNum = Number(datos.monto) || 0;
   const terminoDerivado = derivarTermino(datos.fechaInicio, Number(datos.plazoDias));
   return (
@@ -103,10 +119,10 @@ function TabDatosGenerales({ datos, set, err }) {
           <input type="number" min="1" step="1" className={inputCls(e.plazoDias)} value={datos.plazoDias} onChange={set('plazoDias')} />
         </Field>
         <Field label="Fecha de inicio" required>
-          <input type="date" className={inputCls(e.fechaInicio)} value={datos.fechaInicio} onChange={set('fechaInicio')} />
+          <input type="date" lang="es-MX" className={inputCls(e.fechaInicio)} value={datos.fechaInicio} onChange={set('fechaInicio')} />
         </Field>
         <Field label="Fecha de término (calculada)" hint="Se deriva del inicio + plazo (LOPSRM 31-V). No editable.">
-          <input className="sg-input bg-slate-100 text-slate-700" value={terminoDerivado || '—'} readOnly data-testid="termino-derivado" />
+          <input className="sg-input bg-slate-100 text-slate-700" value={terminoDerivado ? fmtFechaES(terminoDerivado) : '—'} readOnly data-testid="termino-derivado" />
         </Field>
       </div>
 
@@ -118,6 +134,33 @@ function TabDatosGenerales({ datos, set, err }) {
 
       <div className="mt-3 bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 text-sm text-slate-800">
         <strong>Campos marcados con *</strong> son obligatorios. El IVA y el total son <strong>derivados</strong> (no se guardan).
+      </div>
+
+      <div className="mt-6 pt-5 border-t border-slate-200">
+        <h3 className="text-lg font-bold text-sigecop-blue mb-1">Equipo del contrato</h3>
+        <p className="text-sm text-slate-600 mb-3">
+          Quienes firmarán la apertura de la bitácora. Cada miembro firma <strong>desde su propia cuenta</strong>; no se capturan nombres a mano.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <Field label="Residente (tú)">
+            <input className="sg-input bg-slate-100 text-slate-700" value={eq.usuarioNombre || '—'} readOnly data-testid="equipo-residente" />
+          </Field>
+          <Field label="Superintendente" required hint="Cuenta de contratista aprobada.">
+            <select className={inputCls(eq.errSuperintendente)} value={eq.superintendenteId || ''} onChange={(ev) => eq.setSuperintendenteId(ev.target.value)} data-testid="select-superintendente">
+              <option value="">— Selecciona —</option>
+              {(eq.asignablesContratista || []).map((u) => <option key={u.id} value={u.id}>{u.nombre} · {u.email}</option>)}
+            </select>
+          </Field>
+          <Field label="Supervisión (opcional)" hint="Cuenta de supervisión aprobada.">
+            <select className="sg-input" value={eq.supervisionId || ''} onChange={(ev) => eq.setSupervisionId(ev.target.value)} data-testid="select-supervision">
+              <option value="">— Sin supervisión —</option>
+              {(eq.asignablesSupervision || []).map((u) => <option key={u.id} value={u.id}>{u.nombre} · {u.email}</option>)}
+            </select>
+          </Field>
+        </div>
+        {(eq.asignablesContratista || []).length === 0 && (
+          <p className="text-xs text-amber-700 mt-2">No hay cuentas de contratista aprobadas; la dependencia debe aprobar al menos una para poder asignar superintendente.</p>
+        )}
       </div>
     </div>
   );
@@ -235,8 +278,8 @@ function TabPrograma({ rows, onCell, onAdd, onRemove, soloLectura, errIdx }) {
             {rows.map((p, i) => (
               <tr key={p.rid} className={`border-t border-slate-200 ${errIdx === i ? 'bg-red-50' : ''}`}>
                 <td className="px-2 py-1"><input className="sg-input" value={p.actividad} onChange={onCell(i, 'actividad')} disabled={soloLectura} /></td>
-                <td className="px-2 py-1"><input type="date" className="sg-input" value={p.inicio} onChange={onCell(i, 'inicio')} disabled={soloLectura} /></td>
-                <td className="px-2 py-1"><input type="date" className="sg-input" value={p.termino} onChange={onCell(i, 'termino')} disabled={soloLectura} /></td>
+                <td className="px-2 py-1"><input type="date" lang="es-MX" className="sg-input" value={p.inicio} onChange={onCell(i, 'inicio')} disabled={soloLectura} /></td>
+                <td className="px-2 py-1"><input type="date" lang="es-MX" className="sg-input" value={p.termino} onChange={onCell(i, 'termino')} disabled={soloLectura} /></td>
                 <td className="px-2 py-1"><input type="number" min="0" max="100" step="0.01" className="sg-input text-right" value={p.peso} onChange={onCell(i, 'peso')} disabled={soloLectura} /></td>
                 <td className="px-2 py-1 text-center">
                   <button type="button" onClick={() => onRemove(i)} disabled={soloLectura} className="text-red-500 hover:text-red-700 disabled:opacity-30" title="Quitar actividad">✕</button>
@@ -286,10 +329,16 @@ function TabGarantias({ rows, onCell, onAdd, onRemove, anticipoPct, setAnticipoP
 
       <div className="mb-4 max-w-md">
         <Field label="% de anticipo otorgado" hint="Base de la amortización (art. 50 LOPSRM). 0–100%.">
-          <input type="number" min="0" max="100" step="0.01" className={inputCls(errAnticipo)} value={anticipoPct} onChange={(e) => setAnticipoPct(e.target.value)} disabled={soloLectura} />
+          <input type="number" min="0" max="100" step="0.01" className={inputCls(errAnticipo)} value={anticipoPct} onChange={(e) => setAnticipoPct(e.target.value)} disabled={soloLectura} data-testid="anticipo-input" />
         </Field>
-        {ap > 30 && <p className="text-xs text-amber-700 mt-2">⚠ Anticipo {ap}%: requiere <strong>autorización escrita del titular</strong> (art. 50 fr. IV LOPSRM).</p>}
-        {ap > 50 && <p className="text-xs text-amber-700 mt-1">⚠ Anticipo {ap}%: además, <strong>informar a la Secretaría</strong> (art. 139 RLOPSRM).</p>}
+        {ap > 30 && (
+          <div className="mt-3 bg-blue-50 border-l-4 border-blue-500 px-4 py-3 text-sm text-blue-900 space-y-2" data-testid="avisos-anticipo">
+            <div className="text-xs font-bold uppercase tracking-wider text-blue-700">Aviso legal</div>
+            <p>Conforme al art. 50 fr. IV de la LOPSRM, un anticipo mayor al 30% requiere autorización escrita del titular de la dependencia o entidad. El sistema solo lo informa; el trámite se realiza fuera del sistema.</p>
+            {ap > 50 && <p>Conforme al art. 139 del RLOPSRM, un anticipo mayor al 50% debe informarse a la Secretaría antes de su entrega. El sistema solo lo informa; el trámite se realiza fuera del sistema.</p>}
+            {ap >= 100 && <p>El 100% solo procede en contrato plurianual que inicia en el último trimestre (art. 50 fr. V LOPSRM).</p>}
+          </div>
+        )}
       </div>
 
       <div className="overflow-x-auto border border-slate-200 rounded-md mb-4">
@@ -314,7 +363,7 @@ function TabGarantias({ rows, onCell, onAdd, onRemove, anticipoPct, setAnticipoP
                   <td className="px-2 py-1 align-top"><input className="sg-input font-mono text-xs" value={p.poliza} onChange={onCell(i, 'poliza')} disabled={soloLectura} /></td>
                   <td className="px-2 py-1 align-top"><input type="number" min="0" step="0.01" className="sg-input text-right" value={p.monto} onChange={onCell(i, 'monto')} disabled={soloLectura} /></td>
                   <td className="px-2 py-1 align-top">
-                    <input type="date" className="sg-input" value={p.vigencia} onChange={onCell(i, 'vigencia')} disabled={soloLectura} />
+                    <input type="date" lang="es-MX" className="sg-input" value={p.vigencia} onChange={onCell(i, 'vigencia')} disabled={soloLectura} />
                     {vencida && <span className="block text-xs text-amber-600 mt-1">⚠ vigencia vencida</span>}
                   </td>
                   <td className="px-2 py-1 text-center align-top">
@@ -406,12 +455,17 @@ function TabPdfFirmado({ contratoId, soloLectura }) {
           ) : (
             <p className="text-sm text-slate-500 mb-4">{cargando ? 'Consultando…' : 'Aún no hay PDF firmado adjunto a este contrato.'}</p>
           )}
-          <div className="border-2 border-dashed border-slate-300 rounded-md p-8 text-center bg-white">
-            <input ref={inputRef} type="file" accept="application/pdf,.pdf" onChange={onArchivo} disabled={soloLectura || subiendo} className="block mx-auto text-sm" />
-            <p className="text-xs text-slate-400 mt-3">PDF firmado por las tres partes (máx. 10 MB). Se guarda en la base de datos.</p>
-            {subiendo && <p className="text-sm text-sigecop-accent mt-2">Subiendo…</p>}
-            {meta && <p className="text-xs text-slate-400 mt-1">Subir otro archivo reemplaza el actual.</p>}
-          </div>
+          {meta ? (
+            <div className="bg-sigecop-green-bg border-l-4 border-sigecop-green-validation px-4 py-3 text-sm text-slate-800">
+              El documento firmado es <strong>inmutable</strong>: una vez adjuntado no se reemplaza.
+            </div>
+          ) : (
+            <div className="border-2 border-dashed border-slate-300 rounded-md p-8 text-center bg-white">
+              <input ref={inputRef} type="file" accept="application/pdf,.pdf" onChange={onArchivo} disabled={soloLectura || subiendo} className="block mx-auto text-sm" />
+              <p className="text-xs text-slate-400 mt-3">PDF firmado por las partes (máx. 10 MB). Se guarda en la base de datos.</p>
+              {subiendo && <p className="text-sm text-sigecop-accent mt-2">Subiendo…</p>}
+            </div>
+          )}
         </>
       )}
     </div>
@@ -493,7 +547,7 @@ function TabRegistrados({ contratos, loading, errorMsg, sinSesion, onRecargar, s
                   <td className="px-3 py-2">{c.contratista}</td>
                   <td className="px-3 py-2 text-right">{formatoMXN.format(Number(c.monto))}</td>
                   <td className="px-3 py-2 text-right">{c.plazo_dias} d</td>
-                  <td className="px-3 py-2">{c.fecha_inicio?.slice(0, 10)}</td>
+                  <td className="px-3 py-2">{fmtFechaES(c.fecha_inicio)}</td>
                   <td className="px-3 py-2">
                     {subiendoId === c.id ? (
                       <span className="text-xs text-sigecop-accent">Subiendo…</span>
@@ -502,7 +556,6 @@ function TabRegistrados({ contratos, loading, errorMsg, sinSesion, onRecargar, s
                         <span title="Tiene PDF firmado">📄</span>
                         <button type="button" onClick={() => verDescargar(c.id, false)} className="text-xs text-sigecop-accent hover:underline">Ver</button>
                         <button type="button" onClick={() => verDescargar(c.id, true)} className="text-xs text-sigecop-accent hover:underline">Descargar</button>
-                        {!soloLectura && <button type="button" onClick={() => pedirArchivo(c.id)} className="text-xs text-slate-500 hover:underline">Reemplazar</button>}
                       </div>
                     ) : (
                       !soloLectura
@@ -525,7 +578,7 @@ const REQ_GENERALES = ['folio', 'tipo', 'objeto', 'contratista', 'dependencia', 
 export default function AltaContrato() {
   const { showToast } = useToast();
   const { soloLectura } = useVistaHU('HU-01');
-  const { token } = useSesion();
+  const { token, usuario } = useSesion();
   const sinSesion = !token;
 
   const ridCounter = useRef(0);
@@ -541,6 +594,12 @@ export default function AltaContrato() {
   const [programa, setPrograma] = useState(programaIniciales);
   const [garantias, setGarantias] = useState(garantiasIniciales);
 
+  // Equipo del contrato (ligado a cuentas). El residente es el usuario actual.
+  const [superintendenteId, setSuperintendenteId] = useState('');
+  const [supervisionId, setSupervisionId] = useState('');
+  const [asignablesContratista, setAsignablesContratista] = useState([]);
+  const [asignablesSupervision, setAsignablesSupervision] = useState([]);
+
   const [errores, setErrores] = useState(ERR0);
   const [tabActivo, setTabActivo] = useState(0);
 
@@ -552,7 +611,15 @@ export default function AltaContrato() {
   const mkRemove = (setter) => (i) => setter((prev) => prev.filter((_, idx) => idx !== i));
   const mkPatch = (setter) => (i, patch) => setter((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
 
-  useEffect(() => { setErrores(ERR0); }, [datosGenerales, datosJuridicos, anticipoPct, conceptos, programa, garantias]);
+  useEffect(() => { setErrores(ERR0); }, [datosGenerales, datosJuridicos, anticipoPct, conceptos, programa, garantias, superintendenteId, supervisionId]);
+
+  // Cuentas asignables al equipo (solo el residente puede consultarlas; si el rol
+  // no es residente la API responde 403 y dejamos las listas vacías).
+  useEffect(() => {
+    if (sinSesion) return;
+    api.listarAsignables('contratista').then((l) => setAsignablesContratista(Array.isArray(l) ? l : [])).catch(() => setAsignablesContratista([]));
+    api.listarAsignables('supervision').then((l) => setAsignablesSupervision(Array.isArray(l) ? l : [])).catch(() => setAsignablesSupervision([]));
+  }, [sinSesion]);
 
   const [contratos, setContratos] = useState([]);
   const [loadingLista, setLoadingLista] = useState(false);
@@ -580,6 +647,8 @@ export default function AltaContrato() {
     const montoNum = Number(datosGenerales.monto);
     if (!(montoNum > 0)) return { tab: 0, msg: 'El monto debe ser un número mayor a 0', errores: { ...ERR0, campos: { monto: true } } };
     if (!(Number.isInteger(Number(datosGenerales.plazoDias)) && Number(datosGenerales.plazoDias) > 0)) return { tab: 0, msg: 'El plazo debe ser un entero mayor a 0', errores: { ...ERR0, campos: { plazoDias: true } } };
+    // Equipo: superintendente obligatorio.
+    if (!superintendenteId) return { tab: 0, msg: 'Asigna un superintendente al equipo del contrato', errores: { ...ERR0, campos: { superintendente: true } } };
     if (anticipoPct !== '' && anticipoPct !== null) {
       const a = Number(anticipoPct);
       if (!(a >= 0 && a <= 100)) return { tab: 4, msg: 'El % de anticipo debe estar entre 0 y 100', errores: { ...ERR0, campos: { anticipoPct: true } } };
@@ -614,7 +683,10 @@ export default function AltaContrato() {
     const sumaPeso = Math.round(programa.reduce((s, a) => s + (Number(a.peso) || 0), 0) * 100) / 100;
     if (sumaPeso > 100) return { tab: 2, msg: `El programa de obra suma ${sumaPeso}% (excede 100%). Ajusta los pesos antes de guardar.`, errores: ERR0 };
     for (let i = 0; i < garantias.length; i++) {
-      if (!String(garantias[i].tipo).trim()) return { tab: 4, msg: `Garantía #${i + 1}: el tipo es obligatorio`, errores: { ...ERR0, garantiaIdx: i } };
+      const g = garantias[i];
+      if (garantiaVacia(g)) continue; // fila completamente vacía → se ignora
+      if (!String(g.tipo).trim()) return { tab: 4, msg: `Garantía #${i + 1}: el tipo es obligatorio`, errores: { ...ERR0, garantiaIdx: i } };
+      if (!(Number(g.monto) > 0)) return { tab: 4, msg: `Garantía #${i + 1}: si capturas la póliza, indica un monto mayor a 0`, errores: { ...ERR0, garantiaIdx: i } };
     }
     return null;
   };
@@ -635,11 +707,13 @@ export default function AltaContrato() {
         monto: Number(datosGenerales.monto),
         plazoDias: Number(datosGenerales.plazoDias),
         fechaInicio: datosGenerales.fechaInicio,
+        superintendenteId: Number(superintendenteId),
+        supervisionId: supervisionId ? Number(supervisionId) : null,
         anticipoPct: anticipoPct === '' || anticipoPct === null ? null : Number(anticipoPct),
         juridicos: datosJuridicos,
         conceptos: conceptos.map((c) => ({ concepto: c.concepto, unidad: c.unidad, cantidad: c.cantidad, pu: c.pu })),
         actividades: programa.map((a) => ({ actividad: a.actividad, inicio: a.inicio, termino: a.termino, peso: a.peso })),
-        garantias: garantias.map((g) => ({ tipo: g.tipo, afianzadora: g.afianzadora, poliza: g.poliza, monto: g.monto, vigencia: g.vigencia }))
+        garantias: garantias.filter((g) => !garantiaVacia(g)).map((g) => ({ tipo: g.tipo, afianzadora: g.afianzadora, poliza: g.poliza, monto: g.monto, vigencia: g.vigencia }))
       };
       const creado = await api.crearContrato(payload);
       if (creado && creado.id) setContratoGuardadoId(creado.id);
@@ -664,6 +738,8 @@ export default function AltaContrato() {
     setDatosGenerales({ ...DATOS_INICIALES });
     setDatosJuridicos({ ...JURIDICOS_INICIALES });
     setAnticipoPct(30);
+    setSuperintendenteId('');
+    setSupervisionId('');
     setConceptos(conceptosIniciales());
     setPrograma(programaIniciales());
     setGarantias(garantiasIniciales());
@@ -675,7 +751,7 @@ export default function AltaContrato() {
   const tabsConError = useMemo(() => {
     const s = new Set();
     const c = errores.campos || {};
-    if (REQ_GENERALES.some((k) => c[k])) s.add(0);
+    if (REQ_GENERALES.some((k) => c[k]) || c.superintendente) s.add(0);
     if (errores.conceptoIdx != null || errores.catalogoMonto) s.add(1);
     if (errores.actividadIdx != null) s.add(2);
     if (c.anticipoPct || errores.garantiaIdx != null) s.add(4);
@@ -685,7 +761,12 @@ export default function AltaContrato() {
   const wrapTab = (node) => (<RegionEditable disabled={soloLectura}>{node}</RegionEditable>);
 
   const tabs = [
-    { label: 'Datos generales', content: wrapTab(<TabDatosGenerales datos={datosGenerales} set={setDatosGen} err={errores.campos} />) },
+    { label: 'Datos generales', content: wrapTab(<TabDatosGenerales datos={datosGenerales} set={setDatosGen} err={errores.campos} equipo={{
+      usuarioNombre: usuario?.nombre,
+      asignablesContratista, asignablesSupervision,
+      superintendenteId, setSuperintendenteId, supervisionId, setSupervisionId,
+      errSuperintendente: errores.campos?.superintendente
+    }} />) },
     { label: 'Catálogo de conceptos', content: wrapTab(
       <TabCatalogo rows={conceptos} onCell={mkCell(setConceptos)} onPatch={mkPatch(setConceptos)} onAdd={mkAdd(setConceptos, { concepto: '', unidad: '', cantidad: '', pu: '' })} onRemove={mkRemove(setConceptos)} soloLectura={soloLectura} errIdx={errores.conceptoIdx} monto={datosGenerales.monto} />
     ) },

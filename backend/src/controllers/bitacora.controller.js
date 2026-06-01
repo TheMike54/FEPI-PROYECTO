@@ -1,15 +1,12 @@
-// HU-08: apertura formal de la bitacora del contrato (art. 46 LOPSRM, 122 RLOPSRM).
-// La apertura es un acto unico del residente: captura las 3 firmas en una sola
-// transaccion. El acta JSONB es la "primera nota" congelada (5 grupos del art. 122).
+// HU-08 + identidad/firma: la apertura crea el acta-snapshot inmutable y deja una
+// firma PENDIENTE por cada miembro del equipo del contrato. Cada quien firma despues
+// desde SU cuenta (POST /:aperturaId/firmar). El estado "completa" se DERIVA.
 const { pool } = require('../db/pool');
+const { esParteOSupervision } = require('../lib/acceso');
 
-// Roles con acceso de LECTURA a la bitacora (permisos.js HU-08: residente 'E',
-// contratista/supervision 'C'). La apertura (POST) queda solo para residente.
-const ROLES_BITACORA_LECTURA = ['residente', 'contratista', 'supervision'];
-
-// Construye el acta (primera nota): snapshot inmutable de los 5 grupos obligatorios
-// del criterio c, tomados del contrato + los firmantes.
-function construirActa(contrato, firmantes, cronograma) {
+// Construye el acta (primera nota): snapshot inmutable de los grupos del art. 122
+// RLOPSRM, tomados del contrato + el roster de firmantes (identidad por cuenta).
+function construirActa(contrato, roster, cronograma) {
   return {
     identificacion: {
       folio: contrato.folio,
@@ -27,37 +24,26 @@ function construirActa(contrato, firmantes, cronograma) {
       fin: cronograma.fin,
       entrega_sitio: cronograma.entregaSitio
     },
-    firmas: firmantes
-      .filter((f) => f.aplica)
-      .map((f) => ({ parte: f.parte, titulo: f.titulo, firmante: f.firmante, cargo: f.cargo, firmado_en: f.firmadoEn }))
+    firmas: roster.map((m) => ({
+      rol_en_firma: m.rol_en_firma,
+      usuario_id: m.usuario_id,
+      nombre: m.nombre,
+      correo: m.correo
+    }))
   };
 }
 
+// POST /api/bitacora/apertura — el residente asignado abre la bitácora: crea el
+// acta y una firma PENDIENTE por miembro del equipo. NO firma ninguna aquí.
 async function abrirBitacora(req, res) {
   const body = req.body || {};
-
   const contratoId = Number(body.contratoId);
   if (!Number.isInteger(contratoId) || contratoId <= 0) {
     return res.status(400).json({ error: 'contratoId inválido' });
   }
-  const { fechaEntregaSitio, fechaInicioCronograma, fechaFinCronograma } = body;
-  if (!fechaEntregaSitio || !fechaInicioCronograma || !fechaFinCronograma) {
-    return res.status(400).json({ error: 'Faltan fechas: entrega del sitio, inicio y término del cronograma' });
-  }
-
-  const firmantesIn = Array.isArray(body.firmantes) ? body.firmantes : [];
-  if (firmantesIn.length === 0) {
-    return res.status(400).json({ error: 'Se requieren los firmantes de las partes' });
-  }
-  // Firma conjunta: cada parte que aplica debe tener firmante y estar firmada.
-  for (const f of firmantesIn) {
-    if (f.aplica === false) continue;
-    if (!f.firmante || !String(f.firmante).trim()) {
-      return res.status(400).json({ error: `La parte ${f.parte} (${f.titulo || ''}) requiere firmante` });
-    }
-    if (f.firmado !== true) {
-      return res.status(400).json({ error: `Falta la firma de la parte ${f.parte} (${f.titulo || ''}). La apertura requiere la firma conjunta.` });
-    }
+  const fechaEntregaSitio = body.fechaEntregaSitio;
+  if (!fechaEntregaSitio) {
+    return res.status(400).json({ error: 'Falta la fecha de entrega del sitio' });
   }
 
   let client;
@@ -66,9 +52,10 @@ async function abrirBitacora(req, res) {
     try {
       await client.query('BEGIN');
 
-      // El contrato es la fuente autoritativa del acta.
       const cres = await client.query(
-        'SELECT folio, objeto, contratista, dependencia, monto, plazo_dias, anticipo_pct FROM contratos WHERE id = $1',
+        `SELECT id, folio, objeto, contratista, dependencia, monto, plazo_dias, anticipo_pct,
+                fecha_inicio, fecha_termino, residente_id, superintendente_id, supervision_id
+           FROM contratos WHERE id = $1`,
         [contratoId]
       );
       if (cres.rowCount === 0) {
@@ -77,28 +64,40 @@ async function abrirBitacora(req, res) {
       }
       const contrato = cres.rows[0];
 
-      // Sello de firma = momento de la apertura (acto unico).
-      const firmadoEn = new Date().toISOString();
-      const firmantes = firmantesIn.map((f) => {
-        const aplica = f.aplica !== false;
-        const firmado = aplica && f.firmado === true;
-        return {
-          parte: Number(f.parte),
-          titulo: f.titulo || '',
-          firmante: aplica ? (f.firmante || null) : null,
-          cargoLabel: f.cargoLabel || null,
-          cargo: aplica ? (f.cargo || null) : null,
-          correo: aplica ? (f.correo || null) : null,
-          opcional: f.opcional === true,
-          aplica,
-          firmado,
-          firmadoEn: firmado ? firmadoEn : null
-        };
+      // Solo el residente asignado a ESE contrato puede aperturar su bitácora.
+      if (contrato.residente_id !== req.user.id) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ error: 'Solo el residente asignado a este contrato puede aperturar su bitácora' });
+      }
+      // Equipo mínimo: superintendente obligatorio.
+      if (!contrato.superintendente_id) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'El contrato no tiene superintendente asignado; asigna el equipo antes de aperturar' });
+      }
+
+      // Miembros que firmarán (pendientes): residente + superintendente (+ supervisión).
+      const miembros = [
+        { usuario_id: contrato.residente_id, rol_en_firma: 'residente' },
+        { usuario_id: contrato.superintendente_id, rol_en_firma: 'superintendente' }
+      ];
+      if (contrato.supervision_id) {
+        miembros.push({ usuario_id: contrato.supervision_id, rol_en_firma: 'supervision' });
+      }
+
+      // Identidades (nombre/correo) para congelar en el acta.
+      const ures = await client.query(
+        'SELECT id, nombre, email FROM usuarios WHERE id = ANY($1)',
+        [miembros.map((m) => m.usuario_id)]
+      );
+      const byId = new Map(ures.rows.map((u) => [u.id, u]));
+      const roster = miembros.map((m) => {
+        const u = byId.get(m.usuario_id) || {};
+        return { ...m, nombre: u.nombre || null, correo: u.email || null };
       });
 
-      const acta = construirActa(contrato, firmantes, {
-        inicio: fechaInicioCronograma,
-        fin: fechaFinCronograma,
+      const acta = construirActa(contrato, roster, {
+        inicio: contrato.fecha_inicio,
+        fin: contrato.fecha_termino,
         entregaSitio: fechaEntregaSitio
       });
 
@@ -110,12 +109,11 @@ async function abrirBitacora(req, res) {
       );
       const bitacora = ins.rows[0];
 
-      for (const f of firmantes) {
+      for (const m of miembros) {
         await client.query(
-          `INSERT INTO bitacora_firmantes
-             (bitacora_id, parte, titulo, firmante, cargo_label, cargo, correo, opcional, aplica, firmado, firmado_en)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-          [bitacora.id, f.parte, f.titulo, f.firmante, f.cargoLabel, f.cargo, f.correo, f.opcional, f.aplica, f.firmado, f.firmadoEn]
+          `INSERT INTO bitacora_firmantes (bitacora_id, usuario_id, rol_en_firma, firmado)
+           VALUES ($1, $2, $3, false)`,
+          [bitacora.id, m.usuario_id, m.rol_en_firma]
         );
       }
 
@@ -128,43 +126,108 @@ async function abrirBitacora(req, res) {
       client.release();
     }
   } catch (err) {
-    if (err.code === '23505') {
-      return res.status(409).json({ error: 'Ya existe una bitácora para este contrato' });
-    }
-    if (err.code === '23503') {
-      return res.status(404).json({ error: 'Contrato no encontrado' });
-    }
+    if (err.code === '23505') return res.status(409).json({ error: 'Ya existe una bitácora para este contrato' });
+    if (err.code === '23503') return res.status(404).json({ error: 'Contrato no encontrado' });
     console.error('[abrirBitacora]', err);
     return res.status(500).json({ error: 'Error interno' });
   }
 }
 
-// GET /api/bitacora/contrato/:contratoId — bitácora + firmantes, o 404 si no hay.
+// POST /api/bitacora/:aperturaId/firmar — el usuario del token firma SU parte.
+// 403 si no es firmante; 409 si ya firmó; si no, transición pendiente -> firmado.
+async function firmarApertura(req, res) {
+  try {
+    const aperturaId = Number(req.params.aperturaId);
+    if (!Number.isInteger(aperturaId) || aperturaId <= 0) {
+      return res.status(400).json({ error: 'aperturaId inválido' });
+    }
+
+    const f = await pool.query(
+      'SELECT id, firmado FROM bitacora_firmantes WHERE bitacora_id = $1 AND usuario_id = $2',
+      [aperturaId, req.user.id]
+    );
+    if (f.rowCount === 0) return res.status(403).json({ error: 'No eres firmante de esta apertura' });
+    if (f.rows[0].firmado) return res.status(409).json({ error: 'Ya firmaste esta apertura' });
+
+    const upd = await pool.query(
+      `UPDATE bitacora_firmantes SET firmado = true, firmado_en = NOW()
+        WHERE bitacora_id = $1 AND usuario_id = $2 AND firmado = false
+        RETURNING id, firmado, firmado_en`,
+      [aperturaId, req.user.id]
+    );
+    if (upd.rowCount === 0) return res.status(409).json({ error: 'Ya firmaste esta apertura' });
+
+    const est = await pool.query(
+      'SELECT count(*) FILTER (WHERE NOT firmado) AS pendientes FROM bitacora_firmantes WHERE bitacora_id = $1',
+      [aperturaId]
+    );
+    const pendientes = Number(est.rows[0].pendientes);
+    return res.status(200).json({ firmado: true, firmado_en: upd.rows[0].firmado_en, completa: pendientes === 0, pendientes });
+  } catch (err) {
+    console.error('[firmarApertura]', err);
+    return res.status(500).json({ error: 'Error interno' });
+  }
+}
+
+// GET /api/bitacora/pendientes — bandeja "por firmar" del usuario del token.
+async function pendientesPorFirmar(req, res) {
+  try {
+    const r = await pool.query(
+      `SELECT a.id AS apertura_id, a.contrato_id, c.folio, c.objeto, f.rol_en_firma, a.apertura_en
+         FROM bitacora_firmantes f
+         JOIN bitacora_aperturas a ON a.id = f.bitacora_id
+         JOIN contratos c ON c.id = a.contrato_id
+        WHERE f.usuario_id = $1 AND f.firmado = false
+        ORDER BY a.apertura_en DESC`,
+      [req.user.id]
+    );
+    return res.status(200).json(r.rows);
+  } catch (err) {
+    console.error('[pendientesPorFirmar]', err);
+    return res.status(500).json({ error: 'Error interno' });
+  }
+}
+
+// GET /api/bitacora/contrato/:contratoId — bitácora + firmantes (con identidad) +
+// estado derivado. Acotada por participación en el contrato.
 async function bitacoraDeContrato(req, res) {
   try {
     const contratoId = Number(req.params.contratoId);
     if (!Number.isInteger(contratoId) || contratoId <= 0) {
       return res.status(400).json({ error: 'contratoId inválido' });
     }
+    const c = await pool.query(
+      'SELECT id, created_by, residente_id, superintendente_id, supervision_id FROM contratos WHERE id = $1',
+      [contratoId]
+    );
+    if (c.rowCount === 0) return res.status(404).json({ error: 'Contrato no encontrado' });
+    if (!esParteOSupervision(req.user, c.rows[0])) {
+      return res.status(403).json({ error: 'No tienes acceso a este contrato' });
+    }
+
     const a = await pool.query(
       `SELECT id, contrato_id, fecha_apertura, apertura_en, acta, aperturada_por, created_at
          FROM bitacora_aperturas WHERE contrato_id = $1`,
       [contratoId]
     );
-    if (a.rowCount === 0) {
-      return res.status(404).json({ error: 'El contrato no tiene bitácora aperturada' });
-    }
+    if (a.rowCount === 0) return res.status(404).json({ error: 'El contrato no tiene bitácora aperturada' });
     const bitacora = a.rows[0];
+
     const f = await pool.query(
-      `SELECT parte, titulo, firmante, cargo_label, cargo, correo, opcional, aplica, firmado, firmado_en
-         FROM bitacora_firmantes WHERE bitacora_id = $1 ORDER BY parte`,
+      `SELECT f.usuario_id, f.rol_en_firma, f.firmado, f.firmado_en, u.nombre, u.email
+         FROM bitacora_firmantes f
+         LEFT JOIN usuarios u ON u.id = f.usuario_id
+        WHERE f.bitacora_id = $1
+        ORDER BY f.id`,
       [bitacora.id]
     );
-    return res.status(200).json({ ...bitacora, firmantes: f.rows });
+    const firmantes = f.rows;
+    const completa = firmantes.length > 0 && firmantes.every((x) => x.firmado);
+    return res.status(200).json({ ...bitacora, firmantes, completa });
   } catch (err) {
     console.error('[bitacoraDeContrato]', err);
     return res.status(500).json({ error: 'Error interno' });
   }
 }
 
-module.exports = { abrirBitacora, bitacoraDeContrato, ROLES_BITACORA_LECTURA };
+module.exports = { abrirBitacora, firmarApertura, pendientesPorFirmar, bitacoraDeContrato };

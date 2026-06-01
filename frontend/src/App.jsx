@@ -7,6 +7,7 @@ import Inicio from './pages/Inicio.jsx';
 import AltaContrato from './pages/AltaContrato.jsx';
 import RegistroFianzas from './pages/RegistroFianzas.jsx';
 import AperturaBitacora from './pages/AperturaBitacora.jsx';
+import PorFirmar from './pages/PorFirmar.jsx';
 import EmisionNotas from './pages/EmisionNotas.jsx';
 import ConsultaNotas from './pages/ConsultaNotas.jsx';
 import IntegracionEstimacion from './pages/IntegracionEstimacion.jsx';
@@ -58,6 +59,7 @@ export default function App() {
             <Route path="/contratos/alta" element={<WithLayout><AltaContrato /></WithLayout>} />
             <Route path="/contratos/fianzas" element={<WithLayout><RegistroFianzas /></WithLayout>} />
             <Route path="/bitacora/apertura" element={<WithLayout><AperturaBitacora /></WithLayout>} />
+            <Route path="/bitacora/por-firmar" element={<WithLayout><PorFirmar /></WithLayout>} />
             <Route path="/bitacora/notas" element={<WithLayout><EmisionNotas /></WithLayout>} />
             <Route path="/bitacora/consulta" element={<WithLayout><ConsultaNotas /></WithLayout>} />
             <Route path="/bitacora/minutas" element={<WithLayout><MinutasVisitas /></WithLayout>} />

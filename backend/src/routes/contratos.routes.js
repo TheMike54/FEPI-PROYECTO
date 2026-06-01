@@ -7,8 +7,7 @@ const {
   detalleContrato,
   subirDocumento,
   documentoMeta,
-  descargarDocumento,
-  ROLES_DOC_LECTURA
+  descargarDocumento
 } = require('../controllers/contratos.controller');
 
 const router = express.Router();
@@ -44,10 +43,10 @@ router.post('/', requireRole('residente'), crearContrato);
 router.get('/', listarContratos);
 router.get('/:id', detalleContrato);
 
-// PDF firmado: se liga DESPUES de crear el contrato. Subida solo residente;
-// lectura para los roles con acceso a HU-01.
+// PDF firmado: se liga DESPUES de crear el contrato. Subida solo el residente
+// ASIGNADO (lo valida el controller); lectura acotada por participación (helper).
 router.post('/:id/documento', requireRole('residente'), subirPdf, subirDocumento);
-router.get('/:id/documento/meta', requireRole(...ROLES_DOC_LECTURA), documentoMeta);
-router.get('/:id/documento', requireRole(...ROLES_DOC_LECTURA), descargarDocumento);
+router.get('/:id/documento/meta', documentoMeta);
+router.get('/:id/documento', descargarDocumento);
 
 module.exports = router;

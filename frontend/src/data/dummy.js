@@ -39,7 +39,7 @@ export const programaObraDummy = [
 export const polizasGarantiaDummy = [
   { tipo: 'Anticipo', afianzadora: 'Afianzadora Sofimex', poliza: 'F-2026-08746', monto: 3735000, vigencia: '2026-08-28' },
   { tipo: 'Cumplimiento', afianzadora: 'Afianzadora Sofimex', poliza: 'F-2026-08745', monto: 1245000, vigencia: '2026-11-28' },
-  { tipo: 'Vicios ocultos', afianzadora: '', poliza: '', monto: 0, vigencia: '' }
+  { tipo: 'Vicios ocultos', afianzadora: 'Afianzadora Sofimex', poliza: 'F-2026-08747', monto: 190685, vigencia: '2027-11-28' }
 ];
 
 // HU-02 — Pólizas de fianza. El campo clave es `diasOffset`: días desde HOY

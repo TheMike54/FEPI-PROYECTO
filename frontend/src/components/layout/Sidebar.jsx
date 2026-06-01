@@ -73,6 +73,33 @@ export default function Sidebar() {
           ))}
         </nav>
 
+        {/* Bandeja de firmas pendientes: cualquier miembro de equipo (residente,
+            contratista/superintendente, supervisión). Fuera del catálogo de HU. */}
+        {enModoApp && ['residente', 'contratista', 'supervision'].includes(rol) && (
+          <div className="mt-6 pt-4 border-t border-slate-200">
+            <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 px-3 mb-2">
+              Bitácora
+            </div>
+            <nav className="space-y-1">
+              <NavLink
+                to="/bitacora/por-firmar"
+                className={({ isActive }) =>
+                  `flex items-start gap-3 px-3 py-2.5 rounded-md text-sm transition-colors border-l-4 ${
+                    isActive
+                      ? 'bg-sigecop-blue-light/60 text-sigecop-blue border-sigecop-accent font-semibold'
+                      : 'border-transparent text-slate-700 hover:bg-slate-50 hover:text-sigecop-blue'
+                  }`
+                }
+              >
+                <span className="text-lg leading-none flex-shrink-0">✍️</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm leading-tight">Por firmar</div>
+                </div>
+              </NavLink>
+            </nav>
+          </div>
+        )}
+
         {/* Administración de la dependencia: gestión de solicitudes de registro.
             Fuera del catálogo de HU para no alterar conteos ni permisos por HU. */}
         {enModoApp && rol === 'dependencia' && (

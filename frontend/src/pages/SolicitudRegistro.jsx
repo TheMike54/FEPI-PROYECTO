@@ -73,7 +73,7 @@ export default function SolicitudRegistro() {
             />
           </div>
           <div>
-            <label className="sg-label">Rol que solicita *</label>
+            <label className="sg-label">Rol solicitado *</label>
             <select
               className="sg-input"
               value={rolSolicitado}

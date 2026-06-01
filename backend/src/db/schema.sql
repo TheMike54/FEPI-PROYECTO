@@ -253,10 +253,99 @@ CREATE TRIGGER trg_bitacora_aperturas_inalterable
   BEFORE UPDATE ON bitacora_aperturas
   FOR EACH ROW EXECUTE FUNCTION sigecop_bitacora_inalterable();
 
+-- El trigger de bitacora_firmantes ya NO es bloqueo total: la seccion
+-- "IDENTIDAD, FIRMA Y ACCESO" (mas abajo) lo reemplaza por una transicion
+-- controlada (pendiente -> firmado) ligada a la cuenta de cada firmante.
+
+-- =====================================================================
+-- IDENTIDAD, FIRMA Y ACCESO (Sprint 1+): equipo del contrato ligado a
+-- cuentas, firmas de apertura por cuenta, PDF/firmas append-only y
+-- trazabilidad de aprobacion de usuarios. Aditivo e idempotente.
+-- =====================================================================
+
+-- (1) Equipo del contrato: 3 miembros ligados a cuentas de usuarios.
+--     residente_id = quien crea el contrato; superintendente_id (cuenta rol
+--     'contratista') obligatorio en el alta; supervision_id (cuenta rol
+--     'supervision') opcional. La validacion de rol/estado la hace el
+--     controller; aqui solo se referencia la cuenta (SET NULL si se borra).
+ALTER TABLE contratos ADD COLUMN IF NOT EXISTS residente_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL;
+ALTER TABLE contratos ADD COLUMN IF NOT EXISTS superintendente_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL;
+ALTER TABLE contratos ADD COLUMN IF NOT EXISTS supervision_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_contratos_residente ON contratos(residente_id);
+CREATE INDEX IF NOT EXISTS idx_contratos_superintendente ON contratos(superintendente_id);
+CREATE INDEX IF NOT EXISTS idx_contratos_supervision ON contratos(supervision_id);
+
+-- (2) Firmantes de la apertura, ligados a CUENTA (cada quien firma desde la
+--     suya). usuario_id + rol_en_firma reemplazan la captura de texto libre
+--     (firmante/cargo/correo quedan en desuso). UNIQUE por (apertura, cuenta).
+ALTER TABLE bitacora_firmantes ADD COLUMN IF NOT EXISTS usuario_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL;
+ALTER TABLE bitacora_firmantes ADD COLUMN IF NOT EXISTS rol_en_firma TEXT;
+-- Los campos de texto libre previos dejan de ser obligatorios.
+ALTER TABLE bitacora_firmantes ALTER COLUMN parte DROP NOT NULL;
+ALTER TABLE bitacora_firmantes ALTER COLUMN titulo DROP NOT NULL;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_bitacora_firmantes_rol') THEN
+    ALTER TABLE bitacora_firmantes ADD CONSTRAINT chk_bitacora_firmantes_rol
+      CHECK (rol_en_firma IS NULL OR rol_en_firma IN ('residente','superintendente','supervision'));
+  END IF;
+END $$;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_bitacora_firmantes_usuario') THEN
+    ALTER TABLE bitacora_firmantes ADD CONSTRAINT uq_bitacora_firmantes_usuario UNIQUE (bitacora_id, usuario_id);
+  END IF;
+END $$;
+CREATE INDEX IF NOT EXISTS idx_bitacora_firmantes_usuario ON bitacora_firmantes(usuario_id);
+
+-- (3) Inmutabilidad de firma con transicion controlada: una firma ya firmada
+--     es un candado; no se puede reasignar su identidad (usuario/rol/apertura);
+--     SOLO se permite la transicion pendiente(false) -> firmado(true), que hace
+--     la app al firmar. Reemplaza el bloqueo total que HU-08 ponia a firmantes.
+--     Bloquea UPDATE indebido; el DELETE en cascada sigue permitido.
+CREATE OR REPLACE FUNCTION sigecop_firma_transicion() RETURNS trigger AS $func$
+BEGIN
+  IF OLD.firmado = true THEN
+    RAISE EXCEPTION 'La firma ya fue registrada y es inalterable';
+  END IF;
+  IF NEW.usuario_id IS DISTINCT FROM OLD.usuario_id
+     OR NEW.rol_en_firma IS DISTINCT FROM OLD.rol_en_firma
+     OR NEW.bitacora_id IS DISTINCT FROM OLD.bitacora_id THEN
+    RAISE EXCEPTION 'No se puede reasignar la identidad de una firma';
+  END IF;
+  IF NOT (OLD.firmado = false AND NEW.firmado = true) THEN
+    RAISE EXCEPTION 'Solo se permite la transicion de pendiente a firmado';
+  END IF;
+  RETURN NEW;
+END;
+$func$ LANGUAGE plpgsql;
+
 DROP TRIGGER IF EXISTS trg_bitacora_firmantes_inalterable ON bitacora_firmantes;
-CREATE TRIGGER trg_bitacora_firmantes_inalterable
+DROP TRIGGER IF EXISTS trg_bitacora_firmantes_transicion ON bitacora_firmantes;
+CREATE TRIGGER trg_bitacora_firmantes_transicion
   BEFORE UPDATE ON bitacora_firmantes
-  FOR EACH ROW EXECUTE FUNCTION sigecop_bitacora_inalterable();
+  FOR EACH ROW EXECUTE FUNCTION sigecop_firma_transicion();
+
+-- (4) PDF firmado del contrato: append-only. Bloquea UPDATE (no se reemplaza);
+--     el DELETE en cascada (al borrar el contrato) sigue permitido.
+CREATE OR REPLACE FUNCTION sigecop_documento_inmutable() RETURNS trigger AS $func$
+BEGIN
+  RAISE EXCEPTION 'El documento firmado del contrato es inmutable y no puede reemplazarse';
+END;
+$func$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_contrato_documentos_append_only ON contrato_documentos;
+CREATE TRIGGER trg_contrato_documentos_append_only
+  BEFORE UPDATE ON contrato_documentos
+  FOR EACH ROW EXECUTE FUNCTION sigecop_documento_inmutable();
+
+-- (5) Registro/aprobacion de usuarios: el rol efectivo lo asigna la dependencia
+--     al aprobar. El alta solo guarda 'rol_solicitado' (referencia) y deja 'rol'
+--     NULL hasta la aprobacion. aprobado_por/aprobado_en dan trazabilidad.
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS rol_solicitado TEXT;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS aprobado_por INTEGER REFERENCES usuarios(id) ON DELETE SET NULL;
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS aprobado_en TIMESTAMPTZ;
+-- 'rol' pasa a NULLABLE: las altas nuevas nacen sin rol efectivo. Las cuentas
+-- sembradas y previas conservan su rol (este ALTER no toca datos).
+ALTER TABLE usuarios ALTER COLUMN rol DROP NOT NULL;
 
 -- =====================================================================
 -- SEED MÍNIMO PARA TESTING

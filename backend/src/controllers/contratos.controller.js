@@ -2,6 +2,7 @@
 // query() global, que tomaria OTRA conexion del pool y se auto-commitearia,
 // rompiendo la atomicidad).
 const { pool } = require('../db/pool');
+const { ROLES_VEN_TODO, esParteOSupervision } = require('../lib/acceso');
 
 const REQUIRED_FIELDS = [
   'folio', 'tipo', 'objeto', 'contratista', 'dependencia',
@@ -29,6 +30,14 @@ const numOrNull = (v) => {
   const x = Number(n);
   return Number.isFinite(x) ? x : null;
 };
+
+// Una fila de garantía está "vacía" si no tiene NINGÚN dato. Si trae cualquier dato,
+// debe estar completa (al menos monto > 0); a medias se bloquea.
+const garantiaVacia = (g) => !(
+  String(g.tipo || '').trim() || String(g.afianzadora || '').trim() ||
+  String(g.poliza || '').trim() || (g.monto !== '' && g.monto !== undefined && g.monto !== null) ||
+  String(g.vigencia || '').trim()
+);
 
 async function crearContrato(req, res) {
   const body = req.body || {};
@@ -124,7 +133,34 @@ async function crearContrato(req, res) {
     return res.status(400).json({ error: `La suma de %peso del programa no puede exceder 100% (actual: ${sumaPeso}%)` });
   }
   for (const [i, g] of garantias.entries()) {
+    if (garantiaVacia(g)) continue; // fila completamente vacía → se ignora
     if (!g.tipo) return res.status(400).json({ error: `Garantía #${i + 1}: el tipo es obligatorio` });
+    const gm = numOrNull(g.monto);
+    if (gm === null || gm <= 0) {
+      return res.status(400).json({ error: `Garantía #${i + 1}: si capturas la póliza, indica un monto mayor a 0` });
+    }
+  }
+
+  // Equipo del contrato: residente = usuario del token; superintendente (cuenta
+  // 'contratista' aprobada) OBLIGATORIO; supervisión (cuenta 'supervision' aprobada)
+  // OPCIONAL. Se validan rol y estado contra la BD (no se confía en el cliente).
+  const superintendenteId = numOrNull(body.superintendenteId);
+  const supervisionId = numOrNull(body.supervisionId);
+  if (superintendenteId === null) {
+    return res.status(400).json({ error: 'Debes asignar un superintendente (cuenta de contratista aprobada)' });
+  }
+  const equipoIds = supervisionId === null ? [superintendenteId] : [superintendenteId, supervisionId];
+  const equipo = await pool.query('SELECT id, rol, estado FROM usuarios WHERE id = ANY($1)', [equipoIds]);
+  const equipoById = new Map(equipo.rows.map((u) => [u.id, u]));
+  const sup = equipoById.get(superintendenteId);
+  if (!sup || sup.rol !== 'contratista' || sup.estado !== 'activo') {
+    return res.status(400).json({ error: 'El superintendente debe ser una cuenta aprobada con rol contratista' });
+  }
+  if (supervisionId !== null) {
+    const sv = equipoById.get(supervisionId);
+    if (!sv || sv.rol !== 'supervision' || sv.estado !== 'activo') {
+      return res.status(400).json({ error: 'La supervisión debe ser una cuenta aprobada con rol supervision' });
+    }
   }
 
   const { folio, tipo, objeto, contratista, dependencia, fechaInicio } = body;
@@ -139,14 +175,16 @@ async function crearContrato(req, res) {
       const cab = await client.query(
         `INSERT INTO contratos
            (folio, tipo, objeto, contratista, dependencia, monto, plazo_dias,
-            fecha_inicio, fecha_termino, created_by, datos_juridicos, anticipo_pct)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+            fecha_inicio, fecha_termino, created_by, datos_juridicos, anticipo_pct,
+            residente_id, superintendente_id, supervision_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
          RETURNING id`,
         [
           folio, tipo, objeto, contratista, dependencia, monto, plazoDias,
           fechaInicio, fechaTerminoDerivada, req.user.id,
           juridicos ? JSON.stringify(juridicos) : null,
-          anticipoPct
+          anticipoPct,
+          req.user.id, superintendenteId, supervisionId
         ]
       );
       const contratoId = cab.rows[0].id;
@@ -166,6 +204,7 @@ async function crearContrato(req, res) {
         );
       }
       for (const g of garantias) {
+        if (garantiaVacia(g)) continue; // no se persiste una fila vacía
         await client.query(
           `INSERT INTO contrato_garantias (contrato_id, tipo, afianzadora, poliza, monto, vigencia)
            VALUES ($1,$2,$3,$4,$5,$6)`,
@@ -207,12 +246,26 @@ async function crearContrato(req, res) {
 
 async function listarContratos(req, res) {
   try {
-    const result = await pool.query(
-      `SELECT c.*,
-              EXISTS (SELECT 1 FROM contrato_documentos d WHERE d.contrato_id = c.id) AS tiene_documento
-         FROM contratos c
-        ORDER BY c.created_at DESC`
-    );
+    const u = req.user;
+    const cols = `c.*,
+              ru.nombre AS residente_nombre,
+              su.nombre AS superintendente_nombre,
+              sv.nombre AS supervision_nombre,
+              EXISTS (SELECT 1 FROM contrato_documentos d WHERE d.contrato_id = c.id) AS tiene_documento`;
+    const joins = `FROM contratos c
+         LEFT JOIN usuarios ru ON ru.id = c.residente_id
+         LEFT JOIN usuarios su ON su.id = c.superintendente_id
+         LEFT JOIN usuarios sv ON sv.id = c.supervision_id`;
+    // Acceso: dependencia/finanzas ven todos; operativos solo donde son parte.
+    const result = ROLES_VEN_TODO.includes(u.rol)
+      ? await pool.query(`SELECT ${cols} ${joins} ORDER BY c.created_at DESC`)
+      : await pool.query(
+          `SELECT ${cols} ${joins}
+            WHERE c.created_by = $1 OR c.residente_id = $1
+               OR c.superintendente_id = $1 OR c.supervision_id = $1
+            ORDER BY c.created_at DESC`,
+          [u.id]
+        );
     return res.status(200).json(result.rows);
   } catch (err) {
     console.error('[listarContratos]', err);
@@ -227,9 +280,24 @@ async function detalleContrato(req, res) {
       return res.status(404).json({ error: 'Contrato no encontrado' });
     }
 
-    const result = await pool.query('SELECT * FROM contratos WHERE id = $1', [id]);
+    const result = await pool.query(
+      `SELECT c.*,
+              ru.nombre AS residente_nombre,
+              su.nombre AS superintendente_nombre,
+              sv.nombre AS supervision_nombre
+         FROM contratos c
+         LEFT JOIN usuarios ru ON ru.id = c.residente_id
+         LEFT JOIN usuarios su ON su.id = c.superintendente_id
+         LEFT JOIN usuarios sv ON sv.id = c.supervision_id
+        WHERE c.id = $1`,
+      [id]
+    );
     if (result.rowCount === 0) {
       return res.status(404).json({ error: 'Contrato no encontrado' });
+    }
+    // Acceso: solo partes del contrato (o dependencia/finanzas).
+    if (!esParteOSupervision(req.user, result.rows[0])) {
+      return res.status(403).json({ error: 'No tienes acceso a este contrato' });
     }
 
     // Trae los bloques hijos para que el contrato se lea como una sola entidad.
@@ -251,13 +319,9 @@ async function detalleContrato(req, res) {
   }
 }
 
-// Roles con acceso de LECTURA al PDF segun el modelo de permisos de HU-01
-// (frontend/src/data/permisos.js: residente 'E', contratista/supervision/dependencia 'C',
-// finanzas sin acceso). La subida queda restringida a residente.
-const ROLES_DOC_LECTURA = ['residente', 'contratista', 'supervision', 'dependencia'];
-
 // POST /api/contratos/:id/documento  (multipart, campo "documento") — liga el PDF
-// firmado DESPUES de crear el contrato. Se guarda como BYTEA. Reemplaza el anterior.
+// firmado DESPUES de crear el contrato. Solo el residente ASIGNADO; append-only:
+// si ya existe documento NO se reemplaza (el PDF firmado es inmutable, 409).
 async function subirDocumento(req, res) {
   try {
     const id = Number(req.params.id);
@@ -273,34 +337,45 @@ async function subirDocumento(req, res) {
       return res.status(400).json({ error: 'El archivo no es un PDF válido' });
     }
 
-    const existe = await pool.query('SELECT id FROM contratos WHERE id = $1', [id]);
-    if (existe.rowCount === 0) {
+    const cres = await pool.query(
+      'SELECT id, created_by, residente_id, superintendente_id, supervision_id FROM contratos WHERE id = $1',
+      [id]
+    );
+    if (cres.rowCount === 0) {
       return res.status(404).json({ error: 'Contrato no encontrado' });
     }
-
-    // Un PDF por contrato: reemplaza el anterior (DELETE + INSERT) atomicamente.
-    const client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-      await client.query('DELETE FROM contrato_documentos WHERE contrato_id = $1', [id]);
-      const r = await client.query(
-        `INSERT INTO contrato_documentos (contrato_id, nombre, mime, tamano, contenido)
-         VALUES ($1, $2, $3, $4, $5)
-         RETURNING id, nombre, mime, tamano, subido_en`,
-        [id, originalname, mimetype, size, buffer]
-      );
-      await client.query('COMMIT');
-      return res.status(201).json(r.rows[0]);
-    } catch (e) {
-      try { await client.query('ROLLBACK'); } catch (_) { /* el client pudo morir */ }
-      throw e;
-    } finally {
-      client.release();
+    // Solo el residente ASIGNADO al contrato puede subir su documento.
+    if (cres.rows[0].residente_id !== req.user.id) {
+      return res.status(403).json({ error: 'Solo el residente asignado al contrato puede subir su documento' });
     }
+    // Append-only: si ya hay un documento, es inmutable y no se reemplaza.
+    const ya = await pool.query('SELECT id FROM contrato_documentos WHERE contrato_id = $1 LIMIT 1', [id]);
+    if (ya.rowCount > 0) {
+      return res.status(409).json({ error: 'El contrato ya tiene un documento firmado; es inmutable y no se puede reemplazar' });
+    }
+
+    const r = await pool.query(
+      `INSERT INTO contrato_documentos (contrato_id, nombre, mime, tamano, contenido)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, nombre, mime, tamano, subido_en`,
+      [id, originalname, mimetype, size, buffer]
+    );
+    return res.status(201).json(r.rows[0]);
   } catch (err) {
     console.error('[subirDocumento]', err);
     return res.status(500).json({ error: 'Error interno' });
   }
+}
+
+// Verifica acceso al contrato (participación) antes de servir su PDF. 404/403.
+async function asegurarAccesoContrato(req, id) {
+  const cres = await pool.query(
+    'SELECT id, created_by, residente_id, superintendente_id, supervision_id FROM contratos WHERE id = $1',
+    [id]
+  );
+  if (cres.rowCount === 0) return { error: 404 };
+  if (!esParteOSupervision(req.user, cres.rows[0])) return { error: 403 };
+  return { ok: true };
 }
 
 // GET /api/contratos/:id/documento/meta — metadata del PDF (sin los bytes) o 404.
@@ -310,6 +385,9 @@ async function documentoMeta(req, res) {
     if (!Number.isInteger(id) || id <= 0) {
       return res.status(404).json({ error: 'Contrato no encontrado' });
     }
+    const acc = await asegurarAccesoContrato(req, id);
+    if (acc.error === 404) return res.status(404).json({ error: 'Contrato no encontrado' });
+    if (acc.error === 403) return res.status(403).json({ error: 'No tienes acceso a este contrato' });
     const r = await pool.query(
       `SELECT id, nombre, mime, tamano, subido_en
          FROM contrato_documentos WHERE contrato_id = $1
@@ -333,6 +411,9 @@ async function descargarDocumento(req, res) {
     if (!Number.isInteger(id) || id <= 0) {
       return res.status(404).json({ error: 'Contrato no encontrado' });
     }
+    const acc = await asegurarAccesoContrato(req, id);
+    if (acc.error === 404) return res.status(404).json({ error: 'Contrato no encontrado' });
+    if (acc.error === 403) return res.status(403).json({ error: 'No tienes acceso a este contrato' });
     const r = await pool.query(
       `SELECT nombre, mime, tamano, contenido
          FROM contrato_documentos WHERE contrato_id = $1
@@ -355,6 +436,5 @@ async function descargarDocumento(req, res) {
 
 module.exports = {
   crearContrato, listarContratos, detalleContrato,
-  subirDocumento, documentoMeta, descargarDocumento,
-  ROLES_DOC_LECTURA
+  subirDocumento, documentoMeta, descargarDocumento
 };

@@ -1,15 +1,24 @@
 const express = require('express');
 const { authMiddleware, requireRole } = require('../middlewares/auth.middleware');
-const { abrirBitacora, bitacoraDeContrato, ROLES_BITACORA_LECTURA } = require('../controllers/bitacora.controller');
+const {
+  abrirBitacora,
+  firmarApertura,
+  pendientesPorFirmar,
+  bitacoraDeContrato
+} = require('../controllers/bitacora.controller');
 
 const router = express.Router();
 
 router.use(authMiddleware);
 
-// Apertura formal: solo el residente (permisos.js HU-08 residente='E').
+// Apertura formal: solo el residente ASIGNADO al contrato (lo valida el controller).
 router.post('/apertura', requireRole('residente'), abrirBitacora);
 
-// Lectura de la bitácora de un contrato: roles con acceso a HU-08.
-router.get('/contrato/:contratoId', requireRole(...ROLES_BITACORA_LECTURA), bitacoraDeContrato);
+// Bandeja "por firmar" del usuario y firmar la propia parte (cualquier rol autenticado).
+router.get('/pendientes', pendientesPorFirmar);
+router.post('/:aperturaId/firmar', firmarApertura);
+
+// Lectura de la bitácora de un contrato: acotada por participación en el controller.
+router.get('/contrato/:contratoId', bitacoraDeContrato);
 
 module.exports = router;

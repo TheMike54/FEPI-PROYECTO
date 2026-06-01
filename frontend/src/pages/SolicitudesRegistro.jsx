@@ -24,7 +24,8 @@ export default function SolicitudesRegistro() {
     try {
       const data = await api.listarUsuarios('pendiente');
       setSolicitudes(data);
-      setRolElegido(Object.fromEntries(data.map((u) => [u.id, u.rol])));
+      // La dependencia DEBE elegir el rol a otorgar (no se hereda el solicitado).
+      setRolElegido(Object.fromEntries(data.map((u) => [u.id, ''])));
     } catch (err) {
       setError(err.message || 'No se pudieron cargar las solicitudes');
     } finally {
@@ -41,9 +42,11 @@ export default function SolicitudesRegistro() {
   }, [sinToken, cargar]);
 
   const aprobar = async (id) => {
+    const rol = rolElegido[id];
+    if (!rol) { showToast('Elige el rol a otorgar antes de aprobar.'); return; }
     setProcesando(id);
     try {
-      await api.aprobarUsuario(id, rolElegido[id]);
+      await api.aprobarUsuario(id, rol);
       setSolicitudes((prev) => prev.filter((u) => u.id !== id));
       showToast('Solicitud aprobada. El usuario ya puede iniciar sesión.');
     } catch (err) {
@@ -125,18 +128,19 @@ export default function SolicitudesRegistro() {
                   <td className="px-4 py-3 font-medium text-slate-800">{u.nombre}</td>
                   <td className="px-4 py-3 text-slate-600">{u.email}</td>
                   <td className="px-4 py-3 text-slate-600">
-                    {ROLES.find((r) => r.id === u.rol)?.nombre || u.rol}
+                    {ROLES.find((r) => r.id === u.rol_solicitado)?.nombre || u.rol_solicitado || '— sin especificar —'}
                   </td>
                   <td className="px-4 py-3">
                     <select
                       data-testid="select-rol"
                       className="sg-input py-1"
-                      value={rolElegido[u.id] ?? u.rol}
+                      value={rolElegido[u.id] ?? ''}
                       onChange={(e) =>
                         setRolElegido((prev) => ({ ...prev, [u.id]: e.target.value }))
                       }
                       disabled={procesando === u.id}
                     >
+                      <option value="">— Elige rol —</option>
                       {ROLES.map((r) => (
                         <option key={r.id} value={r.id}>{r.nombre}</option>
                       ))}

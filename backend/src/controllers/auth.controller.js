@@ -62,16 +62,18 @@ async function register(req, res) {
     if (String(password).length < 8) {
       return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
     }
-    const rol = ROLES_VALIDOS.includes(rolSolicitado) ? rolSolicitado : 'residente';
+    // El usuario solo SOLICITA un rol (referencia). El rol efectivo (columna rol)
+    // queda NULL hasta que la dependencia lo asigna al aprobar.
+    const rolSol = ROLES_VALIDOS.includes(rolSolicitado) ? rolSolicitado : null;
     const emailNorm = String(email).trim().toLowerCase();
 
     const hash = await bcrypt.hash(password, 10);
 
     const result = await query(
-      `INSERT INTO usuarios (nombre, email, password_hash, rol, estado)
-       VALUES ($1, $2, $3, $4, 'pendiente')
-       RETURNING id, nombre, email, rol, estado, created_at`,
-      [String(nombre).trim(), emailNorm, hash, rol]
+      `INSERT INTO usuarios (nombre, email, password_hash, rol, rol_solicitado, estado)
+       VALUES ($1, $2, $3, NULL, $4, 'pendiente')
+       RETURNING id, nombre, email, rol, rol_solicitado, estado, created_at`,
+      [String(nombre).trim(), emailNorm, hash, rolSol]
     );
 
     return res.status(201).json({

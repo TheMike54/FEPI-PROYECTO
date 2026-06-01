@@ -28,6 +28,8 @@ export const api = {
   login: (credenciales) => request('/auth/login', { method: 'POST', body: JSON.stringify(credenciales) }),
   register: (payload) => request('/auth/register', { method: 'POST', body: JSON.stringify(payload) }),
   listarUsuarios: (estado) => request(`/usuarios${estado ? `?estado=${encodeURIComponent(estado)}` : ''}`),
+  // Cuentas aprobadas asignables al equipo del contrato (rol: contratista|supervision).
+  listarAsignables: (rol) => request(`/usuarios/asignables?rol=${encodeURIComponent(rol)}`),
   aprobarUsuario: (id, rol) => request(`/usuarios/${id}/aprobar`, { method: 'PATCH', body: JSON.stringify({ rol }) }),
   rechazarUsuario: (id) => request(`/usuarios/${id}/rechazar`, { method: 'PATCH' }),
   crearContrato: (payload) => request('/contratos', { method: 'POST', body: JSON.stringify(payload) }),
@@ -71,5 +73,8 @@ export const api = {
     return res.blob();
   },
   abrirBitacora: (payload) => request('/bitacora/apertura', { method: 'POST', body: JSON.stringify(payload) }),
-  bitacoraDeContrato: (contratoId) => request(`/bitacora/contrato/${contratoId}`)
+  bitacoraDeContrato: (contratoId) => request(`/bitacora/contrato/${contratoId}`),
+  // Cada quien firma SU parte desde su cuenta; bandeja de pendientes del usuario.
+  firmarApertura: (aperturaId) => request(`/bitacora/${aperturaId}/firmar`, { method: 'POST' }),
+  pendientesPorFirmar: () => request('/bitacora/pendientes')
 };
