@@ -81,6 +81,11 @@ async function crearContrato(req, res) {
       return res.status(400).json({ error: `Actividad #${i + 1}: el término no puede ser anterior al inicio` });
     }
   }
+  // El programa de obra no puede EXCEDER 100% (suma parcial <100% si permitida).
+  const sumaPeso = Math.round(actividades.reduce((s, a) => s + (numOrNull(a.peso) || 0), 0) * 100) / 100;
+  if (sumaPeso > 100) {
+    return res.status(400).json({ error: `La suma de %peso del programa no puede exceder 100% (actual: ${sumaPeso}%)` });
+  }
   for (const [i, g] of garantias.entries()) {
     if (!g.tipo) return res.status(400).json({ error: `Garantía #${i + 1}: el tipo es obligatorio` });
   }
@@ -159,7 +164,12 @@ async function crearContrato(req, res) {
 
 async function listarContratos(req, res) {
   try {
-    const result = await pool.query('SELECT * FROM contratos ORDER BY created_at DESC');
+    const result = await pool.query(
+      `SELECT c.*,
+              EXISTS (SELECT 1 FROM contrato_documentos d WHERE d.contrato_id = c.id) AS tiene_documento
+         FROM contratos c
+        ORDER BY c.created_at DESC`
+    );
     return res.status(200).json(result.rows);
   } catch (err) {
     console.error('[listarContratos]', err);

@@ -14,6 +14,9 @@ const formatoMXN = new Intl.NumberFormat('es-MX', {
   maximumFractionDigits: 2
 });
 
+// Unidades estandar del catalogo (simbolos correctos) + opcion "Otro" (texto libre).
+const UNIDADES = ['m', 'm²', 'm³', 'ml', 'cm', 'kg', 'ton', 'pza', 'lote', 'jornal', '%'];
+
 function Field({ label, required, children, hint }) {
   return (
     <div>
@@ -73,7 +76,7 @@ function TabDatosGenerales({ datos, set }) {
   );
 }
 
-function TabCatalogo({ rows, onCell, onAdd, onRemove, soloLectura }) {
+function TabCatalogo({ rows, onCell, onPatch, onAdd, onRemove, soloLectura }) {
   return (
     <div>
       <h3 className="text-lg font-bold text-sigecop-blue mb-4">Catálogo de conceptos</h3>
@@ -85,7 +88,7 @@ function TabCatalogo({ rows, onCell, onAdd, onRemove, soloLectura }) {
           <thead className="bg-sigecop-blue-light text-sigecop-blue">
             <tr>
               <th className="text-left px-3 py-2">Concepto</th>
-              <th className="text-left px-3 py-2 w-24">Unidad</th>
+              <th className="text-left px-3 py-2 w-32">Unidad</th>
               <th className="text-right px-3 py-2 w-32">Cantidad</th>
               <th className="text-right px-3 py-2 w-36">P.U.</th>
               <th className="text-right px-3 py-2 w-36">Importe</th>
@@ -95,14 +98,42 @@ function TabCatalogo({ rows, onCell, onAdd, onRemove, soloLectura }) {
           <tbody>
             {rows.map((c, i) => {
               const importe = (Number(c.cantidad) || 0) * (Number(c.pu) || 0);
+              // "Otro" si el flag esta puesto o si la unidad guardada no es estandar.
+              const esOtro = c.unidadOtro || (c.unidad !== '' && !UNIDADES.includes(c.unidad));
+              const unidadSel = esOtro ? 'Otro' : c.unidad;
               return (
                 <tr key={c.rid} className="border-t border-slate-200">
                   <td className="px-2 py-1"><input className="sg-input" value={c.concepto} onChange={onCell(i, 'concepto')} disabled={soloLectura} /></td>
-                  <td className="px-2 py-1"><input className="sg-input" value={c.unidad} onChange={onCell(i, 'unidad')} disabled={soloLectura} /></td>
-                  <td className="px-2 py-1"><input type="number" min="0" step="0.001" className="sg-input text-right" value={c.cantidad} onChange={onCell(i, 'cantidad')} disabled={soloLectura} /></td>
-                  <td className="px-2 py-1"><input type="number" min="0" step="0.01" className="sg-input text-right" value={c.pu} onChange={onCell(i, 'pu')} disabled={soloLectura} /></td>
-                  <td className="px-3 py-2 text-right font-semibold whitespace-nowrap">{formatoMXN.format(importe)}</td>
-                  <td className="px-2 py-1 text-center">
+                  <td className="px-2 py-1">
+                    <select
+                      className="sg-input"
+                      value={unidadSel}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === 'Otro') onPatch(i, { unidadOtro: true, unidad: '' });
+                        else onPatch(i, { unidadOtro: false, unidad: v });
+                      }}
+                      disabled={soloLectura}
+                    >
+                      <option value="">—</option>
+                      {UNIDADES.map((u) => <option key={u} value={u}>{u}</option>)}
+                      <option value="Otro">Otro…</option>
+                    </select>
+                    {esOtro && (
+                      <input
+                        className="sg-input mt-1"
+                        placeholder="Especifica la unidad"
+                        maxLength={20}
+                        value={c.unidad}
+                        onChange={onCell(i, 'unidad')}
+                        disabled={soloLectura}
+                      />
+                    )}
+                  </td>
+                  <td className="px-2 py-1 align-top"><input type="number" min="0" step="0.001" className="sg-input text-right" value={c.cantidad} onChange={onCell(i, 'cantidad')} disabled={soloLectura} /></td>
+                  <td className="px-2 py-1 align-top"><input type="number" min="0" step="0.01" className="sg-input text-right" value={c.pu} onChange={onCell(i, 'pu')} disabled={soloLectura} /></td>
+                  <td className="px-3 py-2 text-right font-semibold whitespace-nowrap align-top">{formatoMXN.format(importe)}</td>
+                  <td className="px-2 py-1 text-center align-top">
                     <button type="button" onClick={() => onRemove(i)} disabled={soloLectura} className="text-red-500 hover:text-red-700 disabled:opacity-30" title="Quitar concepto">✕</button>
                   </td>
                 </tr>
@@ -122,6 +153,21 @@ function TabCatalogo({ rows, onCell, onAdd, onRemove, soloLectura }) {
 }
 
 function TabPrograma({ rows, onCell, onAdd, onRemove, soloLectura }) {
+  const total = Math.round(rows.reduce((s, p) => s + (Number(p.peso) || 0), 0) * 100) / 100;
+  let avisoCls = '';
+  let avisoMsg = '';
+  if (rows.length > 0) {
+    if (total > 100) {
+      avisoCls = 'text-red-700 bg-red-50 border-red-300';
+      avisoMsg = `Suma de %peso: ${total}% — excede 100%. No se puede guardar; ajusta los pesos.`;
+    } else if (total === 100) {
+      avisoCls = 'text-green-700 bg-green-50 border-green-300';
+      avisoMsg = `Suma de %peso: ${total}% ✓`;
+    } else {
+      avisoCls = 'text-amber-800 bg-amber-50 border-amber-300';
+      avisoMsg = `Suma de %peso: ${total}% — parcial (faltan ${Math.round((100 - total) * 100) / 100}% para llegar a 100%).`;
+    }
+  }
   return (
     <div>
       <h3 className="text-lg font-bold text-sigecop-blue mb-4">Programa de obra</h3>
@@ -157,6 +203,7 @@ function TabPrograma({ rows, onCell, onAdd, onRemove, soloLectura }) {
           </tbody>
         </table>
       </div>
+      {avisoMsg && <div className={`mt-3 px-3 py-2 rounded border text-sm font-medium ${avisoCls}`}>{avisoMsg}</div>}
       <button type="button" onClick={onAdd} disabled={soloLectura} className="mt-3 text-sm text-sigecop-accent hover:underline disabled:opacity-40">
         + Agregar actividad
       </button>
@@ -366,7 +413,55 @@ function TabPdfFirmado({ contratoId, soloLectura }) {
   );
 }
 
-function TabRegistrados({ contratos, loading, errorMsg, sinSesion, onRecargar }) {
+function TabRegistrados({ contratos, loading, errorMsg, sinSesion, onRecargar, soloLectura }) {
+  const { showToast } = useToast();
+  const inputRef = useRef(null);
+  const [targetId, setTargetId] = useState(null);
+  const [subiendoId, setSubiendoId] = useState(null);
+
+  const pedirArchivo = (id) => { setTargetId(id); if (inputRef.current) inputRef.current.click(); };
+
+  const onArchivo = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = '';
+    const id = targetId;
+    if (!file || !id) return;
+    if (file.type !== 'application/pdf') { showToast('Solo se permiten archivos PDF'); return; }
+    if (file.size > 10 * 1024 * 1024) { showToast('El PDF excede el límite de 10 MB'); return; }
+    setSubiendoId(id);
+    try {
+      await api.subirDocumento(id, file);
+      showToast('PDF adjuntado al contrato.');
+      onRecargar();
+    } catch (err) {
+      showToast(err.message || 'No se pudo subir el PDF');
+    } finally {
+      setSubiendoId(null);
+      setTargetId(null);
+    }
+  };
+
+  const verDescargar = async (id, descargar) => {
+    try {
+      let nombre = 'documento.pdf';
+      if (descargar) {
+        try { const m = await api.documentoMeta(id); if (m && m.nombre) nombre = m.nombre; } catch (_) { /* usa default */ }
+      }
+      const blob = await api.descargarDocumento(id);
+      const url = URL.createObjectURL(blob);
+      if (descargar) {
+        const a = document.createElement('a');
+        a.href = url; a.download = nombre;
+        document.body.appendChild(a); a.click(); a.remove();
+      } else {
+        window.open(url, '_blank', 'noopener');
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (err) {
+      showToast(err.message || 'No se pudo obtener el PDF');
+    }
+  };
+
   if (sinSesion) {
     return (
       <div>
@@ -379,6 +474,7 @@ function TabRegistrados({ contratos, loading, errorMsg, sinSesion, onRecargar })
   }
   return (
     <div>
+      <input ref={inputRef} type="file" accept="application/pdf,.pdf" className="hidden" onChange={onArchivo} />
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-bold text-sigecop-blue">Contratos registrados</h3>
         <button type="button" onClick={onRecargar} className="text-sm text-sigecop-accent hover:underline" disabled={loading}>
@@ -403,6 +499,7 @@ function TabRegistrados({ contratos, loading, errorMsg, sinSesion, onRecargar })
                 <th className="text-right px-3 py-2 w-36">Monto</th>
                 <th className="text-right px-3 py-2 w-24">Plazo</th>
                 <th className="text-left px-3 py-2 w-32">Inicio</th>
+                <th className="text-left px-3 py-2 w-56">PDF firmado</th>
               </tr>
             </thead>
             <tbody>
@@ -414,6 +511,22 @@ function TabRegistrados({ contratos, loading, errorMsg, sinSesion, onRecargar })
                   <td className="px-3 py-2 text-right">{formatoMXN.format(Number(c.monto))}</td>
                   <td className="px-3 py-2 text-right">{c.plazo_dias} d</td>
                   <td className="px-3 py-2">{c.fecha_inicio?.slice(0, 10)}</td>
+                  <td className="px-3 py-2">
+                    {subiendoId === c.id ? (
+                      <span className="text-xs text-sigecop-accent">Subiendo…</span>
+                    ) : c.tiene_documento ? (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span title="Tiene PDF firmado">📄</span>
+                        <button type="button" onClick={() => verDescargar(c.id, false)} className="text-xs text-sigecop-accent hover:underline">Ver</button>
+                        <button type="button" onClick={() => verDescargar(c.id, true)} className="text-xs text-sigecop-accent hover:underline">Descargar</button>
+                        {!soloLectura && <button type="button" onClick={() => pedirArchivo(c.id)} className="text-xs text-slate-500 hover:underline">Reemplazar</button>}
+                      </div>
+                    ) : (
+                      !soloLectura
+                        ? <button type="button" onClick={() => pedirArchivo(c.id)} className="text-xs text-sigecop-accent hover:underline">Subir PDF</button>
+                        : <span className="text-xs text-slate-400">Sin PDF</span>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -475,6 +588,8 @@ export default function AltaContrato() {
     setter((prev) => prev.map((r, idx) => (idx === i ? { ...r, [key]: e.target.value } : r)));
   const mkAdd = (setter, vacio) => () => setter((prev) => [...prev, { ...vacio, rid: nextRid() }]);
   const mkRemove = (setter) => (i) => setter((prev) => prev.filter((_, idx) => idx !== i));
+  // Fusiona un objeto parcial en una fila (p. ej. unidad + flag unidadOtro a la vez).
+  const mkPatch = (setter) => (i, patch) => setter((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
 
   const [contratos, setContratos] = useState([]);
   const [loadingLista, setLoadingLista] = useState(false);
@@ -503,6 +618,12 @@ export default function AltaContrato() {
 
   const handleGuardar = async () => {
     if (guardando || soloLectura) return;
+    // Bloquea si el programa de obra EXCEDE 100% (una suma <100% sí se permite).
+    const sumaPeso = Math.round(programa.reduce((s, a) => s + (Number(a.peso) || 0), 0) * 100) / 100;
+    if (sumaPeso > 100) {
+      showToast(`El programa de obra suma ${sumaPeso}% (excede 100%). Ajusta los pesos antes de guardar.`);
+      return;
+    }
     setGuardando(true);
     try {
       const payload = {
@@ -553,6 +674,7 @@ export default function AltaContrato() {
       <TabCatalogo
         rows={conceptos}
         onCell={mkCell(setConceptos)}
+        onPatch={mkPatch(setConceptos)}
         onAdd={mkAdd(setConceptos, { concepto: '', unidad: '', cantidad: '', pu: '' })}
         onRemove={mkRemove(setConceptos)}
         soloLectura={soloLectura}
@@ -587,6 +709,7 @@ export default function AltaContrato() {
         errorMsg={errorLista}
         sinSesion={sinSesion}
         onRecargar={cargarContratos}
+        soloLectura={soloLectura}
       />
     ) }
   ];
@@ -609,14 +732,6 @@ export default function AltaContrato() {
       <div className="mt-6 flex justify-end gap-3">
         <button type="button" className="px-4 py-2 text-slate-600 hover:text-slate-900">
           Cancelar
-        </button>
-        <button
-          type="button"
-          className="sg-btn-secondary"
-          disabled={soloLectura || guardando}
-          onClick={() => showToast('Pendiente para Sprint siguiente.')}
-        >
-          Guardar borrador
         </button>
         <button
           type="button"
