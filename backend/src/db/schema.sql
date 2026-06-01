@@ -348,6 +348,126 @@ ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS aprobado_en TIMESTAMPTZ;
 ALTER TABLE usuarios ALTER COLUMN rol DROP NOT NULL;
 
 -- =====================================================================
+-- HU-09: emisión y respuesta de notas tipificadas de bitácora (Sprint 2)
+-- Aditivo e idempotente. bitacora_notas estaba vacía y sin uso: se reemplaza el
+-- ENUM rígido de 5 tipos por un CATÁLOGO de referencia (eventos del art. 125
+-- RLOPSRM por rol) y se le agregan folio, asunto, vínculo, estado y firma del
+-- emisor. UN emisor por nota (art. 125), NO firma conjunta de tres.
+-- =====================================================================
+
+-- (1) Catálogo de tipos = eventos del art. 125 RLOPSRM agrupados por el rol que
+--     los registra (residente: autoriza/aprueba; superintendente: solicita/avisa;
+--     supervisión: avance/calidad/seguridad/juntas) + apertura/cierre + 'otro'
+--     (art. 125, último párrafo: cualesquiera otros relevantes). rol_emisor NULL =
+--     cualquier parte del roster puede emitirlo.
+CREATE TABLE IF NOT EXISTS bitacora_nota_tipos (
+  clave VARCHAR(40) PRIMARY KEY,
+  etiqueta VARCHAR(120) NOT NULL,
+  rol_emisor VARCHAR(20),
+  orden INTEGER NOT NULL DEFAULT 0,
+  CONSTRAINT chk_bitacora_nota_tipos_rol
+    CHECK (rol_emisor IS NULL OR rol_emisor IN ('residente','superintendente','supervision'))
+);
+
+INSERT INTO bitacora_nota_tipos (clave, etiqueta, rol_emisor, orden) VALUES
+  ('autorizacion', 'Autorización (modificaciones, estimaciones, convenios)',          'residente',       10),
+  ('aprobacion',   'Aprobación (ajuste de costos, conceptos/cantidades adicionales)', 'residente',       20),
+  ('apertura',     'Apertura de bitácora',                                            'residente',       30),
+  ('cierre',       'Cierre de bitácora',                                              'residente',       40),
+  ('solicitud',    'Solicitud (modificaciones, estimaciones, ajuste de costos)',      'superintendente', 50),
+  ('aviso',        'Aviso (terminación de trabajos, atraso de pagos)',                'superintendente', 60),
+  ('avance',       'Avance físico y financiero',                                      'supervision',     70),
+  ('calidad',      'Resultado de pruebas de calidad',                                 'supervision',     80),
+  ('seguridad',    'Seguridad, higiene y protección al ambiente',                     'supervision',     90),
+  ('junta',        'Acuerdos de juntas de trabajo',                                   'supervision',    100),
+  ('otro',         'Otro (evento no tipificado)',                                     NULL,             110)
+ON CONFLICT (clave) DO NOTHING;
+
+-- (2) Plazo de firma/aceptación CONFIGURABLE por contrato (art. 123 fr. III: "plazo
+--     máximo para la firma de las notas... se tendrán por aceptadas una vez vencido
+--     el plazo"). Días naturales; default 2 para Etapa 1 (días hábiles = futuro).
+ALTER TABLE bitacora_aperturas ADD COLUMN IF NOT EXISTS plazo_firma_dias INTEGER NOT NULL DEFAULT 2;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_bitacora_aperturas_plazo') THEN
+    ALTER TABLE bitacora_aperturas ADD CONSTRAINT chk_bitacora_aperturas_plazo
+      CHECK (plazo_firma_dias >= 1 AND plazo_firma_dias <= 60);
+  END IF;
+END $$;
+
+-- (3) bitacora_notas: catálogo en vez de ENUM + folio/asunto/vínculo/estado/firma.
+--     La tabla estaba vacía, así que convertir el ENUM a texto es seguro (USING ::text).
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+              WHERE table_name='bitacora_notas' AND column_name='tipo' AND udt_name='tipo_nota_bitacora') THEN
+    ALTER TABLE bitacora_notas ALTER COLUMN tipo TYPE VARCHAR(40) USING tipo::text;
+  END IF;
+END $$;
+
+ALTER TABLE bitacora_notas ADD COLUMN IF NOT EXISTS numero INTEGER;
+ALTER TABLE bitacora_notas ADD COLUMN IF NOT EXISTS asunto VARCHAR(200);
+ALTER TABLE bitacora_notas ADD COLUMN IF NOT EXISTS vinculada_a INTEGER REFERENCES bitacora_notas(id) ON DELETE SET NULL;
+ALTER TABLE bitacora_notas ADD COLUMN IF NOT EXISTS estado VARCHAR(20) NOT NULL DEFAULT 'emitida';
+ALTER TABLE bitacora_notas ADD COLUMN IF NOT EXISTS firmado_en TIMESTAMPTZ;
+
+-- FK del tipo al catálogo (tabla vacía: no hay filas que la violen).
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_bitacora_notas_tipo') THEN
+    ALTER TABLE bitacora_notas ADD CONSTRAINT fk_bitacora_notas_tipo
+      FOREIGN KEY (tipo) REFERENCES bitacora_nota_tipos(clave);
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_bitacora_notas_estado') THEN
+    ALTER TABLE bitacora_notas ADD CONSTRAINT chk_bitacora_notas_estado
+      CHECK (estado IN ('emitida','anulada'));
+  END IF;
+END $$;
+
+-- Folio correlativo por bitácora, sin saltos ni duplicados (art. 123 fr. V).
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_bitacora_notas_folio') THEN
+    ALTER TABLE bitacora_notas ADD CONSTRAINT uq_bitacora_notas_folio UNIQUE (bitacora_id, numero);
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS idx_bitacora_notas_vinculada ON bitacora_notas(vinculada_a);
+
+-- (4) Inmutabilidad de notas (espejo de sigecop_*): una nota 'emitida' es inalterable
+--     (art. 123 fr. VI); SOLO se permite la transición emitida -> anulada (flujo de
+--     anulación por error, art. 123 fr. VII). Correcciones/respuestas = notas
+--     vinculadas nuevas. Bloquea UPDATE; NO se bloquea DELETE (preserva el borrado en
+--     cascada del contrato); la no-eliminación se cuida en la app (sin endpoint de borrar).
+CREATE OR REPLACE FUNCTION sigecop_nota_inmutable() RETURNS trigger AS $func$
+BEGIN
+  IF OLD.estado = 'anulada' THEN
+    RAISE EXCEPTION 'La nota ya está anulada y es inalterable';
+  END IF;
+  IF NEW.bitacora_id IS DISTINCT FROM OLD.bitacora_id
+     OR NEW.numero IS DISTINCT FROM OLD.numero
+     OR NEW.tipo IS DISTINCT FROM OLD.tipo
+     OR NEW.asunto IS DISTINCT FROM OLD.asunto
+     OR NEW.contenido IS DISTINCT FROM OLD.contenido
+     OR NEW.emisor_id IS DISTINCT FROM OLD.emisor_id
+     OR NEW.vinculada_a IS DISTINCT FROM OLD.vinculada_a
+     OR NEW.fecha IS DISTINCT FROM OLD.fecha
+     OR NEW.firmado_en IS DISTINCT FROM OLD.firmado_en
+     OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+    RAISE EXCEPTION 'Una nota de bitácora es inalterable (art. 123 fr. VI RLOPSRM); use una nota vinculada para corregir';
+  END IF;
+  IF NOT (OLD.estado = 'emitida' AND NEW.estado = 'anulada') THEN
+    RAISE EXCEPTION 'Solo se permite anular una nota emitida, no editarla';
+  END IF;
+  RETURN NEW;
+END;
+$func$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_bitacora_notas_inmutable ON bitacora_notas;
+CREATE TRIGGER trg_bitacora_notas_inmutable
+  BEFORE UPDATE ON bitacora_notas
+  FOR EACH ROW EXECUTE FUNCTION sigecop_nota_inmutable();
+
+-- =====================================================================
 -- SEED MÍNIMO PARA TESTING
 -- Contraseña común de los 3 usuarios demo: Sigecop2026!
 -- Hashes bcrypt reales (algoritmo $2a$, cost 10) generados con bcryptjs.

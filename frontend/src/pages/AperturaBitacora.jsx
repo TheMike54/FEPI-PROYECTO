@@ -107,6 +107,7 @@ export default function AperturaBitacora() {
   const [cargando, setCargando] = useState(false);
   const [aperturando, setAperturando] = useState(false);
   const [fechaEntregaSitio, setFechaEntregaSitio] = useState('');
+  const [plazoFirmaDias, setPlazoFirmaDias] = useState(2);
 
   const contratoSel = contratos.find((c) => String(c.id) === String(contratoId)) || null;
   const soyResidenteDelContrato = !!contratoSel && contratoSel.residente_id === usuario?.id;
@@ -141,7 +142,7 @@ export default function AperturaBitacora() {
     if (!puedeAperturar) return;
     setAperturando(true);
     try {
-      await api.abrirBitacora({ contratoId: Number(contratoId), fechaEntregaSitio });
+      await api.abrirBitacora({ contratoId: Number(contratoId), fechaEntregaSitio, plazoFirmaDias: Number(plazoFirmaDias) || 2 });
       showToast('Bitácora aperturada. Cada parte ya puede firmar desde "Por firmar".');
       const b = await api.bitacoraDeContrato(contratoId);
       setBitacora(b);
@@ -233,10 +234,17 @@ export default function AperturaBitacora() {
                     </div>
                   </div>
                   <div>
-                    <div className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Fecha de entrega del sitio</div>
-                    <div className="max-w-xs">
-                      <label className="sg-label">Entrega del sitio <span className="text-red-600">*</span></label>
-                      <input type="date" className="sg-input" value={fechaEntregaSitio} onChange={(e) => setFechaEntregaSitio(e.target.value)} disabled={soloLectura} required data-testid="input-fecha-apertura" />
+                    <div className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Datos de la apertura</div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-xl">
+                      <div>
+                        <label className="sg-label">Entrega del sitio <span className="text-red-600">*</span></label>
+                        <input type="date" className="sg-input" value={fechaEntregaSitio} onChange={(e) => setFechaEntregaSitio(e.target.value)} disabled={soloLectura} required data-testid="input-fecha-apertura" />
+                      </div>
+                      <div>
+                        <label className="sg-label">Plazo de firma de notas (días naturales)</label>
+                        <input type="number" min={1} max={60} className="sg-input" value={plazoFirmaDias} onChange={(e) => setPlazoFirmaDias(e.target.value)} disabled={soloLectura} data-testid="input-plazo-firma" />
+                        <p className="text-[11px] text-slate-500 mt-1">Vencido el plazo sin respuesta, las notas se tienen por aceptadas (art. 123 fr. III RLOPSRM). Default 2.</p>
+                      </div>
                     </div>
                   </div>
                 </div>

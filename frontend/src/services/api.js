@@ -76,5 +76,11 @@ export const api = {
   bitacoraDeContrato: (contratoId) => request(`/bitacora/contrato/${contratoId}`),
   // Cada quien firma SU parte desde su cuenta; bandeja de pendientes del usuario.
   firmarApertura: (aperturaId) => request(`/bitacora/${aperturaId}/firmar`, { method: 'POST' }),
-  pendientesPorFirmar: () => request('/bitacora/pendientes')
+  pendientesPorFirmar: () => request('/bitacora/pendientes'),
+  // HU-09: notas tipificadas de bitácora.
+  notaTipos: () => request('/bitacora/nota-tipos'),
+  listarNotas: (aperturaId) => request(`/bitacora/${aperturaId}/notas`),
+  emitirNota: (aperturaId, payload) => request(`/bitacora/${aperturaId}/notas`, { method: 'POST', body: JSON.stringify(payload) }),
+  anularNota: (notaId, payload) => request(`/bitacora/notas/${notaId}/anular`, { method: 'POST', body: JSON.stringify(payload) }),
+  vincularNota: (notaId, payload) => request(`/bitacora/notas/${notaId}/vincular`, { method: 'POST', body: JSON.stringify(payload) })
 };
