@@ -468,6 +468,43 @@ CREATE TRIGGER trg_bitacora_notas_inmutable
   FOR EACH ROW EXECUTE FUNCTION sigecop_nota_inmutable();
 
 -- =====================================================================
+-- HU-21: registro del pago efectuado (Sprint 2, variante mínima)
+-- Aditivo e idempotente. Persiste el dinero EJERCIDO (pago ya realizado).
+-- estimacion_id queda NULL hasta que HU-12 persista estimaciones (CA-1b diferido);
+-- el pago es inalterable (append-only) por trigger, como notas/acta/PDF.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS pagos (
+  id                 SERIAL PRIMARY KEY,
+  contrato_id        INTEGER NOT NULL REFERENCES contratos(id) ON DELETE CASCADE,
+  estimacion_id      INTEGER,                                    -- FK a estimaciones cuando exista HU-12 (diferido, CA-1b); NULL por ahora
+  estimacion_ref     VARCHAR(60) NOT NULL,                       -- folio/periodo de la estimación (texto, provisional)
+  fecha_pago         DATE NOT NULL,                              -- día del pago efectuado
+  importe            NUMERIC(14,2) NOT NULL CHECK (importe > 0), -- captura libre (transitorio); se derivará del neto autorizado en HU-12
+  referencia         VARCHAR(100) NOT NULL,                      -- clave de rastreo SPEI (art. 54: medios electrónicos)
+  factura_cfdi       VARCHAR(60) NOT NULL,                       -- folio fiscal CFDI (precondición del plazo, art. 54)
+  fecha_factura      DATE NOT NULL,                              -- fecha de la factura (disparador del plazo de 20 días)
+  fecha_autorizacion DATE,                                       -- provisional; la posee HU-20. Para derivar el plazo de 20 días
+  observaciones      TEXT,
+  registrado_por     INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,  -- del JWT (CA-2)
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pagos_contrato ON pagos(contrato_id);
+
+-- Append-only: un pago registrado es inalterable (auditoría).
+-- BEFORE UPDATE solamente (NO bloquear DELETE, para preservar el ON DELETE CASCADE del contrato), igual que el patrón de notas.
+CREATE OR REPLACE FUNCTION sigecop_pago_inmutable() RETURNS TRIGGER AS $$
+BEGIN
+  RAISE EXCEPTION 'Un pago registrado es inalterable (registro de auditoria).';
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_pago_inmutable ON pagos;
+CREATE TRIGGER trg_pago_inmutable
+  BEFORE UPDATE ON pagos
+  FOR EACH ROW EXECUTE FUNCTION sigecop_pago_inmutable();
+
+-- =====================================================================
 -- SEED MÍNIMO PARA TESTING
 -- Contraseña común de los 3 usuarios demo: Sigecop2026!
 -- Hashes bcrypt reales (algoritmo $2a$, cost 10) generados con bcryptjs.

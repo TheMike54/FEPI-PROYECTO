@@ -7,6 +7,7 @@ const authRoutes = require('./src/routes/auth.routes');
 const usuariosRoutes = require('./src/routes/usuarios.routes');
 const contratosRoutes = require('./src/routes/contratos.routes');
 const bitacoraRoutes = require('./src/routes/bitacora.routes');
+const pagosRoutes = require('./src/routes/pagos.routes');
 const { initDb } = require('./src/db/init');
 
 const app = express();
@@ -28,6 +29,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/usuarios', usuariosRoutes);
 app.use('/api/contratos', contratosRoutes);
 app.use('/api/bitacora', bitacoraRoutes);
+app.use('/api/pagos', pagosRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Ruta no encontrada' });
