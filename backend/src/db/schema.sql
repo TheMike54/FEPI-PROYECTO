@@ -210,10 +210,14 @@ ALTER TABLE bitacora_aperturas ADD COLUMN IF NOT EXISTS acta JSONB NOT NULL DEFA
 ALTER TABLE bitacora_aperturas ADD COLUMN IF NOT EXISTS aperturada_por INTEGER REFERENCES usuarios(id) ON DELETE SET NULL;
 
 -- Una bitacora UNICA por contrato. La tabla esta vacia (el endpoint era un stub
--- 501), asi que agregar el UNIQUE es seguro. Idempotente via duplicate_object.
+-- 501), asi que agregar el UNIQUE es seguro. Idempotente con guard EXPLICITO sobre
+-- pg_constraint: re-correr "ADD CONSTRAINT ... UNIQUE" lanza 42P07 (el indice de
+-- respaldo ya existe), NO 42710, asi que un EXCEPTION WHEN duplicate_object no basta.
 DO $$ BEGIN
-  ALTER TABLE bitacora_aperturas ADD CONSTRAINT uq_bitacora_aperturas_contrato UNIQUE (contrato_id);
-EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_bitacora_aperturas_contrato') THEN
+    ALTER TABLE bitacora_aperturas ADD CONSTRAINT uq_bitacora_aperturas_contrato UNIQUE (contrato_id);
+  END IF;
+END $$;
 
 -- (2) Firmantes de las tres partes (residente, supervisor externo opcional,
 --     superintendente). Firma conjunta = todas las partes que aplican, firmadas.
