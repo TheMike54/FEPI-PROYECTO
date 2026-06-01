@@ -1,466 +1,97 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Tabs from '../components/ui/Tab.jsx';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import BannerContexto from '../components/vista/BannerContexto.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import RegionEditable from '../components/vista/RegionEditable.jsx';
-import { useVistaHU } from '../context/SesionContext.jsx';
-import {
-  contratoDummy,
-  generadoresEstimacionDummy,
-  fotosEstimacionDummy,
-  soportesEstimacionDummy,
-  notasBitacoraDummy,
-  tiposNotaCatalogo
-} from '../data/dummy.js';
+import BuscadorNotas, { useFiltrosNotas } from '../components/notas/BuscadorNotas.jsx';
+import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
+import { useToast } from '../components/ui/Toast.jsx';
+import { api } from '../services/api.js';
 
-// Periodo de la estimación dummy — alimenta los filtros por defecto del modal.
-const PERIODO_DESDE = '2026-05-01';
-const PERIODO_HASTA = '2026-05-31';
+// HU-12 Fase 3 — cableado al backend real. El superintendente del contrato integra
+// la estimación del periodo como expediente (art. 132 RLOPSRM). Toda la verdad del
+// dinero la calcula el backend al integrar; la carátula del cliente es SOLO preview.
+// El buscador de notas REUSA el componente compartido de HU-10 (BuscadorNotas).
 
-const moneda = (n) => {
-  const abs = Math.abs(n).toLocaleString('en-US', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
+const fmtMXN = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const moneda = (n) => fmtMXN.format(Number(n) || 0);
+const num = (n) => (Number(n) || 0).toLocaleString('es-MX', { maximumFractionDigits: 4 });
+// dd/mm/aaaa sin corrimiento de zona horaria (parte de fecha de un ISO/Date).
+const fechaMX = (iso) => {
+  const p = (iso || '').slice(0, 10).split('-');
+  return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : '—';
+};
+const EPS = 1e-6;
+
+const CLASE_ESTADO = {
+  integrada: 'bg-sigecop-blue-light text-sigecop-blue',
+  enviada: 'bg-amber-100 text-amber-800',
+  autorizada: 'bg-green-100 text-sigecop-green-validation',
+  pagada: 'bg-green-100 text-sigecop-green-validation',
+  rechazada: 'bg-red-100 text-red-700'
+};
+const BadgeEstado = ({ estado }) => (
+  <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold capitalize ${CLASE_ESTADO[estado] || 'bg-slate-100 text-slate-600'}`}>
+    {estado}
+  </span>
+);
+
+// ---------------------------------------------------------------------------
+// Modal de vinculación de notas — REUSA el BuscadorNotas de HU-10. El padre le
+// pasa las notas REALES del contrato (notasDeContrato), el catálogo de tipos y
+// el Set de ids ya vinculados (excluirIds). Se monta/desmonta por apertura, así
+// que la selección arranca limpia cada vez.
+// ---------------------------------------------------------------------------
+function ModalVincularNotas({ onCerrar, onConfirmar, notas, tipos, yaVinculadas }) {
+  const excluir = useMemo(() => new Set(yaVinculadas), [yaVinculadas]);
+  const { filtros, setFiltro, limpiar, resultados, firmantesUnicos, numeroPorId } = useFiltrosNotas(notas, { excluirIds: excluir });
+  const [seleccionadas, setSeleccionadas] = useState(() => new Set());
+
+  const toggle = (id) => setSeleccionadas((prev) => {
+    const n = new Set(prev);
+    if (n.has(id)) n.delete(id); else n.add(id);
+    return n;
   });
-  return n < 0 ? `-$ ${abs}` : `$ ${abs}`;
-};
+  const toggleTodas = () => setSeleccionadas((prev) => {
+    const todas = resultados.length > 0 && resultados.every((n) => prev.has(n.id));
+    const n = new Set(prev);
+    resultados.forEach((r) => (todas ? n.delete(r.id) : n.add(r.id)));
+    return n;
+  });
 
-// Calcula la carátula a partir de los generadores y los parámetros del contrato.
-// Subtotal = Σ (cantidad_periodo × precio_unitario). Las deductivas y el % de
-// anticipo vienen del contratoDummy.
-function calcularCaratula(filas, anticipoPct, deductivas) {
-  const subtotal = filas.reduce(
-    (sum, f) => sum + (Number(f.periodo) || 0) * (f.pu || 0),
-    0
-  );
-  const anticipoAmortizado = subtotal * (anticipoPct / 100);
-  const retencion = subtotal * 0.005;
-  const total = subtotal - anticipoAmortizado - retencion - deductivas;
-  return { subtotal, anticipoAmortizado, retencion, deductivas, total };
-}
-
-// Normalización ILIKE sin acentos — la misma que HU-10.
-function normalizar(s) {
-  return (s || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '');
-}
-
-function TabCaratula({ caratula, anticipoPct }) {
-  const renglones = [
-    {
-      label: 'Subtotal del periodo',
-      importe: caratula.subtotal,
-      tipo: 'positivo',
-      formula: 'Σ (cantidad_periodo × precio_unitario) de los números generadores'
-    },
-    {
-      label: `(−) Amortización de anticipo (${anticipoPct}%)`,
-      importe: -caratula.anticipoAmortizado,
-      tipo: 'deduccion',
-      formula: `subtotal × ${anticipoPct / 100} (art. 50 LOPSRM)`
-    },
-    {
-      label: '(−) Retención 5 al millar (art. 191 LFD)',
-      importe: -caratula.retencion,
-      tipo: 'deduccion',
-      formula: 'subtotal × 0.005'
-    },
-    {
-      label: '(−) Deductivas por penalización',
-      importe: -caratula.deductivas,
-      tipo: 'deduccion',
-      formula: 'Deductivas registradas en el contrato'
-    },
-    {
-      label: '(=) Total a pagar',
-      importe: caratula.total,
-      tipo: 'neto',
-      formula: 'subtotal − amortización − retención − deductivas'
-    }
-  ];
+  const confirmar = () => onConfirmar(notas.filter((n) => seleccionadas.has(n.id)));
 
   return (
-    <div>
-      <h3 className="text-lg font-bold text-sigecop-blue mb-4">Carátula de cálculo</h3>
-      <p className="text-xs text-slate-500 mb-2 italic">
-        Los importes se recalculan en vivo a partir de los números generadores. Pasa el cursor
-        sobre cada renglón para ver la fórmula aplicada.
-      </p>
-      <div className="overflow-x-auto border border-slate-200 rounded-md mb-4">
-        <table className="w-full text-sm" data-testid="tabla-caratula">
-          <tbody>
-            {renglones.map((r, i) => {
-              const esNeto = r.tipo === 'neto';
-              return (
-                <tr
-                  key={i}
-                  className={`border-t border-slate-200 ${esNeto ? 'bg-sigecop-blue-light font-bold' : ''}`}
-                  title={r.formula}
-                  data-tipo={r.tipo}
-                >
-                  <td className={`px-4 py-3 ${esNeto ? 'text-sigecop-blue' : 'text-slate-800'}`}>
-                    {r.label}
-                  </td>
-                  <td
-                    className={`px-4 py-3 text-right font-mono ${esNeto ? 'text-sigecop-blue text-base' : 'text-slate-800'}`}
-                    data-testid={esNeto ? 'caratula-total' : undefined}
-                  >
-                    {moneda(r.importe)}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="bg-blue-50 border-l-4 border-blue-500 px-4 py-3 text-sm text-blue-900 rounded-r-md">
-        El 5 al millar se retiene conforme al <strong>art. 191 de la Ley Federal de Derechos</strong> sobre
-        el importe de cada estimación. La amortización del anticipo se aplica conforme al{' '}
-        <strong>art. 50 LOPSRM</strong>, proporcionalmente al avance del periodo.
-      </div>
-    </div>
-  );
-}
-
-function TabGeneradores({ filas, onPeriodoChange }) {
-  return (
-    <div>
-      <h3 className="text-lg font-bold text-sigecop-blue mb-4">Números generadores del periodo</h3>
-      <p className="text-sm text-slate-600 mb-3">
-        Captura las cantidades ejecutadas este periodo. El sistema calcula automáticamente
-        el subtotal, el acumulado y el % de avance contra el catálogo del contrato.
-      </p>
-
-      <div className="overflow-x-auto border border-slate-200 rounded-md mb-3">
-        <table className="w-full text-sm">
-          <thead className="bg-sigecop-blue-light text-sigecop-blue">
-            <tr>
-              <th className="text-left px-3 py-2">Concepto</th>
-              <th className="text-left px-3 py-2 w-20">Unidad</th>
-              <th className="text-right px-3 py-2 w-28">Contratado</th>
-              <th className="text-right px-3 py-2 w-32">PU</th>
-              <th className="text-right px-3 py-2 w-36">Este periodo</th>
-              <th className="text-right px-3 py-2 w-28">Acumulado</th>
-              <th className="text-right px-3 py-2 w-24">% avance</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filas.map((f) => (
-              <tr
-                key={f.idx}
-                className={`border-t border-slate-200 ${f.excede ? 'bg-red-50' : 'hover:bg-slate-50'}`}
-              >
-                <td className="px-3 py-2">
-                  {f.excede && <span title="Excede lo contratado" className="text-red-600 mr-1">⚠</span>}
-                  {f.concepto}
-                </td>
-                <td className="px-3 py-2 text-slate-600">{f.unidad}</td>
-                <td className="px-3 py-2 text-right">{f.contratado.toLocaleString()}</td>
-                <td className="px-3 py-2 text-right font-mono text-xs text-slate-600">
-                  {moneda(f.pu)}
-                </td>
-                <td className="px-3 py-2">
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    className={`sg-input text-right ${f.excede ? 'border-red-500 ring-2 ring-red-200' : ''}`}
-                    value={f.periodo}
-                    onChange={(e) => onPeriodoChange(f.idx, e.target.value)}
-                    data-testid={`gen-periodo-${f.idx}`}
-                  />
-                </td>
-                <td className={`px-3 py-2 text-right font-semibold ${f.excede ? 'text-red-700' : ''}`}>
-                  {f.acumulado.toLocaleString()}
-                </td>
-                <td className={`px-3 py-2 text-right ${f.excede ? 'text-red-700 font-bold' : ''}`}>
-                  {f.avance}%
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {filas.some((f) => f.excede) ? (
-        <div
-          className="bg-red-50 border-l-4 border-red-500 px-4 py-3 text-sm text-red-800 rounded-r-md"
-          data-testid="aviso-exceso"
-        >
-          <strong>⚠ La cantidad acumulada excede lo contratado en el catálogo</strong> en uno o más
-          conceptos. Para integrar la estimación, ajusta las cantidades del periodo o gestiona un
-          convenio modificatorio (art. 118 RLOPSRM).
-        </div>
-      ) : (
-        <div className="bg-green-50 border-l-4 border-sigecop-green-validation px-4 py-3 text-sm text-sigecop-green-validation rounded-r-md">
-          ✓ Todas las cantidades acumuladas están dentro de lo contratado.
-        </div>
-      )}
-    </div>
-  );
-}
-
-function TabFotografico({ descripciones, onDescripcionChange }) {
-  return (
-    <div>
-      <h3 className="text-lg font-bold text-sigecop-blue mb-4">Registro fotográfico del periodo</h3>
-      <p className="text-sm text-slate-600 mb-4">Carga de imágenes disponible en Sprint siguiente.</p>
-
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {fotosEstimacionDummy.map((f) => (
-          <div key={f.id} className="border border-slate-200 rounded-md overflow-hidden">
-            <div className="aspect-video bg-slate-100 flex flex-col items-center justify-center text-slate-400">
-              <div className="text-5xl mb-2">📷</div>
-              <p className="text-xs px-4 text-center">Foto del avance — carga en Sprint siguiente</p>
-            </div>
-            <div className="p-3 bg-white border-t border-slate-200">
-              <label className="sg-label">Descripción</label>
-              <input
-                className="sg-input"
-                value={descripciones[f.id] ?? ''}
-                onChange={(e) => onDescripcionChange(f.id, e.target.value)}
-              />
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function TabSoportes() {
-  return (
-    <div>
-      <h3 className="text-lg font-bold text-sigecop-blue mb-4">Soportes documentales</h3>
-      <p className="text-sm text-slate-600 mb-4">Documentos requeridos para integrar la estimación.</p>
-
-      <div className="overflow-x-auto border border-slate-200 rounded-md">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 text-slate-700">
-            <tr>
-              <th className="text-left p-3 font-semibold">Documento</th>
-              <th className="text-left p-3 font-semibold">Estado</th>
-              <th className="text-center p-3 font-semibold w-40">Acción</th>
-            </tr>
-          </thead>
-          <tbody>
-            {soportesEstimacionDummy.map((s, i) => (
-              <tr key={i} className="border-t border-slate-200 hover:bg-slate-50">
-                <td className="p-3">{s.documento}</td>
-                <td className="p-3">
-                  {s.cargado ? (
-                    <span className="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-green-100 text-sigecop-green-validation">
-                      {s.estado}
-                    </span>
-                  ) : (
-                    <span className="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-slate-200 text-slate-600">
-                      {s.estado}
-                    </span>
-                  )}
-                </td>
-                <td className="p-3 text-center">
-                  <button
-                    type="button"
-                    disabled
-                    title="Carga real en Sprint siguiente"
-                    className="px-3 py-1.5 bg-slate-200 text-slate-400 rounded text-xs cursor-not-allowed"
-                  >
-                    📤 Cargar soporte
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <p className="mt-3 text-xs text-slate-500">Carga real disponible en Sprint siguiente.</p>
-    </div>
-  );
-}
-
-const FILTROS_BUSCADOR_INICIAL = {
-  tipo: 'Todos',
-  fechaDesde: PERIODO_DESDE,
-  fechaHasta: PERIODO_HASTA,
-  firmante: 'Todos',
-  vinculo: 'Todas',
-  palabraClave: ''
-};
-
-// Modal de búsqueda y selección de notas — mismos filtros que HU-10 con AND.
-// Recibe `yaVinculadas` (Set de folios) para excluirlas y `onConfirmar` con la
-// lista de notas seleccionadas en esta apertura del modal.
-function BuscadorNotasModal({ abierto, onCerrar, onConfirmar, yaVinculadas }) {
-  const [filtros, setFiltros] = useState(FILTROS_BUSCADOR_INICIAL);
-  const [seleccionadas, setSeleccionadas] = useState(new Set());
-
-  const firmantesUnicos = useMemo(() => {
-    const set = new Set(notasBitacoraDummy.map((n) => n.firmante));
-    return ['Todos', ...Array.from(set).sort()];
-  }, []);
-
-  const setF = (k) => (e) => setFiltros({ ...filtros, [k]: e.target.value });
-
-  const resultados = useMemo(() => {
-    if (!abierto) return [];
-    const palabraNorm = normalizar(filtros.palabraClave);
-    return notasBitacoraDummy.filter((n) => {
-      if (yaVinculadas.has(n.folio)) return false;
-      if (filtros.tipo !== 'Todos' && n.tipo !== filtros.tipo) return false;
-      if (filtros.fechaDesde && n.fecha < filtros.fechaDesde) return false;
-      if (filtros.fechaHasta && n.fecha > filtros.fechaHasta) return false;
-      if (filtros.firmante !== 'Todos' && n.firmante !== filtros.firmante) return false;
-      if (filtros.vinculo === 'Vinculadas' && !n.vinculadaA) return false;
-      if (filtros.vinculo === 'Sin vínculo' && n.vinculadaA) return false;
-      if (palabraNorm) {
-        const haystack = normalizar(`${n.asunto || ''} ${n.contenido || ''}`);
-        if (!haystack.includes(palabraNorm)) return false;
-      }
-      return true;
-    });
-  }, [abierto, filtros, yaVinculadas]);
-
-  const toggle = (folio) => {
-    setSeleccionadas((prev) => {
-      const next = new Set(prev);
-      if (next.has(folio)) next.delete(folio);
-      else next.add(folio);
-      return next;
-    });
-  };
-
-  const limpiarYCerrar = () => {
-    setFiltros(FILTROS_BUSCADOR_INICIAL);
-    setSeleccionadas(new Set());
-    onCerrar();
-  };
-
-  const confirmar = () => {
-    const notas = resultados.filter((n) => seleccionadas.has(n.folio));
-    onConfirmar(notas);
-    setFiltros(FILTROS_BUSCADOR_INICIAL);
-    setSeleccionadas(new Set());
-  };
-
-  if (!abierto) return null;
-
-  return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 p-4"
-      data-testid="modal-buscar-notas"
-    >
-      <div className="bg-white rounded-md shadow-lg max-w-4xl w-full max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 p-4" data-testid="modal-vincular-notas">
+      <div className="bg-white rounded-md shadow-lg max-w-5xl w-full max-h-[90vh] flex flex-col">
         <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
           <h3 className="text-lg font-bold text-sigecop-blue">Buscar y vincular notas de bitácora</h3>
-          <button
-            type="button"
-            className="text-slate-400 hover:text-slate-700 text-xl leading-none"
-            onClick={limpiarYCerrar}
-            aria-label="Cerrar"
-          >
-            ×
-          </button>
+          <button type="button" className="text-slate-400 hover:text-slate-700 text-xl leading-none" onClick={onCerrar} aria-label="Cerrar">×</button>
         </div>
-
-        <div className="px-6 py-4 border-b border-slate-200">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div>
-              <label className="sg-label">Tipo</label>
-              <select className="sg-input" value={filtros.tipo} onChange={setF('tipo')} data-testid="mb-tipo">
-                <option>Todos</option>
-                {tiposNotaCatalogo.map((t) => <option key={t}>{t}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="sg-label">Fecha desde</label>
-              <input type="date" className="sg-input" value={filtros.fechaDesde} onChange={setF('fechaDesde')} />
-            </div>
-            <div>
-              <label className="sg-label">Fecha hasta</label>
-              <input type="date" className="sg-input" value={filtros.fechaHasta} onChange={setF('fechaHasta')} />
-            </div>
-            <div>
-              <label className="sg-label">Firmante</label>
-              <select className="sg-input" value={filtros.firmante} onChange={setF('firmante')}>
-                {firmantesUnicos.map((f) => <option key={f}>{f}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="sg-label">Vínculo</label>
-              <select className="sg-input" value={filtros.vinculo} onChange={setF('vinculo')}>
-                <option>Todas</option>
-                <option>Vinculadas</option>
-                <option>Sin vínculo</option>
-              </select>
-            </div>
-            <div>
-              <label className="sg-label">Palabra clave</label>
-              <input
-                className="sg-input"
-                value={filtros.palabraClave}
-                onChange={setF('palabraClave')}
-                placeholder="ILIKE sin acentos"
-                data-testid="mb-palabra"
-              />
-            </div>
-          </div>
+        <div className="flex-1 overflow-auto px-6 py-4">
+          {notas.length === 0 ? (
+            <p className="p-8 text-center text-slate-400 italic" data-testid="mb-sin-notas">
+              Este contrato no tiene notas de bitácora para vincular.
+            </p>
+          ) : (
+            <BuscadorNotas
+              filtros={filtros}
+              setFiltro={setFiltro}
+              onLimpiar={limpiar}
+              tipos={tipos}
+              firmantesUnicos={firmantesUnicos}
+              resultados={resultados}
+              numeroPorId={numeroPorId}
+              seleccionadas={seleccionadas}
+              onToggle={toggle}
+              onToggleTodas={toggleTodas}
+              idPrefix="mb-"
+            />
+          )}
         </div>
-
-        <div className="flex-1 overflow-auto px-6 py-3">
-          <table className="w-full text-sm" data-testid="mb-tabla-resultados">
-            <thead className="bg-slate-50 text-slate-700 sticky top-0">
-              <tr>
-                <th className="w-10 p-2"></th>
-                <th className="text-left p-2 font-semibold">Folio</th>
-                <th className="text-left p-2 font-semibold">Tipo</th>
-                <th className="text-left p-2 font-semibold">Fecha</th>
-                <th className="text-left p-2 font-semibold">Firmante</th>
-                <th className="text-left p-2 font-semibold">Asunto</th>
-              </tr>
-            </thead>
-            <tbody>
-              {resultados.length === 0 ? (
-                <tr>
-                  <td colSpan="6" className="p-6 text-center text-slate-400 italic">
-                    Sin resultados con los filtros aplicados.
-                  </td>
-                </tr>
-              ) : (
-                resultados.map((n) => (
-                  <tr key={n.folio} className="border-t border-slate-200 hover:bg-slate-50">
-                    <td className="p-2 text-center">
-                      <input
-                        type="checkbox"
-                        checked={seleccionadas.has(n.folio)}
-                        onChange={() => toggle(n.folio)}
-                        aria-label={`Seleccionar ${n.folio}`}
-                      />
-                    </td>
-                    <td className="p-2 font-mono text-xs">{n.folio}</td>
-                    <td className="p-2">{n.tipo}</td>
-                    <td className="p-2">{n.fecha}</td>
-                    <td className="p-2">{n.firmante}</td>
-                    <td className="p-2 text-slate-700">{n.asunto}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
         <div className="px-6 py-3 border-t border-slate-200 flex justify-end gap-3">
-          <button
-            type="button"
-            className="px-4 py-2 text-slate-600 hover:text-slate-900"
-            onClick={limpiarYCerrar}
-          >
-            Cancelar
-          </button>
+          <button type="button" className="px-4 py-2 text-slate-600 hover:text-slate-900" onClick={onCerrar}>Cancelar</button>
           <button
             type="button"
             className="sg-btn-primary disabled:bg-slate-300 disabled:cursor-not-allowed"
@@ -476,31 +107,259 @@ function BuscadorNotasModal({ abierto, onCerrar, onConfirmar, yaVinculadas }) {
   );
 }
 
-function TabNotasVinculadas({ vinculadas, onAbrirBuscador, onQuitar, soloLectura }) {
+// ---------------------------------------------------------------------------
+// Detalle de una estimación del historial (PASO 7) — datos REALES del backend
+// (GET /estimaciones/:id): carátula + generadores (importe/acumulado/% avance) +
+// notas vinculadas + estado.
+// ---------------------------------------------------------------------------
+function ModalDetalle({ estimacion, onCerrar }) {
+  const e = estimacion;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 p-4" data-testid="modal-detalle">
+      <div className="bg-white rounded-md shadow-lg max-w-4xl w-full max-h-[90vh] flex flex-col">
+        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
+          <h3 className="text-lg font-bold text-sigecop-blue">
+            Estimación #{e.numero} · {fechaMX(e.periodo_inicio)} – {fechaMX(e.periodo_fin)} <BadgeEstado estado={e.estado} />
+          </h3>
+          <button type="button" className="text-slate-400 hover:text-slate-700 text-xl leading-none" onClick={onCerrar} aria-label="Cerrar">×</button>
+        </div>
+        <div className="flex-1 overflow-auto px-6 py-4 space-y-6">
+          <div>
+            <h4 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-2">Carátula</h4>
+            <div className="overflow-x-auto border border-slate-200 rounded-md">
+              <table className="w-full text-sm">
+                <tbody>
+                  <tr className="border-b border-slate-200"><td className="px-4 py-2">Subtotal</td><td className="px-4 py-2 text-right font-mono">{moneda(e.subtotal)}</td></tr>
+                  <tr className="border-b border-slate-200"><td className="px-4 py-2">(−) Amortización de anticipo ({Number(e.anticipo_pct_snapshot)}%)</td><td className="px-4 py-2 text-right font-mono">−{moneda(e.amortizacion)}</td></tr>
+                  <tr className="border-b border-slate-200"><td className="px-4 py-2">(−) Retención 5 al millar (art. 191 LFD)</td><td className="px-4 py-2 text-right font-mono">−{moneda(e.retencion)}</td></tr>
+                  <tr className="border-b border-slate-200"><td className="px-4 py-2">(−) Deductivas</td><td className="px-4 py-2 text-right font-mono">−{moneda(e.deductivas)}</td></tr>
+                  <tr className="bg-sigecop-blue-light font-bold"><td className="px-4 py-2 text-sigecop-blue">(=) Neto (sin IVA)</td><td className="px-4 py-2 text-right font-mono text-sigecop-blue" data-testid="detalle-neto">{moneda(e.neto)}</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <p className="text-xs text-slate-500 mt-1">Integró: {e.integrada_por_nombre || '—'} · {fechaMX(e.integrada_en)}</p>
+          </div>
+
+          <div>
+            <h4 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-2">Números generadores</h4>
+            <div className="overflow-x-auto border border-slate-200 rounded-md">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-slate-700">
+                  <tr>
+                    <th className="text-left p-2 font-semibold">Concepto</th>
+                    <th className="text-right p-2 font-semibold">PU</th>
+                    <th className="text-right p-2 font-semibold">Este periodo</th>
+                    <th className="text-right p-2 font-semibold">Acumulado</th>
+                    <th className="text-right p-2 font-semibold">Importe</th>
+                    <th className="text-right p-2 font-semibold">% avance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(e.generadores || []).map((g) => (
+                    <tr key={g.id} className="border-t border-slate-200">
+                      <td className="p-2">{g.concepto} <span className="text-slate-400">({g.unidad})</span></td>
+                      <td className="p-2 text-right font-mono text-xs">{moneda(g.pu_snapshot)}</td>
+                      <td className="p-2 text-right">{num(g.cantidad_periodo)}</td>
+                      <td className="p-2 text-right">{num(g.acumulado)} <span className="text-slate-400 text-xs">/ {num(g.cantidad_contratada)}</span></td>
+                      <td className="p-2 text-right font-mono">{moneda(g.importe)}</td>
+                      <td className="p-2 text-right">{g.avance_pct != null ? `${Number(g.avance_pct)}%` : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div>
+            <h4 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-2">Notas vinculadas ({(e.notas || []).length})</h4>
+            {(e.notas || []).length === 0 ? (
+              <p className="text-sm text-slate-400 italic">Sin notas vinculadas.</p>
+            ) : (
+              <div className="overflow-x-auto border border-slate-200 rounded-md">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-50 text-slate-700">
+                    <tr>
+                      <th className="text-left p-2 font-semibold">Folio</th>
+                      <th className="text-left p-2 font-semibold">Tipo</th>
+                      <th className="text-left p-2 font-semibold">Fecha</th>
+                      <th className="text-left p-2 font-semibold">Asunto</th>
+                      <th className="text-left p-2 font-semibold">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(e.notas || []).map((n) => (
+                      <tr key={n.nota_id} className="border-t border-slate-200">
+                        <td className="p-2 font-mono text-xs">#{n.numero}</td>
+                        <td className="p-2">{n.tipo}</td>
+                        <td className="p-2">{fechaMX(n.fecha)}</td>
+                        <td className="p-2 text-slate-700">{n.asunto || '—'}</td>
+                        <td className="p-2">{n.estado}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="px-6 py-3 border-t border-slate-200 flex justify-end">
+          <button type="button" className="sg-btn-secondary" onClick={onCerrar}>Cerrar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --------------------------- Tabs internos --------------------------------
+
+function TabGeneradores({ filas, onCantidad }) {
+  if (filas.length === 0) {
+    return (
+      <div>
+        <h3 className="text-lg font-bold text-sigecop-blue mb-4">Números generadores del periodo</h3>
+        <p className="text-sm text-slate-500 italic">Este contrato no tiene catálogo de conceptos; no hay generadores que capturar.</p>
+      </div>
+    );
+  }
+  const hayExceso = filas.some((f) => f.excede);
+  return (
+    <div>
+      <h3 className="text-lg font-bold text-sigecop-blue mb-4">Números generadores del periodo</h3>
+      <p className="text-sm text-slate-600 mb-3">
+        Captura la cantidad ejecutada este periodo por concepto. El importe, el acumulado y el % de
+        avance se calculan en vivo contra el catálogo y el acumulado previo (art. 118 RLOPSRM).
+      </p>
+      <div className="overflow-x-auto border border-slate-200 rounded-md mb-3">
+        <table className="w-full text-sm" data-testid="tabla-generadores">
+          <thead className="bg-sigecop-blue-light text-sigecop-blue">
+            <tr>
+              <th className="text-left px-3 py-2">Concepto</th>
+              <th className="text-left px-3 py-2 w-16">Unidad</th>
+              <th className="text-right px-3 py-2 w-28">Contratado</th>
+              <th className="text-right px-3 py-2 w-28">Acum. previo</th>
+              <th className="text-right px-3 py-2 w-32">PU</th>
+              <th className="text-right px-3 py-2 w-32">Este periodo</th>
+              <th className="text-right px-3 py-2 w-32">Importe</th>
+              <th className="text-right px-3 py-2 w-28">Acumulado</th>
+              <th className="text-right px-3 py-2 w-24">% avance</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filas.map((f) => (
+              <tr key={f.contrato_concepto_id} className={`border-t border-slate-200 ${f.excede ? 'bg-red-50' : 'hover:bg-slate-50'}`}>
+                <td className="px-3 py-2">
+                  {f.excede && <span title="Excede lo contratado" className="text-red-600 mr-1">⚠</span>}
+                  {f.concepto}
+                </td>
+                <td className="px-3 py-2 text-slate-600">{f.unidad}</td>
+                <td className="px-3 py-2 text-right">{num(f.contratado)}</td>
+                <td className="px-3 py-2 text-right text-slate-600">{num(f.anterior)}</td>
+                <td className="px-3 py-2 text-right font-mono text-xs text-slate-600">{moneda(f.pu)}</td>
+                <td className="px-3 py-2">
+                  <input
+                    type="number"
+                    min="0"
+                    step="any"
+                    className={`sg-input text-right ${f.excede ? 'border-red-500 ring-2 ring-red-200' : ''}`}
+                    value={f.valor}
+                    onChange={(e) => onCantidad(f.contrato_concepto_id, e.target.value)}
+                    data-testid={`gen-cantidad-${f.contrato_concepto_id}`}
+                  />
+                </td>
+                <td className="px-3 py-2 text-right font-mono">{moneda(f.importe)}</td>
+                <td className={`px-3 py-2 text-right font-semibold ${f.excede ? 'text-red-700' : ''}`}>{num(f.acumulado)}</td>
+                <td className={`px-3 py-2 text-right ${f.excede ? 'text-red-700 font-bold' : ''}`}>{f.avancePct.toFixed(1)}%</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {hayExceso ? (
+        <div className="bg-red-50 border-l-4 border-red-500 px-4 py-3 text-sm text-red-800 rounded-r-md" data-testid="aviso-exceso">
+          <strong>⚠ La cantidad acumulada excede lo contratado</strong> en uno o más conceptos. Ajusta las
+          cantidades o tramita un convenio modificatorio (art. 118 RLOPSRM). No se puede integrar así.
+        </div>
+      ) : (
+        <div className="bg-green-50 border-l-4 border-sigecop-green-validation px-4 py-3 text-sm text-sigecop-green-validation rounded-r-md">
+          ✓ Las cantidades acumuladas están dentro de lo contratado.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TabCaratula({ caratula, anticipoPct, deductivas, onDeductivas }) {
+  const renglones = [
+    { label: 'Subtotal del periodo', importe: caratula.subtotal, formula: 'Σ (cantidad_periodo × PU) de los generadores con avance' },
+    { label: `(−) Amortización de anticipo (${anticipoPct}%)`, importe: -caratula.amortizacion, formula: `subtotal × ${anticipoPct}/100 (art. 143 fr. I RLOPSRM)` },
+    { label: '(−) Retención 5 al millar (art. 191 LFD)', importe: -caratula.retencion, formula: 'subtotal × 0.005' }
+  ];
+  return (
+    <div>
+      <h3 className="text-lg font-bold text-sigecop-blue mb-1">Carátula de cálculo</h3>
+      <p className="text-xs text-amber-700 mb-3 italic">
+        Vista previa que recalcula al teclear. El neto OFICIAL lo materializa el backend al integrar
+        (fuente única de verdad, sin IVA — art. 2 fr. XIX RLOPSRM).
+      </p>
+      <div className="overflow-x-auto border border-slate-200 rounded-md mb-4 max-w-2xl">
+        <table className="w-full text-sm" data-testid="tabla-caratula-preview">
+          <tbody>
+            {renglones.map((r, i) => (
+              <tr key={i} className="border-t border-slate-200" title={r.formula}>
+                <td className="px-4 py-3 text-slate-800">{r.label}</td>
+                <td className="px-4 py-3 text-right font-mono text-slate-800">{moneda(r.importe)}</td>
+              </tr>
+            ))}
+            <tr className="border-t border-slate-200">
+              <td className="px-4 py-3 text-slate-800">(−) Deductivas (manual)</td>
+              <td className="px-4 py-2 text-right">
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  className="sg-input text-right w-40 inline-block"
+                  value={deductivas}
+                  onChange={(e) => onDeductivas(e.target.value)}
+                  data-testid="caratula-deductivas"
+                />
+              </td>
+            </tr>
+            <tr className={`border-t border-slate-200 font-bold ${caratula.neto < 0 ? 'bg-red-50' : 'bg-sigecop-blue-light'}`}>
+              <td className={`px-4 py-3 ${caratula.neto < 0 ? 'text-red-700' : 'text-sigecop-blue'}`}>(=) Neto a pagar (preview)</td>
+              <td className={`px-4 py-3 text-right font-mono text-base ${caratula.neto < 0 ? 'text-red-700' : 'text-sigecop-blue'}`} data-testid="caratula-neto-preview">
+                {moneda(caratula.neto)}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      {caratula.neto < 0 && (
+        <div className="bg-red-50 border-l-4 border-red-500 px-4 py-3 text-sm text-red-800 rounded-r-md mb-3">
+          Las deductivas dejan el neto en negativo; el backend rechazará la integración (ajusta las deductivas).
+        </div>
+      )}
+      <div className="bg-blue-50 border-l-4 border-blue-500 px-4 py-3 text-sm text-blue-900 rounded-r-md max-w-2xl">
+        Amortización del anticipo conforme al <strong>art. 143 fr. I RLOPSRM</strong> y retención del{' '}
+        <strong>5 al millar (art. 191 LFD)</strong>. La estimación se calcula <strong>sin IVA</strong>.
+      </div>
+    </div>
+  );
+}
+
+function TabNotasVinculadas({ vinculadas, onAbrir, onQuitar, soloLectura }) {
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <h3 className="text-lg font-bold text-sigecop-blue">
-          Notas vinculadas a esta estimación ({vinculadas.length})
-        </h3>
+        <h3 className="text-lg font-bold text-sigecop-blue">Notas vinculadas a esta estimación ({vinculadas.length})</h3>
         {!soloLectura && (
-          <button
-            type="button"
-            className="sg-btn-secondary"
-            onClick={onAbrirBuscador}
-            data-testid="btn-abrir-buscador-notas"
-          >
+          <button type="button" className="sg-btn-secondary" onClick={onAbrir} data-testid="btn-abrir-buscador-notas">
             🔍 Buscar y vincular notas de bitácora
           </button>
         )}
       </div>
-
       <p className="text-sm text-slate-600 mb-4">
-        Selecciona las notas de bitácora que respaldan esta estimación. Las notas vinculadas
-        forman parte de la entidad de la estimación junto con la carátula, los generadores, las
-        fotos y los soportes documentales.
+        Las notas de bitácora vinculadas forman parte del expediente de la estimación (art. 132 fr. II RLOPSRM).
       </p>
-
       <div className="overflow-x-auto border border-slate-200 rounded-md">
         <table className="w-full text-sm" data-testid="tabla-notas-vinculadas">
           <thead className="bg-slate-50 text-slate-700">
@@ -515,28 +374,18 @@ function TabNotasVinculadas({ vinculadas, onAbrirBuscador, onQuitar, soloLectura
           </thead>
           <tbody>
             {vinculadas.length === 0 ? (
-              <tr>
-                <td colSpan="6" className="p-6 text-center text-slate-400 italic">
-                  Sin notas vinculadas. Usa el botón "Buscar y vincular notas de bitácora".
-                </td>
-              </tr>
+              <tr><td colSpan="6" className="p-6 text-center text-slate-400 italic">Sin notas vinculadas.</td></tr>
             ) : (
               vinculadas.map((n) => (
-                <tr key={n.folio} className="border-t border-slate-200 hover:bg-slate-50">
-                  <td className="p-3 font-mono text-xs">{n.folio}</td>
-                  <td className="p-3">{n.tipo}</td>
-                  <td className="p-3">{n.fecha}</td>
-                  <td className="p-3">{n.firmante}</td>
-                  <td className="p-3 text-slate-700">{n.asunto}</td>
+                <tr key={n.id} className="border-t border-slate-200 hover:bg-slate-50">
+                  <td className="p-3 font-mono text-xs">#{n.numero}</td>
+                  <td className="p-3">{n.tipo_etiqueta || n.tipo}</td>
+                  <td className="p-3">{fechaMX(n.fecha)}</td>
+                  <td className="p-3">{n.emisor_nombre || '—'}</td>
+                  <td className="p-3 text-slate-700">{n.asunto || '—'}</td>
                   <td className="p-3 text-center">
                     {!soloLectura && (
-                      <button
-                        type="button"
-                        className="text-xs text-red-600 hover:underline"
-                        onClick={() => onQuitar(n.folio)}
-                      >
-                        Quitar
-                      </button>
+                      <button type="button" className="text-xs text-red-600 hover:underline" onClick={() => onQuitar(n.id)}>Quitar</button>
                     )}
                   </td>
                 </tr>
@@ -549,121 +398,179 @@ function TabNotasVinculadas({ vinculadas, onAbrirBuscador, onQuitar, soloLectura
   );
 }
 
-export default function IntegracionEstimacion() {
-  const { soloLectura } = useVistaHU('HU-12');
-
-  // Estado de cantidades por periodo — vive en el padre para no perderse al cambiar de tab.
-  const [periodos, setPeriodos] = useState(
-    generadoresEstimacionDummy.reduce((acc, g, i) => {
-      acc[i] = g.periodoDefault;
-      return acc;
-    }, {})
+function TabPlaceholder({ titulo }) {
+  return (
+    <div>
+      <h3 className="text-lg font-bold text-sigecop-blue mb-4">{titulo}</h3>
+      <div className="bg-slate-50 border border-dashed border-slate-300 rounded-md p-8 text-center text-slate-400">
+        <div className="text-4xl mb-2">🗂️</div>
+        <p className="text-sm">Carga de archivos diferida a una etapa siguiente (como en el prototipo).</p>
+      </div>
+    </div>
   );
+}
 
-  // Notas de bitácora vinculadas a la estimación (acumulan tras cada confirmación
-  // del modal). El estado del modal es independiente.
+// ------------------------------ Página ------------------------------------
+
+export default function IntegracionEstimacion() {
+  const { token, usuario } = useSesion();
+  const { soloLectura } = useVistaHU('HU-12');
+  const { showToast } = useToast();
+  const sinSesion = !token;
+
+  const [contratos, setContratos] = useState([]);
+  const [contratoId, setContratoId] = useState('');
+  const [tipos, setTipos] = useState([]);
+
+  const [avance, setAvance] = useState([]);
+  const [historial, setHistorial] = useState([]);
+  const [notasContrato, setNotasContrato] = useState([]);
+  const [cargando, setCargando] = useState(false);
+
+  const [cantidades, setCantidades] = useState({}); // { [contrato_concepto_id]: string }
+  const [deductivas, setDeductivas] = useState('0');
+  const [periodoInicio, setPeriodoInicio] = useState('');
+  const [periodoFin, setPeriodoFin] = useState('');
   const [notasVinculadas, setNotasVinculadas] = useState([]);
   const [modalAbierto, setModalAbierto] = useState(false);
 
-  // Descripciones de fotos en el padre — el tab se desmonta al cambiar de pestaña.
-  const [descripcionesFotos, setDescripcionesFotos] = useState(
-    fotosEstimacionDummy.reduce((acc, f) => {
-      acc[f.id] = f.descripcion;
-      return acc;
-    }, {})
-  );
+  const [integrando, setIntegrando] = useState(false);
+  const [resultado, setResultado] = useState(null);
+  const [errorIntegrar, setErrorIntegrar] = useState(null);
+  const [detalle, setDetalle] = useState(null);
 
-  const handleDescripcionFoto = (id, valor) => {
-    setDescripcionesFotos((prev) => ({ ...prev, [id]: valor }));
-  };
+  const selected = useMemo(() => contratos.find((c) => String(c.id) === String(contratoId)) || null, [contratos, contratoId]);
+  const anticipoPct = selected && selected.anticipo_pct != null ? Number(selected.anticipo_pct) : 0;
+  const esSuperintendente = selected && usuario && selected.superintendente_id === usuario.id;
 
-  // Generadores con cálculo de exceso, acumulado y % de avance.
-  const filasGeneradores = useMemo(() => {
-    return generadoresEstimacionDummy.map((g, i) => {
-      const periodo = Number(periodos[i]) || 0;
-      const acumulado = g.anteriorAcum + periodo;
-      const excede = acumulado > g.contratado;
-      const avance = g.contratado > 0 ? Math.round((acumulado / g.contratado) * 100) : 0;
-      return { ...g, idx: i, periodo, acumulado, excede, avance };
+  // Carga inicial: contratos del usuario + catálogo de tipos de nota (para el modal).
+  useEffect(() => {
+    if (sinSesion) return;
+    api.listarContratos().then((l) => setContratos(Array.isArray(l) ? l : [])).catch(() => setContratos([]));
+    api.notaTipos().then((t) => setTipos(Array.isArray(t) ? t : [])).catch(() => setTipos([]));
+  }, [sinSesion]);
+
+  const recargarAvance = useCallback(async (id) => {
+    const data = await api.avanceContrato(id);
+    setAvance(Array.isArray(data) ? data : []);
+  }, []);
+  const recargarHistorial = useCallback(async (id) => {
+    const data = await api.estimacionesDeContrato(id);
+    setHistorial(Array.isArray(data) ? data : []);
+  }, []);
+
+  const seleccionarContrato = useCallback(async (id) => {
+    setContratoId(id);
+    setAvance([]); setHistorial([]); setNotasContrato([]);
+    setCantidades({}); setDeductivas('0'); setPeriodoInicio(''); setPeriodoFin('');
+    setNotasVinculadas([]); setResultado(null); setErrorIntegrar(null);
+    if (!id) return;
+    setCargando(true);
+    try {
+      await Promise.all([recargarAvance(id), recargarHistorial(id)]);
+      // Notas del contrato para el modal (404 = sin bitácora → simplemente no hay notas).
+      try {
+        const n = await api.notasDeContrato(id);
+        setNotasContrato(Array.isArray(n?.notas) ? n.notas : []);
+      } catch (e) {
+        if (e.status !== 404) throw e;
+        setNotasContrato([]);
+      }
+    } catch (e) {
+      showToast(e.status === 403 ? 'No tienes acceso a las estimaciones de este contrato' : 'No se pudieron cargar los datos del contrato');
+    } finally {
+      setCargando(false);
+    }
+  }, [recargarAvance, recargarHistorial, showToast]);
+
+  const filas = useMemo(() => avance.map((a) => {
+    const valor = cantidades[a.contrato_concepto_id] ?? '';
+    const periodo = Number(valor) || 0;
+    const contratado = Number(a.cantidad_contratada);
+    const anterior = Number(a.acumulado_anterior);
+    const pu = Number(a.pu);
+    const acumulado = anterior + periodo;
+    const excede = acumulado > contratado + EPS;
+    const avancePct = contratado > 0 ? (acumulado / contratado) * 100 : 0;
+    return { ...a, valor, periodo, contratado, anterior, pu, acumulado, excede, avancePct, importe: periodo * pu };
+  }), [avance, cantidades]);
+
+  const hayExceso = filas.some((f) => f.excede);
+  const hayLineas = filas.some((f) => f.periodo > 0);
+
+  const caratula = useMemo(() => {
+    const subtotal = filas.reduce((s, f) => s + (f.periodo > 0 ? f.importe : 0), 0);
+    const amortizacion = subtotal * anticipoPct / 100;
+    const retencion = subtotal * 0.005;
+    const deduc = Number(deductivas) || 0;
+    return { subtotal, amortizacion, retencion, neto: subtotal - amortizacion - retencion - deduc };
+  }, [filas, anticipoPct, deductivas]);
+
+  const onCantidad = (cid, valor) => setCantidades((prev) => ({ ...prev, [cid]: valor }));
+
+  const idsVinculados = useMemo(() => notasVinculadas.map((n) => n.id), [notasVinculadas]);
+  const confirmarNotas = (elegidas) => {
+    setNotasVinculadas((prev) => {
+      const existentes = new Set(prev.map((n) => n.id));
+      return [...prev, ...elegidas.filter((n) => !existentes.has(n.id))];
     });
-  }, [periodos]);
-
-  const hayExceso = filasGeneradores.some((f) => f.excede);
-
-  // Carátula viva — depende de las cantidades del periodo y de los parámetros
-  // del contrato (anticipoPct + deductivasPenalizacion).
-  const caratula = useMemo(
-    () => calcularCaratula(
-      filasGeneradores,
-      contratoDummy.anticipoPct,
-      contratoDummy.deductivasPenalizacion
-    ),
-    [filasGeneradores]
-  );
-
-  const handlePeriodoChange = (idx, valor) => {
-    setPeriodos((prev) => ({ ...prev, [idx]: valor }));
-  };
-
-  const foliosVinculados = useMemo(
-    () => new Set(notasVinculadas.map((n) => n.folio)),
-    [notasVinculadas]
-  );
-
-  const handleConfirmarBuscador = (notas) => {
-    setNotasVinculadas((prev) => [...prev, ...notas]);
     setModalAbierto(false);
   };
+  const quitarNota = (id) => setNotasVinculadas((prev) => prev.filter((n) => n.id !== id));
 
-  const handleQuitarVinculada = (folio) => {
-    setNotasVinculadas((prev) => prev.filter((n) => n.folio !== folio));
+  const integrar = async () => {
+    if (!contratoId || hayExceso || integrando) return;
+    const generadores = filas.filter((f) => f.periodo > 0).map((f) => ({ contrato_concepto_id: f.contrato_concepto_id, cantidad_periodo: f.periodo }));
+    if (generadores.length === 0) { showToast('Captura al menos un concepto con cantidad mayor a 0'); return; }
+    if (!periodoInicio || !periodoFin) { showToast('Indica el periodo (inicio y fin)'); return; }
+    setIntegrando(true); setErrorIntegrar(null);
+    try {
+      const est = await api.integrarEstimacion({
+        contrato_id: Number(contratoId),
+        periodo_inicio: periodoInicio,
+        periodo_fin: periodoFin,
+        deductivas: Number(deductivas) || 0,
+        generadores,
+        notas: notasVinculadas.map((n) => n.id)
+      });
+      setResultado(est);
+      showToast(`Estimación #${est.numero} integrada`);
+      // El acumulado y el historial cambiaron: recargar y limpiar el formulario.
+      await Promise.all([recargarAvance(contratoId), recargarHistorial(contratoId)]);
+      setCantidades({}); setDeductivas('0'); setPeriodoInicio(''); setPeriodoFin(''); setNotasVinculadas([]);
+    } catch (e) {
+      // Errores localizados del backend tal cual (400 periodo>1 mes / neto<0; 409
+      // exceso art.118 / solape; 403 no superintendente).
+      const msg = e.payload?.error || e.message || 'No se pudo integrar la estimación';
+      setErrorIntegrar(msg);
+      showToast(msg);
+    } finally {
+      setIntegrando(false);
+    }
   };
 
-  // Estado local de "integrada" — el prototipo refleja el evento sin backend.
-  const [integrada, setIntegrada] = useState(false);
+  const verDetalle = async (id) => {
+    try {
+      const d = await api.detalleEstimacion(id);
+      setDetalle(d);
+    } catch (e) {
+      showToast(e.payload?.error || 'No se pudo cargar el detalle');
+    }
+  };
 
-  // Envolvemos el contenido de cada tab — NO el componente Tabs — para que en
-  // solo-lectura los inputs queden disabled pero la navegación entre pestañas
-  // siga viva.
-  const wrapTab = (node) => (
-    <RegionEditable disabled={soloLectura}>{node}</RegionEditable>
-  );
+  const wrapTab = (node) => <RegionEditable disabled={soloLectura}>{node}</RegionEditable>;
 
   const tabs = [
-    {
-      label: 'Carátula',
-      content: wrapTab(<TabCaratula caratula={caratula} anticipoPct={contratoDummy.anticipoPct} />)
-    },
-    {
-      label: 'Números generadores',
-      content: wrapTab(
-        <TabGeneradores filas={filasGeneradores} onPeriodoChange={handlePeriodoChange} />
-      )
-    },
-    {
-      label: 'Registro fotográfico',
-      content: wrapTab(
-        <TabFotografico descripciones={descripcionesFotos} onDescripcionChange={handleDescripcionFoto} />
-      )
-    },
-    { label: 'Soportes', content: wrapTab(<TabSoportes />) },
-    {
-      label: `Notas vinculadas (${notasVinculadas.length})`,
-      content: wrapTab(
-        <TabNotasVinculadas
-          vinculadas={notasVinculadas}
-          onAbrirBuscador={() => setModalAbierto(true)}
-          onQuitar={handleQuitarVinculada}
-          soloLectura={soloLectura}
-        />
-      )
-    }
+    { label: 'Carátula', content: wrapTab(<TabCaratula caratula={caratula} anticipoPct={anticipoPct} deductivas={deductivas} onDeductivas={setDeductivas} />) },
+    { label: 'Números generadores', content: wrapTab(<TabGeneradores filas={filas} onCantidad={onCantidad} />) },
+    { label: 'Registro fotográfico', content: wrapTab(<TabPlaceholder titulo="Registro fotográfico del periodo" />) },
+    { label: 'Soportes', content: wrapTab(<TabPlaceholder titulo="Soportes documentales" />) },
+    { label: `Notas vinculadas (${notasVinculadas.length})`, content: wrapTab(
+      <TabNotasVinculadas vinculadas={notasVinculadas} onAbrir={() => setModalAbierto(true)} onQuitar={quitarNota} soloLectura={soloLectura} />
+    ) }
   ];
 
-  const handleIntegrar = () => {
-    if (hayExceso || integrada) return;
-    setIntegrada(true);
-  };
+  const integrarDeshabilitado = soloLectura || integrando || hayExceso || !hayLineas;
 
   return (
     <div>
@@ -672,83 +579,164 @@ export default function IntegracionEstimacion() {
         titulo="Apertura del periodo e integración de la estimación"
         sprint="Sprint 3"
         rolAcademico="Contratista"
-        breadcrumb={[
-          { label: 'Inicio', href: '/' },
-          { label: 'Estimaciones' },
-          { label: 'Integración del periodo' }
-        ]}
+        breadcrumb={[{ label: 'Inicio', href: '/' }, { label: 'Estimaciones' }, { label: 'Integración del periodo' }]}
       />
 
-      <BannerContexto
-        variant="slate"
-        folio={contratoDummy.folio}
-        folioLabel="Contrato"
-        extra={[
-          { label: 'Periodo:', value: 'Mayo 2026', resaltado: true },
-          { label: 'Estimación', value: 'EST-2026-003', resaltado: true }
-        ]}
-      />
+      {sinSesion && (
+        <div className="bg-slate-50 border border-slate-200 rounded-md px-4 py-3 mb-4 text-sm text-slate-600">
+          Inicia sesión en modo aplicación para cargar tus contratos e integrar estimaciones.
+        </div>
+      )}
 
-      {integrada && (
-        <div
-          className="bg-sigecop-green-bg border-l-4 border-sigecop-green-validation px-4 py-3 mb-4 rounded-r-md"
-          data-testid="aviso-integrada"
+      <div className="bg-white border border-slate-200 rounded-md p-4 mb-6 max-w-2xl">
+        <label className="sg-label">Contrato</label>
+        <select
+          className="sg-input"
+          value={contratoId}
+          onChange={(e) => seleccionarContrato(e.target.value)}
+          disabled={sinSesion}
+          data-testid="select-contrato"
         >
-          <div className="text-sm font-semibold text-sigecop-green-validation">
-            ✓ Estimación integrada
+          <option value="">— Selecciona un contrato —</option>
+          {contratos.map((c) => <option key={c.id} value={c.id}>{c.folio} · {c.objeto}</option>)}
+        </select>
+      </div>
+
+      {!sinSesion && !contratoId && (
+        <p className="text-sm text-slate-500 mb-4">Selecciona un contrato para integrar la estimación de su periodo.</p>
+      )}
+      {cargando && <p className="text-sm text-slate-500 mb-4">Cargando datos del contrato…</p>}
+
+      {selected && (
+        <>
+          <BannerContexto
+            variant="slate"
+            folio={selected.folio}
+            folioLabel="Contrato"
+            extra={[
+              { label: 'Contratista:', value: selected.contratista || '—' },
+              { label: 'Anticipo:', value: `${anticipoPct}%`, resaltado: true },
+              { label: 'Estimaciones:', value: String(historial.length), resaltado: true }
+            ]}
+          />
+
+          {!soloLectura && !esSuperintendente && (
+            <div className="bg-amber-50 border-l-4 border-amber-400 px-4 py-3 mb-4 text-sm text-amber-800 rounded-r-md">
+              Solo el <strong>superintendente asignado</strong> a este contrato puede integrar estimaciones; el servidor rechazará el intento si no lo eres.
+            </div>
+          )}
+
+          {resultado && (
+            <div className="bg-sigecop-green-bg border-l-4 border-sigecop-green-validation px-4 py-3 mb-4 rounded-r-md" data-testid="banner-integrada">
+              <div className="text-sm font-semibold text-sigecop-green-validation">✓ Estimación #{resultado.numero} integrada</div>
+              <p className="text-sm text-slate-800 mt-1">
+                Carátula oficial del backend (fuente de verdad): subtotal {moneda(resultado.subtotal)} − amortización {moneda(resultado.amortizacion)} − retención {moneda(resultado.retencion)} − deductivas {moneda(resultado.deductivas)} = <strong>neto {moneda(resultado.neto)}</strong> (sin IVA). Estado: <BadgeEstado estado={resultado.estado} />.
+              </p>
+              <p className="text-xs text-slate-500 mt-1">
+                Quedó registrada como expediente del periodo. El envío y la revisión por supervisión/residencia son etapas posteriores (HU-13/HU-15), aún no implementadas.
+              </p>
+            </div>
+          )}
+
+          {errorIntegrar && (
+            <div className="bg-red-50 border-l-4 border-red-500 px-4 py-3 mb-4 text-sm text-red-800 rounded-r-md" data-testid="banner-error">
+              <strong>No se integró:</strong> {errorIntegrar}
+            </div>
+          )}
+
+          {!soloLectura && (
+            <div className="bg-white border border-slate-200 rounded-md p-4 mb-6 max-w-2xl">
+              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">Apertura del periodo</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="sg-label">Periodo — inicio</label>
+                  <input type="date" className="sg-input" value={periodoInicio} onChange={(e) => setPeriodoInicio(e.target.value)} data-testid="periodo-inicio" />
+                </div>
+                <div>
+                  <label className="sg-label">Periodo — fin</label>
+                  <input type="date" className="sg-input" value={periodoFin} onChange={(e) => setPeriodoFin(e.target.value)} data-testid="periodo-fin" />
+                </div>
+              </div>
+              <p className="text-xs text-slate-500 mt-2">Periodo máximo de un mes (art. 54); no puede traslaparse con otra estimación del contrato.</p>
+            </div>
+          )}
+
+          <Tabs tabs={tabs} />
+
+          {!soloLectura && (
+            <div className="mt-6 flex justify-end">
+              <button
+                type="button"
+                className="sg-btn-primary disabled:bg-slate-300 disabled:cursor-not-allowed"
+                onClick={integrar}
+                disabled={integrarDeshabilitado}
+                title={hayExceso ? 'Hay conceptos que exceden lo contratado' : (!hayLineas ? 'Captura al menos un concepto con cantidad > 0' : '')}
+                data-testid="btn-integrar"
+              >
+                {integrando ? 'Integrando…' : 'Integrar estimación'}
+              </button>
+            </div>
+          )}
+
+          <div className="mt-8">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">Historial de estimaciones del contrato</h2>
+            <div className="overflow-x-auto border border-slate-200 rounded-md">
+              <table className="w-full text-sm" data-testid="tabla-historial">
+                <thead className="bg-slate-50 text-slate-700">
+                  <tr>
+                    <th className="text-left p-3 font-semibold">#</th>
+                    <th className="text-left p-3 font-semibold">Periodo</th>
+                    <th className="text-left p-3 font-semibold">Estado</th>
+                    <th className="text-right p-3 font-semibold">Subtotal</th>
+                    <th className="text-right p-3 font-semibold">Neto</th>
+                    <th className="text-left p-3 font-semibold">Integró</th>
+                    <th className="text-center p-3 font-semibold w-24">Detalle</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {historial.length === 0 ? (
+                    <tr><td colSpan="7" className="p-6 text-center text-slate-400 italic">Este contrato aún no tiene estimaciones integradas.</td></tr>
+                  ) : (
+                    historial.map((e) => (
+                      <tr key={e.id} className="border-t border-slate-200 hover:bg-slate-50">
+                        <td className="p-3 font-mono">{e.numero}</td>
+                        <td className="p-3">{fechaMX(e.periodo_inicio)} – {fechaMX(e.periodo_fin)}</td>
+                        <td className="p-3"><BadgeEstado estado={e.estado} /></td>
+                        <td className="p-3 text-right font-mono">{moneda(e.subtotal)}</td>
+                        <td className="p-3 text-right font-mono">{moneda(e.neto)}</td>
+                        <td className="p-3">{e.integrada_por_nombre || '—'}</td>
+                        <td className="p-3 text-center">
+                          <button type="button" className="text-xs text-sigecop-blue hover:underline" onClick={() => verDetalle(e.id)} data-testid={`btn-ver-detalle-${e.id}`}>Ver</button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
-          <p className="text-sm text-slate-800 mt-1">
-            La estimación quedó integrada como entidad única: carátula calculada, generadores,
-            registro fotográfico, soportes y {notasVinculadas.length} nota(s) de bitácora vinculada(s).
-          </p>
-        </div>
-      )}
-
-      {hayExceso && (
-        <div
-          className="bg-red-50 border-l-4 border-red-500 px-4 py-3 mb-4 text-sm text-red-800 rounded-r-md"
-        >
-          <strong>⚠ Integración bloqueada:</strong> uno o más conceptos en "Números generadores"
-          exceden lo contratado. Ajusta las cantidades en ese tab o tramita un convenio
-          modificatorio (art. 118 RLOPSRM).
-        </div>
-      )}
-
-      <Tabs tabs={tabs} />
-
-      {!soloLectura && !integrada && (
-        <div className="mt-6 flex justify-end gap-3">
-          <button type="button" className="sg-btn-secondary" disabled>
-            Guardar borrador
-          </button>
-          <button
-            type="button"
-            className="sg-btn-primary disabled:bg-slate-300 disabled:cursor-not-allowed"
-            onClick={handleIntegrar}
-            disabled={hayExceso}
-            title={hayExceso ? 'Hay conceptos que exceden lo contratado' : ''}
-            data-testid="btn-integrar"
-          >
-            Integrar estimación
-          </button>
-        </div>
+        </>
       )}
 
       <SeccionCriterios
         huId="HU-12"
         criterios={[
-          { numero: 1, texto: 'La estimación se guarda como una sola entidad que contiene carátula, generadores, registro fotográfico, soportes y notas vinculadas seleccionadas del buscador de bitácora.' },
-          { numero: 2, texto: 'La carátula calcula automáticamente anticipo amortizado, retenciones legales (5 al millar, art. 191 LFD) y deductivas por penalizaciones según el contrato.' },
-          { numero: 3, texto: 'El sistema bloquea la integración cuando una cantidad por concepto excede la cantidad contratada en el catálogo (art. 118 RLOPSRM).' }
+          { numero: 1, texto: 'La estimación se integra como una sola entidad (carátula + números generadores + notas de bitácora vinculadas) calculada server-side.' },
+          { numero: 2, texto: 'La carátula calcula amortización del anticipo, retención (5 al millar, art. 191 LFD) y deductivas; el neto es sin IVA (art. 2 fr. XIX RLOPSRM).' },
+          { numero: 3, texto: 'El sistema bloquea la integración cuando una cantidad acumulada por concepto excede lo contratado (art. 118 RLOPSRM).' }
         ]}
       />
 
-      <BuscadorNotasModal
-        abierto={modalAbierto}
-        onCerrar={() => setModalAbierto(false)}
-        onConfirmar={handleConfirmarBuscador}
-        yaVinculadas={foliosVinculados}
-      />
+      {modalAbierto && (
+        <ModalVincularNotas
+          notas={notasContrato}
+          tipos={tipos}
+          yaVinculadas={idsVinculados}
+          onConfirmar={confirmarNotas}
+          onCerrar={() => setModalAbierto(false)}
+        />
+      )}
+      {detalle && <ModalDetalle estimacion={detalle} onCerrar={() => setDetalle(null)} />}
     </div>
   );
 }

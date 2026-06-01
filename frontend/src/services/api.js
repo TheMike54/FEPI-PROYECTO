@@ -87,5 +87,10 @@ export const api = {
   vincularNota: (notaId, payload) => request(`/bitacora/notas/${notaId}/vincular`, { method: 'POST', body: JSON.stringify(payload) }),
   // HU-21: registro del pago efectuado.
   registrarPago: (payload) => request('/pagos', { method: 'POST', body: JSON.stringify(payload) }),
-  listarPagos: (contratoId) => request(`/pagos/contrato/${contratoId}`)
+  listarPagos: (contratoId) => request(`/pagos/contrato/${contratoId}`),
+  // HU-12: estimaciones (integración + consulta + avance para el preview).
+  avanceContrato: (contratoId) => request(`/estimaciones/contrato/${contratoId}/avance`),
+  estimacionesDeContrato: (contratoId) => request(`/estimaciones/contrato/${contratoId}`),
+  detalleEstimacion: (id) => request(`/estimaciones/${id}`),
+  integrarEstimacion: (payload) => request('/estimaciones', { method: 'POST', body: JSON.stringify(payload) })
 };

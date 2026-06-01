@@ -505,6 +505,152 @@ CREATE TRIGGER trg_pago_inmutable
   FOR EACH ROW EXECUTE FUNCTION sigecop_pago_inmutable();
 
 -- =====================================================================
+-- HU-12 (Fase 1): dominio financiero — estimaciones (Sprint 3)
+-- Aditivo e idempotente. La estimación es un EXPEDIENTE (art. 132 RLOPSRM):
+-- carátula materializada + números generadores + notas de bitácora vinculadas
+-- (art. 132 fr. I-II) + soportes/fotos (esqueleto; carga real DIFERIDA). El neto se
+-- calcula server-side al integrar (fuente única de verdad) y queda CONGELADO por
+-- trigger; el ESTADO sí puede AVANZAR (autorizada/pagada en HUs posteriores).
+-- Activa además el FK diferido pagos.estimacion_id -> estimaciones (D12.9 / CA-1b).
+-- =====================================================================
+
+-- (1) Cabecera + carátula materializada. Un correlativo por contrato (UNIQUE). Los
+--     importes se guardan YA calculados server-side: la carátula es la fuente única
+--     de verdad y, una vez integrada, es inalterable (trigger más abajo).
+CREATE TABLE IF NOT EXISTS estimaciones (
+  id                    SERIAL PRIMARY KEY,
+  contrato_id           INTEGER NOT NULL REFERENCES contratos(id) ON DELETE CASCADE,
+  numero                INTEGER NOT NULL,                  -- correlativo por contrato (lo genera el controller; el UNIQUE lo blinda)
+  periodo_inicio        DATE NOT NULL,
+  periodo_fin           DATE NOT NULL,
+  estado                VARCHAR(20) NOT NULL DEFAULT 'integrada',  -- ciclo: integrada -> enviada -> autorizada -> pagada (o rechazada); el estado puede AVANZAR
+  anticipo_pct_snapshot NUMERIC(5,2)  NOT NULL,            -- % de anticipo del contrato congelado al integrar (art. 50 LOPSRM / art. 143 RLOPSRM)
+  subtotal              NUMERIC(14,2) NOT NULL,            -- Σ (cantidad_periodo × pu_snapshot) de los generadores
+  amortizacion          NUMERIC(14,2) NOT NULL,            -- subtotal × anticipo_pct/100 (amortización proporcional, art. 143 fr. I RLOPSRM)
+  retencion             NUMERIC(14,2) NOT NULL,            -- subtotal × 0.005 (5 al millar, art. 191 LFD)
+  deductivas            NUMERIC(14,2) NOT NULL DEFAULT 0,  -- captura manual en Etapa 1 (penas convencionales / retenciones a estimaciones, art. 46 Bis LOPSRM)
+  neto                  NUMERIC(14,2) NOT NULL,            -- subtotal − amortizacion − retencion − deductivas (SIN IVA; cf. art. 2 fr. XIX RLOPSRM "monto ejercido sin IVA")
+  integrada_por         INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,  -- del JWT (CA-1)
+  integrada_en          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT uq_estimaciones_numero    UNIQUE (contrato_id, numero),
+  CONSTRAINT chk_estimaciones_periodo  CHECK (periodo_fin >= periodo_inicio),
+  CONSTRAINT chk_estimaciones_estado   CHECK (estado IN ('integrada','enviada','autorizada','pagada','rechazada')),
+  CONSTRAINT chk_estimaciones_anticipo CHECK (anticipo_pct_snapshot >= 0 AND anticipo_pct_snapshot <= 100),
+  -- Componentes de la carátula no-negativos; el neto NO se acota por signo a
+  -- propósito (en periodos atípicos las deducciones podrían igualarlo/excederlo).
+  CONSTRAINT chk_estimaciones_montos   CHECK (subtotal >= 0 AND amortizacion >= 0 AND retencion >= 0 AND deductivas >= 0)
+);
+CREATE INDEX IF NOT EXISTS idx_estimaciones_contrato ON estimaciones(contrato_id);
+
+-- (2) Números generadores del periodo. Snapshots (pu_snapshot, cantidad_anterior_acum)
+--     para que la estimación sea inmutable aunque cambie el catálogo. El importe
+--     (cantidad_periodo × pu_snapshot) es DERIVADO; no se almacena. cantidad_periodo
+--     > 0: un renglón generador solo existe si el concepto tuvo avance en el periodo.
+CREATE TABLE IF NOT EXISTS estimacion_generadores (
+  id                     SERIAL PRIMARY KEY,
+  estimacion_id          INTEGER NOT NULL REFERENCES estimaciones(id) ON DELETE CASCADE,
+  -- NO ACTION (no RESTRICT): protege el snapshot ante un borrado directo del concepto
+  -- sin romper la cascada del contrato (NO ACTION difiere el chequeo a fin de
+  -- sentencia, cuando el generador ya cayó por la cascada de estimaciones).
+  contrato_concepto_id   INTEGER NOT NULL REFERENCES contrato_conceptos(id) ON DELETE NO ACTION,
+  cantidad_periodo       NUMERIC(14,4) NOT NULL CHECK (cantidad_periodo > 0),
+  cantidad_anterior_acum NUMERIC(14,4) NOT NULL DEFAULT 0 CHECK (cantidad_anterior_acum >= 0),  -- acumulado previo congelado (base de CA-3: acumulado ≤ contratado, art. 118 RLOPSRM)
+  pu_snapshot            NUMERIC(14,2) NOT NULL CHECK (pu_snapshot >= 0),                         -- PU del catálogo congelado al integrar
+  CONSTRAINT uq_estimacion_generadores_concepto UNIQUE (estimacion_id, contrato_concepto_id)     -- un renglón por concepto y estimación
+);
+CREATE INDEX IF NOT EXISTS idx_estimacion_generadores_estimacion ON estimacion_generadores(estimacion_id);
+CREATE INDEX IF NOT EXISTS idx_estimacion_generadores_concepto ON estimacion_generadores(contrato_concepto_id);
+
+-- (3) Notas de bitácora vinculadas a la estimación (N:M, art. 132 fr. II RLOPSRM).
+--     nota_id NO ACTION: la nota es inmutable (solo muere por cascada del contrato);
+--     el chequeo diferido no rompe esa cascada (el vínculo cae con la estimación).
+CREATE TABLE IF NOT EXISTS estimacion_notas (
+  estimacion_id INTEGER NOT NULL REFERENCES estimaciones(id) ON DELETE CASCADE,
+  nota_id       INTEGER NOT NULL REFERENCES bitacora_notas(id) ON DELETE NO ACTION,
+  PRIMARY KEY (estimacion_id, nota_id)
+);
+CREATE INDEX IF NOT EXISTS idx_estimacion_notas_estimacion ON estimacion_notas(estimacion_id);
+CREATE INDEX IF NOT EXISTS idx_estimacion_notas_nota ON estimacion_notas(nota_id);
+
+-- (4) Soportes documentales y registro fotográfico (esqueleto, art. 132 fr. IV
+--     RLOPSRM). La carga real de archivos (BYTEA) queda DIFERIDA, como el prototipo;
+--     aquí solo viven las filas-metadatos.
+CREATE TABLE IF NOT EXISTS estimacion_soportes (
+  id            SERIAL PRIMARY KEY,
+  estimacion_id INTEGER NOT NULL REFERENCES estimaciones(id) ON DELETE CASCADE,
+  nombre        TEXT NOT NULL,
+  descripcion   TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_estimacion_soportes_estimacion ON estimacion_soportes(estimacion_id);
+
+CREATE TABLE IF NOT EXISTS estimacion_fotos (
+  id            SERIAL PRIMARY KEY,
+  estimacion_id INTEGER NOT NULL REFERENCES estimaciones(id) ON DELETE CASCADE,
+  nombre        TEXT,
+  descripcion   TEXT,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_estimacion_fotos_estimacion ON estimacion_fotos(estimacion_id);
+
+-- (5) Inmutabilidad. Tras integrar, la CARÁTULA/contenido de la estimación es
+--     inalterable (art. 132 RLOPSRM); el ESTADO sí puede AVANZAR (autorizada por
+--     HU-15, pagada por la reconexión de HU-21). Espejo de sigecop_nota_inmutable:
+--     compara columna por columna con IS DISTINCT FROM y deja 'estado' libre. La
+--     dirección del estado (máquina de estados) se valida en la app/HUs futuras.
+CREATE OR REPLACE FUNCTION sigecop_estimacion_inmutable() RETURNS trigger AS $func$
+BEGIN
+  IF NEW.contrato_id              IS DISTINCT FROM OLD.contrato_id
+     OR NEW.numero                IS DISTINCT FROM OLD.numero
+     OR NEW.periodo_inicio        IS DISTINCT FROM OLD.periodo_inicio
+     OR NEW.periodo_fin           IS DISTINCT FROM OLD.periodo_fin
+     OR NEW.anticipo_pct_snapshot IS DISTINCT FROM OLD.anticipo_pct_snapshot
+     OR NEW.subtotal              IS DISTINCT FROM OLD.subtotal
+     OR NEW.amortizacion          IS DISTINCT FROM OLD.amortizacion
+     OR NEW.retencion             IS DISTINCT FROM OLD.retencion
+     OR NEW.deductivas            IS DISTINCT FROM OLD.deductivas
+     OR NEW.neto                  IS DISTINCT FROM OLD.neto
+     OR NEW.integrada_por         IS DISTINCT FROM OLD.integrada_por
+     OR NEW.integrada_en          IS DISTINCT FROM OLD.integrada_en THEN
+    RAISE EXCEPTION 'La carátula de una estimación integrada es inalterable (art. 132 RLOPSRM); solo puede avanzar su estado';
+  END IF;
+  RETURN NEW;
+END;
+$func$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_estimacion_inmutable ON estimaciones;
+CREATE TRIGGER trg_estimacion_inmutable
+  BEFORE UPDATE ON estimaciones
+  FOR EACH ROW EXECUTE FUNCTION sigecop_estimacion_inmutable();
+
+-- Generadores: append-only. BEFORE UPDATE bloquea (no se editan tras integrar); el
+-- DELETE en cascada se preserva (no se intercepta DELETE), igual que pagos/notas.
+CREATE OR REPLACE FUNCTION sigecop_estimacion_generador_inmutable() RETURNS trigger AS $func$
+BEGIN
+  RAISE EXCEPTION 'Un numero generador de estimacion es inalterable (append-only).';
+END;
+$func$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_estimacion_generador_inmutable ON estimacion_generadores;
+CREATE TRIGGER trg_estimacion_generador_inmutable
+  BEFORE UPDATE ON estimacion_generadores
+  FOR EACH ROW EXECUTE FUNCTION sigecop_estimacion_generador_inmutable();
+
+-- (6) Activa el FK diferido pagos.estimacion_id -> estimaciones (D12.9 / CA-1b). Los
+--     pagos existentes tienen estimacion_id NULL -> la FK (nullable) se cumple. ON
+--     DELETE NO ACTION a propósito: un SET NULL haría UPDATE sobre pagos y dispararía
+--     su trigger append-only (el borrado fallaría); CASCADE borraría el registro de
+--     auditoría. NO ACTION protege el pago y, como el borrado del contrato elimina
+--     pago y estimación en el MISMO statement, el chequeo a fin de sentencia no
+--     bloquea esa cascada. Guard idempotente sobre pg_constraint.
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_pagos_estimacion') THEN
+    ALTER TABLE pagos ADD CONSTRAINT fk_pagos_estimacion
+      FOREIGN KEY (estimacion_id) REFERENCES estimaciones(id) ON DELETE NO ACTION;
+  END IF;
+END $$;
+
+-- =====================================================================
 -- SEED MÍNIMO PARA TESTING
 -- Contraseña común de los 3 usuarios demo: Sigecop2026!
 -- Hashes bcrypt reales (algoritmo $2a$, cost 10) generados con bcryptjs.
