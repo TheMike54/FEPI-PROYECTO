@@ -70,5 +70,6 @@ export const api = {
     }
     return res.blob();
   },
-  abrirBitacora: (payload) => request('/bitacora/apertura', { method: 'POST', body: JSON.stringify(payload) })
+  abrirBitacora: (payload) => request('/bitacora/apertura', { method: 'POST', body: JSON.stringify(payload) }),
+  bitacoraDeContrato: (contratoId) => request(`/bitacora/contrato/${contratoId}`)
 };

@@ -197,6 +197,64 @@ CREATE TABLE IF NOT EXISTS contrato_documentos (
 CREATE INDEX IF NOT EXISTS idx_contrato_documentos_contrato ON contrato_documentos(contrato_id);
 
 -- =====================================================================
+-- HU-08: apertura formal de la bitacora del contrato (Sprint 1)
+-- Aditivo e idempotente. No altera contratos/usuarios/auth (a contratos solo se
+-- le LEE para armar el acta; aperturada_por->usuarios es SET NULL).
+-- =====================================================================
+
+-- (1) Columnas nuevas en bitacora_aperturas: instante formal inmutable (apertura_en),
+--     acta JSONB (la "primera nota" congelada con los 5 grupos del art. 122 RLOPSRM)
+--     y quien apertura. fecha_apertura existente se reusa como fecha de entrega del sitio.
+ALTER TABLE bitacora_aperturas ADD COLUMN IF NOT EXISTS apertura_en TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE bitacora_aperturas ADD COLUMN IF NOT EXISTS acta JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE bitacora_aperturas ADD COLUMN IF NOT EXISTS aperturada_por INTEGER REFERENCES usuarios(id) ON DELETE SET NULL;
+
+-- Una bitacora UNICA por contrato. La tabla esta vacia (el endpoint era un stub
+-- 501), asi que agregar el UNIQUE es seguro. Idempotente via duplicate_object.
+DO $$ BEGIN
+  ALTER TABLE bitacora_aperturas ADD CONSTRAINT uq_bitacora_aperturas_contrato UNIQUE (contrato_id);
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- (2) Firmantes de las tres partes (residente, supervisor externo opcional,
+--     superintendente). Firma conjunta = todas las partes que aplican, firmadas.
+CREATE TABLE IF NOT EXISTS bitacora_firmantes (
+  id SERIAL PRIMARY KEY,
+  bitacora_id INTEGER NOT NULL REFERENCES bitacora_aperturas(id) ON DELETE CASCADE,
+  parte SMALLINT NOT NULL,
+  titulo VARCHAR(120) NOT NULL,
+  firmante VARCHAR(200),
+  cargo_label VARCHAR(60),
+  cargo VARCHAR(200),
+  correo VARCHAR(150),
+  opcional BOOLEAN NOT NULL DEFAULT false,
+  aplica BOOLEAN NOT NULL DEFAULT true,
+  firmado BOOLEAN NOT NULL DEFAULT false,
+  firmado_en TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (bitacora_id, parte)
+);
+CREATE INDEX IF NOT EXISTS idx_bitacora_firmantes_bitacora ON bitacora_firmantes(bitacora_id);
+
+-- (3) Inmutabilidad: trigger BEFORE UPDATE que rechaza cualquier cambio a una
+--     apertura/firmante ya registrados. Bloquea SOLO UPDATE; el DELETE en cascada
+--     (al borrar el contrato) sigue permitido. Idempotente.
+CREATE OR REPLACE FUNCTION sigecop_bitacora_inalterable() RETURNS trigger AS $func$
+BEGIN
+  RAISE EXCEPTION 'La bitacora aperturada es un evento formal inalterable y no puede modificarse';
+END;
+$func$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_bitacora_aperturas_inalterable ON bitacora_aperturas;
+CREATE TRIGGER trg_bitacora_aperturas_inalterable
+  BEFORE UPDATE ON bitacora_aperturas
+  FOR EACH ROW EXECUTE FUNCTION sigecop_bitacora_inalterable();
+
+DROP TRIGGER IF EXISTS trg_bitacora_firmantes_inalterable ON bitacora_firmantes;
+CREATE TRIGGER trg_bitacora_firmantes_inalterable
+  BEFORE UPDATE ON bitacora_firmantes
+  FOR EACH ROW EXECUTE FUNCTION sigecop_bitacora_inalterable();
+
+-- =====================================================================
 -- SEED MÍNIMO PARA TESTING
 -- Contraseña común de los 3 usuarios demo: Sigecop2026!
 -- Hashes bcrypt reales (algoritmo $2a$, cost 10) generados con bcryptjs.
