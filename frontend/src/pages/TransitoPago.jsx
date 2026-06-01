@@ -262,7 +262,9 @@ export default function TransitoPago() {
     const hoy = new Date();
     const fa = new Date(hoy);
     fa.setDate(hoy.getDate() - fechaAutorizacionOffsetDias);
-    const iso = fa.toISOString().slice(0, 10);
+    // Fecha LOCAL (no toISOString(), que es UTC y adelanta un dia despues de las
+    // 18:00 en Mexico UTC-6) para que el conteo "Dia X de 20" sea determinista.
+    const iso = `${fa.getFullYear()}-${String(fa.getMonth() + 1).padStart(2, '0')}-${String(fa.getDate()).padStart(2, '0')}`;
     return { fechaAutorizacionISO: iso, diaActual: diasEntre(iso, hoy) };
   }, []);
 
