@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS usuarios (
   email VARCHAR(150) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
   rol rol_usuario NOT NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- Columna de estado: idempotente y NO destructiva. El DEFAULT 'activo' hace que
@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS contratos (
   fecha_termino DATE,
   pdf_path TEXT,
   created_by INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_contratos_folio ON contratos(folio);
@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS bitacora_aperturas (
   parte_2_firmante VARCHAR(200),
   parte_3_firmante VARCHAR(200),
   fecha_apertura DATE NOT NULL DEFAULT CURRENT_DATE,
-  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_bitacora_aperturas_contrato ON bitacora_aperturas(contrato_id);
@@ -77,12 +77,124 @@ CREATE TABLE IF NOT EXISTS bitacora_notas (
   tipo tipo_nota_bitacora NOT NULL,
   contenido TEXT NOT NULL,
   emisor_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
-  fecha TIMESTAMP NOT NULL DEFAULT NOW(),
-  created_at TIMESTAMP NOT NULL DEFAULT NOW()
+  fecha TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS idx_bitacora_notas_bitacora ON bitacora_notas(bitacora_id);
 CREATE INDEX IF NOT EXISTS idx_bitacora_notas_tipo ON bitacora_notas(tipo);
+
+-- =====================================================================
+-- HU-01: persistencia completa del alta de contratos (Sprint 1)
+-- Cambios ADITIVOS e idempotentes. No alteran usuarios/auth/registro salvo el
+-- cambio de tipo de created_at a timestamptz (no afecta el comportamiento del
+-- login: auth no lee created_at).
+-- =====================================================================
+
+-- (1) Migrar created_at/fecha 'naive' a TIMESTAMPTZ interpretando lo guardado
+--     como UTC (el servidor de Postgres corre en UTC). Idempotente: solo
+--     convierte si la columna aun es 'timestamp without time zone'.
+DO $$ BEGIN
+  IF (SELECT data_type FROM information_schema.columns
+        WHERE table_name='usuarios' AND column_name='created_at') = 'timestamp without time zone' THEN
+    ALTER TABLE usuarios ALTER COLUMN created_at TYPE TIMESTAMPTZ USING created_at AT TIME ZONE 'UTC';
+  END IF;
+END $$;
+DO $$ BEGIN
+  IF (SELECT data_type FROM information_schema.columns
+        WHERE table_name='contratos' AND column_name='created_at') = 'timestamp without time zone' THEN
+    ALTER TABLE contratos ALTER COLUMN created_at TYPE TIMESTAMPTZ USING created_at AT TIME ZONE 'UTC';
+  END IF;
+END $$;
+DO $$ BEGIN
+  IF (SELECT data_type FROM information_schema.columns
+        WHERE table_name='bitacora_aperturas' AND column_name='created_at') = 'timestamp without time zone' THEN
+    ALTER TABLE bitacora_aperturas ALTER COLUMN created_at TYPE TIMESTAMPTZ USING created_at AT TIME ZONE 'UTC';
+  END IF;
+END $$;
+DO $$ BEGIN
+  IF (SELECT data_type FROM information_schema.columns
+        WHERE table_name='bitacora_notas' AND column_name='fecha') = 'timestamp without time zone' THEN
+    ALTER TABLE bitacora_notas ALTER COLUMN fecha TYPE TIMESTAMPTZ USING fecha AT TIME ZONE 'UTC';
+  END IF;
+END $$;
+DO $$ BEGIN
+  IF (SELECT data_type FROM information_schema.columns
+        WHERE table_name='bitacora_notas' AND column_name='created_at') = 'timestamp without time zone' THEN
+    ALTER TABLE bitacora_notas ALTER COLUMN created_at TYPE TIMESTAMPTZ USING created_at AT TIME ZONE 'UTC';
+  END IF;
+END $$;
+
+-- (2) Columnas nuevas del contrato: datos juridicos (1:1, JSONB), % de anticipo
+--     escalar (lo usa HU-12) y placeholders JSONB para penalizacion/amortizacion
+--     (hoy solo cajas de texto legal Art. 46 Bis / Art. 50 LOPSRM).
+ALTER TABLE contratos ADD COLUMN IF NOT EXISTS datos_juridicos JSONB;
+ALTER TABLE contratos ADD COLUMN IF NOT EXISTS anticipo_pct NUMERIC(5,2);
+ALTER TABLE contratos ADD COLUMN IF NOT EXISTS penalizacion JSONB;
+ALTER TABLE contratos ADD COLUMN IF NOT EXISTS amortizacion JSONB;
+DO $$ BEGIN
+  ALTER TABLE contratos ADD CONSTRAINT chk_contratos_anticipo_pct
+    CHECK (anticipo_pct IS NULL OR (anticipo_pct >= 0 AND anticipo_pct <= 100));
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
+-- (3) Catalogo de conceptos. Normalizado: HU-06/HU-12 lo consultan por fila para
+--     validar cantidad ejecutada <= contratada (art. 118 RLOPSRM). El importe no
+--     se guarda (es cantidad*pu, derivado).
+CREATE TABLE IF NOT EXISTS contrato_conceptos (
+  id SERIAL PRIMARY KEY,
+  contrato_id INTEGER NOT NULL REFERENCES contratos(id) ON DELETE CASCADE,
+  orden INTEGER NOT NULL,
+  concepto TEXT NOT NULL,
+  unidad VARCHAR(20) NOT NULL,
+  cantidad NUMERIC(14,3) NOT NULL CHECK (cantidad >= 0),
+  pu NUMERIC(14,2) NOT NULL CHECK (pu >= 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (contrato_id, orden)
+);
+CREATE INDEX IF NOT EXISTS idx_contrato_conceptos_contrato ON contrato_conceptos(contrato_id);
+
+-- (4) Programa de obra. Alimenta la curva S de HU-05. Fechas DATE (sin corrimiento).
+CREATE TABLE IF NOT EXISTS contrato_actividades (
+  id SERIAL PRIMARY KEY,
+  contrato_id INTEGER NOT NULL REFERENCES contratos(id) ON DELETE CASCADE,
+  orden INTEGER NOT NULL,
+  actividad TEXT NOT NULL,
+  inicio DATE NOT NULL,
+  termino DATE NOT NULL,
+  peso NUMERIC(5,2) NOT NULL CHECK (peso >= 0 AND peso <= 100),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT chk_contrato_actividades_fechas CHECK (termino >= inicio),
+  UNIQUE (contrato_id, orden)
+);
+CREATE INDEX IF NOT EXISTS idx_contrato_actividades_contrato ON contrato_actividades(contrato_id);
+
+-- (5) Garantias/fianzas. HU-02 (Sprint 6) alerta por vigencia (indice por fecha).
+CREATE TABLE IF NOT EXISTS contrato_garantias (
+  id SERIAL PRIMARY KEY,
+  contrato_id INTEGER NOT NULL REFERENCES contratos(id) ON DELETE CASCADE,
+  tipo VARCHAR(40) NOT NULL,
+  afianzadora VARCHAR(200),
+  poliza VARCHAR(60),
+  monto NUMERIC(14,2) CHECK (monto IS NULL OR monto >= 0),
+  vigencia DATE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (contrato_id, tipo)
+);
+CREATE INDEX IF NOT EXISTS idx_contrato_garantias_contrato ON contrato_garantias(contrato_id);
+CREATE INDEX IF NOT EXISTS idx_contrato_garantias_vigencia ON contrato_garantias(vigencia);
+
+-- (6) PDF firmado del contrato, guardado como BYTEA en la BD (el disco de Render
+--     es efimero). Se liga DESPUES de crear el contrato via POST /contratos/:id/documento.
+CREATE TABLE IF NOT EXISTS contrato_documentos (
+  id SERIAL PRIMARY KEY,
+  contrato_id INTEGER NOT NULL REFERENCES contratos(id) ON DELETE CASCADE,
+  nombre TEXT NOT NULL,
+  mime VARCHAR(100) NOT NULL,
+  tamano INTEGER NOT NULL,
+  contenido BYTEA NOT NULL,
+  subido_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_contrato_documentos_contrato ON contrato_documentos(contrato_id);
 
 -- =====================================================================
 -- SEED MÍNIMO PARA TESTING

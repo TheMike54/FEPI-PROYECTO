@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Tabs from '../components/ui/Tab.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
@@ -73,72 +73,91 @@ function TabDatosGenerales({ datos, set }) {
   );
 }
 
-function TabCatalogo() {
+function TabCatalogo({ rows, onCell, onAdd, onRemove, soloLectura }) {
   return (
     <div>
       <h3 className="text-lg font-bold text-sigecop-blue mb-4">Catálogo de conceptos</h3>
-      <p className="text-sm text-slate-600 mb-3">Conceptos del contrato sobre la base de precios unitarios.</p>
+      <p className="text-sm text-slate-600 mb-3">
+        Conceptos del contrato sobre la base de precios unitarios. Bloque opcional: puedes dejarlo vacío.
+      </p>
       <div className="overflow-x-auto border border-slate-200 rounded-md">
         <table className="w-full text-sm">
           <thead className="bg-sigecop-blue-light text-sigecop-blue">
             <tr>
               <th className="text-left px-3 py-2">Concepto</th>
-              <th className="text-left px-3 py-2 w-20">Unidad</th>
-              <th className="text-right px-3 py-2 w-28">Cantidad</th>
-              <th className="text-right px-3 py-2 w-32">P.U.</th>
+              <th className="text-left px-3 py-2 w-24">Unidad</th>
+              <th className="text-right px-3 py-2 w-32">Cantidad</th>
+              <th className="text-right px-3 py-2 w-36">P.U.</th>
               <th className="text-right px-3 py-2 w-36">Importe</th>
+              <th className="w-10 px-2 py-2"></th>
             </tr>
           </thead>
           <tbody>
-            {conceptosDummy.map((c, i) => (
-              <tr key={i} className="border-t border-slate-200 hover:bg-slate-50">
-                <td className="px-3 py-2">{c.concepto}</td>
-                <td className="px-3 py-2 text-slate-600">{c.unidad}</td>
-                <td className="px-3 py-2 text-right">{c.cantidad.toLocaleString()}</td>
-                <td className="px-3 py-2 text-right">${c.pu.toFixed(2)}</td>
-                <td className="px-3 py-2 text-right font-semibold">
-                  ${(c.cantidad * c.pu).toLocaleString('en-US', { minimumFractionDigits: 2 })}
-                </td>
-              </tr>
-            ))}
+            {rows.map((c, i) => {
+              const importe = (Number(c.cantidad) || 0) * (Number(c.pu) || 0);
+              return (
+                <tr key={c.rid} className="border-t border-slate-200">
+                  <td className="px-2 py-1"><input className="sg-input" value={c.concepto} onChange={onCell(i, 'concepto')} disabled={soloLectura} /></td>
+                  <td className="px-2 py-1"><input className="sg-input" value={c.unidad} onChange={onCell(i, 'unidad')} disabled={soloLectura} /></td>
+                  <td className="px-2 py-1"><input type="number" min="0" step="0.001" className="sg-input text-right" value={c.cantidad} onChange={onCell(i, 'cantidad')} disabled={soloLectura} /></td>
+                  <td className="px-2 py-1"><input type="number" min="0" step="0.01" className="sg-input text-right" value={c.pu} onChange={onCell(i, 'pu')} disabled={soloLectura} /></td>
+                  <td className="px-3 py-2 text-right font-semibold whitespace-nowrap">{formatoMXN.format(importe)}</td>
+                  <td className="px-2 py-1 text-center">
+                    <button type="button" onClick={() => onRemove(i)} disabled={soloLectura} className="text-red-500 hover:text-red-700 disabled:opacity-30" title="Quitar concepto">✕</button>
+                  </td>
+                </tr>
+              );
+            })}
+            {rows.length === 0 && (
+              <tr><td colSpan={6} className="px-3 py-4 text-center text-slate-400">Sin conceptos. Agrega uno o deja el bloque vacío.</td></tr>
+            )}
           </tbody>
         </table>
       </div>
-      <button type="button" className="mt-3 text-sm text-sigecop-accent hover:underline">
+      <button type="button" onClick={onAdd} disabled={soloLectura} className="mt-3 text-sm text-sigecop-accent hover:underline disabled:opacity-40">
         + Agregar concepto
       </button>
     </div>
   );
 }
 
-function TabPrograma() {
+function TabPrograma({ rows, onCell, onAdd, onRemove, soloLectura }) {
   return (
     <div>
       <h3 className="text-lg font-bold text-sigecop-blue mb-4">Programa de obra</h3>
-      <p className="text-sm text-slate-600 mb-3">Actividades calendarizadas mes a mes.</p>
+      <p className="text-sm text-slate-600 mb-3">
+        Actividades calendarizadas. Bloque opcional: puedes dejarlo vacío.
+      </p>
       <div className="overflow-x-auto border border-slate-200 rounded-md">
         <table className="w-full text-sm">
           <thead className="bg-sigecop-blue-light text-sigecop-blue">
             <tr>
               <th className="text-left px-3 py-2">Actividad</th>
-              <th className="text-left px-3 py-2 w-36">Inicio</th>
-              <th className="text-left px-3 py-2 w-36">Término</th>
-              <th className="text-right px-3 py-2 w-24">% peso</th>
+              <th className="text-left px-3 py-2 w-44">Inicio</th>
+              <th className="text-left px-3 py-2 w-44">Término</th>
+              <th className="text-right px-3 py-2 w-28">% peso</th>
+              <th className="w-10 px-2 py-2"></th>
             </tr>
           </thead>
           <tbody>
-            {programaObraDummy.map((p, i) => (
-              <tr key={i} className="border-t border-slate-200 hover:bg-slate-50">
-                <td className="px-3 py-2">{p.actividad}</td>
-                <td className="px-3 py-2">{p.inicio}</td>
-                <td className="px-3 py-2">{p.termino}</td>
-                <td className="px-3 py-2 text-right font-semibold">{p.peso}%</td>
+            {rows.map((p, i) => (
+              <tr key={p.rid} className="border-t border-slate-200">
+                <td className="px-2 py-1"><input className="sg-input" value={p.actividad} onChange={onCell(i, 'actividad')} disabled={soloLectura} /></td>
+                <td className="px-2 py-1"><input type="date" className="sg-input" value={p.inicio} onChange={onCell(i, 'inicio')} disabled={soloLectura} /></td>
+                <td className="px-2 py-1"><input type="date" className="sg-input" value={p.termino} onChange={onCell(i, 'termino')} disabled={soloLectura} /></td>
+                <td className="px-2 py-1"><input type="number" min="0" max="100" step="0.01" className="sg-input text-right" value={p.peso} onChange={onCell(i, 'peso')} disabled={soloLectura} /></td>
+                <td className="px-2 py-1 text-center">
+                  <button type="button" onClick={() => onRemove(i)} disabled={soloLectura} className="text-red-500 hover:text-red-700 disabled:opacity-30" title="Quitar actividad">✕</button>
+                </td>
               </tr>
             ))}
+            {rows.length === 0 && (
+              <tr><td colSpan={5} className="px-3 py-4 text-center text-slate-400">Sin actividades. Agrega una o deja el bloque vacío.</td></tr>
+            )}
           </tbody>
         </table>
       </div>
-      <button type="button" className="mt-3 text-sm text-sigecop-accent hover:underline">
+      <button type="button" onClick={onAdd} disabled={soloLectura} className="mt-3 text-sm text-sigecop-accent hover:underline disabled:opacity-40">
         + Agregar actividad
       </button>
     </div>
@@ -150,16 +169,16 @@ function TabJuridicos({ datos, set }) {
     <div>
       <h3 className="text-lg font-bold text-sigecop-blue mb-4">Datos jurídicos</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Field label="Firmante autorizado de la dependencia" required>
+        <Field label="Firmante autorizado de la dependencia">
           <input className="sg-input" value={datos.firmanteDependencia} onChange={set('firmanteDependencia')} />
         </Field>
-        <Field label="Cargo del firmante" required>
+        <Field label="Cargo del firmante">
           <input className="sg-input" value={datos.cargoFirmante} onChange={set('cargoFirmante')} />
         </Field>
-        <Field label="Representante legal del contratista" required>
+        <Field label="Representante legal del contratista">
           <input className="sg-input" value={datos.representanteLegal} onChange={set('representanteLegal')} />
         </Field>
-        <Field label="Cédula profesional del responsable técnico" required hint="Ingresar cédula vigente del DRO">
+        <Field label="Cédula profesional del responsable técnico" hint="Ingresar cédula vigente del DRO">
           <input className="sg-input" value={datos.cedulaProfesional} onChange={set('cedulaProfesional')} />
         </Field>
         <Field label="No. de poder notarial">
@@ -169,41 +188,58 @@ function TabJuridicos({ datos, set }) {
           <input className="sg-input" value={datos.notaria} onChange={set('notaria')} />
         </Field>
       </div>
+      <div className="mt-4 bg-blue-50 border-l-4 border-blue-500 px-4 py-3 text-sm text-blue-900">
+        Bloque opcional. Se guarda junto con el contrato como un solo registro (campo <code>datos_juridicos</code>).
+      </div>
     </div>
   );
 }
 
-function TabGarantias() {
+function TabGarantias({ rows, onCell, onAdd, onRemove, anticipoPct, setAnticipoPct, soloLectura }) {
   return (
     <div>
       <h3 className="text-lg font-bold text-sigecop-blue mb-4">Garantías, penalizaciones y amortización</h3>
+
+      <div className="mb-4 max-w-xs">
+        <Field label="% de anticipo otorgado" hint="Base de la amortización (art. 50 LOPSRM). Opcional.">
+          <input type="number" min="0" max="100" step="0.01" className="sg-input" value={anticipoPct} onChange={(e) => setAnticipoPct(e.target.value)} disabled={soloLectura} />
+        </Field>
+      </div>
 
       <div className="overflow-x-auto border border-slate-200 rounded-md mb-4">
         <table className="w-full text-sm">
           <thead className="bg-sigecop-blue-light text-sigecop-blue">
             <tr>
-              <th className="text-left px-3 py-2">Tipo de póliza</th>
+              <th className="text-left px-3 py-2 w-40">Tipo de póliza</th>
               <th className="text-left px-3 py-2">Afianzadora</th>
-              <th className="text-left px-3 py-2 w-36">No. de póliza</th>
-              <th className="text-right px-3 py-2 w-36">Monto</th>
-              <th className="text-left px-3 py-2 w-40">Vigencia</th>
+              <th className="text-left px-3 py-2 w-40">No. de póliza</th>
+              <th className="text-right px-3 py-2 w-40">Monto</th>
+              <th className="text-left px-3 py-2 w-44">Vigencia</th>
+              <th className="w-10 px-2 py-2"></th>
             </tr>
           </thead>
           <tbody>
-            {polizasGarantiaDummy.map((p) => (
-              <tr key={p.tipo} className="border-t border-slate-200">
-                <td className="px-3 py-2 font-medium">{p.tipo}</td>
-                <td className="px-3 py-2">{p.afianzadora || <span className="text-slate-400 italic">Por registrar</span>}</td>
-                <td className="px-3 py-2 font-mono text-xs">{p.poliza || <span className="text-slate-400 italic">—</span>}</td>
-                <td className="px-3 py-2 text-right">
-                  {p.monto ? `$ ${p.monto.toLocaleString('en-US', { minimumFractionDigits: 2 })}` : <span className="text-slate-400 italic">—</span>}
+            {rows.map((p, i) => (
+              <tr key={p.rid} className="border-t border-slate-200">
+                <td className="px-2 py-1"><input className="sg-input" value={p.tipo} onChange={onCell(i, 'tipo')} disabled={soloLectura} /></td>
+                <td className="px-2 py-1"><input className="sg-input" value={p.afianzadora} onChange={onCell(i, 'afianzadora')} disabled={soloLectura} /></td>
+                <td className="px-2 py-1"><input className="sg-input font-mono text-xs" value={p.poliza} onChange={onCell(i, 'poliza')} disabled={soloLectura} /></td>
+                <td className="px-2 py-1"><input type="number" min="0" step="0.01" className="sg-input text-right" value={p.monto} onChange={onCell(i, 'monto')} disabled={soloLectura} /></td>
+                <td className="px-2 py-1"><input type="date" className="sg-input" value={p.vigencia} onChange={onCell(i, 'vigencia')} disabled={soloLectura} /></td>
+                <td className="px-2 py-1 text-center">
+                  <button type="button" onClick={() => onRemove(i)} disabled={soloLectura} className="text-red-500 hover:text-red-700 disabled:opacity-30" title="Quitar póliza">✕</button>
                 </td>
-                <td className="px-3 py-2">{p.vigencia || <span className="text-slate-400 italic">—</span>}</td>
               </tr>
             ))}
+            {rows.length === 0 && (
+              <tr><td colSpan={6} className="px-3 py-4 text-center text-slate-400">Sin pólizas. Agrega una o deja el bloque vacío.</td></tr>
+            )}
           </tbody>
         </table>
       </div>
+      <button type="button" onClick={onAdd} disabled={soloLectura} className="mb-4 text-sm text-sigecop-accent hover:underline disabled:opacity-40">
+        + Agregar póliza
+      </button>
 
       <div className="bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 text-sm text-slate-800 mb-3">
         <strong>Penalizaciones — Art. 46 Bis LOPSRM:</strong> se aplicarán deductivas por atraso conforme al programa de obra. El 5 al millar (art. 191 LFD) se carga automáticamente sobre cada estimación.
@@ -216,18 +252,116 @@ function TabGarantias() {
   );
 }
 
-function TabPdfFirmado() {
+function TabPdfFirmado({ contratoId, soloLectura }) {
+  const { showToast } = useToast();
+  const [meta, setMeta] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [subiendo, setSubiendo] = useState(false);
+  const inputRef = useRef(null);
+
+  const cargarMeta = useCallback(async () => {
+    if (!contratoId) { setMeta(null); return; }
+    setCargando(true);
+    try {
+      setMeta(await api.documentoMeta(contratoId));
+    } catch (err) {
+      if (err.status === 404) setMeta(null);
+      else showToast('No se pudo consultar el PDF ligado');
+    } finally {
+      setCargando(false);
+    }
+  }, [contratoId, showToast]);
+
+  useEffect(() => { cargarMeta(); }, [cargarMeta]);
+
+  const onArchivo = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    if (file.type !== 'application/pdf') {
+      showToast('Solo se permiten archivos PDF');
+      if (inputRef.current) inputRef.current.value = '';
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      showToast('El PDF excede el límite de 10 MB');
+      if (inputRef.current) inputRef.current.value = '';
+      return;
+    }
+    setSubiendo(true);
+    try {
+      await api.subirDocumento(contratoId, file);
+      showToast('PDF firmado adjuntado: ' + file.name);
+      await cargarMeta();
+    } catch (err) {
+      showToast(err.message || 'No se pudo subir el PDF');
+    } finally {
+      setSubiendo(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  };
+
+  const obtener = async (descargar) => {
+    try {
+      const blob = await api.descargarDocumento(contratoId);
+      const url = URL.createObjectURL(blob);
+      if (descargar) {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = (meta && meta.nombre) || 'documento.pdf';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      } else {
+        window.open(url, '_blank', 'noopener');
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (err) {
+      showToast(err.message || 'No se pudo obtener el PDF');
+    }
+  };
+
+  const formatoKB = (n) => `${(Number(n) / 1024).toFixed(0)} KB`;
+
   return (
     <div>
       <h3 className="text-lg font-bold text-sigecop-blue mb-4">PDF firmado del contrato</h3>
-      <div className="border-2 border-dashed border-slate-300 rounded-md p-10 text-center bg-slate-50">
-        <div className="text-5xl text-slate-300 mb-2">📄</div>
-        <p className="text-sm text-slate-600 mb-1">Carga real disponible en Sprint siguiente</p>
-        <p className="text-xs text-slate-400">Aquí se subirá el PDF firmado por las tres partes (máx. 20 MB).</p>
-        <button type="button" disabled className="mt-4 px-4 py-2 bg-slate-200 text-slate-400 rounded-md text-sm cursor-not-allowed">
-          Seleccionar archivo (deshabilitado)
-        </button>
-      </div>
+
+      {!contratoId ? (
+        <div className="bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 text-sm text-slate-800">
+          Guarda primero el contrato (botón <strong>Guardar contrato</strong>); el PDF firmado se liga después, una vez que el contrato existe.
+        </div>
+      ) : (
+        <>
+          {meta ? (
+            <div className="border border-slate-200 rounded-md p-4 mb-4 flex items-center justify-between gap-4 bg-slate-50">
+              <div className="min-w-0">
+                <p className="font-semibold text-slate-800 truncate" title={meta.nombre}>📄 {meta.nombre}</p>
+                <p className="text-xs text-slate-500">{formatoKB(meta.tamano)} · {meta.mime}</p>
+              </div>
+              <div className="flex gap-3 flex-shrink-0">
+                <button type="button" onClick={() => obtener(false)} className="text-sm text-sigecop-accent hover:underline">Ver</button>
+                <button type="button" onClick={() => obtener(true)} className="text-sm text-sigecop-accent hover:underline">Descargar</button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500 mb-4">{cargando ? 'Consultando…' : 'Aún no hay PDF firmado adjunto a este contrato.'}</p>
+          )}
+
+          <div className="border-2 border-dashed border-slate-300 rounded-md p-8 text-center bg-white">
+            <input
+              ref={inputRef}
+              type="file"
+              accept="application/pdf,.pdf"
+              onChange={onArchivo}
+              disabled={soloLectura || subiendo}
+              className="block mx-auto text-sm"
+            />
+            <p className="text-xs text-slate-400 mt-3">PDF firmado por las tres partes (máx. 10 MB). Se guarda en la base de datos.</p>
+            {subiendo && <p className="text-sm text-sigecop-accent mt-2">Subiendo…</p>}
+            {meta && <p className="text-xs text-slate-400 mt-1">Subir otro archivo reemplaza el actual.</p>}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -315,13 +449,39 @@ export default function AltaContrato() {
     poderNotarial: 'Escritura Núm. 12,345',
     notaria: 'Notaría Pública Núm. 47 — Acapulco, Gro.'
   });
+  const [anticipoPct, setAnticipoPct] = useState(30);
+
+  // Bloques-lista editables (precargados con datos de ejemplo para la demo).
+  // rid = id estable por fila (solo UI, NO se envia al backend) para las keys de
+  // React, de modo que editar/borrar filas no provoque parpadeo ni perdida de foco.
+  const ridCounter = useRef(0);
+  const nextRid = () => (ridCounter.current += 1);
+
+  const [conceptos, setConceptos] = useState(() =>
+    conceptosDummy.map((c) => ({ rid: nextRid(), concepto: c.concepto, unidad: c.unidad, cantidad: c.cantidad, pu: c.pu }))
+  );
+  const [programa, setPrograma] = useState(() =>
+    programaObraDummy.map((a) => ({ rid: nextRid(), actividad: a.actividad, inicio: a.inicio, termino: a.termino, peso: a.peso }))
+  );
+  const [garantias, setGarantias] = useState(() =>
+    polizasGarantiaDummy.map((g) => ({ rid: nextRid(), tipo: g.tipo, afianzadora: g.afianzadora, poliza: g.poliza, monto: g.monto, vigencia: g.vigencia }))
+  );
+
   const setDatosGen = (k) => (e) => setDatosGenerales((prev) => ({ ...prev, [k]: e.target.value }));
   const setDatosJur = (k) => (e) => setDatosJuridicos((prev) => ({ ...prev, [k]: e.target.value }));
+
+  // Helpers de edicion de filas para los bloques-lista.
+  const mkCell = (setter) => (i, key) => (e) =>
+    setter((prev) => prev.map((r, idx) => (idx === i ? { ...r, [key]: e.target.value } : r)));
+  const mkAdd = (setter, vacio) => () => setter((prev) => [...prev, { ...vacio, rid: nextRid() }]);
+  const mkRemove = (setter) => (i) => setter((prev) => prev.filter((_, idx) => idx !== i));
 
   const [contratos, setContratos] = useState([]);
   const [loadingLista, setLoadingLista] = useState(false);
   const [errorLista, setErrorLista] = useState(null);
   const [guardando, setGuardando] = useState(false);
+  // id del contrato recien guardado: habilita ligar el PDF firmado (HU-01) despues.
+  const [contratoGuardadoId, setContratoGuardadoId] = useState(null);
 
   const cargarContratos = useCallback(async () => {
     if (sinSesion) return;
@@ -354,9 +514,15 @@ export default function AltaContrato() {
         monto: Number(datosGenerales.monto),
         plazoDias: Number(datosGenerales.plazoDias),
         fechaInicio: datosGenerales.fechaInicio,
-        fechaTermino: datosGenerales.fechaTermino
+        fechaTermino: datosGenerales.fechaTermino,
+        anticipoPct: anticipoPct === '' || anticipoPct === null ? null : Number(anticipoPct),
+        juridicos: datosJuridicos,
+        conceptos: conceptos.map((c) => ({ concepto: c.concepto, unidad: c.unidad, cantidad: c.cantidad, pu: c.pu })),
+        actividades: programa.map((a) => ({ actividad: a.actividad, inicio: a.inicio, termino: a.termino, peso: a.peso })),
+        garantias: garantias.map((g) => ({ tipo: g.tipo, afianzadora: g.afianzadora, poliza: g.poliza, monto: g.monto, vigencia: g.vigencia }))
       };
-      await api.crearContrato(payload);
+      const creado = await api.crearContrato(payload);
+      if (creado && creado.id) setContratoGuardadoId(creado.id);
       showToast('Contrato guardado: ' + payload.folio);
       cargarContratos();
     } catch (err) {
@@ -364,7 +530,7 @@ export default function AltaContrato() {
         showToast('El folio ya existe');
       } else if (err.status === 400) {
         const f = err.payload?.faltantes?.join(', ');
-        showToast(f ? `Faltan campos: ${f}` : 'Faltan campos');
+        showToast(f ? `Faltan campos: ${f}` : (err.message || 'Revisa los datos del formulario'));
       } else if (err.status === 403) {
         showToast('Solo el residente puede crear contratos');
       } else if (err.status === 401) {
@@ -383,11 +549,37 @@ export default function AltaContrato() {
 
   const tabs = [
     { label: 'Datos generales', content: wrapTab(<TabDatosGenerales datos={datosGenerales} set={setDatosGen} />) },
-    { label: 'Catálogo de conceptos', content: wrapTab(<TabCatalogo />) },
-    { label: 'Programa de obra', content: wrapTab(<TabPrograma />) },
+    { label: 'Catálogo de conceptos', content: wrapTab(
+      <TabCatalogo
+        rows={conceptos}
+        onCell={mkCell(setConceptos)}
+        onAdd={mkAdd(setConceptos, { concepto: '', unidad: '', cantidad: '', pu: '' })}
+        onRemove={mkRemove(setConceptos)}
+        soloLectura={soloLectura}
+      />
+    ) },
+    { label: 'Programa de obra', content: wrapTab(
+      <TabPrograma
+        rows={programa}
+        onCell={mkCell(setPrograma)}
+        onAdd={mkAdd(setPrograma, { actividad: '', inicio: '', termino: '', peso: '' })}
+        onRemove={mkRemove(setPrograma)}
+        soloLectura={soloLectura}
+      />
+    ) },
     { label: 'Datos jurídicos', content: wrapTab(<TabJuridicos datos={datosJuridicos} set={setDatosJur} />) },
-    { label: 'Garantías, penalizaciones y amortización', content: wrapTab(<TabGarantias />) },
-    { label: 'PDF firmado', content: wrapTab(<TabPdfFirmado />) },
+    { label: 'Garantías, penalizaciones y amortización', content: wrapTab(
+      <TabGarantias
+        rows={garantias}
+        onCell={mkCell(setGarantias)}
+        onAdd={mkAdd(setGarantias, { tipo: '', afianzadora: '', poliza: '', monto: '', vigencia: '' })}
+        onRemove={mkRemove(setGarantias)}
+        anticipoPct={anticipoPct}
+        setAnticipoPct={setAnticipoPct}
+        soloLectura={soloLectura}
+      />
+    ) },
+    { label: 'PDF firmado', content: wrapTab(<TabPdfFirmado contratoId={contratoGuardadoId} soloLectura={soloLectura} />) },
     { label: 'Registrados', content: (
       <TabRegistrados
         contratos={contratos}
