@@ -1,122 +1,118 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import ExcelJS from 'exceljs';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
-import { useVistaHU } from '../context/SesionContext.jsx';
-import { notasBitacoraDummy, tiposNotaCatalogo } from '../data/dummy.js';
+import BuscadorNotas, { useFiltrosNotas, ETIQUETA_ACEPTACION } from '../components/notas/BuscadorNotas.jsx';
+import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
+import { useToast } from '../components/ui/Toast.jsx';
+import { api } from '../services/api.js';
 
-// Normaliza texto para búsqueda case-insensitive y sin acentos, equivalente a
-// PostgreSQL `ILIKE` con `unaccent`: "excavacion" matchea "Excavación", etc.
-// El escape ̀-ͯ cubre los "combining diacritical marks" que NFD deja
-// separados al descomponer caracteres acentuados.
-function normalizar(s) {
-  return (s || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '');
-}
+// HU-10 conectado al backend. La búsqueda y el export ya existían sobre datos de
+// muestra; aquí se cablean a datos REALES: el usuario elige un contrato (de los que
+// participa) y se cargan las notas de su bitácora (GET /bitacora/contrato/:id/notas).
+// Los filtros AND, la selección múltiple y el export viven en el componente
+// reutilizable BuscadorNotas (HU-12 reusará el mismo buscador como modal).
 
-const FILTROS_INICIALES = {
-  tipo: 'Todos',
-  fechaDesde: '',
-  fechaHasta: '',
-  firmante: 'Todos',
-  vinculo: 'Todas',     // 'Todas' | 'Vinculadas' | 'Sin vínculo'
-  palabraClave: ''
-};
-
-const OPCIONES_VINCULO = ['Todas', 'Vinculadas', 'Sin vínculo'];
+const soloFecha = (f) => (f || '').slice(0, 10);
 
 export default function ConsultaNotas() {
-  // soloLectura no aplica a la consulta (todos los roles consultan), pero
-  // mantenemos el hook para la metadata académica del header.
+  // soloLectura no bloquea la consulta (todos los roles con acceso consultan); el
+  // hook se mantiene por la metadata académica y el aviso del HeaderVista.
+  const { token } = useSesion();
   useVistaHU('HU-10');
+  const { showToast } = useToast();
+  const sinSesion = !token;
 
-  const [filtrosDraft, setFiltrosDraft] = useState(FILTROS_INICIALES);
-  const [filtrosAplicados, setFiltrosAplicados] = useState(FILTROS_INICIALES);
-  const [seleccionadas, setSeleccionadas] = useState(new Set());
+  const [contratos, setContratos] = useState([]);
+  const [contratoId, setContratoId] = useState('');
+  const [tipos, setTipos] = useState([]);
+  const [notas, setNotas] = useState([]);
+  const [cargando, setCargando] = useState(false);
+  const [sinBitacora, setSinBitacora] = useState(false);
+  const [seleccionadas, setSeleccionadas] = useState(() => new Set());
 
-  // Lista de firmantes únicos del libro, ordenada alfabéticamente, para el
-  // select. Se calcula una sola vez (el libro dummy no cambia en sesión).
-  const firmantesUnicos = useMemo(() => {
-    const set = new Set(notasBitacoraDummy.map((n) => n.firmante));
-    return ['Todos', ...Array.from(set).sort()];
-  }, []);
+  // Carga inicial: contratos del usuario + catálogo REAL de tipos (art. 125).
+  useEffect(() => {
+    if (sinSesion) return;
+    api.listarContratos().then((l) => setContratos(Array.isArray(l) ? l : [])).catch(() => setContratos([]));
+    api.notaTipos().then((t) => setTipos(Array.isArray(t) ? t : [])).catch(() => setTipos([]));
+  }, [sinSesion]);
 
-  const setDraft = (k) => (e) =>
-    setFiltrosDraft({ ...filtrosDraft, [k]: e.target.value });
-
-  const aplicarFiltros = (e) => {
-    e?.preventDefault?.();
-    setFiltrosAplicados(filtrosDraft);
+  const seleccionarContrato = useCallback(async (id) => {
+    setContratoId(id);
+    setNotas([]);
     setSeleccionadas(new Set());
-  };
-
-  const limpiarFiltros = () => {
-    setFiltrosDraft(FILTROS_INICIALES);
-    setFiltrosAplicados(FILTROS_INICIALES);
-    setSeleccionadas(new Set());
-  };
-
-  // Resultados con AND de los 5 filtros activos.
-  const resultados = useMemo(() => {
-    const palabraNorm = normalizar(filtrosAplicados.palabraClave);
-    return notasBitacoraDummy.filter((n) => {
-      if (filtrosAplicados.tipo !== 'Todos' && n.tipo !== filtrosAplicados.tipo) return false;
-      if (filtrosAplicados.fechaDesde && n.fecha < filtrosAplicados.fechaDesde) return false;
-      if (filtrosAplicados.fechaHasta && n.fecha > filtrosAplicados.fechaHasta) return false;
-      if (filtrosAplicados.firmante !== 'Todos' && n.firmante !== filtrosAplicados.firmante) return false;
-      if (filtrosAplicados.vinculo === 'Vinculadas' && !n.vinculadaA) return false;
-      if (filtrosAplicados.vinculo === 'Sin vínculo' && n.vinculadaA) return false;
-      if (palabraNorm) {
-        const haystack = normalizar(`${n.asunto || ''} ${n.contenido || ''}`);
-        if (!haystack.includes(palabraNorm)) return false;
+    setSinBitacora(false);
+    if (!id) return;
+    setCargando(true);
+    try {
+      const data = await api.notasDeContrato(id);
+      setNotas(Array.isArray(data?.notas) ? data.notas : []);
+    } catch (e) {
+      // 404 = el contrato no tiene bitácora aperturada (caso esperado, no error duro).
+      if (e.status === 404) {
+        setSinBitacora(true);
+      } else {
+        showToast(e.status === 403 ? 'No tienes acceso a las notas de este contrato' : 'No se pudieron cargar las notas');
       }
-      return true;
-    });
-  }, [filtrosAplicados]);
+      setNotas([]);
+    } finally {
+      setCargando(false);
+    }
+  }, [showToast]);
 
-  const toggleNota = (folio) => {
+  const { filtros, setFiltro, limpiar, resultados, firmantesUnicos, numeroPorId } = useFiltrosNotas(notas);
+
+  const toggle = (id) => {
     setSeleccionadas((prev) => {
       const next = new Set(prev);
-      if (next.has(folio)) next.delete(folio);
-      else next.add(folio);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   };
 
   const toggleTodas = () => {
-    if (seleccionadas.size === resultados.length) {
-      setSeleccionadas(new Set());
-    } else {
-      setSeleccionadas(new Set(resultados.map((r) => r.folio)));
-    }
+    setSeleccionadas((prev) => {
+      const todas = resultados.length > 0 && resultados.every((n) => prev.has(n.id));
+      if (todas) {
+        const next = new Set(prev);
+        resultados.forEach((n) => next.delete(n.id));
+        return next;
+      }
+      const next = new Set(prev);
+      resultados.forEach((n) => next.add(n.id));
+      return next;
+    });
   };
 
-  // Exporta las notas seleccionadas a un .xlsx con exceljs. El archivo se
-  // descarga directamente desde el navegador (sin backend). Esta vista usa
-  // anchos de columna personalizados, asi que escribe exceljs directo en
-  // lugar del helper genérico de services/excelExport.
-  const handleExportar = async () => {
+  // Export client-side con exceljs de las notas seleccionadas (resueltas contra el
+  // libro cargado). Columnas finales: Folio, Fecha, Tipo, Emisor, Vínculo, Asunto,
+  // Contenido, Estado de aceptación.
+  const exportar = async () => {
     if (seleccionadas.size === 0) return;
-    const notas = resultados.filter((n) => seleccionadas.has(n.folio));
+    const elegidas = notas.filter((n) => seleccionadas.has(n.id));
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Notas');
     ws.columns = [
-      { header: 'Folio',        key: 'folio',       width: 12 },
-      { header: 'Fecha',        key: 'fecha',       width: 12 },
-      { header: 'Tipo',         key: 'tipo',        width: 14 },
-      { header: 'Firmante',     key: 'firmante',    width: 32 },
-      { header: 'Vinculada a',  key: 'vinculadaA',  width: 14 },
-      { header: 'Contenido',    key: 'contenido',   width: 80 }
+      { header: 'Folio',    key: 'folio',     width: 10 },
+      { header: 'Fecha',    key: 'fecha',     width: 12 },
+      { header: 'Tipo',     key: 'tipo',      width: 22 },
+      { header: 'Emisor',   key: 'emisor',    width: 32 },
+      { header: 'Vínculo',  key: 'vinculo',   width: 12 },
+      { header: 'Asunto',   key: 'asunto',    width: 40 },
+      { header: 'Contenido', key: 'contenido', width: 80 },
+      { header: 'Estado',   key: 'estado',    width: 18 }
     ];
-    ws.addRows(notas.map((n) => ({
-      folio: n.folio,
-      fecha: n.fecha,
-      tipo: n.tipo,
-      firmante: n.firmante,
-      vinculadaA: n.vinculadaA || '',
-      contenido: n.contenido || ''
+    ws.addRows(elegidas.map((n) => ({
+      folio: `#${n.numero}`,
+      fecha: soloFecha(n.fecha),
+      tipo: n.tipo_etiqueta || n.tipo,
+      emisor: n.emisor_nombre || '',
+      vinculo: n.vinculada_a ? `#${numeroPorId.get(n.vinculada_a) ?? n.vinculada_a}` : '',
+      asunto: n.asunto || '',
+      contenido: n.contenido || '',
+      estado: ETIQUETA_ACEPTACION[n.aceptacion] || n.aceptacion || ''
     })));
     const buffer = await wb.xlsx.writeBuffer();
     const blob = new Blob([buffer], {
@@ -147,177 +143,59 @@ export default function ConsultaNotas() {
         ]}
       />
 
-      <form
-        onSubmit={aplicarFiltros}
-        className="bg-white border border-slate-200 rounded-md p-5 mb-6"
-      >
-        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
-          Filtros de búsqueda
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <label className="sg-label">Tipo de nota</label>
-            <select
-              className="sg-input"
-              value={filtrosDraft.tipo}
-              onChange={setDraft('tipo')}
-              data-testid="filtro-tipo"
-            >
-              <option>Todos</option>
-              {tiposNotaCatalogo.map((t) => <option key={t}>{t}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="sg-label">Fecha desde</label>
-            <input
-              type="date"
-              className="sg-input"
-              value={filtrosDraft.fechaDesde}
-              onChange={setDraft('fechaDesde')}
-              data-testid="filtro-desde"
-            />
-          </div>
-          <div>
-            <label className="sg-label">Fecha hasta</label>
-            <input
-              type="date"
-              className="sg-input"
-              value={filtrosDraft.fechaHasta}
-              onChange={setDraft('fechaHasta')}
-              data-testid="filtro-hasta"
-            />
-          </div>
-          <div>
-            <label className="sg-label">Firmante</label>
-            <select
-              className="sg-input"
-              value={filtrosDraft.firmante}
-              onChange={setDraft('firmante')}
-              data-testid="filtro-firmante"
-            >
-              {firmantesUnicos.map((f) => <option key={f}>{f}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="sg-label">Vínculo</label>
-            <select
-              className="sg-input"
-              value={filtrosDraft.vinculo}
-              onChange={setDraft('vinculo')}
-              data-testid="filtro-vinculo"
-            >
-              {OPCIONES_VINCULO.map((v) => <option key={v}>{v}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="sg-label">Palabra clave</label>
-            <input
-              className="sg-input"
-              placeholder="Busca en asunto y contenido (ILIKE sin acentos)"
-              value={filtrosDraft.palabraClave}
-              onChange={setDraft('palabraClave')}
-              data-testid="filtro-palabra"
-            />
-          </div>
+      {sinSesion && (
+        <div className="bg-slate-50 border border-slate-200 rounded-md px-4 py-3 mb-4 text-sm text-slate-600">
+          Inicia sesión en modo aplicación para cargar tus contratos y consultar las notas de su bitácora.
         </div>
-        <div className="mt-4 flex justify-end gap-2">
-          <button
-            type="button"
-            className="sg-btn-secondary"
-            onClick={limpiarFiltros}
-            data-testid="btn-limpiar"
-          >
-            Limpiar
-          </button>
-          <button type="submit" className="sg-btn-primary" data-testid="btn-buscar">
-            🔍 Buscar
-          </button>
+      )}
+
+      <div className="bg-white border border-slate-200 rounded-md p-4 mb-6 max-w-2xl">
+        <label className="sg-label">Contrato</label>
+        <select
+          className="sg-input"
+          value={contratoId}
+          onChange={(e) => seleccionarContrato(e.target.value)}
+          disabled={sinSesion}
+          data-testid="select-contrato"
+        >
+          <option value="">— Selecciona un contrato —</option>
+          {contratos.map((c) => <option key={c.id} value={c.id}>{c.folio} · {c.objeto}</option>)}
+        </select>
+      </div>
+
+      {!sinSesion && !contratoId && (
+        <p className="text-sm text-slate-500 mb-4">Selecciona un contrato para buscar en las notas de su bitácora.</p>
+      )}
+      {cargando && <p className="text-sm text-slate-500 mb-4">Cargando notas…</p>}
+      {sinBitacora && (
+        <div className="bg-amber-50 border-l-4 border-amber-400 px-4 py-3 mb-4 text-sm text-amber-800 rounded-r-md" data-testid="aviso-sin-bitacora">
+          Este contrato aún no tiene bitácora aperturada, por lo que no hay notas que consultar.
         </div>
-      </form>
+      )}
 
       {seleccionadas.size > 0 && (
         <div className="bg-sigecop-blue-light border-l-4 border-sigecop-accent px-4 py-3 mb-4 rounded-r-md flex items-center justify-between gap-4 flex-wrap">
           <div className="text-sm text-sigecop-blue font-semibold">
             {seleccionadas.size} {seleccionadas.size === 1 ? 'nota seleccionada' : 'notas seleccionadas'}
           </div>
-          <button
-            type="button"
-            className="sg-btn-secondary"
-            onClick={handleExportar}
-            data-testid="btn-exportar"
-          >
+          <button type="button" className="sg-btn-secondary" onClick={exportar} data-testid="btn-exportar">
             ⬇ Exportar a Excel
           </button>
         </div>
       )}
 
-      <div className="bg-white border border-slate-200 rounded-md overflow-hidden">
-        <div className="px-6 py-3 border-b border-slate-200 flex items-center justify-between">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
-            Resultados (<span data-testid="contador-resultados">{resultados.length}</span>)
-          </h2>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm" data-testid="tabla-resultados">
-            <thead className="bg-slate-50 text-slate-700">
-              <tr>
-                <th className="w-10 p-3">
-                  <input
-                    type="checkbox"
-                    checked={resultados.length > 0 && seleccionadas.size === resultados.length}
-                    onChange={toggleTodas}
-                    aria-label="Seleccionar todas"
-                  />
-                </th>
-                <th className="text-left p-3 font-semibold">Folio</th>
-                <th className="text-left p-3 font-semibold">Tipo</th>
-                <th className="text-left p-3 font-semibold">Fecha</th>
-                <th className="text-left p-3 font-semibold">Firmante</th>
-                <th className="text-left p-3 font-semibold">Vínculo</th>
-                <th className="text-left p-3 font-semibold">Asunto</th>
-              </tr>
-            </thead>
-            <tbody>
-              {resultados.length === 0 ? (
-                <tr>
-                  <td colSpan="7" className="p-8 text-center text-slate-400 italic">
-                    Sin resultados con los filtros aplicados.
-                  </td>
-                </tr>
-              ) : (
-                resultados.map((n) => (
-                  <tr key={n.folio} className="border-t border-slate-200 hover:bg-slate-50">
-                    <td className="p-3 text-center">
-                      <input
-                        type="checkbox"
-                        checked={seleccionadas.has(n.folio)}
-                        onChange={() => toggleNota(n.folio)}
-                        aria-label={`Seleccionar ${n.folio}`}
-                      />
-                    </td>
-                    <td className="p-3 font-mono text-xs">{n.folio}</td>
-                    <td className="p-3">
-                      <span className="inline-block px-2 py-0.5 bg-sigecop-blue-light text-sigecop-blue text-xs font-semibold rounded">
-                        {n.tipo}
-                      </span>
-                    </td>
-                    <td className="p-3">{n.fecha}</td>
-                    <td className="p-3">{n.firmante}</td>
-                    <td className="p-3 text-xs">
-                      {n.vinculadaA ? (
-                        <span className="text-sigecop-blue">↪ {n.vinculadaA}</span>
-                      ) : (
-                        <span className="text-slate-400">—</span>
-                      )}
-                    </td>
-                    <td className="p-3 text-slate-700">{n.asunto}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <BuscadorNotas
+        filtros={filtros}
+        setFiltro={setFiltro}
+        onLimpiar={limpiar}
+        tipos={tipos}
+        firmantesUnicos={firmantesUnicos}
+        resultados={resultados}
+        numeroPorId={numeroPorId}
+        seleccionadas={seleccionadas}
+        onToggle={toggle}
+        onToggleTodas={toggleTodas}
+      />
 
       <SeccionCriterios
         huId="HU-10"

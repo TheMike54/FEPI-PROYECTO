@@ -80,6 +80,8 @@ export const api = {
   // HU-09: notas tipificadas de bitácora.
   notaTipos: () => request('/bitacora/nota-tipos'),
   listarNotas: (aperturaId) => request(`/bitacora/${aperturaId}/notas`),
+  // HU-10: notas de la bitácora de un contrato (el UI no maneja aperturaId).
+  notasDeContrato: (contratoId) => request(`/bitacora/contrato/${contratoId}/notas`),
   emitirNota: (aperturaId, payload) => request(`/bitacora/${aperturaId}/notas`, { method: 'POST', body: JSON.stringify(payload) }),
   anularNota: (notaId, payload) => request(`/bitacora/notas/${notaId}/anular`, { method: 'POST', body: JSON.stringify(payload) }),
   vincularNota: (notaId, payload) => request(`/bitacora/notas/${notaId}/vincular`, { method: 'POST', body: JSON.stringify(payload) }),

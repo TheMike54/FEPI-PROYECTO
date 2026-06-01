@@ -1,13 +1,18 @@
 // @ts-check
 // E2E HU-10 — Consulta y búsqueda de notas de bitácora.
 //
-// Cubre los checks distintivos:
-//   · 5 filtros con AND (tipo, fecha desde/hasta, firmante, vínculo, palabra
-//     clave ILIKE sin acentos).
-//   · Limpiar resetea todos los filtros.
-//   · El botón "Adjuntar a estimación" ya NO existe (función migrada a HU-12).
-//   · Exportar descarga un .xlsx real con SheetJS.
-//   · Permisos por rol.
+// HU-10 quedó CABLEADA a datos reales (selector de contrato → GET
+// /api/bitacora/contrato/:id/notas). El buscador (filtros AND + selección + export)
+// vive en el componente reutilizable BuscadorNotas, que HU-12 reusará como modal.
+//
+// La suite E2E del repo solo levanta el FRONTEND (ver playwright.config.js: no hay
+// backend ni DB), así que aquí se cubre lo verificable sin sesión real:
+//   · estructura de la vista (badge, heading, criterios, selector de contrato);
+//   · el formulario de filtros está presente y es utilizable;
+//   · sin sesión se invita a iniciarla y el selector queda deshabilitado;
+//   · permisos por rol (E / C / sin acceso).
+// El camino de datos (filtros AND sobre notas reales + export .xlsx) se verifica con
+// smoke test manual contra el backend local (ver reporte de la HU).
 //
 // PERMISOS[HU-10]: residente='E' · contratista='C' · supervision='C' · dependencia=null · finanzas=null
 //
@@ -27,9 +32,6 @@ import {
 const VIEW_PATH = '/bitacora/consulta';
 const TITULO = 'Consulta y búsqueda de notas de bitácora';
 const SPRINT = 'Sprint 3';
-
-// Total de notas en notasBitacoraDummy. Si cambias el dummy, recuerda actualizar.
-const TOTAL_NOTAS = 12;
 
 /** Lee el contador de resultados como entero. */
 async function leerContador(page) {
@@ -67,7 +69,7 @@ test.describe('HU-10 — modo proyecto', () => {
     await expect(page.locator('span', { hasText: SPRINT }).first()).toBeVisible();
   });
 
-  test('criterios de aceptacion: los 2 textos nuevos al pie', async ({ page }) => {
+  test('criterios de aceptacion: los 2 textos al pie', async ({ page }) => {
     await goToViaSidebar(page, VIEW_PATH);
     const seccion = page.locator('section').filter({
       has: page.getByRole('heading', { name: 'Criterios de aceptación' })
@@ -81,77 +83,30 @@ test.describe('HU-10 — modo proyecto', () => {
     await expect(page.getByText('Adjuntar a estimación')).toHaveCount(0);
   });
 
-  test('estado inicial: muestra todas las notas del libro', async ({ page }) => {
+  // Sin sesión: se invita a iniciarla y el selector de contrato queda deshabilitado
+  // (los contratos se cargan del backend con el token del usuario).
+  test('sin sesion: aviso de inicio y selector de contrato deshabilitado', async ({ page }) => {
     await goToViaSidebar(page, VIEW_PATH);
-    // Antes de pulsar Buscar, los filtros aplicados están vacíos -> todas.
-    expect(await leerContador(page)).toBe(TOTAL_NOTAS);
+    await expect(page.getByText(/Inicia sesión en modo aplicación/)).toBeVisible();
+    await expect(page.getByTestId('select-contrato')).toBeDisabled();
   });
 
-  // CHECK DISTINTIVO 1: filtro por Tipo aplicado con AND reduce el conjunto.
-  test('filtro por Tipo reduce el conjunto al pulsar Buscar', async ({ page }) => {
+  // El formulario de filtros está presente y es utilizable; sin contrato cargado,
+  // el contador de resultados es 0.
+  test('formulario de filtros presente y utilizable; 0 resultados sin contrato', async ({ page }) => {
     await goToViaSidebar(page, VIEW_PATH);
-    await page.getByTestId('filtro-tipo').selectOption('Instrucción');
-    await page.getByTestId('btn-buscar').click();
-    // 3 notas de tipo Instrucción en el dummy.
-    expect(await leerContador(page)).toBe(3);
+    await expect(page.getByTestId('filtro-tipo')).toBeEnabled();
+    await expect(page.getByTestId('filtro-palabra')).toBeEnabled();
+    await expect(page.getByTestId('filtro-vinculo')).toBeEnabled();
+    expect(await leerContador(page)).toBe(0);
   });
 
-  // CHECK DISTINTIVO 2: filtro Vínculo=Vinculadas.
-  test('filtro Vinculo "Vinculadas" deja solo las que tienen vinculadaA', async ({ page }) => {
-    await goToViaSidebar(page, VIEW_PATH);
-    await page.getByTestId('filtro-vinculo').selectOption('Vinculadas');
-    await page.getByTestId('btn-buscar').click();
-    // BIT-0003 y BIT-0008 son las únicas vinculadas en el dummy.
-    expect(await leerContador(page)).toBe(2);
-  });
-
-  // CHECK DISTINTIVO 3: palabra clave ILIKE sin acentos — "excavacion"
-  // (sin tilde) matchea "Excavación" en asunto y contenido de BIT-0005.
-  test('palabra clave ILIKE sin acentos: "excavacion" encuentra "Excavación"', async ({ page }) => {
+  // Limpiar es utilizable aunque no haya datos (resetea el formulario sin romper).
+  test('Limpiar no rompe la vista sin datos', async ({ page }) => {
     await goToViaSidebar(page, VIEW_PATH);
     await page.getByTestId('filtro-palabra').fill('excavacion');
-    await page.getByTestId('btn-buscar').click();
-    expect(await leerContador(page)).toBe(1);
-  });
-
-  // CHECK DISTINTIVO 4: AND de dos filtros — Tipo=Instrucción + palabra
-  // "excavacion" = solo BIT-0005 (Instrucción que además habla de excavación).
-  test('AND de Tipo + palabra clave reduce al subconjunto comun', async ({ page }) => {
-    await goToViaSidebar(page, VIEW_PATH);
-    await page.getByTestId('filtro-tipo').selectOption('Instrucción');
-    await page.getByTestId('filtro-palabra').fill('excavacion');
-    await page.getByTestId('btn-buscar').click();
-    expect(await leerContador(page)).toBe(1);
-  });
-
-  // CHECK DISTINTIVO 5: Limpiar resetea todos los filtros y vuelven todas.
-  test('Limpiar resetea los filtros y vuelven todas las notas', async ({ page }) => {
-    await goToViaSidebar(page, VIEW_PATH);
-    await page.getByTestId('filtro-tipo').selectOption('Instrucción');
-    await page.getByTestId('btn-buscar').click();
-    expect(await leerContador(page)).toBe(3);
-
     await page.getByTestId('btn-limpiar').click();
-    expect(await leerContador(page)).toBe(TOTAL_NOTAS);
-  });
-
-  // CHECK DISTINTIVO 6: Export descarga un .xlsx con nombre notas_busqueda_*.
-  test('Exportar descarga un archivo .xlsx de las notas seleccionadas', async ({ page }) => {
-    await goToViaSidebar(page, VIEW_PATH);
-
-    // Selecciona una sola nota — basta para activar el botón Exportar.
-    await page
-      .getByTestId('tabla-resultados')
-      .locator('tbody tr')
-      .first()
-      .locator('input[type="checkbox"]')
-      .check();
-
-    const downloadPromise = page.waitForEvent('download');
-    await page.getByTestId('btn-exportar').click();
-    const download = await downloadPromise;
-
-    expect(download.suggestedFilename()).toMatch(/^notas_busqueda_\d{4}-\d{2}-\d{2}\.xlsx$/);
+    await expect(page.getByTestId('filtro-palabra')).toHaveValue('');
   });
 });
 

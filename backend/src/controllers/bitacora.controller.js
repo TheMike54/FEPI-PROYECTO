@@ -332,9 +332,55 @@ async function emitirNota(req, res) {
   }
 }
 
-// GET /api/bitacora/:aperturaId/notas — lista las notas con identidad del emisor,
-// tipo, folio, estado, vínculo y estado de ACEPTACIÓN derivado (tácita si venció el
-// plazo sin respuesta de contraparte). Acotada por participación. Base para HU-10.
+// Construye el payload de notas (identidad del emisor, tipo, folio, estado, vínculo
+// y estado de ACEPTACIÓN derivado: tácita si venció el plazo sin respuesta de
+// contraparte) para una apertura YA resuelta y con acceso verificado. Lo comparten
+// listarNotas (por aperturaId) y notasDeContrato (por contratoId, base de HU-10).
+// `apertura` trae id, contrato_id, plazo_firma_dias y el equipo del contrato
+// (residente_id/superintendente_id/supervision_id) para derivar mi_rol.
+async function construirPayloadNotas(apertura, userId) {
+  // Rol del usuario EN ESTE contrato (null si solo es ve-todo: dependencia/finanzas).
+  // Permite al UI filtrar los tipos emitibles sin exponer el equipo completo.
+  let miRol = null;
+  if (apertura.residente_id === userId) miRol = 'residente';
+  else if (apertura.superintendente_id === userId) miRol = 'superintendente';
+  else if (apertura.supervision_id === userId) miRol = 'supervision';
+
+  const r = await pool.query(
+    `SELECT n.id, n.numero, n.tipo, tp.etiqueta AS tipo_etiqueta, tp.rol_emisor,
+            n.asunto, n.contenido, n.estado, n.vinculada_a, n.fecha, n.firmado_en,
+            n.emisor_id, u.nombre AS emisor_nombre, u.email AS emisor_correo,
+            (NOW() > n.fecha + make_interval(days => $2::int)) AS plazo_vencido,
+            EXISTS (SELECT 1 FROM bitacora_notas m
+                     WHERE m.vinculada_a = n.id AND m.emisor_id IS DISTINCT FROM n.emisor_id) AS respondida
+       FROM bitacora_notas n
+       LEFT JOIN bitacora_nota_tipos tp ON tp.clave = n.tipo
+       LEFT JOIN usuarios u ON u.id = n.emisor_id
+      WHERE n.bitacora_id = $1
+      ORDER BY n.numero`,
+    [apertura.id, apertura.plazo_firma_dias]
+  );
+
+  const notas = r.rows.map((n) => {
+    let aceptacion;
+    if (n.estado === 'anulada') aceptacion = 'anulada';
+    else if (n.respondida) aceptacion = 'respondida';
+    else if (n.plazo_vencido) aceptacion = 'aceptada_tacita';
+    else aceptacion = 'en_plazo';
+    return { ...n, aceptacion };
+  });
+
+  return {
+    apertura_id: apertura.id,
+    contrato_id: apertura.contrato_id,
+    plazo_firma_dias: apertura.plazo_firma_dias,
+    mi_rol: miRol,
+    notas
+  };
+}
+
+// GET /api/bitacora/:aperturaId/notas — lista las notas de UNA apertura (por id).
+// Acotada por participación.
 async function listarNotas(req, res) {
   try {
     const aperturaId = Number(req.params.aperturaId);
@@ -353,46 +399,50 @@ async function listarNotas(req, res) {
     if (!esParteOSupervision(req.user, apertura)) {
       return res.status(403).json({ error: 'No tienes acceso a este contrato' });
     }
-    // Rol del usuario EN ESTE contrato (null si solo es ve-todo: dependencia/finanzas).
-    // Permite al UI filtrar los tipos emitibles sin exponer el equipo completo.
-    let miRol = null;
-    if (apertura.residente_id === req.user.id) miRol = 'residente';
-    else if (apertura.superintendente_id === req.user.id) miRol = 'superintendente';
-    else if (apertura.supervision_id === req.user.id) miRol = 'supervision';
-
-    const r = await pool.query(
-      `SELECT n.id, n.numero, n.tipo, tp.etiqueta AS tipo_etiqueta, tp.rol_emisor,
-              n.asunto, n.contenido, n.estado, n.vinculada_a, n.fecha, n.firmado_en,
-              n.emisor_id, u.nombre AS emisor_nombre, u.email AS emisor_correo,
-              (NOW() > n.fecha + make_interval(days => $2::int)) AS plazo_vencido,
-              EXISTS (SELECT 1 FROM bitacora_notas m
-                       WHERE m.vinculada_a = n.id AND m.emisor_id IS DISTINCT FROM n.emisor_id) AS respondida
-         FROM bitacora_notas n
-         LEFT JOIN bitacora_nota_tipos tp ON tp.clave = n.tipo
-         LEFT JOIN usuarios u ON u.id = n.emisor_id
-        WHERE n.bitacora_id = $1
-        ORDER BY n.numero`,
-      [aperturaId, apertura.plazo_firma_dias]
-    );
-
-    const notas = r.rows.map((n) => {
-      let aceptacion;
-      if (n.estado === 'anulada') aceptacion = 'anulada';
-      else if (n.respondida) aceptacion = 'respondida';
-      else if (n.plazo_vencido) aceptacion = 'aceptada_tacita';
-      else aceptacion = 'en_plazo';
-      return { ...n, aceptacion };
-    });
-
-    return res.status(200).json({
-      apertura_id: apertura.id,
-      contrato_id: apertura.contrato_id,
-      plazo_firma_dias: apertura.plazo_firma_dias,
-      mi_rol: miRol,
-      notas
-    });
+    return res.status(200).json(await construirPayloadNotas(apertura, req.user.id));
   } catch (err) {
     console.error('[listarNotas]', err);
+    return res.status(500).json({ error: 'Error interno' });
+  }
+}
+
+// GET /api/bitacora/contrato/:contratoId/notas — resuelve la (única) apertura del
+// contrato y devuelve sus notas. Azúcar de HU-10: el UI maneja contratos, no
+// aperturaId. El acceso se verifica sobre el CONTRATO (participación) ANTES de
+// revelar si tiene bitácora, igual que las demás lecturas por contrato.
+async function notasDeContrato(req, res) {
+  try {
+    const contratoId = Number(req.params.contratoId);
+    if (!Number.isInteger(contratoId) || contratoId <= 0) return res.status(400).json({ error: 'contratoId inválido' });
+
+    const c = await pool.query(
+      'SELECT id, created_by, residente_id, superintendente_id, supervision_id FROM contratos WHERE id = $1',
+      [contratoId]
+    );
+    if (c.rowCount === 0) return res.status(404).json({ error: 'Contrato no encontrado' });
+    if (!esParteOSupervision(req.user, c.rows[0])) {
+      return res.status(403).json({ error: 'No tienes acceso a este contrato' });
+    }
+
+    const a = await pool.query(
+      'SELECT id, contrato_id, plazo_firma_dias FROM bitacora_aperturas WHERE contrato_id = $1',
+      [contratoId]
+    );
+    if (a.rowCount === 0) return res.status(404).json({ error: 'El contrato no tiene bitácora aperturada' });
+
+    // Mezcla explícita: id/plazo de la apertura + equipo del contrato. (No usar
+    // spread de c.rows[0]: su `id` es el del contrato y pisaría el de la apertura.)
+    const apertura = {
+      id: a.rows[0].id,
+      contrato_id: a.rows[0].contrato_id,
+      plazo_firma_dias: a.rows[0].plazo_firma_dias,
+      residente_id: c.rows[0].residente_id,
+      superintendente_id: c.rows[0].superintendente_id,
+      supervision_id: c.rows[0].supervision_id
+    };
+    return res.status(200).json(await construirPayloadNotas(apertura, req.user.id));
+  } catch (err) {
+    console.error('[notasDeContrato]', err);
     return res.status(500).json({ error: 'Error interno' });
   }
 }
@@ -515,6 +565,7 @@ module.exports = {
   listarNotaTipos,
   emitirNota,
   listarNotas,
+  notasDeContrato,
   anularNota,
   vincularNota
 };

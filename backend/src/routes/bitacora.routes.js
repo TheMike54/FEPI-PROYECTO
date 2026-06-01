@@ -8,6 +8,7 @@ const {
   listarNotaTipos,
   emitirNota,
   listarNotas,
+  notasDeContrato,
   anularNota,
   vincularNota
 } = require('../controllers/bitacora.controller');
@@ -28,6 +29,10 @@ router.get('/nota-tipos', listarNotaTipos);
 
 // Lectura de la bitácora de un contrato: acotada por participación en el controller.
 router.get('/contrato/:contratoId', bitacoraDeContrato);
+
+// HU-10: notas de la bitácora de un contrato (resuelve la apertura internamente).
+// No colisiona con '/:aperturaId/notas' (3 vs 2 segmentos). Acotada por participación.
+router.get('/contrato/:contratoId/notas', notasDeContrato);
 
 // HU-09: notas tipificadas. Emitir/listar bajo una apertura; anular/vincular por id de nota.
 // El emisor sale del JWT; el rol→tipo (art. 125) y el acceso por participación se validan
