@@ -78,3 +78,9 @@ render_backup_*.sql
 
 # Respaldos de las Historias de Usuario
 *_BACKUP_*.xlsx
+
+# Notas de operación con credenciales (NO subir: contiene una contraseña)
+comandos usuario.txt
+
+# Acordeón de defensa (material interno, marcado "no entregable")
+Acordeon_Defensa_SIGECOP.md
