@@ -39,6 +39,19 @@ async function crearContrato(req, res) {
     return res.status(400).json({ error: 'plazoDias debe ser un entero mayor a 0' });
   }
 
+  // T1: coherencia de fechas del contrato (ambas ya son requeridas arriba).
+  if (String(body.fechaTermino) < String(body.fechaInicio)) {
+    return res.status(400).json({ error: 'La fecha de término no puede ser anterior a la fecha de inicio' });
+  }
+
+  // T3: longitud de los campos de texto (evita 22001 desde la BD).
+  const LIMITES_TEXTO = { folio: 50, tipo: 80, contratista: 200, dependencia: 200 };
+  for (const [campo, max] of Object.entries(LIMITES_TEXTO)) {
+    if (body[campo] != null && String(body[campo]).length > max) {
+      return res.status(400).json({ error: `El campo "${campo}" excede el máximo de ${max} caracteres` });
+    }
+  }
+
   const anticipoPct = numOrNull(body.anticipoPct);
   if (anticipoPct !== null && (anticipoPct < 0 || anticipoPct > 100)) {
     return res.status(400).json({ error: 'anticipoPct debe estar entre 0 y 100' });
@@ -63,6 +76,9 @@ async function crearContrato(req, res) {
   for (const [i, c] of conceptos.entries()) {
     if (!c.concepto || !c.unidad) {
       return res.status(400).json({ error: `Concepto #${i + 1}: concepto y unidad son obligatorios` });
+    }
+    if (String(c.unidad).length > 20) {
+      return res.status(400).json({ error: `Concepto #${i + 1}: la unidad excede el máximo de 20 caracteres` });
     }
     const cant = numOrNull(c.cantidad);
     const pu = numOrNull(c.pu);
@@ -156,6 +172,12 @@ async function crearContrato(req, res) {
     }
     if (err.code === '22007' || err.code === '22P02') {
       return res.status(400).json({ error: 'Hay un valor con formato inválido (fecha o número).' });
+    }
+    if (err.code === '22001') {
+      return res.status(400).json({ error: 'Un campo de texto excede el límite de caracteres permitido.' });
+    }
+    if (err.code === '22003') {
+      return res.status(400).json({ error: 'Un valor numérico está fuera de rango (demasiado grande).' });
     }
     console.error('[crearContrato]', err);
     return res.status(500).json({ error: 'Error interno' });

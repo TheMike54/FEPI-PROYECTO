@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Tabs from '../components/ui/Tab.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
@@ -17,6 +17,33 @@ const formatoMXN = new Intl.NumberFormat('es-MX', {
 // Unidades estandar del catalogo (simbolos correctos) + opcion "Otro" (texto libre).
 const UNIDADES = ['m', 'm²', 'm³', 'ml', 'cm', 'kg', 'ton', 'pza', 'lote', 'jornal', '%'];
 
+// Estado de errores vacio (referencia estable para limpiar marcas).
+const ERR0 = { campos: {}, conceptoIdx: null, actividadIdx: null, garantiaIdx: null };
+
+// Valores iniciales (tambien usados por "Cancelar" para reiniciar).
+const DATOS_INICIALES = {
+  folio: 'C-2026-0042',
+  tipo: 'Obra pública sobre la base de precios unitarios',
+  objeto: 'Construcción de edificio administrativo en av. principal',
+  contratista: 'Constructora XYZ S.A. de C.V.',
+  dependencia: 'Secretaría de Obras Públicas',
+  monto: 12450000,
+  plazoDias: 180,
+  fechaInicio: '2026-06-01',
+  fechaTermino: '2026-11-28'
+};
+const JURIDICOS_INICIALES = {
+  firmanteDependencia: 'Lic. María Pérez García',
+  cargoFirmante: 'Directora de Obras',
+  representanteLegal: 'Lic. Juan Ramírez Soto',
+  cedulaProfesional: '8475612',
+  poderNotarial: 'Escritura Núm. 12,345',
+  notaria: 'Notaría Pública Núm. 47 — Acapulco, Gro.'
+};
+
+// className de input con marca de error en rojo.
+const inputCls = (err) => `sg-input${err ? ' border-red-500 ring-1 ring-red-400' : ''}`;
+
 function Field({ label, required, children, hint }) {
   return (
     <div>
@@ -29,16 +56,17 @@ function Field({ label, required, children, hint }) {
   );
 }
 
-function TabDatosGenerales({ datos, set }) {
+function TabDatosGenerales({ datos, set, err }) {
+  const e = err || {};
   return (
     <div>
       <h3 className="text-lg font-bold text-sigecop-blue mb-4">Datos generales del contrato</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Field label="Folio del contrato" required>
-          <input className="sg-input" value={datos.folio} onChange={set('folio')} />
+          <input className={inputCls(e.folio)} maxLength={50} value={datos.folio} onChange={set('folio')} />
         </Field>
         <Field label="Tipo de contrato" required>
-          <select className="sg-input" value={datos.tipo} onChange={set('tipo')}>
+          <select className={inputCls(e.tipo)} value={datos.tipo} onChange={set('tipo')}>
             <option>Obra pública sobre la base de precios unitarios</option>
             <option>Obra pública a precio alzado</option>
             <option>Servicios relacionados con obra pública</option>
@@ -46,26 +74,26 @@ function TabDatosGenerales({ datos, set }) {
         </Field>
         <div className="md:col-span-2">
           <Field label="Objeto del contrato" required>
-            <input className="sg-input" value={datos.objeto} onChange={set('objeto')} />
+            <input className={inputCls(e.objeto)} value={datos.objeto} onChange={set('objeto')} />
           </Field>
         </div>
         <Field label="Contratista" required>
-          <input className="sg-input" value={datos.contratista} onChange={set('contratista')} />
+          <input className={inputCls(e.contratista)} maxLength={200} value={datos.contratista} onChange={set('contratista')} />
         </Field>
         <Field label="Dependencia" required>
-          <input className="sg-input" value={datos.dependencia} onChange={set('dependencia')} />
+          <input className={inputCls(e.dependencia)} maxLength={200} value={datos.dependencia} onChange={set('dependencia')} />
         </Field>
         <Field label="Monto (MXN)" required>
-          <input type="number" min="0" step="0.01" className="sg-input" value={datos.monto} onChange={set('monto')} />
+          <input type="number" min="0" step="0.01" className={inputCls(e.monto)} value={datos.monto} onChange={set('monto')} />
         </Field>
         <Field label="Plazo (días naturales)" required>
-          <input type="number" min="1" step="1" className="sg-input" value={datos.plazoDias} onChange={set('plazoDias')} />
+          <input type="number" min="1" step="1" className={inputCls(e.plazoDias)} value={datos.plazoDias} onChange={set('plazoDias')} />
         </Field>
         <Field label="Fecha de inicio" required>
-          <input type="date" className="sg-input" value={datos.fechaInicio} onChange={set('fechaInicio')} />
+          <input type="date" className={inputCls(e.fechaInicio)} value={datos.fechaInicio} onChange={set('fechaInicio')} />
         </Field>
         <Field label="Fecha de término" required>
-          <input type="date" className="sg-input" value={datos.fechaTermino} onChange={set('fechaTermino')} />
+          <input type="date" className={inputCls(e.fechaTermino)} value={datos.fechaTermino} onChange={set('fechaTermino')} />
         </Field>
       </div>
 
@@ -76,7 +104,8 @@ function TabDatosGenerales({ datos, set }) {
   );
 }
 
-function TabCatalogo({ rows, onCell, onPatch, onAdd, onRemove, soloLectura }) {
+function TabCatalogo({ rows, onCell, onPatch, onAdd, onRemove, soloLectura, errIdx }) {
+  const total = rows.reduce((s, c) => s + (Number(c.cantidad) || 0) * (Number(c.pu) || 0), 0);
   return (
     <div>
       <h3 className="text-lg font-bold text-sigecop-blue mb-4">Catálogo de conceptos</h3>
@@ -98,36 +127,21 @@ function TabCatalogo({ rows, onCell, onPatch, onAdd, onRemove, soloLectura }) {
           <tbody>
             {rows.map((c, i) => {
               const importe = (Number(c.cantidad) || 0) * (Number(c.pu) || 0);
-              // "Otro" si el flag esta puesto o si la unidad guardada no es estandar.
               const esOtro = c.unidadOtro || (c.unidad !== '' && !UNIDADES.includes(c.unidad));
               const unidadSel = esOtro ? 'Otro' : c.unidad;
               return (
-                <tr key={c.rid} className="border-t border-slate-200">
-                  <td className="px-2 py-1"><input className="sg-input" value={c.concepto} onChange={onCell(i, 'concepto')} disabled={soloLectura} /></td>
-                  <td className="px-2 py-1">
-                    <select
-                      className="sg-input"
-                      value={unidadSel}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        if (v === 'Otro') onPatch(i, { unidadOtro: true, unidad: '' });
-                        else onPatch(i, { unidadOtro: false, unidad: v });
-                      }}
-                      disabled={soloLectura}
-                    >
+                <tr key={c.rid} className={`border-t border-slate-200 ${errIdx === i ? 'bg-red-50' : ''}`}>
+                  <td className="px-2 py-1 align-top"><input className="sg-input" value={c.concepto} onChange={onCell(i, 'concepto')} disabled={soloLectura} /></td>
+                  <td className="px-2 py-1 align-top">
+                    <select className="sg-input" value={unidadSel}
+                      onChange={(e) => { const v = e.target.value; if (v === 'Otro') onPatch(i, { unidadOtro: true, unidad: '' }); else onPatch(i, { unidadOtro: false, unidad: v }); }}
+                      disabled={soloLectura}>
                       <option value="">—</option>
                       {UNIDADES.map((u) => <option key={u} value={u}>{u}</option>)}
                       <option value="Otro">Otro…</option>
                     </select>
                     {esOtro && (
-                      <input
-                        className="sg-input mt-1"
-                        placeholder="Especifica la unidad"
-                        maxLength={20}
-                        value={c.unidad}
-                        onChange={onCell(i, 'unidad')}
-                        disabled={soloLectura}
-                      />
+                      <input className="sg-input mt-1" placeholder="Especifica la unidad" maxLength={20} value={c.unidad} onChange={onCell(i, 'unidad')} disabled={soloLectura} />
                     )}
                   </td>
                   <td className="px-2 py-1 align-top"><input type="number" min="0" step="0.001" className="sg-input text-right" value={c.cantidad} onChange={onCell(i, 'cantidad')} disabled={soloLectura} /></td>
@@ -143,6 +157,15 @@ function TabCatalogo({ rows, onCell, onPatch, onAdd, onRemove, soloLectura }) {
               <tr><td colSpan={6} className="px-3 py-4 text-center text-slate-400">Sin conceptos. Agrega uno o deja el bloque vacío.</td></tr>
             )}
           </tbody>
+          {rows.length > 0 && (
+            <tfoot>
+              <tr className="border-t-2 border-slate-300 bg-slate-50">
+                <td colSpan={4} className="px-3 py-2 text-right font-semibold text-slate-700">Total del catálogo (Σ cantidad × P.U.)</td>
+                <td className="px-3 py-2 text-right font-bold text-sigecop-blue whitespace-nowrap" data-testid="catalogo-total">{formatoMXN.format(total)}</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
       <button type="button" onClick={onAdd} disabled={soloLectura} className="mt-3 text-sm text-sigecop-accent hover:underline disabled:opacity-40">
@@ -152,21 +175,14 @@ function TabCatalogo({ rows, onCell, onPatch, onAdd, onRemove, soloLectura }) {
   );
 }
 
-function TabPrograma({ rows, onCell, onAdd, onRemove, soloLectura }) {
+function TabPrograma({ rows, onCell, onAdd, onRemove, soloLectura, errIdx }) {
   const total = Math.round(rows.reduce((s, p) => s + (Number(p.peso) || 0), 0) * 100) / 100;
   let avisoCls = '';
   let avisoMsg = '';
   if (rows.length > 0) {
-    if (total > 100) {
-      avisoCls = 'text-red-700 bg-red-50 border-red-300';
-      avisoMsg = `Suma de %peso: ${total}% — excede 100%. No se puede guardar; ajusta los pesos.`;
-    } else if (total === 100) {
-      avisoCls = 'text-green-700 bg-green-50 border-green-300';
-      avisoMsg = `Suma de %peso: ${total}% ✓`;
-    } else {
-      avisoCls = 'text-amber-800 bg-amber-50 border-amber-300';
-      avisoMsg = `Suma de %peso: ${total}% — parcial (faltan ${Math.round((100 - total) * 100) / 100}% para llegar a 100%).`;
-    }
+    if (total > 100) { avisoCls = 'text-red-700 bg-red-50 border-red-300'; avisoMsg = `Suma de %peso: ${total}% — excede 100%. No se puede guardar; ajusta los pesos.`; }
+    else if (total === 100) { avisoCls = 'text-green-700 bg-green-50 border-green-300'; avisoMsg = `Suma de %peso: ${total}% ✓`; }
+    else { avisoCls = 'text-amber-800 bg-amber-50 border-amber-300'; avisoMsg = `Suma de %peso: ${total}% — parcial (faltan ${Math.round((100 - total) * 100) / 100}% para llegar a 100%).`; }
   }
   return (
     <div>
@@ -187,7 +203,7 @@ function TabPrograma({ rows, onCell, onAdd, onRemove, soloLectura }) {
           </thead>
           <tbody>
             {rows.map((p, i) => (
-              <tr key={p.rid} className="border-t border-slate-200">
+              <tr key={p.rid} className={`border-t border-slate-200 ${errIdx === i ? 'bg-red-50' : ''}`}>
                 <td className="px-2 py-1"><input className="sg-input" value={p.actividad} onChange={onCell(i, 'actividad')} disabled={soloLectura} /></td>
                 <td className="px-2 py-1"><input type="date" className="sg-input" value={p.inicio} onChange={onCell(i, 'inicio')} disabled={soloLectura} /></td>
                 <td className="px-2 py-1"><input type="date" className="sg-input" value={p.termino} onChange={onCell(i, 'termino')} disabled={soloLectura} /></td>
@@ -242,14 +258,16 @@ function TabJuridicos({ datos, set }) {
   );
 }
 
-function TabGarantias({ rows, onCell, onAdd, onRemove, anticipoPct, setAnticipoPct, soloLectura }) {
+function TabGarantias({ rows, onCell, onAdd, onRemove, anticipoPct, setAnticipoPct, soloLectura, errIdx, errAnticipo }) {
+  const hoy = new Date();
+  const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
   return (
     <div>
       <h3 className="text-lg font-bold text-sigecop-blue mb-4">Garantías, penalizaciones y amortización</h3>
 
       <div className="mb-4 max-w-xs">
         <Field label="% de anticipo otorgado" hint="Base de la amortización (art. 50 LOPSRM). Opcional.">
-          <input type="number" min="0" max="100" step="0.01" className="sg-input" value={anticipoPct} onChange={(e) => setAnticipoPct(e.target.value)} disabled={soloLectura} />
+          <input type="number" min="0" max="100" step="0.01" className={inputCls(errAnticipo)} value={anticipoPct} onChange={(e) => setAnticipoPct(e.target.value)} disabled={soloLectura} />
         </Field>
       </div>
 
@@ -261,23 +279,29 @@ function TabGarantias({ rows, onCell, onAdd, onRemove, anticipoPct, setAnticipoP
               <th className="text-left px-3 py-2">Afianzadora</th>
               <th className="text-left px-3 py-2 w-40">No. de póliza</th>
               <th className="text-right px-3 py-2 w-40">Monto</th>
-              <th className="text-left px-3 py-2 w-44">Vigencia</th>
+              <th className="text-left px-3 py-2 w-48">Vigencia</th>
               <th className="w-10 px-2 py-2"></th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((p, i) => (
-              <tr key={p.rid} className="border-t border-slate-200">
-                <td className="px-2 py-1"><input className="sg-input" value={p.tipo} onChange={onCell(i, 'tipo')} disabled={soloLectura} /></td>
-                <td className="px-2 py-1"><input className="sg-input" value={p.afianzadora} onChange={onCell(i, 'afianzadora')} disabled={soloLectura} /></td>
-                <td className="px-2 py-1"><input className="sg-input font-mono text-xs" value={p.poliza} onChange={onCell(i, 'poliza')} disabled={soloLectura} /></td>
-                <td className="px-2 py-1"><input type="number" min="0" step="0.01" className="sg-input text-right" value={p.monto} onChange={onCell(i, 'monto')} disabled={soloLectura} /></td>
-                <td className="px-2 py-1"><input type="date" className="sg-input" value={p.vigencia} onChange={onCell(i, 'vigencia')} disabled={soloLectura} /></td>
-                <td className="px-2 py-1 text-center">
-                  <button type="button" onClick={() => onRemove(i)} disabled={soloLectura} className="text-red-500 hover:text-red-700 disabled:opacity-30" title="Quitar póliza">✕</button>
-                </td>
-              </tr>
-            ))}
+            {rows.map((p, i) => {
+              const vencida = p.vigencia && p.vigencia < hoyStr;
+              return (
+                <tr key={p.rid} className={`border-t border-slate-200 ${errIdx === i ? 'bg-red-50' : ''}`}>
+                  <td className="px-2 py-1 align-top"><input className="sg-input" value={p.tipo} onChange={onCell(i, 'tipo')} disabled={soloLectura} /></td>
+                  <td className="px-2 py-1 align-top"><input className="sg-input" value={p.afianzadora} onChange={onCell(i, 'afianzadora')} disabled={soloLectura} /></td>
+                  <td className="px-2 py-1 align-top"><input className="sg-input font-mono text-xs" value={p.poliza} onChange={onCell(i, 'poliza')} disabled={soloLectura} /></td>
+                  <td className="px-2 py-1 align-top"><input type="number" min="0" step="0.01" className="sg-input text-right" value={p.monto} onChange={onCell(i, 'monto')} disabled={soloLectura} /></td>
+                  <td className="px-2 py-1 align-top">
+                    <input type="date" className="sg-input" value={p.vigencia} onChange={onCell(i, 'vigencia')} disabled={soloLectura} />
+                    {vencida && <span className="block text-xs text-amber-600 mt-1">⚠ vigencia vencida</span>}
+                  </td>
+                  <td className="px-2 py-1 text-center align-top">
+                    <button type="button" onClick={() => onRemove(i)} disabled={soloLectura} className="text-red-500 hover:text-red-700 disabled:opacity-30" title="Quitar póliza">✕</button>
+                  </td>
+                </tr>
+              );
+            })}
             {rows.length === 0 && (
               <tr><td colSpan={6} className="px-3 py-4 text-center text-slate-400">Sin pólizas. Agrega una o deja el bloque vacío.</td></tr>
             )}
@@ -395,14 +419,7 @@ function TabPdfFirmado({ contratoId, soloLectura }) {
           )}
 
           <div className="border-2 border-dashed border-slate-300 rounded-md p-8 text-center bg-white">
-            <input
-              ref={inputRef}
-              type="file"
-              accept="application/pdf,.pdf"
-              onChange={onArchivo}
-              disabled={soloLectura || subiendo}
-              className="block mx-auto text-sm"
-            />
+            <input ref={inputRef} type="file" accept="application/pdf,.pdf" onChange={onArchivo} disabled={soloLectura || subiendo} className="block mx-auto text-sm" />
             <p className="text-xs text-slate-400 mt-3">PDF firmado por las tres partes (máx. 10 MB). Se guarda en la base de datos.</p>
             {subiendo && <p className="text-sm text-sigecop-accent mt-2">Subiendo…</p>}
             {meta && <p className="text-xs text-slate-400 mt-1">Subir otro archivo reemplaza el actual.</p>}
@@ -537,65 +554,47 @@ function TabRegistrados({ contratos, loading, errorMsg, sinSesion, onRecargar, s
   );
 }
 
+const REQ_GENERALES = ['folio', 'tipo', 'objeto', 'contratista', 'dependencia', 'monto', 'plazoDias', 'fechaInicio', 'fechaTermino'];
+
 export default function AltaContrato() {
   const { showToast } = useToast();
   const { soloLectura } = useVistaHU('HU-01');
   const { token } = useSesion();
   const sinSesion = !token;
 
-  const [datosGenerales, setDatosGenerales] = useState({
-    folio: 'C-2026-0042',
-    tipo: 'Obra pública sobre la base de precios unitarios',
-    objeto: 'Construcción de edificio administrativo en av. principal',
-    contratista: 'Constructora XYZ S.A. de C.V.',
-    dependencia: 'Secretaría de Obras Públicas',
-    monto: 12450000,
-    plazoDias: 180,
-    fechaInicio: '2026-06-01',
-    fechaTermino: '2026-11-28'
-  });
-  const [datosJuridicos, setDatosJuridicos] = useState({
-    firmanteDependencia: 'Lic. María Pérez García',
-    cargoFirmante: 'Directora de Obras',
-    representanteLegal: 'Lic. Juan Ramírez Soto',
-    cedulaProfesional: '8475612',
-    poderNotarial: 'Escritura Núm. 12,345',
-    notaria: 'Notaría Pública Núm. 47 — Acapulco, Gro.'
-  });
-  const [anticipoPct, setAnticipoPct] = useState(30);
-
-  // Bloques-lista editables (precargados con datos de ejemplo para la demo).
-  // rid = id estable por fila (solo UI, NO se envia al backend) para las keys de
-  // React, de modo que editar/borrar filas no provoque parpadeo ni perdida de foco.
   const ridCounter = useRef(0);
   const nextRid = () => (ridCounter.current += 1);
+  const conceptosIniciales = () => conceptosDummy.map((c) => ({ rid: nextRid(), concepto: c.concepto, unidad: c.unidad, cantidad: c.cantidad, pu: c.pu }));
+  const programaIniciales = () => programaObraDummy.map((a) => ({ rid: nextRid(), actividad: a.actividad, inicio: a.inicio, termino: a.termino, peso: a.peso }));
+  const garantiasIniciales = () => polizasGarantiaDummy.map((g) => ({ rid: nextRid(), tipo: g.tipo, afianzadora: g.afianzadora, poliza: g.poliza, monto: g.monto, vigencia: g.vigencia }));
 
-  const [conceptos, setConceptos] = useState(() =>
-    conceptosDummy.map((c) => ({ rid: nextRid(), concepto: c.concepto, unidad: c.unidad, cantidad: c.cantidad, pu: c.pu }))
-  );
-  const [programa, setPrograma] = useState(() =>
-    programaObraDummy.map((a) => ({ rid: nextRid(), actividad: a.actividad, inicio: a.inicio, termino: a.termino, peso: a.peso }))
-  );
-  const [garantias, setGarantias] = useState(() =>
-    polizasGarantiaDummy.map((g) => ({ rid: nextRid(), tipo: g.tipo, afianzadora: g.afianzadora, poliza: g.poliza, monto: g.monto, vigencia: g.vigencia }))
-  );
+  const [datosGenerales, setDatosGenerales] = useState(() => ({ ...DATOS_INICIALES }));
+  const [datosJuridicos, setDatosJuridicos] = useState(() => ({ ...JURIDICOS_INICIALES }));
+  const [anticipoPct, setAnticipoPct] = useState(30);
+  const [conceptos, setConceptos] = useState(conceptosIniciales);
+  const [programa, setPrograma] = useState(programaIniciales);
+  const [garantias, setGarantias] = useState(garantiasIniciales);
+
+  // Marcas de error y pestaña activa (controlada, para navegar al error).
+  const [errores, setErrores] = useState(ERR0);
+  const [tabActivo, setTabActivo] = useState(0);
 
   const setDatosGen = (k) => (e) => setDatosGenerales((prev) => ({ ...prev, [k]: e.target.value }));
   const setDatosJur = (k) => (e) => setDatosJuridicos((prev) => ({ ...prev, [k]: e.target.value }));
 
-  // Helpers de edicion de filas para los bloques-lista.
   const mkCell = (setter) => (i, key) => (e) =>
     setter((prev) => prev.map((r, idx) => (idx === i ? { ...r, [key]: e.target.value } : r)));
   const mkAdd = (setter, vacio) => () => setter((prev) => [...prev, { ...vacio, rid: nextRid() }]);
   const mkRemove = (setter) => (i) => setter((prev) => prev.filter((_, idx) => idx !== i));
-  // Fusiona un objeto parcial en una fila (p. ej. unidad + flag unidadOtro a la vez).
   const mkPatch = (setter) => (i, patch) => setter((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+
+  // Al editar cualquier dato del formulario, limpia las marcas de error.
+  useEffect(() => { setErrores(ERR0); }, [datosGenerales, datosJuridicos, anticipoPct, conceptos, programa, garantias]);
 
   const [contratos, setContratos] = useState([]);
   const [loadingLista, setLoadingLista] = useState(false);
   const [errorLista, setErrorLista] = useState(null);
   const [guardando, setGuardando] = useState(false);
-  // id del contrato recien guardado: habilita ligar el PDF firmado (HU-01) despues.
   const [contratoGuardadoId, setContratoGuardadoId] = useState(null);
 
   const cargarContratos = useCallback(async () => {
@@ -616,14 +615,66 @@ export default function AltaContrato() {
     cargarContratos();
   }, [cargarContratos]);
 
-  const handleGuardar = async () => {
-    if (guardando || soloLectura) return;
-    // Bloquea si el programa de obra EXCEDE 100% (una suma <100% sí se permite).
+  // Validacion en cliente: devuelve { tab, msg, errores } del primer error, o null.
+  // Los requeridos van TODOS juntos; el resto se reporta de uno en uno y localizado.
+  const validar = () => {
+    const faltan = REQ_GENERALES.filter((k) => String(datosGenerales[k] ?? '').trim() === '');
+    if (faltan.length) {
+      const campos = {};
+      faltan.forEach((k) => { campos[k] = true; });
+      return { tab: 0, msg: `Faltan campos: ${faltan.join(', ')}`, errores: { ...ERR0, campos } };
+    }
+    if (!(Number(datosGenerales.monto) > 0)) {
+      return { tab: 0, msg: 'El monto debe ser un número mayor a 0', errores: { ...ERR0, campos: { monto: true } } };
+    }
+    if (!(Number.isInteger(Number(datosGenerales.plazoDias)) && Number(datosGenerales.plazoDias) > 0)) {
+      return { tab: 0, msg: 'El plazo debe ser un entero mayor a 0', errores: { ...ERR0, campos: { plazoDias: true } } };
+    }
+    if (datosGenerales.fechaTermino < datosGenerales.fechaInicio) {
+      return { tab: 0, msg: 'La fecha de término no puede ser anterior a la fecha de inicio', errores: { ...ERR0, campos: { fechaInicio: true, fechaTermino: true } } };
+    }
+    if (anticipoPct !== '' && anticipoPct !== null) {
+      const a = Number(anticipoPct);
+      if (!(a >= 0 && a <= 100)) return { tab: 4, msg: 'El % de anticipo debe estar entre 0 y 100', errores: { ...ERR0, campos: { anticipoPct: true } } };
+    }
+    for (let i = 0; i < conceptos.length; i++) {
+      const c = conceptos[i];
+      const cant = Number(c.cantidad);
+      const pu = Number(c.pu);
+      if (!String(c.concepto).trim() || !String(c.unidad).trim() || c.cantidad === '' || c.pu === '' || !(cant >= 0) || !(pu >= 0)) {
+        return { tab: 1, msg: `Concepto #${i + 1}: revisa concepto, unidad, cantidad y P.U.`, errores: { ...ERR0, conceptoIdx: i } };
+      }
+    }
+    for (let i = 0; i < programa.length; i++) {
+      const a = programa[i];
+      if (!String(a.actividad).trim() || !a.inicio || !a.termino || a.peso === '') {
+        return { tab: 2, msg: `Actividad #${i + 1}: revisa actividad, fechas y peso`, errores: { ...ERR0, actividadIdx: i } };
+      }
+      if (a.termino < a.inicio) {
+        return { tab: 2, msg: `Actividad #${i + 1}: el término no puede ser anterior al inicio`, errores: { ...ERR0, actividadIdx: i } };
+      }
+      const pp = Number(a.peso);
+      if (!(pp >= 0 && pp <= 100)) {
+        return { tab: 2, msg: `Actividad #${i + 1}: el peso debe estar entre 0 y 100`, errores: { ...ERR0, actividadIdx: i } };
+      }
+    }
     const sumaPeso = Math.round(programa.reduce((s, a) => s + (Number(a.peso) || 0), 0) * 100) / 100;
     if (sumaPeso > 100) {
-      showToast(`El programa de obra suma ${sumaPeso}% (excede 100%). Ajusta los pesos antes de guardar.`);
-      return;
+      return { tab: 2, msg: `El programa de obra suma ${sumaPeso}% (excede 100%). Ajusta los pesos antes de guardar.`, errores: ERR0 };
     }
+    for (let i = 0; i < garantias.length; i++) {
+      if (!String(garantias[i].tipo).trim()) {
+        return { tab: 4, msg: `Garantía #${i + 1}: el tipo es obligatorio`, errores: { ...ERR0, garantiaIdx: i } };
+      }
+    }
+    return null;
+  };
+
+  const handleGuardar = async () => {
+    if (guardando || soloLectura) return;
+    const v = validar();
+    if (v) { setErrores(v.errores); setTabActivo(v.tab); showToast(v.msg); return; }
+    setErrores(ERR0);
     setGuardando(true);
     try {
       const payload = {
@@ -648,10 +699,20 @@ export default function AltaContrato() {
       cargarContratos();
     } catch (err) {
       if (err.status === 409) {
+        setErrores({ ...ERR0, campos: { folio: true } });
+        setTabActivo(0);
         showToast('El folio ya existe');
       } else if (err.status === 400) {
-        const f = err.payload?.faltantes?.join(', ');
-        showToast(f ? `Faltan campos: ${f}` : (err.message || 'Revisa los datos del formulario'));
+        const f = err.payload?.faltantes;
+        if (f && f.length) {
+          const campos = {};
+          f.forEach((k) => { campos[k] = true; });
+          setErrores({ ...ERR0, campos });
+          setTabActivo(0);
+          showToast(`Faltan campos: ${f.join(', ')}`);
+        } else {
+          showToast(err.message || 'Revisa los datos del formulario');
+        }
       } else if (err.status === 403) {
         showToast('Solo el residente puede crear contratos');
       } else if (err.status === 401) {
@@ -664,53 +725,49 @@ export default function AltaContrato() {
     }
   };
 
+  const handleCancelar = () => {
+    if (soloLectura) return;
+    if (!window.confirm('¿Descartar los cambios y reiniciar el formulario?')) return;
+    setDatosGenerales({ ...DATOS_INICIALES });
+    setDatosJuridicos({ ...JURIDICOS_INICIALES });
+    setAnticipoPct(30);
+    setConceptos(conceptosIniciales());
+    setPrograma(programaIniciales());
+    setGarantias(garantiasIniciales());
+    setErrores(ERR0);
+    setTabActivo(0);
+    setContratoGuardadoId(null);
+  };
+
+  const tabsConError = useMemo(() => {
+    const s = new Set();
+    const c = errores.campos || {};
+    if (REQ_GENERALES.some((k) => c[k])) s.add(0);
+    if (errores.conceptoIdx != null) s.add(1);
+    if (errores.actividadIdx != null) s.add(2);
+    if (c.anticipoPct || errores.garantiaIdx != null) s.add(4);
+    return s;
+  }, [errores]);
+
   const wrapTab = (node) => (
     <RegionEditable disabled={soloLectura}>{node}</RegionEditable>
   );
 
   const tabs = [
-    { label: 'Datos generales', content: wrapTab(<TabDatosGenerales datos={datosGenerales} set={setDatosGen} />) },
+    { label: 'Datos generales', content: wrapTab(<TabDatosGenerales datos={datosGenerales} set={setDatosGen} err={errores.campos} />) },
     { label: 'Catálogo de conceptos', content: wrapTab(
-      <TabCatalogo
-        rows={conceptos}
-        onCell={mkCell(setConceptos)}
-        onPatch={mkPatch(setConceptos)}
-        onAdd={mkAdd(setConceptos, { concepto: '', unidad: '', cantidad: '', pu: '' })}
-        onRemove={mkRemove(setConceptos)}
-        soloLectura={soloLectura}
-      />
+      <TabCatalogo rows={conceptos} onCell={mkCell(setConceptos)} onPatch={mkPatch(setConceptos)} onAdd={mkAdd(setConceptos, { concepto: '', unidad: '', cantidad: '', pu: '' })} onRemove={mkRemove(setConceptos)} soloLectura={soloLectura} errIdx={errores.conceptoIdx} />
     ) },
     { label: 'Programa de obra', content: wrapTab(
-      <TabPrograma
-        rows={programa}
-        onCell={mkCell(setPrograma)}
-        onAdd={mkAdd(setPrograma, { actividad: '', inicio: '', termino: '', peso: '' })}
-        onRemove={mkRemove(setPrograma)}
-        soloLectura={soloLectura}
-      />
+      <TabPrograma rows={programa} onCell={mkCell(setPrograma)} onAdd={mkAdd(setPrograma, { actividad: '', inicio: '', termino: '', peso: '' })} onRemove={mkRemove(setPrograma)} soloLectura={soloLectura} errIdx={errores.actividadIdx} />
     ) },
     { label: 'Datos jurídicos', content: wrapTab(<TabJuridicos datos={datosJuridicos} set={setDatosJur} />) },
     { label: 'Garantías, penalizaciones y amortización', content: wrapTab(
-      <TabGarantias
-        rows={garantias}
-        onCell={mkCell(setGarantias)}
-        onAdd={mkAdd(setGarantias, { tipo: '', afianzadora: '', poliza: '', monto: '', vigencia: '' })}
-        onRemove={mkRemove(setGarantias)}
-        anticipoPct={anticipoPct}
-        setAnticipoPct={setAnticipoPct}
-        soloLectura={soloLectura}
-      />
+      <TabGarantias rows={garantias} onCell={mkCell(setGarantias)} onAdd={mkAdd(setGarantias, { tipo: '', afianzadora: '', poliza: '', monto: '', vigencia: '' })} onRemove={mkRemove(setGarantias)} anticipoPct={anticipoPct} setAnticipoPct={setAnticipoPct} soloLectura={soloLectura} errIdx={errores.garantiaIdx} errAnticipo={errores.campos.anticipoPct} />
     ) },
     { label: 'PDF firmado', content: wrapTab(<TabPdfFirmado contratoId={contratoGuardadoId} soloLectura={soloLectura} />) },
     { label: 'Registrados', content: (
-      <TabRegistrados
-        contratos={contratos}
-        loading={loadingLista}
-        errorMsg={errorLista}
-        sinSesion={sinSesion}
-        onRecargar={cargarContratos}
-        soloLectura={soloLectura}
-      />
+      <TabRegistrados contratos={contratos} loading={loadingLista} errorMsg={errorLista} sinSesion={sinSesion} onRecargar={cargarContratos} soloLectura={soloLectura} />
     ) }
   ];
 
@@ -727,10 +784,10 @@ export default function AltaContrato() {
         ]}
       />
 
-      <Tabs tabs={tabs} />
+      <Tabs tabs={tabs} active={tabActivo} onTabChange={setTabActivo} tabsConError={tabsConError} />
 
       <div className="mt-6 flex justify-end gap-3">
-        <button type="button" className="px-4 py-2 text-slate-600 hover:text-slate-900">
+        <button type="button" onClick={handleCancelar} disabled={soloLectura} className="px-4 py-2 text-slate-600 hover:text-slate-900 disabled:opacity-40">
           Cancelar
         </button>
         <button
