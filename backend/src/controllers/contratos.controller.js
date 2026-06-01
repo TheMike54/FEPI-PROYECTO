@@ -5,8 +5,20 @@ const { pool } = require('../db/pool');
 
 const REQUIRED_FIELDS = [
   'folio', 'tipo', 'objeto', 'contratista', 'dependencia',
-  'monto', 'plazoDias', 'fechaInicio', 'fechaTermino'
+  'monto', 'plazoDias', 'fechaInicio'
 ];
+
+// --- Reglas de dominio HU-01 ---
+const TOLERANCIA_CATALOGO = 1;    // ±$1 entre Σ(catálogo) y el monto (subtotal sin IVA)
+// El dia de inicio cuenta como dia 1; por eso termino = inicio + (plazo - OFFSET_TERMINO_DIAS).
+// Convencion LOPSRM 31-V / RLOPSRM 100. Cambiar aqui si la convencion cambia.
+const OFFSET_TERMINO_DIAS = 1;
+function derivarTermino(inicioISO, plazoDias) {
+  const [y, m, d] = String(inicioISO).split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + (plazoDias - OFFSET_TERMINO_DIAS));
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
+}
 
 // '' / undefined -> NULL para cualquier campo opcional (evita castear '' a DATE
 // o NUMERIC, que aborta la transaccion con 22P02/22007).
@@ -39,10 +51,8 @@ async function crearContrato(req, res) {
     return res.status(400).json({ error: 'plazoDias debe ser un entero mayor a 0' });
   }
 
-  // T1: coherencia de fechas del contrato (ambas ya son requeridas arriba).
-  if (String(body.fechaTermino) < String(body.fechaInicio)) {
-    return res.status(400).json({ error: 'La fecha de término no puede ser anterior a la fecha de inicio' });
-  }
+  // Regla 3: la fecha de término se DERIVA del inicio + plazo (no se confía en el cliente).
+  const fechaTerminoDerivada = derivarTermino(body.fechaInicio, plazoDias);
 
   // T3: longitud de los campos de texto (evita 22001 desde la BD).
   const LIMITES_TEXTO = { folio: 50, tipo: 80, contratista: 200, dependencia: 200 };
@@ -82,8 +92,15 @@ async function crearContrato(req, res) {
     }
     const cant = numOrNull(c.cantidad);
     const pu = numOrNull(c.pu);
-    if (cant === null || cant < 0) return res.status(400).json({ error: `Concepto #${i + 1}: cantidad inválida` });
-    if (pu === null || pu < 0) return res.status(400).json({ error: `Concepto #${i + 1}: precio unitario inválido` });
+    if (cant === null || cant <= 0) return res.status(400).json({ error: `Concepto #${i + 1}: la cantidad debe ser mayor a 0` });
+    if (pu === null || pu <= 0) return res.status(400).json({ error: `Concepto #${i + 1}: el precio unitario debe ser mayor a 0` });
+  }
+  // Regla 1: si hay catálogo, Σ(cantidad×pu) debe coincidir con el monto (subtotal sin IVA), ±$1.
+  if (conceptos.length > 0) {
+    const sumaCatalogo = conceptos.reduce((s, c) => s + (numOrNull(c.cantidad) || 0) * (numOrNull(c.pu) || 0), 0);
+    if (Math.abs(sumaCatalogo - monto) > TOLERANCIA_CATALOGO) {
+      return res.status(400).json({ error: `El catálogo suma ${sumaCatalogo.toFixed(2)} pero el monto (subtotal sin IVA) es ${monto.toFixed(2)}; deben coincidir (±$${TOLERANCIA_CATALOGO}).` });
+    }
   }
   for (const [i, a] of actividades.entries()) {
     if (!a.actividad || !a.inicio || !a.termino) {
@@ -96,6 +113,10 @@ async function crearContrato(req, res) {
     if (a.termino < a.inicio) {
       return res.status(400).json({ error: `Actividad #${i + 1}: el término no puede ser anterior al inicio` });
     }
+    // Regla 5: la actividad debe estar dentro del plazo del contrato.
+    if (a.inicio < body.fechaInicio || a.termino > fechaTerminoDerivada) {
+      return res.status(400).json({ error: `Actividad #${i + 1}: debe estar dentro del plazo del contrato (inicio ≥ ${body.fechaInicio} y término ≤ ${fechaTerminoDerivada})` });
+    }
   }
   // El programa de obra no puede EXCEDER 100% (suma parcial <100% si permitida).
   const sumaPeso = Math.round(actividades.reduce((s, a) => s + (numOrNull(a.peso) || 0), 0) * 100) / 100;
@@ -106,7 +127,7 @@ async function crearContrato(req, res) {
     if (!g.tipo) return res.status(400).json({ error: `Garantía #${i + 1}: el tipo es obligatorio` });
   }
 
-  const { folio, tipo, objeto, contratista, dependencia, fechaInicio, fechaTermino } = body;
+  const { folio, tipo, objeto, contratista, dependencia, fechaInicio } = body;
 
   // --- 2) Transaccion: cabecera + bloques = una sola entidad (todo o nada) ----
   let client;
@@ -123,7 +144,7 @@ async function crearContrato(req, res) {
          RETURNING id`,
         [
           folio, tipo, objeto, contratista, dependencia, monto, plazoDias,
-          fechaInicio, fechaTermino, req.user.id,
+          fechaInicio, fechaTerminoDerivada, req.user.id,
           juridicos ? JSON.stringify(juridicos) : null,
           anticipoPct
         ]
