@@ -53,10 +53,10 @@ export function SesionProvider({ children }) {
 
   const salirRol = useCallback(() => setRol(null), []);
 
-  const cambiarModo = useCallback((nuevoModo) => {
-    setModo(nuevoModo);
-    if (nuevoModo === 'proyecto') setRol(null);
-  }, []);
+  // Alternar modo NO borra el rol: el rol se conserva al pasar de proyecto a
+  // aplicación y viceversa. El rol solo se limpia con logout o "Cambiar de rol"
+  // (salirRol), que llevan al selector. Así "modo proyecto" también opera con un rol.
+  const cambiarModo = useCallback((nuevoModo) => setModo(nuevoModo), []);
 
   const value = useMemo(
     () => ({ modo, rol, usuario, token, setModo: cambiarModo, setRol, salirRol, login, logout }),
@@ -83,10 +83,15 @@ export function useVistaHU(huId) {
   const { modo, rol } = useSesion();
   const enModoApp = modo === 'aplicacion';
   const nivel = nivelDe(huId, rol);
+  // El control de acceso por rol aplica en AMBOS modos (proyecto y aplicación):
+  // solo 'E' (ejecuta) permite editar; 'C' (consulta) y null (sin acceso) quedan en
+  // solo lectura. 'sinAcceso' lo usa el ruteo para bloquear el deep-link a una HU
+  // que el rol no puede ver.
   return {
     enModoApp,
     mostrarMeta: !enModoApp,
-    soloLectura: enModoApp && nivel === 'C',
+    soloLectura: nivel !== 'E',
+    sinAcceso: nivel === null,
     nivel
   };
 }

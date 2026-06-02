@@ -7,23 +7,23 @@ export default function Sidebar() {
   const { modo, rol, salirRol } = useSesion();
   const enModoApp = modo === 'aplicacion';
 
-  // En modo aplicación: filtrar por permisos y ocultar HU-00 (login transversal).
-  // En modo proyecto: las 12 vistas tal cual.
-  const entradas = enModoApp
-    ? historiasUsuario
-        .filter((hu) => hu.codigo !== 'HU-00' && nivelDe(hu.codigo, rol) !== null)
-        .map((hu) => ({ ...hu, nivel: nivelDe(hu.codigo, rol) }))
-    : historiasUsuario.map((hu) => ({ ...hu, nivel: null }));
+  // El control por rol aplica en AMBOS modos: solo se listan las HU accesibles para
+  // el rol (nivel != null), ocultando HU-00 (login transversal). En modo proyecto se
+  // conserva la presentación (código de HU, Propuestas) pero ya filtrada por rol; así
+  // el menú no muestra enlaces que la guarda de ruta rebotaría al inicio.
+  const entradas = historiasUsuario
+    .filter((hu) => hu.codigo !== 'HU-00' && nivelDe(hu.codigo, rol) !== null)
+    .map((hu) => ({ ...hu, nivel: nivelDe(hu.codigo, rol) }));
 
   const rolActivo = ROLES.find((r) => r.id === rol);
 
   return (
     <aside className="w-64 bg-white border-r border-slate-200 flex-shrink-0 overflow-y-auto">
       <div className="px-4 py-4">
-        {enModoApp && rolActivo && (
+        {rolActivo && (
           <div className="mb-4 p-3 rounded-md bg-sigecop-blue-light border border-sigecop-accent/30">
             <div className="text-[10px] uppercase tracking-wider text-sigecop-blue font-semibold">
-              Sesión actual
+              Rol activo
             </div>
             <div className="text-sm font-bold text-sigecop-blue leading-tight mt-0.5">
               {rolActivo.nombre}
@@ -62,7 +62,7 @@ export default function Sidebar() {
                 )}
                 <div className="text-sm leading-tight flex items-center gap-2">
                   {hu.titulo}
-                  {enModoApp && hu.nivel === 'C' && (
+                  {hu.nivel === 'C' && (
                     <span className="text-[9px] uppercase tracking-wider bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded">
                       lectura
                     </span>
@@ -75,7 +75,7 @@ export default function Sidebar() {
 
         {/* Bandeja de firmas pendientes: cualquier miembro de equipo (residente,
             contratista/superintendente, supervisión). Fuera del catálogo de HU. */}
-        {enModoApp && ['residente', 'contratista', 'supervision'].includes(rol) && (
+        {['residente', 'contratista', 'supervision'].includes(rol) && (
           <div className="mt-6 pt-4 border-t border-slate-200">
             <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 px-3 mb-2">
               Bitácora
@@ -102,7 +102,7 @@ export default function Sidebar() {
 
         {/* Administración de la dependencia: gestión de solicitudes de registro.
             Fuera del catálogo de HU para no alterar conteos ni permisos por HU. */}
-        {enModoApp && rol === 'dependencia' && (
+        {rol === 'dependencia' && (
           <div className="mt-6 pt-4 border-t border-slate-200">
             <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 px-3 mb-2">
               Administración

@@ -8,11 +8,11 @@ export default function Inicio() {
   const enModoApp = modo === 'aplicacion';
   const rolActivo = ROLES.find((r) => r.id === rol);
 
-  const tarjetas = enModoApp
-    ? historiasUsuario
-        .filter((hu) => hu.codigo !== 'HU-00' && nivelDe(hu.codigo, rol) !== null)
-        .map((hu) => ({ ...hu, nivel: nivelDe(hu.codigo, rol) }))
-    : historiasUsuario.map((hu) => ({ ...hu, nivel: null }));
+  // Control por rol en AMBOS modos: el dashboard solo muestra las HU accesibles para
+  // el rol (consistente con el Sidebar y con la guarda de ruta).
+  const tarjetas = historiasUsuario
+    .filter((hu) => hu.codigo !== 'HU-00' && nivelDe(hu.codigo, rol) !== null)
+    .map((hu) => ({ ...hu, nivel: nivelDe(hu.codigo, rol) }));
 
   return (
     <div>
@@ -48,7 +48,7 @@ export default function Inicio() {
                   {hu.sprint}
                 </span>
               )}
-              {enModoApp && hu.nivel === 'C' && (
+              {hu.nivel === 'C' && (
                 <span className="text-[10px] uppercase tracking-wider bg-slate-200 text-slate-600 px-2 py-0.5 rounded">
                   lectura
                 </span>

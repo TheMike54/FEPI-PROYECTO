@@ -34,6 +34,9 @@ export const PERMISOS = {
 // HU-00 (login) es transversal: no se filtra.
 
 export function nivelDe(huId, rolId) {
-  if (!rolId) return 'E';            // sin rol (modo proyecto) = todo visible
+  // Default SEGURO: sin rol seleccionado = SIN acceso (nunca "ejecutar todo"). El
+  // ruteo (App.jsx) obliga a elegir rol/login antes de entrar, así que este caso no
+  // debería renderizar vistas; el null es la red de seguridad si algo lo llamara.
+  if (!rolId) return null;
   return PERMISOS[huId]?.[rolId] ?? null;
 }

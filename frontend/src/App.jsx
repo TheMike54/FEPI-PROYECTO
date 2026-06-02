@@ -1,6 +1,8 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { ToastProvider } from './components/ui/Toast.jsx';
 import { SesionProvider, useSesion } from './context/SesionContext.jsx';
+import { nivelDe } from './data/permisos.js';
+import { historiasUsuario } from './data/dummy.js';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import Layout from './components/layout/Layout.jsx';
 import Inicio from './pages/Inicio.jsx';
@@ -30,14 +32,32 @@ import TableroEstimaciones from './pages/TableroEstimaciones.jsx';
 import PortafolioEjecutivo from './pages/PortafolioEjecutivo.jsx';
 import ExportacionReportes from './pages/ExportacionReportes.jsx';
 
-// Envuelve con Layout. Si está en modo aplicación sin rol, intercepta y muestra
-// la pantalla de login + selector demo (HU-00). El login real vive ahí dentro;
-// no hay ruta /login dedicada.
+// Mapa ruta -> código de HU (excluye HU-00, que es login/dashboard). Permite que la
+// guarda de ruta sepa qué HU corresponde a cada path para validar el acceso por rol.
+const HU_POR_RUTA = Object.fromEntries(
+  historiasUsuario.filter((h) => h.codigo !== 'HU-00').map((h) => [h.ruta, h.codigo])
+);
+
+// Envuelve con Layout. Dos guardas de acceso:
+//  1) SIN rol (login real o demo) -> selector de login/registro/demo (HU-00). Nunca
+//     se entra "sin rol" a ejecutar todo; aplica en AMBOS modos (proyecto y aplicación).
+//  2) Con rol, si la HU de esta ruta NO es accesible para el rol (nivel null) -> al
+//     inicio. El control por rol también bloquea el DEEP-LINK, no solo oculta el menú.
 function WithLayout({ children }) {
-  const { modo, rol } = useSesion();
-  if (modo === 'aplicacion' && !rol) {
-    return <SeleccionRol />;
-  }
+  const { rol } = useSesion();
+  const { pathname } = useLocation();
+  if (!rol) return <SeleccionRol />;
+  const hu = HU_POR_RUTA[pathname];
+  if (hu && nivelDe(hu, rol) === null) return <Navigate to="/" replace />;
+  return <Layout>{children}</Layout>;
+}
+
+// Rutas sin HU del catálogo (bandeja de firmas, administración) acotadas por rol.
+// Sin rol -> selector; rol no permitido -> al inicio.
+function SoloRol({ roles, children }) {
+  const { rol } = useSesion();
+  if (!rol) return <SeleccionRol />;
+  if (!roles.includes(rol)) return <Navigate to="/" replace />;
   return <Layout>{children}</Layout>;
 }
 
@@ -59,7 +79,7 @@ export default function App() {
             <Route path="/contratos/alta" element={<WithLayout><AltaContrato /></WithLayout>} />
             <Route path="/contratos/fianzas" element={<WithLayout><RegistroFianzas /></WithLayout>} />
             <Route path="/bitacora/apertura" element={<WithLayout><AperturaBitacora /></WithLayout>} />
-            <Route path="/bitacora/por-firmar" element={<WithLayout><PorFirmar /></WithLayout>} />
+            <Route path="/bitacora/por-firmar" element={<SoloRol roles={['residente', 'contratista', 'supervision']}><PorFirmar /></SoloRol>} />
             <Route path="/bitacora/notas" element={<WithLayout><EmisionNotas /></WithLayout>} />
             <Route path="/bitacora/consulta" element={<WithLayout><ConsultaNotas /></WithLayout>} />
             <Route path="/bitacora/minutas" element={<WithLayout><MinutasVisitas /></WithLayout>} />
@@ -79,7 +99,7 @@ export default function App() {
             <Route path="/seguimiento/curva-avance" element={<WithLayout><CurvaAvance /></WithLayout>} />
             <Route path="/seguimiento/trabajos-terminados" element={<WithLayout><TrabajosTerminados /></WithLayout>} />
             <Route path="/solicitud-acceso" element={<SoloModoProyecto><SolicitudRegistro /></SoloModoProyecto>} />
-            <Route path="/usuarios/solicitudes" element={<WithLayout><SolicitudesRegistro /></WithLayout>} />
+            <Route path="/usuarios/solicitudes" element={<SoloRol roles={['dependencia']}><SolicitudesRegistro /></SoloRol>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </ErrorBoundary>
