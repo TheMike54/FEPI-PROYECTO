@@ -1,0 +1,38 @@
+# CODEOWNERS — SIGECOP
+# ZONA CONGELADA (§5 del plan de partición). Cualquier PR que toque estos archivos
+# auto-asigna como revisor obligatorio a @TheMike54 (el integrador).
+#
+# Para que ESTO SE HAGA CUMPLIR (no solo auto-asigne), activar en GitHub:
+#   Settings > Branches > Branch protection rule de `main`
+#     [x] Require a pull request before merging
+#     [x] Require review from Code Owners
+# Sin esa regla, CODEOWNERS solo pide review automáticamente pero no bloquea el merge.
+#
+# Nota: la última regla que coincide gana; aquí todas apuntan al mismo dueño.
+
+# --- Fundación backend: auth / JWT / control de acceso ---
+/backend/server.js                               @TheMike54
+/backend/src/middlewares/auth.middleware.js      @TheMike54
+/backend/src/lib/acceso.js                       @TheMike54
+/backend/src/controllers/auth.controller.js      @TheMike54
+/backend/src/routes/auth.routes.js               @TheMike54
+/backend/src/controllers/usuarios.controller.js  @TheMike54
+/backend/src/routes/usuarios.routes.js           @TheMike54
+
+# --- Fundación backend: contrato + catálogo (alta) ---
+/backend/src/controllers/contratos.controller.js @TheMike54
+/backend/src/routes/contratos.routes.js          @TheMike54
+
+# --- Fundación backend: integración de estimación (HU-12) ---
+/backend/src/controllers/estimaciones.controller.js @TheMike54
+/backend/src/routes/estimaciones.routes.js          @TheMike54
+
+# --- Fundación: esquema core + arranque de la BD ---
+/backend/src/db/schema.sql @TheMike54
+/backend/src/db/init.js    @TheMike54
+/backend/src/db/pool.js    @TheMike54
+
+# --- Fundación frontend: sesión + control de acceso por rol ---
+/frontend/src/App.jsx                   @TheMike54
+/frontend/src/data/permisos.js          @TheMike54
+/frontend/src/context/SesionContext.jsx @TheMike54
