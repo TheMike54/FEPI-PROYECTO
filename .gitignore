@@ -84,3 +84,12 @@ comandos usuario.txt
 
 # Acordeón de defensa (material interno, marcado "no entregable")
 Acordeon_Defensa_SIGECOP.md
+
+# Respaldos de BD en formato JSON (el patrón .sql no los cubre)
+render_backup_*.json
+
+# Transcripciones de reuniones (audio/video) — material interno
+*_transcript.txt
+
+# Análisis interno de la revisión del profesor (lo nombra; no entregable)
+Revision_Profesor*.md
