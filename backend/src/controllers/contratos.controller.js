@@ -4,13 +4,15 @@
 const { pool } = require('../db/pool');
 const { ROLES_VEN_TODO, esParteOSupervision } = require('../lib/acceso');
 
+// 'monto' NO se captura: se DERIVA del catálogo (Σ ROUND(cantidad×pu,2), art. 45 fr. IX
+// RLOPSRM: el catálogo con sus importes ES el presupuesto). Sin catálogo (precio alzado)
+// se captura aparte; ver crearContrato.
 const REQUIRED_FIELDS = [
   'folio', 'tipo', 'objeto', 'contratista', 'dependencia',
-  'monto', 'plazoDias', 'fechaInicio'
+  'plazoDias', 'fechaInicio'
 ];
 
 // --- Reglas de dominio HU-01 ---
-const TOLERANCIA_CATALOGO = 1;    // ±$1 entre Σ(catálogo) y el monto (subtotal sin IVA)
 // El dia de inicio cuenta como dia 1; por eso termino = inicio + (plazo - OFFSET_TERMINO_DIAS).
 // Convencion LOPSRM 31-V / RLOPSRM 100. Cambiar aqui si la convencion cambia.
 const OFFSET_TERMINO_DIAS = 1;
@@ -48,11 +50,6 @@ async function crearContrato(req, res) {
   );
   if (faltantes.length > 0) {
     return res.status(400).json({ error: 'Faltan campos requeridos', faltantes });
-  }
-
-  const monto = Number(body.monto);
-  if (!Number.isFinite(monto) || monto <= 0) {
-    return res.status(400).json({ error: 'monto debe ser un número mayor a 0' });
   }
 
   const plazoDias = Number(body.plazoDias);
@@ -96,6 +93,15 @@ async function crearContrato(req, res) {
     if (!c.concepto || !c.unidad) {
       return res.status(400).json({ error: `Concepto #${i + 1}: concepto y unidad son obligatorios` });
     }
+    // Clave CAPTURADA por el usuario, obligatoria en altas nuevas (art. 45 fr. IX RLOPSRM:
+    // el catálogo lo diseña el usuario). UNIQUE(contrato_id, clave) la blinda en BD; los
+    // contratos viejos quedan con clave NULL (no se auto-migran).
+    if (!String(c.clave || '').trim()) {
+      return res.status(400).json({ error: `Concepto #${i + 1}: la clave del concepto es obligatoria (la define el usuario)` });
+    }
+    if (String(c.clave).trim().length > 40) {
+      return res.status(400).json({ error: `Concepto #${i + 1}: la clave excede el máximo de 40 caracteres` });
+    }
     if (String(c.unidad).length > 20) {
       return res.status(400).json({ error: `Concepto #${i + 1}: la unidad excede el máximo de 20 caracteres` });
     }
@@ -104,11 +110,24 @@ async function crearContrato(req, res) {
     if (cant === null || cant <= 0) return res.status(400).json({ error: `Concepto #${i + 1}: la cantidad debe ser mayor a 0` });
     if (pu === null || pu <= 0) return res.status(400).json({ error: `Concepto #${i + 1}: el precio unitario debe ser mayor a 0` });
   }
-  // Regla 1: si hay catálogo, Σ(cantidad×pu) debe coincidir con el monto (subtotal sin IVA), ±$1.
+  // Monto DERIVADO del catálogo = Σ ROUND(cantidad×pu, 2) con Postgres NUMERIC: UN SOLO
+  // motor de redondeo y la MISMA fórmula que el subtotal de estimaciones, así el monto del
+  // contrato y el subtotal de los generadores coinciden al centavo. SIN tolerancia: el monto
+  // ES la suma (art. 45 fr. IX RLOPSRM). Sin catálogo (precio alzado) se usa el monto capturado.
+  let monto;
   if (conceptos.length > 0) {
-    const sumaCatalogo = conceptos.reduce((s, c) => s + (numOrNull(c.cantidad) || 0) * (numOrNull(c.pu) || 0), 0);
-    if (Math.abs(sumaCatalogo - monto) > TOLERANCIA_CATALOGO) {
-      return res.status(400).json({ error: `El catálogo suma ${sumaCatalogo.toFixed(2)} pero el monto (subtotal sin IVA) es ${monto.toFixed(2)}; deben coincidir (±$${TOLERANCIA_CATALOGO}).` });
+    const vals = conceptos.map((_, i) => `($${i * 2 + 1}::numeric(14,3), $${i * 2 + 2}::numeric(16,4))`).join(', ');
+    const prm = conceptos.flatMap((c) => [numOrNull(c.cantidad), numOrNull(c.pu)]);
+    const mr = await pool.query(
+      `SELECT COALESCE(SUM(ROUND(t.cant * t.pu, 2)), 0)::numeric(14,2) AS monto
+         FROM (VALUES ${vals}) AS t(cant, pu)`,
+      prm
+    );
+    monto = mr.rows[0].monto; // string NUMERIC (p. ej. '7199999.99')
+  } else {
+    monto = numOrNull(body.monto);
+    if (monto === null || !(Number(monto) > 0)) {
+      return res.status(400).json({ error: 'Sin catálogo de conceptos, captura el monto del contrato (mayor a 0)' });
     }
   }
   for (const [i, a] of actividades.entries()) {
@@ -191,9 +210,9 @@ async function crearContrato(req, res) {
 
       for (const [i, c] of conceptos.entries()) {
         await client.query(
-          `INSERT INTO contrato_conceptos (contrato_id, orden, concepto, unidad, cantidad, pu)
-           VALUES ($1,$2,$3,$4,$5,$6)`,
-          [contratoId, i + 1, c.concepto, c.unidad, numOrNull(c.cantidad), numOrNull(c.pu)]
+          `INSERT INTO contrato_conceptos (contrato_id, orden, clave, concepto, unidad, cantidad, pu)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [contratoId, i + 1, String(c.clave).trim(), c.concepto, c.unidad, numOrNull(c.cantidad), numOrNull(c.pu)]
         );
       }
       for (const [i, a] of actividades.entries()) {
@@ -224,6 +243,9 @@ async function crearContrato(req, res) {
     if (err.code === '23505') {
       if (err.constraint && err.constraint.includes('folio')) {
         return res.status(409).json({ error: 'El folio ya existe' });
+      }
+      if (err.constraint && err.constraint.includes('clave')) {
+        return res.status(400).json({ error: 'Hay una clave de concepto repetida; cada clave debe ser única dentro del contrato.' });
       }
       return res.status(400).json({ error: 'Hay un renglón duplicado en un sub-bloque (concepto, actividad o garantía).' });
     }

@@ -18,7 +18,17 @@ const UNIDADES = ['m', 'm²', 'm³', 'ml', 'cm', 'kg', 'ton', 'pza', 'lote', 'jo
 
 // --- Reglas de dominio HU-01 ---
 const IVA_RATE = 0.16;            // IVA derivado (solo se muestra, NO se guarda)
-const TOLERANCIA_CATALOGO = 1;    // ±$1 entre Σ(catálogo) y el monto (subtotal sin IVA)
+
+// Cuadre EXACTO (A1.3): el monto se DERIVA del catálogo = Σ ROUND(cantidad×pu, 2). No hay
+// captura de monto ni tolerancia. round2/round4 replican el redondeo del backend (NUMERIC).
+const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+const round4 = (n) => Math.round((Number(n) + Number.EPSILON) * 1e4) / 1e4;
+// Importe del renglón = ROUND(cantidad×pu, 2) como STRING '0.00' ('' si falta cantidad/pu).
+const importeDe = (cantidad, pu) => {
+  const cant = Number(cantidad);
+  if (!(cant > 0) || pu === '' || pu == null || !(Number(pu) >= 0)) return '';
+  return round2(cant * Number(pu)).toFixed(2);
+};
 // El día de inicio cuenta como día 1; por eso término = inicio + (plazo − OFFSET_TERMINO_DIAS).
 // Convención LOPSRM 31-V / RLOPSRM 100. Cambiar aquí si la convención cambia.
 const OFFSET_TERMINO_DIAS = 1;
@@ -55,7 +65,6 @@ const DATOS_INICIALES = {
   objeto: 'Construcción de edificio administrativo en av. principal',
   contratista: 'Constructora XYZ S.A. de C.V.',
   dependencia: 'Secretaría de Obras Públicas',
-  monto: 1906850,
   plazoDias: 181,
   fechaInicio: '2026-06-01'
 };
@@ -82,10 +91,10 @@ function Field({ label, required, children, hint }) {
   );
 }
 
-function TabDatosGenerales({ datos, set, err, equipo }) {
+function TabDatosGenerales({ datos, set, err, equipo, montoDerivado }) {
   const e = err || {};
   const eq = equipo || {};
-  const montoNum = Number(datos.monto) || 0;
+  const montoNum = Number(montoDerivado) || 0;
   const terminoDerivado = derivarTermino(datos.fechaInicio, Number(datos.plazoDias));
   return (
     <div>
@@ -112,8 +121,8 @@ function TabDatosGenerales({ datos, set, err, equipo }) {
         <Field label="Dependencia" required>
           <input className={inputCls(e.dependencia)} maxLength={200} value={datos.dependencia} onChange={set('dependencia')} />
         </Field>
-        <Field label="Monto del contrato (subtotal sin IVA)" required hint="Debe coincidir con la suma del catálogo de conceptos.">
-          <input type="number" min="0" step="0.01" className={inputCls(e.monto)} value={datos.monto} onChange={set('monto')} />
+        <Field label="Monto del contrato (derivado del catálogo)" hint="Σ de los importes del catálogo (sin IVA). No se captura; se deriva al centavo.">
+          <input className="sg-input bg-slate-100 text-slate-700" value={montoNum ? formatoMXN.format(montoNum) : '—'} readOnly data-testid="monto-derivado" />
         </Field>
         <Field label="Plazo (días naturales)" required>
           <input type="number" min="1" step="1" className={inputCls(e.plazoDias)} value={datos.plazoDias} onChange={set('plazoDias')} />
@@ -166,37 +175,35 @@ function TabDatosGenerales({ datos, set, err, equipo }) {
   );
 }
 
-function TabCatalogo({ rows, onCell, onPatch, onAdd, onRemove, soloLectura, errIdx, monto }) {
-  const total = rows.reduce((s, c) => s + (Number(c.cantidad) || 0) * (Number(c.pu) || 0), 0);
-  const montoNum = Number(monto) || 0;
+function TabCatalogo({ rows, onCell, onPatch, onAdd, onRemove, soloLectura, errIdx, onCantidad, onPu, onImporte, onImporteBlur, montoDerivado }) {
+  const total = Number(montoDerivado) || 0; // = Σ importes = monto derivado, exacto al centavo
   const hayConceptos = rows.length > 0;
-  const dif = total - montoNum;
-  const cuadra = Math.abs(dif) <= TOLERANCIA_CATALOGO;
   return (
     <div>
       <h3 className="text-lg font-bold text-sigecop-blue mb-4">Catálogo de conceptos</h3>
       <p className="text-sm text-slate-600 mb-3">
-        Conceptos del contrato sobre la base de precios unitarios. Si capturas conceptos, su suma debe coincidir con el monto (subtotal sin IVA).
+        Conceptos sobre la base de precios unitarios. Cada concepto lleva su <strong>clave</strong> (la defines tú). El <strong>monto se DERIVA</strong> = Σ de los importes; teclea el P.U. <em>o</em> el importe (el otro se calcula).
       </p>
       <div className="overflow-x-auto border border-slate-200 rounded-md">
         <table className="w-full text-sm">
           <thead className="bg-sigecop-blue-light text-sigecop-blue">
             <tr>
+              <th className="text-left px-3 py-2 w-28">Clave</th>
               <th className="text-left px-3 py-2">Concepto</th>
-              <th className="text-left px-3 py-2 w-32">Unidad</th>
-              <th className="text-right px-3 py-2 w-32">Cantidad</th>
-              <th className="text-right px-3 py-2 w-36">P.U.</th>
+              <th className="text-left px-3 py-2 w-28">Unidad</th>
+              <th className="text-right px-3 py-2 w-28">Cantidad</th>
+              <th className="text-right px-3 py-2 w-32">P.U.</th>
               <th className="text-right px-3 py-2 w-36">Importe</th>
               <th className="w-10 px-2 py-2"></th>
             </tr>
           </thead>
           <tbody>
             {rows.map((c, i) => {
-              const importe = (Number(c.cantidad) || 0) * (Number(c.pu) || 0);
               const esOtro = c.unidadOtro || (c.unidad !== '' && !UNIDADES.includes(c.unidad));
               const unidadSel = esOtro ? 'Otro' : c.unidad;
               return (
                 <tr key={c.rid} className={`border-t border-slate-200 ${errIdx === i ? 'bg-red-50' : ''}`}>
+                  <td className="px-2 py-1 align-top"><input className="sg-input font-mono text-xs" maxLength={40} placeholder="p.ej. AD.01" value={c.clave || ''} onChange={onCell(i, 'clave')} disabled={soloLectura} data-testid={`concepto-clave-${i}`} /></td>
                   <td className="px-2 py-1 align-top"><input className="sg-input" value={c.concepto} onChange={onCell(i, 'concepto')} disabled={soloLectura} /></td>
                   <td className="px-2 py-1 align-top">
                     <select className="sg-input" value={unidadSel}
@@ -210,9 +217,9 @@ function TabCatalogo({ rows, onCell, onPatch, onAdd, onRemove, soloLectura, errI
                       <input className="sg-input mt-1" placeholder="Especifica la unidad" maxLength={20} value={c.unidad} onChange={onCell(i, 'unidad')} disabled={soloLectura} />
                     )}
                   </td>
-                  <td className="px-2 py-1 align-top"><input type="number" min="0" step="0.001" className="sg-input text-right" value={c.cantidad} onChange={onCell(i, 'cantidad')} disabled={soloLectura} /></td>
-                  <td className="px-2 py-1 align-top"><input type="number" min="0" step="0.01" className="sg-input text-right" value={c.pu} onChange={onCell(i, 'pu')} disabled={soloLectura} /></td>
-                  <td className="px-3 py-2 text-right font-semibold whitespace-nowrap align-top">{formatoMXN.format(importe)}</td>
+                  <td className="px-2 py-1 align-top"><input type="number" min="0" step="0.001" className="sg-input text-right" value={c.cantidad} onChange={onCantidad(i)} disabled={soloLectura} data-testid={`concepto-cantidad-${i}`} /></td>
+                  <td className="px-2 py-1 align-top"><input type="number" min="0" step="0.0001" className="sg-input text-right" value={c.pu} onChange={onPu(i)} disabled={soloLectura} data-testid={`concepto-pu-${i}`} /></td>
+                  <td className="px-2 py-1 align-top"><input type="number" min="0" step="0.01" className="sg-input text-right font-semibold" value={c.importe || ''} onChange={onImporte(i)} onBlur={onImporteBlur(i)} disabled={soloLectura} data-testid={`concepto-importe-${i}`} /></td>
                   <td className="px-2 py-1 text-center align-top">
                     <button type="button" onClick={() => onRemove(i)} disabled={soloLectura} className="text-red-500 hover:text-red-700 disabled:opacity-30" title="Quitar concepto">✕</button>
                   </td>
@@ -220,13 +227,13 @@ function TabCatalogo({ rows, onCell, onPatch, onAdd, onRemove, soloLectura, errI
               );
             })}
             {rows.length === 0 && (
-              <tr><td colSpan={6} className="px-3 py-4 text-center text-slate-400">Sin conceptos. Agrega uno o deja el bloque vacío.</td></tr>
+              <tr><td colSpan={7} className="px-3 py-4 text-center text-slate-400">Sin conceptos. Agrega al menos uno (el monto se deriva del catálogo).</td></tr>
             )}
           </tbody>
           {hayConceptos && (
             <tfoot>
               <tr className="border-t-2 border-slate-300 bg-slate-50">
-                <td colSpan={4} className="px-3 py-2 text-right font-semibold text-slate-700">Total del catálogo (Σ cantidad × P.U.)</td>
+                <td colSpan={5} className="px-3 py-2 text-right font-semibold text-slate-700">Monto del contrato (Σ importes)</td>
                 <td className="px-3 py-2 text-right font-bold text-sigecop-blue whitespace-nowrap" data-testid="catalogo-total">{formatoMXN.format(total)}</td>
                 <td></td>
               </tr>
@@ -235,10 +242,8 @@ function TabCatalogo({ rows, onCell, onPatch, onAdd, onRemove, soloLectura, errI
         </table>
       </div>
       {hayConceptos && (
-        <div className={`mt-3 px-3 py-2 rounded border text-sm font-medium ${cuadra ? 'text-green-700 bg-green-50 border-green-300' : 'text-red-700 bg-red-50 border-red-300'}`} data-testid="catalogo-indicador">
-          {cuadra
-            ? `✓ El catálogo cuadra con el monto del contrato (${formatoMXN.format(total)}).`
-            : `El catálogo suma ${formatoMXN.format(total)} y el monto (subtotal) es ${formatoMXN.format(montoNum)} — diferencia ${formatoMXN.format(Math.abs(dif))}. Deben coincidir (±$${TOLERANCIA_CATALOGO}).`}
+        <div className="mt-3 px-3 py-2 rounded border text-sm font-medium text-green-700 bg-green-50 border-green-300" data-testid="catalogo-indicador">
+          ✓ Cuadre exacto: el monto del contrato es la suma de los importes ({formatoMXN.format(total)}), al centavo, sin tolerancia.
         </div>
       )}
       <button type="button" onClick={onAdd} disabled={soloLectura} className="mt-3 text-sm text-sigecop-accent hover:underline disabled:opacity-40">
@@ -573,7 +578,7 @@ function TabRegistrados({ contratos, loading, errorMsg, sinSesion, onRecargar, s
   );
 }
 
-const REQ_GENERALES = ['folio', 'tipo', 'objeto', 'contratista', 'dependencia', 'monto', 'plazoDias', 'fechaInicio'];
+const REQ_GENERALES = ['folio', 'tipo', 'objeto', 'contratista', 'dependencia', 'plazoDias', 'fechaInicio'];
 
 export default function AltaContrato() {
   const { showToast } = useToast();
@@ -583,7 +588,7 @@ export default function AltaContrato() {
 
   const ridCounter = useRef(0);
   const nextRid = () => (ridCounter.current += 1);
-  const conceptosIniciales = () => conceptosDummy.map((c) => ({ rid: nextRid(), concepto: c.concepto, unidad: c.unidad, cantidad: c.cantidad, pu: c.pu }));
+  const conceptosIniciales = () => conceptosDummy.map((c) => ({ rid: nextRid(), clave: c.clave || '', concepto: c.concepto, unidad: c.unidad, cantidad: c.cantidad, pu: c.pu, importe: importeDe(c.cantidad, c.pu) }));
   const programaIniciales = () => programaObraDummy.map((a) => ({ rid: nextRid(), actividad: a.actividad, inicio: a.inicio, termino: a.termino, peso: a.peso }));
   const garantiasIniciales = () => polizasGarantiaDummy.map((g) => ({ rid: nextRid(), tipo: g.tipo, afianzadora: g.afianzadora, poliza: g.poliza, monto: g.monto, vigencia: g.vigencia }));
 
@@ -610,6 +615,23 @@ export default function AltaContrato() {
   const mkAdd = (setter, vacio) => () => setter((prev) => [...prev, { ...vacio, rid: nextRid() }]);
   const mkRemove = (setter) => (i) => setter((prev) => prev.filter((_, idx) => idx !== i));
   const mkPatch = (setter) => (i, patch) => setter((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+
+  // --- Captura del catálogo con cuadre EXACTO (A1.3) ---
+  // pu es el dato canónico; importe = ROUND(cantidad×pu, 2). Teclear el importe back-solea pu
+  // a 4 decimales y el importe "snapea" al valor real (en blur). El monto del contrato se
+  // DERIVA = Σ importes (lo deriva también el backend; no se captura ni se envía en el payload).
+  const setConcepto = (i, patch) => setConceptos((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  const onConceptoCantidad = (i) => (e) => { const cantidad = e.target.value; setConceptos((prev) => prev.map((r, idx) => (idx === i ? { ...r, cantidad, importe: importeDe(cantidad, r.pu) } : r))); };
+  const onConceptoPu = (i) => (e) => { const pu = e.target.value; setConceptos((prev) => prev.map((r, idx) => (idx === i ? { ...r, pu, importe: importeDe(r.cantidad, pu) } : r))); };
+  const onConceptoImporte = (i) => (e) => setConcepto(i, { importe: e.target.value }); // crudo mientras se teclea
+  const onConceptoImporteBlur = (i) => () => setConceptos((prev) => prev.map((r, idx) => {
+    if (idx !== i || r.importe === '' || r.importe == null) return r;
+    const cant = Number(r.cantidad), imp = Number(r.importe);
+    if (!(cant > 0) || !(imp >= 0)) return r;
+    const pu = round4(imp / cant);
+    return { ...r, pu: String(pu), importe: importeDe(r.cantidad, pu) }; // snapea al importe real resultante
+  }));
+  const montoDerivado = round2(conceptos.reduce((s, c) => s + (Number(importeDe(c.cantidad, c.pu)) || 0), 0));
 
   useEffect(() => { setErrores(ERR0); }, [datosGenerales, datosJuridicos, anticipoPct, conceptos, programa, garantias, superintendenteId, supervisionId]);
 
@@ -644,8 +666,6 @@ export default function AltaContrato() {
       const campos = {}; faltan.forEach((k) => { campos[k] = true; });
       return { tab: 0, msg: `Faltan campos: ${faltan.join(', ')}`, errores: { ...ERR0, campos } };
     }
-    const montoNum = Number(datosGenerales.monto);
-    if (!(montoNum > 0)) return { tab: 0, msg: 'El monto debe ser un número mayor a 0', errores: { ...ERR0, campos: { monto: true } } };
     if (!(Number.isInteger(Number(datosGenerales.plazoDias)) && Number(datosGenerales.plazoDias) > 0)) return { tab: 0, msg: 'El plazo debe ser un entero mayor a 0', errores: { ...ERR0, campos: { plazoDias: true } } };
     // Equipo: superintendente obligatorio.
     if (!superintendenteId) return { tab: 0, msg: 'Asigna un superintendente al equipo del contrato', errores: { ...ERR0, campos: { superintendente: true } } };
@@ -653,19 +673,22 @@ export default function AltaContrato() {
       const a = Number(anticipoPct);
       if (!(a >= 0 && a <= 100)) return { tab: 4, msg: 'El % de anticipo debe estar entre 0 y 100', errores: { ...ERR0, campos: { anticipoPct: true } } };
     }
-    // Regla 4: concepto con cantidad > 0 y P.U. > 0.
+    // El monto se DERIVA del catálogo → se exige al menos un concepto.
+    if (conceptos.length === 0) {
+      return { tab: 1, msg: 'Captura al menos un concepto: el monto del contrato se deriva del catálogo.', errores: { ...ERR0, catalogoMonto: true } };
+    }
+    // Cada concepto: clave (obligatoria, ≤40, única por contrato), concepto, unidad, cantidad>0, PU>0.
+    const claves = new Set();
     for (let i = 0; i < conceptos.length; i++) {
       const c = conceptos[i];
       const cant = Number(c.cantidad); const pu = Number(c.pu);
+      const clave = String(c.clave || '').trim();
+      if (!clave) return { tab: 1, msg: `Concepto #${i + 1}: la clave es obligatoria (la defines tú).`, errores: { ...ERR0, conceptoIdx: i } };
+      if (clave.length > 40) return { tab: 1, msg: `Concepto #${i + 1}: la clave excede 40 caracteres.`, errores: { ...ERR0, conceptoIdx: i } };
+      if (claves.has(clave)) return { tab: 1, msg: `Concepto #${i + 1}: la clave "${clave}" está repetida; cada clave debe ser única.`, errores: { ...ERR0, conceptoIdx: i } };
+      claves.add(clave);
       if (!String(c.concepto).trim() || !String(c.unidad).trim() || c.cantidad === '' || c.pu === '' || !(cant > 0) || !(pu > 0)) {
         return { tab: 1, msg: `Concepto #${i + 1}: concepto, unidad y cantidad/P.U. mayores a 0`, errores: { ...ERR0, conceptoIdx: i } };
-      }
-    }
-    // Regla 1: Σ(catálogo) = monto (subtotal sin IVA), ±$1, solo si hay conceptos.
-    if (conceptos.length > 0) {
-      const total = conceptos.reduce((s, c) => s + (Number(c.cantidad) || 0) * (Number(c.pu) || 0), 0);
-      if (Math.abs(total - montoNum) > TOLERANCIA_CATALOGO) {
-        return { tab: 1, msg: `El catálogo (${formatoMXN.format(total)}) no cuadra con el monto (${formatoMXN.format(montoNum)}). Ajusta para que coincidan.`, errores: { ...ERR0, catalogoMonto: true } };
       }
     }
     // Regla 5: actividades dentro del plazo del contrato.
@@ -704,14 +727,14 @@ export default function AltaContrato() {
         objeto: datosGenerales.objeto,
         contratista: datosGenerales.contratista,
         dependencia: datosGenerales.dependencia,
-        monto: Number(datosGenerales.monto),
         plazoDias: Number(datosGenerales.plazoDias),
         fechaInicio: datosGenerales.fechaInicio,
         superintendenteId: Number(superintendenteId),
         supervisionId: supervisionId ? Number(supervisionId) : null,
         anticipoPct: anticipoPct === '' || anticipoPct === null ? null : Number(anticipoPct),
         juridicos: datosJuridicos,
-        conceptos: conceptos.map((c) => ({ concepto: c.concepto, unidad: c.unidad, cantidad: c.cantidad, pu: c.pu })),
+        // monto NO se envía: el backend lo deriva = Σ ROUND(cantidad×pu,2). clave por concepto.
+        conceptos: conceptos.map((c) => ({ clave: String(c.clave || '').trim(), concepto: c.concepto, unidad: c.unidad, cantidad: c.cantidad, pu: c.pu })),
         actividades: programa.map((a) => ({ actividad: a.actividad, inicio: a.inicio, termino: a.termino, peso: a.peso })),
         garantias: garantias.filter((g) => !garantiaVacia(g)).map((g) => ({ tipo: g.tipo, afianzadora: g.afianzadora, poliza: g.poliza, monto: g.monto, vigencia: g.vigencia }))
       };
@@ -761,14 +784,17 @@ export default function AltaContrato() {
   const wrapTab = (node) => (<RegionEditable disabled={soloLectura}>{node}</RegionEditable>);
 
   const tabs = [
-    { label: 'Datos generales', content: wrapTab(<TabDatosGenerales datos={datosGenerales} set={setDatosGen} err={errores.campos} equipo={{
+    { label: 'Datos generales', content: wrapTab(<TabDatosGenerales datos={datosGenerales} set={setDatosGen} err={errores.campos} montoDerivado={montoDerivado} equipo={{
       usuarioNombre: usuario?.nombre,
       asignablesContratista, asignablesSupervision,
       superintendenteId, setSuperintendenteId, supervisionId, setSupervisionId,
       errSuperintendente: errores.campos?.superintendente
     }} />) },
     { label: 'Catálogo de conceptos', content: wrapTab(
-      <TabCatalogo rows={conceptos} onCell={mkCell(setConceptos)} onPatch={mkPatch(setConceptos)} onAdd={mkAdd(setConceptos, { concepto: '', unidad: '', cantidad: '', pu: '' })} onRemove={mkRemove(setConceptos)} soloLectura={soloLectura} errIdx={errores.conceptoIdx} monto={datosGenerales.monto} />
+      <TabCatalogo rows={conceptos} onCell={mkCell(setConceptos)} onPatch={mkPatch(setConceptos)}
+        onCantidad={onConceptoCantidad} onPu={onConceptoPu} onImporte={onConceptoImporte} onImporteBlur={onConceptoImporteBlur}
+        onAdd={mkAdd(setConceptos, { clave: '', concepto: '', unidad: '', cantidad: '', pu: '', importe: '' })}
+        onRemove={mkRemove(setConceptos)} soloLectura={soloLectura} errIdx={errores.conceptoIdx} montoDerivado={montoDerivado} />
     ) },
     { label: 'Programa de obra', content: wrapTab(
       <TabPrograma rows={programa} onCell={mkCell(setPrograma)} onAdd={mkAdd(setPrograma, { actividad: '', inicio: '', termino: '', peso: '' })} onRemove={mkRemove(setPrograma)} soloLectura={soloLectura} errIdx={errores.actividadIdx} />

@@ -192,21 +192,19 @@ async function integrarEstimacion(req, res) {
         }
       }
 
-      // (6) Cálculo server-side de la carátula + validación art. 118 por línea.
+      // (6) Validación art. 118 por línea (acumulado ≤ contratado) — usa cantidad, no importe.
+      //     pu_snapshot se conserva como STRING exacto del catálogo (sin pasar por float).
       const excedidos = [];
       const lineas = generadores.map((g) => {
         const c = ccMap.get(g.contrato_concepto_id);
-        const pu = Number(c.pu);
         const anterior = acumMap.get(g.contrato_concepto_id) || 0;
-        const acumNuevo = anterior + g.cantidad_periodo;
-        if (acumNuevo > Number(c.cantidad) + EPS_CANT) excedidos.push(c.concepto);
+        if (anterior + g.cantidad_periodo > Number(c.cantidad) + EPS_CANT) excedidos.push(c.concepto);
         return {
           contrato_concepto_id: g.contrato_concepto_id,
           concepto: c.concepto,
           cantidad_periodo: g.cantidad_periodo,
           cantidad_anterior_acum: anterior,
-          pu_snapshot: pu,
-          importe: r2(g.cantidad_periodo * pu)
+          pu_snapshot: c.pu // string NUMERIC exacto (no Number(): evita el float)
         };
       });
       if (excedidos.length) {
@@ -216,13 +214,43 @@ async function integrarEstimacion(req, res) {
         });
       }
 
-      const subtotal = r2(lineas.reduce((s, l) => s + l.importe, 0));
-      const amortizacion = r2(subtotal * anticipoPct / 100); // art. 143 fr. I
-      const retencion = r2(subtotal * 0.005);                // 5 al millar, art. 191 LFD
-      const neto = r2(subtotal - amortizacion - retencion - deductivas); // sin IVA
-      // Las deductivas (manuales) no pueden dejar el neto en negativo: 400 localizado en
-      // vez de persistir un neto < 0 (equivale a deductivas <= subtotal − amort − ret).
-      if (neto < 0) {
+      // (6b) Carátula con UN SOLO motor de redondeo (Postgres NUMERIC) y la MISMA fórmula
+      //      Σ ROUND(cantidad×pu, 2) que el catálogo (contratos.controller) y que el detalle
+      //      reproducido (detalleEstimacion): subtotal === Σ importes del detalle, al centavo.
+      //        · RETENCIÓN FISCAL: 5 al millar (art. 191 LFD), ROUND UNA vez sobre el subtotal,
+      //          nunca por renglón (art. 128 RLOPSRM). Es DISTINTA de las 'deductivas', que son
+      //          retenciones ECONÓMICAS por atraso / penas convencionales (art. 46 / 46 Bis
+      //          LOPSRM), capturadas aparte. (El 2 al millar CMIC sería otra retención FISCAL
+      //          —LFD/acuerdos CMIC, no LOPSRM— y queda DIFERIDO.)
+      //        · IVA: la estimación es SIN IVA (art. 2 fr. XIX RLOPSRM); el IVA se aplicaría una
+      //          sola vez sobre el subtotal donde corresponda (factura/pago), nunca por renglón.
+      //        · DRIFT entre estimaciones (DIFERIDO al finiquito): como cada estimación redondea
+      //          su retención por separado, Σ ROUND(subtotal_i×0.005) puede diferir de
+      //          ROUND(Σ subtotales×0.005). Reconciliación en la estimación de CIERRE:
+      //          retencion_objetivo = ROUND(Σ subtotales × 0.005, 2); ajuste = objetivo − Σ retenido.
+      const vals = lineas.map((_, i) => `($${i * 3 + 1}::int, $${i * 3 + 2}::numeric(14,4), $${i * 3 + 3}::numeric(16,4))`).join(', ');
+      const prm = lineas.flatMap((l, i) => [i, l.cantidad_periodo, l.pu_snapshot]);
+      const pA = prm.push(anticipoPct); // índice 1-based de anticipoPct
+      const pD = prm.push(deductivas);  // índice 1-based de deductivas
+      const cal = await client.query(
+        `WITH gen(idx, cant, pu) AS (VALUES ${vals}),
+              lin AS (SELECT idx, ROUND(cant * pu, 2)::numeric(14,2) AS importe FROM gen),
+              sub AS (SELECT COALESCE(SUM(importe), 0)::numeric(14,2) AS subtotal FROM lin)
+         SELECT s.subtotal,
+                ROUND(s.subtotal * $${pA}::numeric / 100, 2)::numeric(14,2) AS amortizacion,
+                ROUND(s.subtotal * 0.005, 2)::numeric(14,2)                 AS retencion,
+                (s.subtotal
+                   - ROUND(s.subtotal * $${pA}::numeric / 100, 2)
+                   - ROUND(s.subtotal * 0.005, 2)
+                   - $${pD}::numeric(14,2))::numeric(14,2)                  AS neto,
+                (SELECT json_agg(importe::text ORDER BY idx) FROM lin)      AS importes
+           FROM sub s`,
+        prm
+      );
+      const { subtotal, amortizacion, retencion, neto, importes } = cal.rows[0];
+      lineas.forEach((l, i) => { l.importe = importes[i]; }); // importe SQL-exacto para la respuesta
+      // Las deductivas (manuales) no pueden dejar el neto en negativo.
+      if (Number(neto) < 0) {
         await client.query('ROLLBACK');
         return res.status(400).json({ error: 'Las deductivas no pueden dejar el neto en negativo' });
       }

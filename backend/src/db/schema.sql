@@ -679,3 +679,49 @@ SELECT
   CURRENT_DATE + INTERVAL '120 days',
   (SELECT id FROM usuarios WHERE email = 'residente@sigecop.test')
 WHERE NOT EXISTS (SELECT 1 FROM contratos WHERE folio = 'OP-2026-DEMO-001');
+
+-- =====================================================================
+-- Paquete A1: catálogo con cuadre EXACTO + clave de concepto capturable.
+-- Aditivo e idempotente. SOLO esquema: la lógica de derivar el monto, quitar la
+-- tolerancia ±$1 y unificar el motor de redondeo (Σ-ROUND del lado SQL) va en los
+-- controllers (A1.2). Fundamento: art. 45 fr. IX RLOPSRM (el catálogo con sus
+-- importes ES el presupuesto del contrato; cada concepto con su clave) y art. 185
+-- RLOPSRM (PU = importe por unidad de concepto).
+-- =====================================================================
+
+-- (1) Clave del concepto, CAPTURADA por el usuario (no un autonumérico ciego, art.
+--     45 fr. IX). Nullable: los contratos existentes quedan con clave NULL; la
+--     obligatoriedad para ALTAS NUEVAS la valida la app (un NOT NULL global rompería
+--     los existentes). UNIQUE por contrato — varios NULL NO colisionan en un UNIQUE,
+--     así que los conceptos viejos sin clave conviven sin chocar.
+ALTER TABLE contrato_conceptos ADD COLUMN IF NOT EXISTS clave VARCHAR(40);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_contrato_conceptos_clave') THEN
+    ALTER TABLE contrato_conceptos ADD CONSTRAINT uq_contrato_conceptos_clave UNIQUE (contrato_id, clave);
+  END IF;
+END $$;
+
+-- (2) Ensanche de la escala del PU a NUMERIC(16,4): 12 dígitos enteros (los MISMOS
+--     que NUMERIC(14,2), 16-4 = 12 = 14-2) + 4 decimales. Permite afinar el PU para
+--     acercar el importe al objetivo sin descuadrar. NO se usa (14,4): eso recortaría
+--     la parte entera a 10 dígitos (riesgo de overflow 22003). No-destructivo: 33333.33
+--     se reinterpreta como 33333.3300 (mismo valor NUMERIC). Se ensancha TAMBIÉN el
+--     snapshot de estimaciones, o un PU de 4 decimales se TRUNCARÍA a 2 al integrar
+--     (descuadre carátula vs detalle). ALTER ... TYPE es DDL: NO dispara los triggers
+--     append-only de fila (sigecop_*_inmutable). Guard por information_schema para no
+--     re-escribir la tabla en cada arranque (idempotencia), como las migraciones
+--     timestamptz de arriba.
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+              WHERE table_name = 'contrato_conceptos' AND column_name = 'pu'
+                AND (numeric_precision <> 16 OR numeric_scale <> 4)) THEN
+    ALTER TABLE contrato_conceptos ALTER COLUMN pu TYPE NUMERIC(16,4);
+  END IF;
+END $$;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+              WHERE table_name = 'estimacion_generadores' AND column_name = 'pu_snapshot'
+                AND (numeric_precision <> 16 OR numeric_scale <> 4)) THEN
+    ALTER TABLE estimacion_generadores ALTER COLUMN pu_snapshot TYPE NUMERIC(16,4);
+  END IF;
+END $$;
