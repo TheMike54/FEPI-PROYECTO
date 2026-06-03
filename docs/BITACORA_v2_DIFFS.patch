@@ -1,0 +1,1209 @@
+diff --git a/backend/scripts/smoke-bitacora-v2.mjs b/backend/scripts/smoke-bitacora-v2.mjs
+new file mode 100644
+index 0000000..a514c2b
+--- /dev/null
++++ b/backend/scripts/smoke-bitacora-v2.mjs
+@@ -0,0 +1,96 @@
++// Smoke funcional de la pasada de Bitácora (HU-08/09/10) contra el backend local.
++// Verifica: apertura = nota #1; candado de emisión (no emitir sin firma completa);
++// firma de la apertura por TODOS; emisión post-firma (folio #2); firma de nota por la
++// contraparte (no por el emisor); guard de anular la apertura. Ejecutar: node este.mjs
++const BASE = 'http://localhost:4000/api';
++let pass = 0, fail = 0;
++const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++; console.log('  ✗ FALLO:', m); } };
++
++async function req(method, path, token, body) {
++  const res = await fetch(BASE + path, {
++    method,
++    headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) },
++    body: body ? JSON.stringify(body) : undefined
++  });
++  const text = await res.text();
++  let data = null; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
++  return { status: res.status, data };
++}
++const login = async (email) => (await req('POST', '/auth/login', null, { email, password: 'Sigecop2026!' })).data;
++
++(async () => {
++  const R = await login('residente@sigecop.test');
++  const S = await login('contratista@sigecop.test');
++  const V = await login('supervision@sigecop.test');
++  ok(R?.token && S?.token && V?.token, 'login residente + superintendente + supervisión');
++  const idS = S.user.id, idV = V.user.id;
++
++  // 1) Crear contrato (residente) con equipo completo + programa 100%.
++  const folio = 'BIT-SMOKE-' + Date.now();
++  const cr = await req('POST', '/contratos', R.token, {
++    folio, tipo: 'Obra pública sobre la base de precios unitarios', objeto: 'Obra smoke bitácora',
++    contratista: 'Constructora Smoke', dependencia: 'Dependencia Smoke', plazoDias: 60, fechaInicio: '2026-06-01',
++    superintendenteId: idS, supervisionId: idV, anticipoPct: null, juridicos: {},
++    conceptos: [{ clave: 'A1', concepto: 'Concepto smoke', unidad: 'm³', cantidad: 100, pu: 50 }],
++    ciclo: 'mensual', programa: [{ clave: 'A1', periodoNumero: 1, cantidad: 100 }], garantias: []
++  });
++  ok(cr.status === 201 && cr.data?.id, `crear contrato → 201 (status ${cr.status})`);
++  const contratoId = cr.data.id;
++
++  // 2) Apertura (residente) con datos mínimos art. 123 fr. III.
++  const ap = await req('POST', '/bitacora/apertura', R.token, {
++    contratoId, fechaEntregaSitio: '2026-06-01', plazoFirmaDias: 2,
++    domicilioDependencia: 'Av. Siempre Viva 1', telefonoDependencia: '7471234567',
++    domicilioContratista: 'Calle Obra 2', telefonoContratista: '7479876543',
++    descripcionTrabajos: 'Construcción de X', caracteristicasSitio: 'Terreno plano, clima cálido'
++  });
++  ok(ap.status === 201 && ap.data?.id, `apertura → 201 (status ${ap.status})`);
++  const aperturaId = ap.data.id;
++
++  // 3) PUNTO 1: la apertura ES la nota #1 (tipo apertura).
++  let notas = (await req('GET', `/bitacora/contrato/${contratoId}/notas`, R.token)).data;
++  const n1 = notas?.notas?.find((n) => n.numero === 1);
++  ok(n1 && n1.tipo === 'apertura', `nota #1 existe y es tipo 'apertura' (${n1?.tipo})`);
++  ok(notas?.notas?.length === 1, `solo existe la nota #1 tras aperturar (hay ${notas?.notas?.length})`);
++
++  // 4) PUNTO 3: candado de emisión — NO se puede emitir sin firma completa de la apertura.
++  let em = await req('POST', `/bitacora/${aperturaId}/notas`, R.token, { tipo: 'res_estimaciones', contenido: 'intento sin firma' });
++  ok(em.status === 409, `emitir SIN firma completa → 409 candado (status ${em.status})`);
++
++  // 5) PUNTO 2: firma de la apertura por TODOS los participantes.
++  const fR = await req('POST', `/bitacora/${aperturaId}/firmar`, R.token);
++  const fS = await req('POST', `/bitacora/${aperturaId}/firmar`, S.token);
++  // Aún falta supervisión → sigue bloqueado.
++  em = await req('POST', `/bitacora/${aperturaId}/notas`, R.token, { tipo: 'res_estimaciones', contenido: 'aún falta 1 firma' });
++  ok(em.status === 409, `con 2 de 3 firmas → emisión sigue bloqueada (status ${em.status})`);
++  const fV = await req('POST', `/bitacora/${aperturaId}/firmar`, V.token);
++  ok(fR.status === 200 && fS.status === 200 && fV.status === 200 && fV.data?.completa === true,
++     `firmas residente+superintendente+supervisión → apertura COMPLETA (completa=${fV.data?.completa})`);
++
++  // 6) Emisión post-firma: ahora sí, y la nota arranca en folio #2.
++  em = await req('POST', `/bitacora/${aperturaId}/notas`, R.token, { tipo: 'res_estimaciones', contenido: 'Autorizo estimación 1', tag: 'EST-1' });
++  ok(em.status === 201 && em.data?.numero === 2, `emitir con apertura firmada → 201 folio #2 (status ${em.status}, folio ${em.data?.numero})`);
++  ok(em.data?.tag === 'EST-1', `la nota guardó el tag de búsqueda (${em.data?.tag})`);
++  const nota2 = em.data.id;
++
++  // 7) PUNTO 2 (firma de nota por la contraparte): el superintendente firma la nota del residente.
++  const fnS = await req('POST', `/bitacora/notas/${nota2}/firmar`, S.token);
++  ok(fnS.status === 201 && fnS.data?.firmado, `contraparte (superintendente) firma la nota #2 → 201`);
++  const fnR = await req('POST', `/bitacora/notas/${nota2}/firmar`, R.token);
++  ok(fnR.status === 409, `el EMISOR no puede firmar su propia nota (ya firmó al emitir) → 409 (status ${fnR.status})`);
++
++  // 8) PUNTO 7: la apertura (#1) no se anula; una nota normal sí (emisor) generando correctiva.
++  const anAp = await req('POST', `/bitacora/notas/${n1.id}/anular`, R.token, { contenido: 'dice/debe decir' });
++  ok(anAp.status === 403, `anular la apertura (#1) → 403 bloqueado (status ${anAp.status})`);
++  const an2 = await req('POST', `/bitacora/notas/${nota2}/anular`, R.token, { contenido: 'Dice: 1 / Debe decir: 2' });
++  ok(an2.status === 201 && an2.data?.correctiva?.numero === 3, `anular nota #2 (emisor) → correctiva #3 (status ${an2.status}, folio ${an2.data?.correctiva?.numero})`);
++
++  // 9) tipos por rol: el catálogo activo del residente trae los granulares art. 125 fr. I.
++  const tipos = (await req('GET', '/bitacora/nota-tipos', R.token)).data;
++  const resAct = tipos.filter((t) => t.rol_emisor === 'residente' && t.activo);
++  ok(resAct.some((t) => t.clave === 'res_sustitucion') && resAct.some((t) => t.clave === 'res_suspension'),
++     `catálogo trae tipos granulares del residente (art. 125 fr. I): ${resAct.length} activos`);
++
++  console.log(`\nRESULT: ${pass} passed, ${fail} failed`);
++  process.exit(fail ? 1 : 0);
++})().catch((e) => { console.error('SMOKE ERROR', e); process.exit(2); });
+diff --git a/backend/src/controllers/bitacora.controller.js b/backend/src/controllers/bitacora.controller.js
+index e25f3f9..90ca263 100644
+--- a/backend/src/controllers/bitacora.controller.js
++++ b/backend/src/controllers/bitacora.controller.js
+@@ -6,14 +6,23 @@ const { esParteOSupervision } = require('../lib/acceso');
+ 
+ // Construye el acta (primera nota): snapshot inmutable de los grupos del art. 122
+ // RLOPSRM, tomados del contrato + el roster de firmantes (identidad por cuenta).
+-function construirActa(contrato, roster, cronograma) {
++function construirActa(contrato, roster, cronograma, datos) {
++  const d = datos || {};
+   return {
+     identificacion: {
+       folio: contrato.folio,
+       dependencia: contrato.dependencia,
+-      contratista: contrato.contratista
++      contratista: contrato.contratista,
++      // art. 123 fr. III RLOPSRM: domicilios y teléfonos de las partes involucradas.
++      domicilio_dependencia: d.domicilioDependencia || null,
++      telefono_dependencia: d.telefonoDependencia || null,
++      domicilio_contratista: d.domicilioContratista || null,
++      telefono_contratista: d.telefonoContratista || null
+     },
+     objeto: contrato.objeto,
++    // art. 123 fr. III RLOPSRM: alcances descriptivos de los trabajos y características del sitio.
++    descripcion_trabajos: d.descripcionTrabajos || null,
++    caracteristicas_sitio: d.caracteristicasSitio || null,
+     datos_financieros: {
+       monto: contrato.monto,
+       anticipo_pct: contrato.anticipo_pct,
+@@ -51,6 +60,17 @@ async function abrirBitacora(req, res) {
+   if (!Number.isInteger(plazoFirmaDias) || plazoFirmaDias < 1 || plazoFirmaDias > 60) {
+     return res.status(400).json({ error: 'plazoFirmaDias debe ser un entero entre 1 y 60' });
+   }
++  // Datos mínimos de la apertura (art. 123 fr. III RLOPSRM): domicilios/teléfonos de las
++  // partes + alcances/características del sitio. La vista los exige; aquí se normalizan.
++  const t = (v) => (typeof v === 'string' ? v.trim() : '') || null;
++  const minData = {
++    domicilioDependencia: t(body.domicilioDependencia),
++    telefonoDependencia: t(body.telefonoDependencia),
++    domicilioContratista: t(body.domicilioContratista),
++    telefonoContratista: t(body.telefonoContratista),
++    descripcionTrabajos: t(body.descripcionTrabajos),
++    caracteristicasSitio: t(body.caracteristicasSitio)
++  };
+ 
+   let client;
+   try {
+@@ -105,13 +125,21 @@ async function abrirBitacora(req, res) {
+         inicio: contrato.fecha_inicio,
+         fin: contrato.fecha_termino,
+         entregaSitio: fechaEntregaSitio
+-      });
++      }, minData);
+ 
++      // fecha_apertura = fecha de INICIO del contrato: la bitácora se abre el MISMO día en que
++      // arranca el contrato (hallazgo del profe, audio 2026-06-01). La entrega del sitio se
++      // conserva aparte (acta.cronograma.entrega_sitio). [validar] la regla "mismo día".
+       const ins = await client.query(
+-        `INSERT INTO bitacora_aperturas (contrato_id, fecha_apertura, plazo_firma_dias, acta, aperturada_por)
+-         VALUES ($1, $2, $3, $4, $5)
++        `INSERT INTO bitacora_aperturas
++           (contrato_id, fecha_apertura, plazo_firma_dias, acta, aperturada_por,
++            domicilio_dependencia, telefono_dependencia, domicilio_contratista, telefono_contratista,
++            descripcion_trabajos, caracteristicas_sitio)
++         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+          RETURNING id, contrato_id, fecha_apertura, plazo_firma_dias, apertura_en, acta, aperturada_por`,
+-        [contratoId, fechaEntregaSitio, plazoFirmaDias, JSON.stringify(acta), req.user.id]
++        [contratoId, contrato.fecha_inicio, plazoFirmaDias, JSON.stringify(acta), req.user.id,
++         minData.domicilioDependencia, minData.telefonoDependencia, minData.domicilioContratista,
++         minData.telefonoContratista, minData.descripcionTrabajos, minData.caracteristicasSitio]
+       );
+       const bitacora = ins.rows[0];
+ 
+@@ -123,6 +151,21 @@ async function abrirBitacora(req, res) {
+         );
+       }
+ 
++      // PUNTO 1 (profe): "¿Cuál es la primer nota? La de la apertura, es la 1". La apertura se
++      // registra COMO la nota #1 del libro (tipo 'apertura', art. 123 fr. III "se deberá iniciar
++      // con una nota especial"); las notas emitidas después arrancan en #2. Su firma es la
++      // CONJUNTA (bitacora_firmantes), no la del emisor → firmado_en NULL.
++      const resumenApertura =
++        `Apertura de bitácora del contrato ${contrato.folio}. Objeto: ${contrato.objeto}. ` +
++        `Partes: ${contrato.dependencia} (dependencia) / ${contrato.contratista} (contratista). ` +
++        `Inicio contractual ${String(contrato.fecha_inicio).slice(0, 10)}; entrega del sitio ${String(fechaEntregaSitio).slice(0, 10)}. ` +
++        `Datos mínimos (art. 123 fr. III RLOPSRM): domicilios, teléfonos y características del sitio registrados en el acta.`;
++      await client.query(
++        `INSERT INTO bitacora_notas (bitacora_id, numero, tipo, asunto, contenido, emisor_id, estado, firmado_en)
++         VALUES ($1, 1, 'apertura', 'Nota de apertura de bitácora', $2, $3, 'emitida', NULL)`,
++        [bitacora.id, resumenApertura, req.user.id]
++      );
++
+       await client.query('COMMIT');
+       return res.status(201).json(bitacora);
+     } catch (e) {
+@@ -276,14 +319,14 @@ async function validarTipoParaRol(client, tipo, rolEnContrato) {
+ 
+ // Inserta una nota con folio correlativo ATÓMICO por bitácora (advisory lock por
+ // bitácora + MAX+1; el UNIQUE(bitacora_id,numero) es la red). Debe ir dentro de una tx.
+-async function insertarNotaAtomica(client, { bitacoraId, tipo, asunto, contenido, emisorId, vinculadaA }) {
++async function insertarNotaAtomica(client, { bitacoraId, tipo, asunto, contenido, emisorId, vinculadaA, tag }) {
+   await client.query('SELECT pg_advisory_xact_lock($1)', [bitacoraId]);
+   const ins = await client.query(
+-    `INSERT INTO bitacora_notas (bitacora_id, numero, tipo, asunto, contenido, emisor_id, estado, firmado_en, vinculada_a)
++    `INSERT INTO bitacora_notas (bitacora_id, numero, tipo, asunto, contenido, emisor_id, estado, firmado_en, vinculada_a, tag)
+      VALUES ($1, (SELECT COALESCE(MAX(numero),0)+1 FROM bitacora_notas WHERE bitacora_id = $1),
+-             $2, $3, $4, $5, 'emitida', NOW(), $6)
+-     RETURNING id, bitacora_id, numero, tipo, asunto, contenido, emisor_id, estado, vinculada_a, fecha, firmado_en`,
+-    [bitacoraId, tipo, asunto || null, contenido, emisorId, vinculadaA || null]
++             $2, $3, $4, $5, 'emitida', NOW(), $6, $7)
++     RETURNING id, bitacora_id, numero, tipo, asunto, contenido, emisor_id, estado, vinculada_a, fecha, firmado_en, tag`,
++    [bitacoraId, tipo, asunto || null, contenido, emisorId, vinculadaA || null, tag || null]
+   );
+   return ins.rows[0];
+ }
+@@ -292,7 +335,10 @@ function leerCamposNota(body) {
+   return {
+     tipo: typeof body.tipo === 'string' ? body.tipo.trim() : '',
+     asunto: typeof body.asunto === 'string' ? body.asunto.trim() : '',
+-    contenido: typeof body.contenido === 'string' ? body.contenido.trim() : ''
++    contenido: typeof body.contenido === 'string' ? body.contenido.trim() : '',
++    // PUNTO 4 (profe): tag de búsqueda por nota (los tipos van embebidos → un tag estructurado
++    // hace la búsqueda eficiente). Opcional.
++    tag: typeof body.tag === 'string' ? body.tag.trim() : ''
+   };
+ }
+ 
+@@ -300,11 +346,14 @@ function leerCamposNota(body) {
+ async function emitirNota(req, res) {
+   const aperturaId = Number(req.params.aperturaId);
+   if (!Number.isInteger(aperturaId) || aperturaId <= 0) return res.status(400).json({ error: 'aperturaId inválido' });
+-  const { tipo, asunto, contenido } = leerCamposNota(req.body || {});
++  const { tipo, asunto, contenido, tag } = leerCamposNota(req.body || {});
+   if (!tipo) return res.status(400).json({ error: 'Falta el tipo de nota' });
++  // La nota de apertura (folio #1) la genera la apertura; no se emite a mano.
++  if (tipo === 'apertura') return res.status(400).json({ error: 'La nota de apertura (folio #1) la genera la apertura de bitácora, no se emite a mano' });
+   if (!contenido) return res.status(400).json({ error: 'Falta el contenido de la nota' });
+   if (contenido.length > 5000) return res.status(400).json({ error: 'El contenido no puede exceder 5000 caracteres' });
+   if (asunto.length > 200) return res.status(400).json({ error: 'El asunto no puede exceder 200 caracteres' });
++  if (tag.length > 60) return res.status(400).json({ error: 'El tag no puede exceder 60 caracteres' });
+ 
+   let client;
+   try {
+@@ -315,10 +364,24 @@ async function emitirNota(req, res) {
+       if (notFound) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'El contrato no tiene bitácora aperturada' }); }
+       if (!rolEnContrato) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'No eres parte firmante de este contrato; no puedes emitir notas' }); }
+ 
++      // PUNTO 3 (candado de emisión, SERVER-SIDE): NO se puede emitir una nota hasta que la
++      // APERTURA esté firmada por TODOS los participantes requeridos. art. 123 fr. III: la
++      // bitácora "se deberá iniciar con una nota especial" firmada por el personal autorizado;
++      // hasta entonces no hay base para asentar notas. (Antes bastaba una sola firma → bug.)
++      const ff = await client.query(
++        'SELECT count(*) FILTER (WHERE NOT firmado) AS pendientes FROM bitacora_firmantes WHERE bitacora_id = $1',
++        [apertura.id]
++      );
++      const pendientes = Number(ff.rows[0].pendientes);
++      if (pendientes > 0) {
++        await client.query('ROLLBACK');
++        return res.status(409).json({ error: `No se pueden emitir notas hasta que la apertura esté firmada por TODOS los participantes (faltan ${pendientes} firma(s)).` });
++      }
++
+       const v = await validarTipoParaRol(client, tipo, rolEnContrato);
+       if (!v.ok) { await client.query('ROLLBACK'); return res.status(v.status).json({ error: v.error }); }
+ 
+-      const nota = await insertarNotaAtomica(client, { bitacoraId: apertura.id, tipo, asunto, contenido, emisorId: req.user.id });
++      const nota = await insertarNotaAtomica(client, { bitacoraId: apertura.id, tipo, asunto, contenido, emisorId: req.user.id, tag });
+       await client.query('COMMIT');
+       return res.status(201).json(nota);
+     } catch (e) {
+@@ -348,11 +411,16 @@ async function construirPayloadNotas(apertura, userId) {
+ 
+   const r = await pool.query(
+     `SELECT n.id, n.numero, n.tipo, tp.etiqueta AS tipo_etiqueta, tp.rol_emisor,
+-            n.asunto, n.contenido, n.estado, n.vinculada_a, n.fecha, n.firmado_en,
++            n.asunto, n.contenido, n.tag, n.estado, n.vinculada_a, n.fecha, n.firmado_en,
+             n.emisor_id, u.nombre AS emisor_nombre, u.email AS emisor_correo,
+             (NOW() > n.fecha + make_interval(days => $2::int)) AS plazo_vencido,
+             EXISTS (SELECT 1 FROM bitacora_notas m
+-                     WHERE m.vinculada_a = n.id AND m.emisor_id IS DISTINCT FROM n.emisor_id) AS respondida
++                     WHERE m.vinculada_a = n.id AND m.emisor_id IS DISTINCT FROM n.emisor_id) AS respondida,
++            COALESCE((SELECT json_agg(json_build_object(
++                         'usuario_id', nf.usuario_id, 'rol_en_firma', nf.rol_en_firma,
++                         'nombre', uf.nombre, 'firmado_en', nf.firmado_en) ORDER BY nf.firmado_en)
++                        FROM bitacora_nota_firmas nf LEFT JOIN usuarios uf ON uf.id = nf.usuario_id
++                       WHERE nf.nota_id = n.id), '[]'::json) AS firmas
+        FROM bitacora_notas n
+        LEFT JOIN bitacora_nota_tipos tp ON tp.clave = n.tipo
+        LEFT JOIN usuarios u ON u.id = n.emisor_id
+@@ -361,9 +429,21 @@ async function construirPayloadNotas(apertura, userId) {
+     [apertura.id, apertura.plazo_firma_dias]
+   );
+ 
++  // Firmantes de la APERTURA (firma conjunta, art. 123 fr. III): los reusa la nota #1 para
++  // mostrar quién firmó + fecha/hora y habilitar el botón de firma de la apertura.
++  const fr = await pool.query(
++    `SELECT f.usuario_id, f.rol_en_firma, f.firmado, f.firmado_en, u.nombre, u.email
++       FROM bitacora_firmantes f LEFT JOIN usuarios u ON u.id = f.usuario_id
++      WHERE f.bitacora_id = $1 ORDER BY f.id`,
++    [apertura.id]
++  );
++  const aperturaFirmantes = fr.rows;
++  const aperturaCompleta = aperturaFirmantes.length > 0 && aperturaFirmantes.every((x) => x.firmado);
++
+   const notas = r.rows.map((n) => {
+     let aceptacion;
+     if (n.estado === 'anulada') aceptacion = 'anulada';
++    else if (n.tipo === 'apertura') aceptacion = aperturaCompleta ? 'aceptada_tacita' : 'en_plazo'; // su firma es la conjunta
+     else if (n.respondida) aceptacion = 'respondida';
+     else if (n.plazo_vencido) aceptacion = 'aceptada_tacita';
+     else aceptacion = 'en_plazo';
+@@ -375,6 +455,8 @@ async function construirPayloadNotas(apertura, userId) {
+     contrato_id: apertura.contrato_id,
+     plazo_firma_dias: apertura.plazo_firma_dias,
+     mi_rol: miRol,
++    apertura_firmantes: aperturaFirmantes,
++    apertura_completa: aperturaCompleta,
+     notas
+   };
+ }
+@@ -468,6 +550,8 @@ async function anularNota(req, res) {
+       );
+       if (nres.rowCount === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Nota no encontrada' }); }
+       const nota = nres.rows[0];
++      // La nota de apertura (folio #1) es el acta de inicio: no se anula (art. 123 fr. III/V/VI).
++      if (nota.tipo === 'apertura') { await client.query('ROLLBACK'); return res.status(403).json({ error: 'La nota de apertura (folio #1) no puede anularse' }); }
+       if (nota.emisor_id !== req.user.id) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'Solo el emisor puede anular su nota' }); }
+       if (nota.estado !== 'emitida') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'La nota ya está anulada' }); }
+ 
+@@ -549,7 +633,9 @@ async function vincularNota(req, res) {
+ // por rol. Único requisito: estar autenticado (el router ya lo exige).
+ async function listarNotaTipos(req, res) {
+   try {
+-    const r = await pool.query('SELECT clave, etiqueta, rol_emisor, orden FROM bitacora_nota_tipos ORDER BY orden');
++    // Se devuelven TODOS (con `activo`): el UI de emisión filtra activo=true (solo los tipos
++    // vigentes del art. 125); la consulta puede resolver etiquetas de tipos viejos (inactivos).
++    const r = await pool.query('SELECT clave, etiqueta, rol_emisor, orden, activo FROM bitacora_nota_tipos ORDER BY orden');
+     return res.status(200).json(r.rows);
+   } catch (err) {
+     console.error('[listarNotaTipos]', err);
+@@ -557,6 +643,49 @@ async function listarNotaTipos(req, res) {
+   }
+ }
+ 
++// POST /api/bitacora/notas/:notaId/firmar — PUNTO 2: una PARTE del contrato que NO es el
++// emisor firma (acepta) una nota dentro del plazo (art. 123 fr. III: "plazo máximo para la
++// firma de las notas"). Append-only (bitacora_nota_firmas). Distinto de la firma CONJUNTA de
++// la APERTURA (esa va por /:aperturaId/firmar, requiere a TODOS los participantes). El emisor
++// ya firmó al emitir. La aceptación tácita al vencer el plazo se sigue derivando en la consulta.
++async function firmarNota(req, res) {
++  const notaId = Number(req.params.notaId);
++  if (!Number.isInteger(notaId) || notaId <= 0) return res.status(400).json({ error: 'notaId inválido' });
++  let client;
++  try {
++    client = await pool.connect();
++    try {
++      await client.query('BEGIN');
++      const nres = await client.query('SELECT id, bitacora_id, tipo, emisor_id, estado FROM bitacora_notas WHERE id = $1', [notaId]);
++      if (nres.rowCount === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Nota no encontrada' }); }
++      const nota = nres.rows[0];
++      if (nota.tipo === 'apertura') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'La apertura (nota #1) se firma en "Por firmar" (firma conjunta de TODOS los participantes)' }); }
++      if (nota.estado !== 'emitida') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'La nota está anulada; no puede firmarse' }); }
++
++      const { notFound, rolEnContrato } = await cargarAperturaYRol(client, nota.bitacora_id, req.user.id);
++      if (notFound) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'El contrato no tiene bitácora aperturada' }); }
++      if (!rolEnContrato) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'No eres parte de este contrato; no puedes firmar sus notas' }); }
++      if (nota.emisor_id === req.user.id) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'El emisor ya firmó la nota al emitirla; la firma aquí es de la contraparte' }); }
++
++      const ins = await client.query(
++        `INSERT INTO bitacora_nota_firmas (nota_id, usuario_id, rol_en_firma)
++         VALUES ($1, $2, $3) ON CONFLICT (nota_id, usuario_id) DO NOTHING
++         RETURNING id, firmado_en`,
++        [notaId, req.user.id, rolEnContrato]
++      );
++      if (ins.rowCount === 0) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'Ya firmaste esta nota' }); }
++      await client.query('COMMIT');
++      return res.status(201).json({ nota_id: notaId, firmado: true, firmado_en: ins.rows[0].firmado_en, rol_en_firma: rolEnContrato });
++    } catch (e) {
++      try { await client.query('ROLLBACK'); } catch (_) {}
++      throw e;
++    } finally { client.release(); }
++  } catch (err) {
++    console.error('[firmarNota]', err);
++    return res.status(500).json({ error: 'Error interno' });
++  }
++}
++
+ module.exports = {
+   abrirBitacora,
+   firmarApertura,
+@@ -567,5 +696,6 @@ module.exports = {
+   listarNotas,
+   notasDeContrato,
+   anularNota,
+-  vincularNota
++  vincularNota,
++  firmarNota
+ };
+diff --git a/backend/src/db/schema.sql b/backend/src/db/schema.sql
+index 196f102..4315084 100644
+--- a/backend/src/db/schema.sql
++++ b/backend/src/db/schema.sql
+@@ -829,3 +829,94 @@ DO $$ BEGIN
+     ALTER TABLE contrato_documentos ADD CONSTRAINT uq_contrato_documentos_tipo UNIQUE (contrato_id, tipo);
+   END IF;
+ END $$;
++
++-- =====================================================================
++-- PASADA BITÁCORA (HU-08/09/10): apertura = nota #1, firma de notas, candado de
++-- emisión server-side, tipos por rol EXACTOS (art. 125 RLOPSRM), datos mínimos de
++-- apertura (art. 123 fr. III), y tag de búsqueda. ADITIVO e IDEMPOTENTE: aplica
++-- sobre BD existente (Render) sin tocar contrato/alta/A2/estimación.
++-- =====================================================================
++
++-- (B1) Datos mínimos de la apertura — art. 123 fr. III RLOPSRM: la nota especial de
++--      inicio relaciona "como mínimo... domicilios y teléfonos... y alcances descriptivos
++--      de los trabajos y de las características del sitio donde se desarrollarán". Se
++--      capturan en la apertura y se congelan también en el acta (snapshot inmutable).
++ALTER TABLE bitacora_aperturas ADD COLUMN IF NOT EXISTS domicilio_dependencia TEXT;
++ALTER TABLE bitacora_aperturas ADD COLUMN IF NOT EXISTS telefono_dependencia  TEXT;
++ALTER TABLE bitacora_aperturas ADD COLUMN IF NOT EXISTS domicilio_contratista TEXT;
++ALTER TABLE bitacora_aperturas ADD COLUMN IF NOT EXISTS telefono_contratista  TEXT;
++ALTER TABLE bitacora_aperturas ADD COLUMN IF NOT EXISTS descripcion_trabajos  TEXT;
++ALTER TABLE bitacora_aperturas ADD COLUMN IF NOT EXISTS caracteristicas_sitio TEXT;
++
++-- (B2) Catálogo de tipos = lista EXACTA del art. 125 RLOPSRM por rol (fr. I residente a–k;
++--      fr. II superintendente a–g; fr. III supervisión a–d) + apertura/cierre + 'otro'
++--      (art. 125, último párrafo). Se agrega `activo` para OCULTAR del selector los tipos
++--      "coarse" previos (autorizacion/aprobacion/solicitud/aviso) SIN romper la FK de notas
++--      ya emitidas con ellos (siguen resolviendo su etiqueta en consultas).
++ALTER TABLE bitacora_nota_tipos ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT true;
++
++INSERT INTO bitacora_nota_tipos (clave, etiqueta, rol_emisor, orden) VALUES
++  -- Residente — art. 125 fr. I a) … k) (autoriza / aprueba):
++  ('res_modificaciones',       'Autorización de modificaciones (proyecto ejecutivo, procedimiento, calidad, programa)', 'residente', 101),
++  ('res_estimaciones',         'Autorización de estimaciones',                                                          'residente', 102),
++  ('res_ajuste_costos',        'Aprobación de ajuste de costos',                                                        'residente', 103),
++  ('res_conceptos_extra',      'Aprobación de conceptos no previstos y cantidades adicionales',                         'residente', 104),
++  ('res_convenios',            'Autorización de convenios modificatorios',                                              'residente', 105),
++  ('res_terminacion_rescision','Terminación anticipada o rescisión administrativa del contrato',                        'residente', 106),
++  ('res_sustitucion',          'Sustitución del superintendente, del residente anterior o de la supervisión',          'residente', 107),
++  ('res_suspension',           'Suspensión de trabajos',                                                                'residente', 108),
++  ('res_conciliacion',         'Conciliaciones y, en su caso, convenios respectivos',                                   'residente', 109),
++  ('res_caso_fortuito',        'Caso fortuito o fuerza mayor que afecta el programa de ejecución',                       'residente', 110),
++  ('res_terminacion',          'Terminación de los trabajos',                                                           'residente', 111),
++  -- Superintendente — art. 125 fr. II a) … g) (solicita / avisa):
++  ('sup_modificaciones',       'Solicitud de modificaciones (proyecto ejecutivo, procedimiento, calidad, programa)',    'superintendente', 201),
++  ('sup_estimaciones',         'Solicitud de aprobación de estimaciones',                                               'superintendente', 202),
++  ('sup_falta_pago',           'Falta o atraso en el pago de estimaciones',                                             'superintendente', 203),
++  ('sup_ajuste_costos',        'Solicitud de ajuste de costos',                                                         'superintendente', 204),
++  ('sup_conceptos_extra',      'Solicitud de conceptos no previstos y cantidades adicionales',                          'superintendente', 205),
++  ('sup_convenios',            'Solicitud de convenios modificatorios',                                                 'superintendente', 206),
++  ('sup_aviso_terminacion',    'Aviso de terminación de los trabajos',                                                  'superintendente', 207)
++ON CONFLICT (clave) DO NOTHING;
++
++-- Supervisión (art. 125 fr. III a–d) ya era granular (avance/calidad/seguridad/junta) → se
++-- conserva. apertura/cierre/otro se conservan. Se OCULTAN (no se borran) los coarse previos.
++UPDATE bitacora_nota_tipos SET activo = false WHERE clave IN ('autorizacion','aprobacion','solicitud','aviso');
++-- Reordenar supervisión y especiales para que queden agrupados al final del selector.
++UPDATE bitacora_nota_tipos SET orden = 301 WHERE clave = 'avance';
++UPDATE bitacora_nota_tipos SET orden = 302 WHERE clave = 'calidad';
++UPDATE bitacora_nota_tipos SET orden = 303 WHERE clave = 'seguridad';
++UPDATE bitacora_nota_tipos SET orden = 304 WHERE clave = 'junta';
++UPDATE bitacora_nota_tipos SET orden = 400 WHERE clave = 'apertura';
++UPDATE bitacora_nota_tipos SET orden = 401 WHERE clave = 'cierre';
++UPDATE bitacora_nota_tipos SET orden = 999 WHERE clave = 'otro';
++
++-- (B3) Tag de búsqueda por nota (lo pidió el profe: como los tipos van embebidos en el
++--      texto, un tag estructurado hace la búsqueda eficiente). Opcional; lo captura el emisor.
++ALTER TABLE bitacora_notas ADD COLUMN IF NOT EXISTS tag VARCHAR(60);
++CREATE INDEX IF NOT EXISTS idx_bitacora_notas_tag ON bitacora_notas(tag);
++
++-- (B4) Firmas de NOTAS — distintas de la firma conjunta de la APERTURA (que vive en
++--      bitacora_firmantes). art. 123 fr. III: "se establecerá un plazo máximo para la firma
++--      de las notas... se tendrán por aceptadas una vez vencido el plazo". Cada parte del
++--      contrato que NO es el emisor puede firmar (aceptar) la nota. Append-only (UNIQUE por
++--      nota+usuario; UPDATE bloqueado). La aceptación tácita al vencer el plazo se sigue
++--      DERIVANDO en la consulta (no requiere fila).
++CREATE TABLE IF NOT EXISTS bitacora_nota_firmas (
++  id SERIAL PRIMARY KEY,
++  nota_id INTEGER NOT NULL REFERENCES bitacora_notas(id) ON DELETE CASCADE,
++  usuario_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
++  rol_en_firma TEXT,
++  firmado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
++  UNIQUE (nota_id, usuario_id)
++);
++CREATE INDEX IF NOT EXISTS idx_bitacora_nota_firmas_nota ON bitacora_nota_firmas(nota_id);
++
++CREATE OR REPLACE FUNCTION sigecop_nota_firma_inmutable() RETURNS trigger AS $func$
++BEGIN
++  RAISE EXCEPTION 'La firma de una nota de bitácora es append-only y no puede modificarse';
++END;
++$func$ LANGUAGE plpgsql;
++DROP TRIGGER IF EXISTS trg_bitacora_nota_firmas_inmutable ON bitacora_nota_firmas;
++CREATE TRIGGER trg_bitacora_nota_firmas_inmutable
++  BEFORE UPDATE ON bitacora_nota_firmas
++  FOR EACH ROW EXECUTE FUNCTION sigecop_nota_firma_inmutable();
+diff --git a/backend/src/routes/bitacora.routes.js b/backend/src/routes/bitacora.routes.js
+index e8b6102..6474497 100644
+--- a/backend/src/routes/bitacora.routes.js
++++ b/backend/src/routes/bitacora.routes.js
+@@ -10,7 +10,8 @@ const {
+   listarNotas,
+   notasDeContrato,
+   anularNota,
+-  vincularNota
++  vincularNota,
++  firmarNota
+ } = require('../controllers/bitacora.controller');
+ 
+ const router = express.Router();
+@@ -41,5 +42,8 @@ router.post('/:aperturaId/notas', emitirNota);
+ router.get('/:aperturaId/notas', listarNotas);
+ router.post('/notas/:notaId/anular', anularNota);
+ router.post('/notas/:notaId/vincular', vincularNota);
++// Firma/aceptación de una nota por la contraparte (no la apertura). Cualquier autenticado entra;
++// el controller valida participación + que no sea el emisor (art. 123 fr. III).
++router.post('/notas/:notaId/firmar', firmarNota);
+ 
+ module.exports = router;
+diff --git a/frontend/e2e/bitacora-v2.spec.js b/frontend/e2e/bitacora-v2.spec.js
+new file mode 100644
+index 0000000..ab2585c
+--- /dev/null
++++ b/frontend/e2e/bitacora-v2.spec.js
+@@ -0,0 +1,157 @@
++// @ts-check
++// E2E pasada BITÁCORA (HU-08/09/10) — comportamientos nuevos verificados en la UI.
++// El armado de datos (contrato, apertura, firmas, nota) se hace por API (Playwright request);
++// la UI se usa para VERIFICAR: (a) apertura = nota #1; (b) firma con botón registra firmante;
++// (c) candado de emisión sin firma completa; (d) tipos por rol (art. 125); (e) datos mínimos
++// de apertura (incl. teléfono/domicilio); (f) búsqueda por tag. La lógica server-side completa
++// (multi-firma + emisión post-firma + anular) está en backend/scripts/smoke-bitacora-v2.mjs.
++import { test, expect } from '@playwright/test';
++import { freshHome, enterAppMode, goToViaSidebar } from './_helpers.js';
++
++test.skip(!!process.env.CI, 'bitácora-v2: login real + backend; se corre en local');
++
++const API = 'http://localhost:4000/api';
++const PASS = 'Sigecop2026!';
++
++async function login(ctx, email) {
++  const r = await ctx.post(`${API}/auth/login`, { data: { email, password: PASS } });
++  return r.json();
++}
++const auth = (token) => ({ Authorization: `Bearer ${token}` });
++
++async function crearContrato(ctx, token, folio, superId, supId) {
++  const r = await ctx.post(`${API}/contratos`, {
++    headers: auth(token),
++    data: {
++      folio, tipo: 'Obra pública sobre la base de precios unitarios', objeto: 'Obra e2e bitácora',
++      contratista: 'Constructora E2E', dependencia: 'Dependencia E2E', plazoDias: 60, fechaInicio: '2026-06-01',
++      superintendenteId: superId, supervisionId: supId, anticipoPct: null, juridicos: {},
++      conceptos: [{ clave: 'A1', concepto: 'Concepto e2e', unidad: 'm³', cantidad: 100, pu: 50 }],
++      ciclo: 'mensual', programa: [{ clave: 'A1', periodoNumero: 1, cantidad: 100 }], garantias: []
++    }
++  });
++  expect(r.status(), 'crear contrato').toBe(201);
++  return (await r.json()).id;
++}
++async function aperturar(ctx, token, contratoId) {
++  const r = await ctx.post(`${API}/bitacora/apertura`, {
++    headers: auth(token),
++    data: {
++      contratoId, fechaEntregaSitio: '2026-06-01', plazoFirmaDias: 2,
++      domicilioDependencia: 'Av. Reforma 1', telefonoDependencia: '7471234567',
++      domicilioContratista: 'Calle Obra 2', telefonoContratista: '7479876543',
++      descripcionTrabajos: 'Construcción de nave', caracteristicasSitio: 'Terreno plano'
++    }
++  });
++  expect(r.status(), 'apertura').toBe(201);
++  return (await r.json()).id;
++}
++const firmarApertura = (ctx, token, apId) => ctx.post(`${API}/bitacora/${apId}/firmar`, { headers: auth(token) });
++const emitir = (ctx, token, apId, body) => ctx.post(`${API}/bitacora/${apId}/notas`, { headers: auth(token), data: body });
++
++// Tokens/ids de las cuentas semilla (residente=1, contratista/superintendente=2, supervisión=3).
++async function actores(ctx) {
++  const R = await login(ctx, 'residente@sigecop.test');
++  const S = await login(ctx, 'contratista@sigecop.test');
++  const V = await login(ctx, 'supervision@sigecop.test');
++  return { R, S, V };
++}
++
++test.describe('Bitácora v2 — apertura=nota#1, firma, candado, tipos, datos mínimos, tag', () => {
++  test('(e) la apertura EXIGE los datos mínimos (incl. teléfono y domicilio)', async ({ page, request }) => {
++    const { R, S, V } = await actores(request);
++    const folio = `BITUI-E-${Date.now()}`;
++    await crearContrato(request, R.token, folio, S.user.id, V.user.id); // sin aperturar
++
++    await freshHome(page);
++    await enterAppMode(page, 'residente');
++    await goToViaSidebar(page, '/bitacora/apertura');
++    await page.getByTestId('select-contrato').selectOption({ label: `${folio} · Obra e2e bitácora` });
++    // Sin datos mínimos: "Iniciar apertura" deshabilitado + aviso.
++    await expect(page.getByTestId('md-incompleto')).toBeVisible();
++    await expect(page.getByTestId('btn-aperturar')).toBeDisabled();
++    // Capturar TODOS los datos mínimos (domicilios + TELÉFONOS + alcance + sitio) lo habilita.
++    await page.getByTestId('md-domicilio-dependencia').fill('Av. Reforma 1');
++    await page.getByTestId('md-telefono-dependencia').fill('7471234567');
++    await page.getByTestId('md-domicilio-contratista').fill('Calle Obra 2');
++    await page.getByTestId('md-telefono-contratista').fill('7479876543');
++    await page.getByTestId('md-descripcion-trabajos').fill('Construcción de nave');
++    await page.getByTestId('md-caracteristicas-sitio').fill('Terreno plano');
++    await expect(page.getByTestId('btn-aperturar')).toBeEnabled();
++  });
++
++  test('(a) la apertura aparece como nota #1 y (c) candado: sin firma completa no se emite', async ({ page, request }) => {
++    const { R, S, V } = await actores(request);
++    const folio = `BITUI-AC-${Date.now()}`;
++    const cid = await crearContrato(request, R.token, folio, S.user.id, V.user.id);
++    await aperturar(request, R.token, cid); // aperturada, SIN firmar
++
++    await freshHome(page);
++    await enterAppMode(page, 'residente');
++    await goToViaSidebar(page, '/bitacora/notas');
++    await page.getByTestId('select-contrato').selectOption({ value: String(cid) });
++    // (a) la nota #1 es la apertura.
++    await expect(page.getByTestId('apertura-nota')).toBeVisible();
++    await expect(page.getByTestId('apertura-nota')).toContainText('BIT-0001');
++    await expect(page.getByTestId('apertura-nota')).toContainText('Apertura de bitácora');
++    // (c) candado de emisión: banner + botón emitir deshabilitado (apertura sin firmar).
++    await expect(page.getByTestId('gate-emision')).toBeVisible();
++    await expect(page.getByTestId('btn-emitir')).toBeDisabled();
++  });
++
++  test('(b) firmar la apertura con el BOTÓN registra al firmante + fecha', async ({ page, request }) => {
++    const { R, S, V } = await actores(request);
++    const folio = `BITUI-B-${Date.now()}`;
++    const cid = await crearContrato(request, R.token, folio, S.user.id, V.user.id);
++    await aperturar(request, R.token, cid);
++
++    await freshHome(page);
++    await enterAppMode(page, 'residente');
++    await goToViaSidebar(page, '/bitacora/notas');
++    await page.getByTestId('select-contrato').selectOption({ value: String(cid) });
++    await expect(page.getByTestId('apertura-firma-estado')).toContainText('0/3');
++    await page.getByTestId('btn-firmar-apertura').click();
++    // Tras firmar, el estado pasa a 1/3 y el firmante (residente) queda registrado con ✓.
++    await expect(page.getByTestId('apertura-firma-estado')).toContainText('1/3');
++    await expect(page.getByTestId('apertura-firmante-residente')).toContainText('✓');
++  });
++
++  test('(d) tipos de nota por rol: el residente ve los tipos granulares del art. 125 fr. I', async ({ page, request }) => {
++    const { R, S, V } = await actores(request);
++    const folio = `BITUI-D-${Date.now()}`;
++    const cid = await crearContrato(request, R.token, folio, S.user.id, V.user.id);
++    await aperturar(request, R.token, cid);
++
++    await freshHome(page);
++    await enterAppMode(page, 'residente');
++    await goToViaSidebar(page, '/bitacora/notas');
++    await page.getByTestId('select-contrato').selectOption({ value: String(cid) });
++    const sel = page.getByTestId('select-tipo');
++    // Granulares del residente (art. 125 fr. I); auto-retry hasta que cargue el catálogo.
++    await expect(sel.locator('option', { hasText: 'Sustitución del superintendente' })).toHaveCount(1);
++    await expect(sel.locator('option', { hasText: 'Suspensión de trabajos' })).toHaveCount(1);
++    expect(await sel.locator('option').count()).toBeGreaterThanOrEqual(10);
++  });
++
++  test('(f) búsqueda por TAG encuentra la nota en HU-10', async ({ page, request }) => {
++    const { R, S, V } = await actores(request);
++    const folio = `BITUI-F-${Date.now()}`;
++    const cid = await crearContrato(request, R.token, folio, S.user.id, V.user.id);
++    const apId = await aperturar(request, R.token, cid);
++    // Firmar la apertura por los 3 y emitir una nota con tag (todo por API).
++    await firmarApertura(request, R.token, apId);
++    await firmarApertura(request, S.token, apId);
++    await firmarApertura(request, V.token, apId);
++    const em = await emitir(request, R.token, apId, { tipo: 'res_estimaciones', contenido: 'Autorizo estimación', tag: 'ESTIM-UI-7' });
++    expect(em.status()).toBe(201);
++
++    await freshHome(page);
++    await enterAppMode(page, 'residente');
++    await goToViaSidebar(page, '/bitacora/consulta');
++    await page.getByTestId('select-contrato').selectOption({ value: String(cid) });
++    // Buscar por el tag: aparece 1 resultado y el chip del tag.
++    await page.getByTestId('filtro-palabra').fill('ESTIM-UI-7');
++    await expect(page.getByTestId('contador-resultados')).toHaveText('1');
++    await expect(page.locator('[data-testid^="tag-resultado-"]').first()).toContainText('ESTIM-UI-7');
++  });
++});
+diff --git a/frontend/src/components/notas/BuscadorNotas.jsx b/frontend/src/components/notas/BuscadorNotas.jsx
+index b13cef7..16c0a7a 100644
+--- a/frontend/src/components/notas/BuscadorNotas.jsx
++++ b/frontend/src/components/notas/BuscadorNotas.jsx
+@@ -80,7 +80,9 @@ export function useFiltrosNotas(notas, { excluirIds, filtrosIniciales } = {}) {
+       if (filtros.vinculo === 'Vinculadas' && !n.vinculada_a) return false;
+       if (filtros.vinculo === 'Sin vínculo' && n.vinculada_a) return false;
+       if (palabra) {
+-        const haystack = normalizarTexto(`${n.asunto || ''} ${n.contenido || ''}`);
++        // Incluye el TAG estructurado y la etiqueta del tipo (lo pidió el profe: búsqueda
++        // eficiente sin tener que leer el texto embebido).
++        const haystack = normalizarTexto(`${n.asunto || ''} ${n.contenido || ''} ${n.tag || ''} ${n.tipo_etiqueta || ''}`);
+         if (!haystack.includes(palabra)) return false;
+       }
+       return true;
+@@ -153,7 +155,7 @@ export default function BuscadorNotas({
+             <label className="sg-label">Palabra clave</label>
+             <input
+               className="sg-input"
+-              placeholder="Busca en asunto y contenido (sin acentos)"
++              placeholder="Busca en asunto, contenido, tag y tipo (sin acentos)"
+               value={filtros.palabraClave}
+               onChange={setFiltro('palabraClave')}
+               data-testid={tid('filtro-palabra')}
+@@ -214,6 +216,7 @@ export default function BuscadorNotas({
+                         <span className="inline-block px-2 py-0.5 bg-sigecop-blue-light text-sigecop-blue text-xs font-semibold rounded">
+                           {n.tipo_etiqueta || n.tipo}
+                         </span>
++                        {n.tag && <span className="ml-1 inline-block px-2 py-0.5 bg-violet-100 text-violet-800 text-[11px] font-semibold rounded" data-testid={`tag-resultado-${n.numero}`}>#{n.tag}</span>}
+                       </td>
+                       <td className="p-3">{soloFecha(n.fecha)}</td>
+                       <td className="p-3">{n.emisor_nombre || '—'}</td>
+diff --git a/frontend/src/pages/AperturaBitacora.jsx b/frontend/src/pages/AperturaBitacora.jsx
+index 8907127..7990bbd 100644
+--- a/frontend/src/pages/AperturaBitacora.jsx
++++ b/frontend/src/pages/AperturaBitacora.jsx
+@@ -40,7 +40,7 @@ function BitacoraReadOnly({ bitacora }) {
+       <div className="bg-sigecop-green-bg border-l-4 border-sigecop-green-validation px-4 py-3 rounded-r-md mb-6">
+         <div className="text-sm font-semibold text-sigecop-green-validation">✓ Bitácora aperturada</div>
+         <p className="text-sm text-slate-800 mt-1">
+-          Evento formal registrado el <strong>{aperturaEn}</strong> (entrega del sitio: {soloFecha(bitacora.fecha_apertura)}). La fecha y hora son <strong>inalterables</strong>.
++          Evento formal registrado el <strong>{aperturaEn}</strong>. Fecha de apertura (inicio del contrato): <strong>{soloFecha(bitacora.fecha_apertura)}</strong> · entrega del sitio: {soloFecha(cron.entrega_sitio)}. La fecha y hora son <strong>inalterables</strong>.
+         </p>
+       </div>
+ 
+@@ -59,7 +59,21 @@ function BitacoraReadOnly({ bitacora }) {
+             <Dato label="Contratista" valor={ident.contratista} />
+           </div>
+         </Grupo>
++        <Grupo titulo="Domicilios y teléfonos de las partes (art. 123 fr. III RLOPSRM)">
++          <div className="grid grid-cols-1 md:grid-cols-2 gap-3" data-testid="acta-domicilios">
++            <Dato label="Domicilio dependencia" valor={ident.domicilio_dependencia} />
++            <Dato label="Teléfono dependencia" valor={ident.telefono_dependencia} />
++            <Dato label="Domicilio contratista" valor={ident.domicilio_contratista} />
++            <Dato label="Teléfono contratista" valor={ident.telefono_contratista} />
++          </div>
++        </Grupo>
+         <Grupo titulo="Objeto de los trabajos"><div className="text-sm text-slate-800">{acta.objeto || '—'}</div></Grupo>
++        <Grupo titulo="Alcance de los trabajos y características del sitio (art. 123 fr. III RLOPSRM)">
++          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
++            <Dato label="Descripción de los trabajos" valor={acta.descripcion_trabajos} />
++            <Dato label="Características del sitio" valor={acta.caracteristicas_sitio} />
++          </div>
++        </Grupo>
+         <Grupo titulo="Datos financieros">
+           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+             <Dato label="Monto contractual" valor={mxn(fin.monto)} />
+@@ -108,6 +122,12 @@ export default function AperturaBitacora() {
+   const [aperturando, setAperturando] = useState(false);
+   const [fechaEntregaSitio, setFechaEntregaSitio] = useState('');
+   const [plazoFirmaDias, setPlazoFirmaDias] = useState(2);
++  // Datos mínimos de la apertura — art. 123 fr. III RLOPSRM (el profe: "esos son los que al
++  // menos deberían contemplar"): domicilios y teléfonos de las partes + alcance/sitio.
++  const MIN_KEYS = ['domicilioDependencia', 'telefonoDependencia', 'domicilioContratista', 'telefonoContratista', 'descripcionTrabajos', 'caracteristicasSitio'];
++  const [minData, setMinData] = useState({ domicilioDependencia: '', telefonoDependencia: '', domicilioContratista: '', telefonoContratista: '', descripcionTrabajos: '', caracteristicasSitio: '' });
++  const setMD = (k) => (e) => setMinData((p) => ({ ...p, [k]: e.target.value }));
++  const minDataCompleta = MIN_KEYS.every((k) => String(minData[k] || '').trim() !== '');
+ 
+   const contratoSel = contratos.find((c) => String(c.id) === String(contratoId)) || null;
+   const soyResidenteDelContrato = !!contratoSel && contratoSel.residente_id === usuario?.id;
+@@ -136,13 +156,13 @@ export default function AperturaBitacora() {
+     }
+   }, [contratos, showToast]);
+ 
+-  const puedeAperturar = !soloLectura && soyResidenteDelContrato && tieneSuperintendente && !bitacora && !cargando && !!fechaEntregaSitio && !aperturando;
++  const puedeAperturar = !soloLectura && soyResidenteDelContrato && tieneSuperintendente && !bitacora && !cargando && !!fechaEntregaSitio && minDataCompleta && !aperturando;
+ 
+   const handleAperturar = async () => {
+     if (!puedeAperturar) return;
+     setAperturando(true);
+     try {
+-      await api.abrirBitacora({ contratoId: Number(contratoId), fechaEntregaSitio, plazoFirmaDias: Number(plazoFirmaDias) || 2 });
++      await api.abrirBitacora({ contratoId: Number(contratoId), fechaEntregaSitio, plazoFirmaDias: Number(plazoFirmaDias) || 2, ...minData });
+       showToast('Bitácora aperturada. Cada parte ya puede firmar desde "Por firmar".');
+       const b = await api.bitacoraDeContrato(contratoId);
+       setBitacora(b);
+@@ -247,6 +267,18 @@ export default function AperturaBitacora() {
+                       </div>
+                     </div>
+                   </div>
++                  <div>
++                    <div className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Datos mínimos de la apertura — art. 123 fr. III RLOPSRM <span className="text-red-600">*</span></div>
++                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
++                      <div><label className="sg-label">Domicilio de la dependencia <span className="text-red-600">*</span></label><input className="sg-input" value={minData.domicilioDependencia} onChange={setMD('domicilioDependencia')} disabled={soloLectura} data-testid="md-domicilio-dependencia" /></div>
++                      <div><label className="sg-label">Teléfono de la dependencia <span className="text-red-600">*</span></label><input className="sg-input" value={minData.telefonoDependencia} onChange={setMD('telefonoDependencia')} disabled={soloLectura} data-testid="md-telefono-dependencia" /></div>
++                      <div><label className="sg-label">Domicilio del contratista <span className="text-red-600">*</span></label><input className="sg-input" value={minData.domicilioContratista} onChange={setMD('domicilioContratista')} disabled={soloLectura} data-testid="md-domicilio-contratista" /></div>
++                      <div><label className="sg-label">Teléfono del contratista <span className="text-red-600">*</span></label><input className="sg-input" value={minData.telefonoContratista} onChange={setMD('telefonoContratista')} disabled={soloLectura} data-testid="md-telefono-contratista" /></div>
++                      <div className="md:col-span-2"><label className="sg-label">Alcance/descripción de los trabajos <span className="text-red-600">*</span></label><textarea className="sg-input" rows={2} value={minData.descripcionTrabajos} onChange={setMD('descripcionTrabajos')} disabled={soloLectura} data-testid="md-descripcion-trabajos" /></div>
++                      <div className="md:col-span-2"><label className="sg-label">Características del sitio <span className="text-red-600">*</span></label><textarea className="sg-input" rows={2} value={minData.caracteristicasSitio} onChange={setMD('caracteristicasSitio')} disabled={soloLectura} data-testid="md-caracteristicas-sitio" /></div>
++                    </div>
++                    {!minDataCompleta && <p className="text-[11px] text-amber-700 mt-2" data-testid="md-incompleto">Captura los datos mínimos (domicilios, teléfonos, alcance y sitio) para poder aperturar (art. 123 fr. III RLOPSRM).</p>}
++                  </div>
+                 </div>
+               </RegionEditable>
+ 
+diff --git a/frontend/src/pages/EmisionNotas.jsx b/frontend/src/pages/EmisionNotas.jsx
+index 63692e6..8acd1f3 100644
+--- a/frontend/src/pages/EmisionNotas.jsx
++++ b/frontend/src/pages/EmisionNotas.jsx
+@@ -5,9 +5,11 @@ import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
+ import { useToast } from '../components/ui/Toast.jsx';
+ import { api } from '../services/api.js';
+ 
+-// HU-09 conectado al backend. UN emisor por nota (art. 125): el rol emisor lo deduce
+-// el servidor por el equipo del contrato; el folio es correlativo del backend; las
+-// correcciones/respuestas son notas vinculadas (la original nunca se edita).
++// HU-09 conectado al backend. Pasada bitácora:
++//  · La APERTURA es la nota #1 (art. 123 fr. III); su firma es CONJUNTA (todos los participantes).
++//  · CANDADO de emisión (server-side): no se emite hasta que la apertura esté firmada por TODOS.
++//  · Firma de notas por la CONTRAPARTE (botón). UN emisor por nota (art. 125); folio del servidor.
++//  · La emisión/respuesta es la PARTE CENTRAL; el libro va detrás de "Ver bitácora".
+ 
+ const folioFmt = (n) => (n == null ? '—' : 'BIT-' + String(n).padStart(4, '0'));
+ const soloFecha = (s) => (s ? String(s).slice(0, 10) : '');
+@@ -34,11 +36,14 @@ export default function EmisionNotas() {
+   const [tipos, setTipos] = useState([]);
+   const [data, setData] = useState(null);           // respuesta de listarNotas
+   const [cargando, setCargando] = useState(false);
++  const [verBitacora, setVerBitacora] = useState(false); // punto 6: el libro va detrás de un botón
++  const [firmando, setFirmando] = useState(null);   // id (apertura o nota) que se está firmando
+ 
+   // Formulario (emitir o responder/vincular)
+   const [respondiendoA, setRespondiendoA] = useState(null); // id de nota o null
+   const [tipo, setTipo] = useState('');
+   const [asunto, setAsunto] = useState('');
++  const [tag, setTag] = useState('');
+   const [contenido, setContenido] = useState('');
+   const [enviando, setEnviando] = useState(false);
+ 
+@@ -48,13 +53,16 @@ export default function EmisionNotas() {
+ 
+   const miRol = data?.mi_rol || null;
+   const esParte = !!miRol;
++  const aperturaCompleta = data?.apertura_completa === true;
++  const firmantesApertura = data?.apertura_firmantes || [];
++  const miFirmaAperturaPendiente = firmantesApertura.some((f) => f.usuario_id === usuario?.id && !f.firmado);
+ 
++  // PUNTO 4: solo los tipos VIGENTES (activos) del rol del usuario (art. 125), + 'otro'.
+   const tiposDeMiRol = useMemo(
+-    () => tipos.filter((t) => t.rol_emisor === miRol || t.rol_emisor === null),
++    () => tipos.filter((t) => t.activo !== false && (t.rol_emisor === miRol || t.rol_emisor === null) && t.clave !== 'apertura'),
+     [tipos, miRol]
+   );
+ 
+-  // mapa id -> numero para mostrar los vínculos como folio legible.
+   const numeroPorId = useMemo(() => {
+     const m = {};
+     (data?.notas || []).forEach((n) => { m[n.id] = n.numero; });
+@@ -80,7 +88,7 @@ export default function EmisionNotas() {
+   const seleccionar = useCallback(async (id) => {
+     setContratoId(id);
+     setApertura(null); setSinApertura(false); setData(null);
+-    setRespondiendoA(null); setAnulando(null);
++    setRespondiendoA(null); setAnulando(null); setVerBitacora(false);
+     if (!id) return;
+     setCargando(true);
+     try {
+@@ -94,7 +102,6 @@ export default function EmisionNotas() {
+     } finally { setCargando(false); }
+   }, [cargarNotas, showToast]);
+ 
+-  // Fija un tipo por defecto válido cuando cambian los tipos disponibles.
+   useEffect(() => {
+     if (tiposDeMiRol.length && !tiposDeMiRol.some((t) => t.clave === tipo)) {
+       setTipo(tiposDeMiRol[0].clave);
+@@ -103,16 +110,16 @@ export default function EmisionNotas() {
+ 
+   const iniciarRespuesta = (notaId) => {
+     setRespondiendoA(notaId);
+-    setAsunto(''); setContenido(''); setAnulando(null);
++    setAsunto(''); setContenido(''); setTag(''); setAnulando(null);
+     if (tiposDeMiRol.length) setTipo(tiposDeMiRol[0].clave);
+   };
+-  const cancelarForm = () => { setRespondiendoA(null); setAsunto(''); setContenido(''); };
++  const cancelarForm = () => { setRespondiendoA(null); setAsunto(''); setContenido(''); setTag(''); };
+ 
+   const enviar = async () => {
+     if (!tipo || !contenido.trim()) { showToast('Tipo y contenido son obligatorios'); return; }
+     setEnviando(true);
+     try {
+-      const payload = { tipo, asunto: asunto.trim(), contenido: contenido.trim() };
++      const payload = { tipo, asunto: asunto.trim(), contenido: contenido.trim(), tag: tag.trim() };
+       if (respondiendoA) await api.vincularNota(respondiendoA, payload);
+       else await api.emitirNota(apertura.id, payload);
+       showToast(respondiendoA ? 'Respuesta vinculada emitida' : 'Nota emitida y firmada');
+@@ -135,7 +142,97 @@ export default function EmisionNotas() {
+     }
+   };
+ 
++  // PUNTO 2 — firma de la APERTURA (conjunta, todos los participantes).
++  const firmarApertura = async () => {
++    if (!apertura) return;
++    setFirmando('apertura');
++    try {
++      const r = await api.firmarApertura(apertura.id);
++      showToast(r.completa ? 'Firmaste. La apertura quedó COMPLETA: ya pueden emitirse notas.' : 'Firmaste tu parte. Faltan otras firmas.');
++      await cargarNotas(apertura.id);
++    } catch (e) {
++      showToast(e.status === 409 ? 'Ya habías firmado la apertura' : (e.message || 'No se pudo firmar'));
++    } finally { setFirmando(null); }
++  };
++
++  // PUNTO 2 — firma de una NOTA por la contraparte (no el emisor).
++  const firmarNota = async (notaId) => {
++    setFirmando(notaId);
++    try {
++      await api.firmarNota(notaId);
++      showToast('Firmaste (aceptaste) la nota.');
++      await cargarNotas(apertura.id);
++    } catch (e) {
++      showToast(e.message || 'No se pudo firmar la nota');
++    } finally { setFirmando(null); }
++  };
++
+   const notas = data?.notas || [];
++  const notaApertura = notas.find((n) => n.tipo === 'apertura') || null;
++  const notasResto = notas.filter((n) => n.tipo !== 'apertura');
++
++  // Tarjeta de una nota del libro (no apertura): firmas, vínculo, responder/anular/firmar.
++  const NotaCard = (n) => {
++    const ac = ACEPTACION[n.aceptacion] || ACEPTACION.en_plazo;
++    const soyEmisor = n.emisor_id === usuario?.id;
++    const yaFirme = (n.firmas || []).some((f) => f.usuario_id === usuario?.id);
++    const puedeAnular = !soloLectura && esParte && soyEmisor && n.estado === 'emitida' && n.aceptacion !== 'respondida';
++    const puedeResponder = !soloLectura && esParte && n.estado === 'emitida';
++    const puedeFirmar = !soloLectura && esParte && !soyEmisor && !yaFirme && n.estado === 'emitida';
++    return (
++      <div key={n.id} className={`border rounded-md p-3 ${n.estado === 'anulada' ? 'border-slate-200 bg-slate-50' : 'border-slate-200 hover:bg-slate-50'}`} data-testid={`nota-${n.numero}`}>
++        <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
++          <span className="px-2 py-0.5 rounded text-xs font-semibold font-mono bg-sigecop-blue-light text-sigecop-blue">
++            {folioFmt(n.numero)} · {n.tipo_etiqueta || n.tipo}
++          </span>
++          <div className="flex items-center gap-2">
++            {n.tag && <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-violet-100 text-violet-800" data-testid={`tag-${n.numero}`}>#{n.tag}</span>}
++            <span className={`px-2 py-0.5 rounded text-[11px] font-semibold ${ac.cls}`} data-testid={`aceptacion-${n.numero}`}>{ac.label}</span>
++            <span className="text-xs text-slate-500">{soloFecha(n.fecha)}</span>
++          </div>
++        </div>
++        {n.asunto && <div className="text-xs font-semibold text-slate-800">{n.asunto}</div>}
++        <div className={`text-xs text-slate-600 mt-1 ${n.estado === 'anulada' ? 'line-through' : ''}`}>{n.contenido}</div>
++        <div className="text-xs text-slate-500 mt-1">
++          Emisor: {n.emisor_nombre || '—'}{n.rol_emisor ? ` · ${ROL_LABEL[n.rol_emisor] || n.rol_emisor}` : ''}
++          {n.firmado_en ? ` · firmó ${fechaHora(n.firmado_en)}` : ''}
++        </div>
++        {(n.firmas || []).length > 0 && (
++          <div className="text-xs text-sigecop-green-validation mt-1" data-testid={`firmas-nota-${n.numero}`}>
++            ✓ Aceptada por: {(n.firmas).map((f) => `${f.nombre || ROL_LABEL[f.rol_en_firma] || f.rol_en_firma} (${fechaHora(f.firmado_en)})`).join(' · ')}
++          </div>
++        )}
++        {n.vinculada_a && (
++          <div className="text-xs text-sigecop-blue mt-1" data-testid={`vinculo-${n.numero}`}>↪ Vinculada a {folioFmt(numeroPorId[n.vinculada_a])}</div>
++        )}
++        {(puedeResponder || puedeAnular || puedeFirmar) && (
++          <div className="mt-2 flex gap-4 flex-wrap">
++            {puedeFirmar && (
++              <button type="button" className="text-xs text-sigecop-green-validation font-semibold hover:underline disabled:opacity-50" disabled={firmando === n.id} onClick={() => firmarNota(n.id)} data-testid={`btn-firmar-nota-${n.numero}`}>
++                {firmando === n.id ? 'Firmando…' : '✓ Firmar (aceptar) nota'}
++              </button>
++            )}
++            {puedeResponder && (
++              <button type="button" className="text-xs text-sigecop-blue hover:underline" onClick={() => iniciarRespuesta(n.id)} data-testid={`btn-responder-${n.numero}`}>↪ Responder / vincular</button>
++            )}
++            {puedeAnular && (
++              <button type="button" className="text-xs text-red-600 hover:underline" onClick={() => { setAnulando(n.id); setCorreccion(''); }} data-testid={`btn-anular-${n.numero}`}>Anular (dice/debe decir)</button>
++            )}
++          </div>
++        )}
++        {anulando === n.id && (
++          <div className="mt-2 border-t border-slate-200 pt-2" data-testid={`form-anular-${n.numero}`}>
++            <label className="sg-label">Corrección — “dice / debe decir”</label>
++            <textarea className="sg-input" rows={2} value={correccion} onChange={(e) => setCorreccion(e.target.value)} placeholder="Dice: … / Debe decir: …" />
++            <div className="flex justify-end gap-2 mt-1">
++              <button type="button" className="text-xs text-slate-500" onClick={() => { setAnulando(null); setCorreccion(''); }}>Cancelar</button>
++              <button type="button" className="sg-btn-primary text-xs py-1" onClick={confirmarAnular} data-testid={`btn-confirmar-anular-${n.numero}`}>Anular y corregir</button>
++            </div>
++          </div>
++        )}
++      </div>
++    );
++  };
+ 
+   return (
+     <div>
+@@ -170,113 +267,105 @@ export default function EmisionNotas() {
+           )}
+ 
+           {contratoId && !cargando && apertura && data && (
+-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+-              {/* Libro de bitácora */}
+-              <div className="lg:col-span-2">
+-                <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+-                  <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">Libro de bitácora ({notas.length})</h2>
+-                  <span className="text-xs text-slate-500">Plazo de firma: <strong>{data.plazo_firma_dias} día(s)</strong></span>
+-                </div>
+-                <div className="space-y-2" data-testid="lista-notas">
+-                  {notas.length === 0 && <p className="text-sm text-slate-400 italic">Aún no hay notas en esta bitácora.</p>}
+-                  {notas.map((n) => {
+-                    const ac = ACEPTACION[n.aceptacion] || ACEPTACION.en_plazo;
+-                    const soyEmisor = n.emisor_id === usuario?.id;
+-                    const puedeAnular = !soloLectura && esParte && soyEmisor && n.estado === 'emitida' && n.aceptacion !== 'respondida';
+-                    const puedeResponder = !soloLectura && esParte && n.estado === 'emitida';
+-                    return (
+-                      <div
+-                        key={n.id}
+-                        className={`border rounded-md p-3 ${n.estado === 'anulada' ? 'border-slate-200 bg-slate-50' : 'border-slate-200 hover:bg-slate-50'}`}
+-                        data-testid={`nota-${n.numero}`}
+-                      >
+-                        <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
+-                          <span className="px-2 py-0.5 rounded text-xs font-semibold font-mono bg-sigecop-blue-light text-sigecop-blue">
+-                            {folioFmt(n.numero)} · {n.tipo_etiqueta || n.tipo}
+-                          </span>
+-                          <div className="flex items-center gap-2">
+-                            <span className={`px-2 py-0.5 rounded text-[11px] font-semibold ${ac.cls}`} data-testid={`aceptacion-${n.numero}`}>{ac.label}</span>
+-                            <span className="text-xs text-slate-500">{soloFecha(n.fecha)}</span>
+-                          </div>
+-                        </div>
+-                        {n.asunto && <div className="text-xs font-semibold text-slate-800">{n.asunto}</div>}
+-                        <div className={`text-xs text-slate-600 mt-1 ${n.estado === 'anulada' ? 'line-through' : ''}`}>{n.contenido}</div>
+-                        <div className="text-xs text-slate-500 mt-1">
+-                          Emisor: {n.emisor_nombre || '—'}{n.rol_emisor ? ` · ${ROL_LABEL[n.rol_emisor] || n.rol_emisor}` : ''}
+-                          {n.firmado_en ? ` · firmó ${fechaHora(n.firmado_en)}` : ''}
+-                        </div>
+-                        {n.vinculada_a && (
+-                          <div className="text-xs text-sigecop-blue mt-1" data-testid={`vinculo-${n.numero}`}>↪ Vinculada a {folioFmt(numeroPorId[n.vinculada_a])}</div>
+-                        )}
+-                        {(puedeResponder || puedeAnular) && (
+-                          <div className="mt-2 flex gap-4">
+-                            {puedeResponder && (
+-                              <button type="button" className="text-xs text-sigecop-blue hover:underline" onClick={() => iniciarRespuesta(n.id)} data-testid={`btn-responder-${n.numero}`}>
+-                                ↪ Responder / vincular
+-                              </button>
+-                            )}
+-                            {puedeAnular && (
+-                              <button type="button" className="text-xs text-red-600 hover:underline" onClick={() => { setAnulando(n.id); setCorreccion(''); }} data-testid={`btn-anular-${n.numero}`}>
+-                                Anular (dice/debe decir)
+-                              </button>
+-                            )}
+-                          </div>
+-                        )}
+-                        {anulando === n.id && (
+-                          <div className="mt-2 border-t border-slate-200 pt-2" data-testid={`form-anular-${n.numero}`}>
+-                            <label className="sg-label">Corrección — “dice / debe decir”</label>
+-                            <textarea className="sg-input" rows={2} value={correccion} onChange={(e) => setCorreccion(e.target.value)} placeholder="Dice: … / Debe decir: …" />
+-                            <div className="flex justify-end gap-2 mt-1">
+-                              <button type="button" className="text-xs text-slate-500" onClick={() => { setAnulando(null); setCorreccion(''); }}>Cancelar</button>
+-                              <button type="button" className="sg-btn-primary text-xs py-1" onClick={confirmarAnular} data-testid={`btn-confirmar-anular-${n.numero}`}>Anular y corregir</button>
+-                            </div>
+-                          </div>
+-                        )}
++            <div className="space-y-6">
++              {/* PUNTO 1 + 2: la APERTURA es la nota #1; su firma es conjunta (todos los participantes). */}
++              {notaApertura && (
++                <div className="border-2 border-sigecop-blue/20 rounded-md p-4 bg-sigecop-blue-light/30" data-testid="apertura-nota">
++                  <div className="flex items-center justify-between gap-2 flex-wrap mb-1">
++                    <span className="px-2 py-0.5 rounded text-xs font-semibold font-mono bg-sigecop-blue text-white">{folioFmt(notaApertura.numero)} · Apertura de bitácora</span>
++                    <span className={`px-2 py-0.5 rounded text-[11px] font-semibold ${aperturaCompleta ? 'bg-green-100 text-sigecop-green-validation' : 'bg-amber-100 text-amber-800'}`} data-testid="apertura-firma-estado">
++                      Firma conjunta {firmantesApertura.filter((f) => f.firmado).length}/{firmantesApertura.length}{aperturaCompleta ? ' — COMPLETA' : ' — PENDIENTE'}
++                    </span>
++                  </div>
++                  <div className="text-xs text-slate-600 mt-1">{notaApertura.contenido}</div>
++                  <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mt-3">
++                    {firmantesApertura.map((f) => (
++                      <div key={f.usuario_id || f.rol_en_firma} className={`border rounded p-2 text-xs ${f.firmado ? 'border-sigecop-green-validation bg-sigecop-green-bg/40' : 'border-slate-200 bg-white'}`} data-testid={`apertura-firmante-${f.rol_en_firma}`}>
++                        <div className="font-semibold text-slate-500 uppercase tracking-wider">{ROL_LABEL[f.rol_en_firma] || f.rol_en_firma}</div>
++                        <div className="text-slate-800">{f.nombre || '—'}</div>
++                        {f.firmado ? <div className="text-sigecop-green-validation font-semibold">✓ {fechaHora(f.firmado_en)}</div> : <div className="text-amber-700 font-semibold">Pendiente</div>}
+                       </div>
+-                    );
+-                  })}
++                    ))}
++                  </div>
++                  {!soloLectura && miFirmaAperturaPendiente && (
++                    <div className="mt-3">
++                      <button type="button" className="sg-btn-primary text-sm disabled:opacity-50" disabled={firmando === 'apertura'} onClick={firmarApertura} data-testid="btn-firmar-apertura">
++                        {firmando === 'apertura' ? 'Firmando…' : 'Firmar apertura (nota #1)'}
++                      </button>
++                    </div>
++                  )}
+                 </div>
+-              </div>
++              )}
++
++              {/* PUNTO 3: candado de emisión — server-side; la UI lo refleja. */}
++              {!aperturaCompleta && (
++                <div className="bg-amber-50 border-l-4 border-amber-400 px-4 py-3 rounded-r-md text-sm text-amber-800" data-testid="gate-emision">
++                  No se pueden emitir notas hasta que la <strong>apertura esté firmada por TODOS</strong> los participantes
++                  ({firmantesApertura.filter((f) => f.firmado).length}/{firmantesApertura.length}). art. 123 fr. III RLOPSRM.
++                </div>
++              )}
+ 
+-              {/* Formulario emitir / responder */}
+-              <div className="lg:col-span-1">
+-                {!esParte ? (
+-                  <div className="bg-slate-50 border border-slate-200 rounded-md p-4 text-sm text-slate-600" data-testid="aviso-observador">
+-                    Consultas esta bitácora como <strong>{ROL_LABEL[usuario?.rol] || usuario?.rol || 'observador'}</strong>; solo las partes del contrato (residente, superintendente, supervisión) emiten notas (art. 125 RLOPSRM).
++              {/* PUNTO 6: la emisión/respuesta es la PARTE CENTRAL. */}
++              {!esParte ? (
++                <div className="bg-slate-50 border border-slate-200 rounded-md p-4 text-sm text-slate-600" data-testid="aviso-observador">
++                  Consultas esta bitácora como <strong>{ROL_LABEL[usuario?.rol] || usuario?.rol || 'observador'}</strong>; solo las partes del contrato (residente, superintendente, supervisión) emiten notas (art. 125 RLOPSRM).
++                </div>
++              ) : soloLectura ? (
++                <div className="bg-slate-50 border border-slate-200 rounded-md p-4 text-sm text-slate-600">Vista en solo lectura.</div>
++              ) : (
++                <div className="bg-white border-2 border-sigecop-accent/30 rounded-md p-6 shadow-sm" data-testid="form-nota">
++                  <h2 className="text-lg font-bold text-sigecop-blue mb-4">
++                    {respondiendoA ? `Responder a ${folioFmt(numeroPorId[respondiendoA])}` : 'Emitir nueva nota'}
++                  </h2>
++                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
++                    <div>
++                      <label className="sg-label">Tipo de nota (tu rol: {ROL_LABEL[miRol]})</label>
++                      <select className="sg-input" value={tipo} onChange={(e) => setTipo(e.target.value)} data-testid="select-tipo">
++                        {tiposDeMiRol.map((t) => <option key={t.clave} value={t.clave}>{t.etiqueta}</option>)}
++                      </select>
++                      <p className="text-[11px] text-slate-500 mt-1">Tipos del art. 125 RLOPSRM para tu rol; “Otro” cubre eventos no tipificados (último párrafo).</p>
++                    </div>
++                    <div>
++                      <label className="sg-label">Tag de búsqueda</label>
++                      <input className="sg-input" value={tag} onChange={(e) => setTag(e.target.value)} placeholder="p. ej. EST-1, CONCEPTO-A1 (opcional)" maxLength={60} data-testid="input-tag" />
++                      <p className="text-[11px] text-slate-500 mt-1">Etiqueta corta para buscar la nota luego (HU-10).</p>
++                    </div>
++                    <div className="md:col-span-2">
++                      <label className="sg-label">Asunto</label>
++                      <input className="sg-input" value={asunto} onChange={(e) => setAsunto(e.target.value)} placeholder="Asunto breve (opcional)" data-testid="input-asunto" />
++                    </div>
++                    <div className="md:col-span-2">
++                      <label className="sg-label">Contenido *</label>
++                      <textarea className="sg-input" rows={5} value={contenido} onChange={(e) => setContenido(e.target.value)} placeholder="Redacción de la nota" data-testid="input-contenido" />
++                    </div>
+                   </div>
+-                ) : soloLectura ? (
+-                  <div className="bg-slate-50 border border-slate-200 rounded-md p-4 text-sm text-slate-600">Vista en solo lectura.</div>
+-                ) : (
+-                  <div className="bg-white border border-slate-200 rounded-md p-5" data-testid="form-nota">
+-                    <h2 className="text-base font-bold text-sigecop-blue mb-3">
+-                      {respondiendoA ? `Responder a ${folioFmt(numeroPorId[respondiendoA])}` : 'Emitir nueva nota'}
+-                    </h2>
+-                    <div className="space-y-3">
+-                      <div>
+-                        <label className="sg-label">Tipo de nota (tu rol: {ROL_LABEL[miRol]})</label>
+-                        <select className="sg-input" value={tipo} onChange={(e) => setTipo(e.target.value)} data-testid="select-tipo">
+-                          {tiposDeMiRol.map((t) => <option key={t.clave} value={t.clave}>{t.etiqueta}</option>)}
+-                        </select>
+-                        <p className="text-[11px] text-slate-500 mt-1">Solo los tipos que tu rol puede emitir; “Otro” cubre eventos no tipificados (art. 125, último párrafo).</p>
+-                      </div>
+-                      <div>
+-                        <label className="sg-label">Asunto</label>
+-                        <input className="sg-input" value={asunto} onChange={(e) => setAsunto(e.target.value)} placeholder="Asunto breve (opcional)" data-testid="input-asunto" />
+-                      </div>
+-                      <div>
+-                        <label className="sg-label">Contenido *</label>
+-                        <textarea className="sg-input" rows={5} value={contenido} onChange={(e) => setContenido(e.target.value)} placeholder="Redacción de la nota" data-testid="input-contenido" />
+-                      </div>
+-                      <div className="bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-3 py-2 text-xs text-slate-800 rounded-r-md">
+-                        ⚠️ Al emitir, <strong>firmas la nota</strong> y queda <strong>inmutable</strong>. Para corregir, emite una nota vinculada.
+-                      </div>
+-                      <div className="flex justify-end gap-2">
+-                        {respondiendoA && <button type="button" className="px-3 py-2 text-slate-600 text-sm" onClick={cancelarForm}>Cancelar</button>}
+-                        <button type="button" className="sg-btn-primary disabled:bg-slate-300 disabled:cursor-not-allowed" disabled={enviando || !contenido.trim()} onClick={enviar} data-testid="btn-emitir">
+-                          {enviando ? 'Emitiendo…' : (respondiendoA ? 'Emitir respuesta' : 'Emitir nota')}
+-                        </button>
+-                      </div>
++                  <div className="bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-3 py-2 text-xs text-slate-800 rounded-r-md mt-4">
++                    ⚠️ Al emitir, <strong>firmas la nota</strong> y queda <strong>inmutable</strong>. Para corregir, emite una nota vinculada.
++                  </div>
++                  <div className="flex justify-end gap-2 mt-4">
++                    {respondiendoA && <button type="button" className="px-3 py-2 text-slate-600 text-sm" onClick={cancelarForm}>Cancelar</button>}
++                    <button type="button" className="sg-btn-primary disabled:bg-slate-300 disabled:cursor-not-allowed" disabled={enviando || !contenido.trim() || !aperturaCompleta} onClick={enviar} data-testid="btn-emitir">
++                      {enviando ? 'Emitiendo…' : (respondiendoA ? 'Emitir respuesta' : 'Emitir nota')}
++                    </button>
++                  </div>
++                  {!aperturaCompleta && <p className="text-[11px] text-amber-700 mt-2 text-right">Emisión bloqueada hasta completar la firma de la apertura.</p>}
++                </div>
++              )}
++
++              {/* PUNTO 6: el libro de bitácora va detrás de "Ver bitácora". */}
++              <div>
++                <button type="button" className="sg-btn-secondary text-sm" onClick={() => setVerBitacora((v) => !v)} data-testid="btn-ver-bitacora">
++                  {verBitacora ? '▾ Ocultar bitácora' : `▸ Ver bitácora (${notas.length} nota${notas.length === 1 ? '' : 's'})`}
++                </button>
++                {verBitacora && (
++                  <div className="mt-3 space-y-2" data-testid="lista-notas">
++                    <div className="flex items-center justify-between gap-2 flex-wrap">
++                      <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">Libro de bitácora</h2>
++                      <span className="text-xs text-slate-500">Plazo de firma: <strong>{data.plazo_firma_dias} día(s)</strong></span>
+                     </div>
++                    {notaApertura && NotaCard(notaApertura)}
++                    {notasResto.length === 0 && <p className="text-sm text-slate-400 italic">Aún no hay notas además de la apertura.</p>}
++                    {notasResto.map((n) => NotaCard(n))}
+                   </div>
+                 )}
+               </div>
+diff --git a/frontend/src/services/api.js b/frontend/src/services/api.js
+index 3c69170..ca1bd0e 100644
+--- a/frontend/src/services/api.js
++++ b/frontend/src/services/api.js
+@@ -91,6 +91,8 @@ export const api = {
+   emitirNota: (aperturaId, payload) => request(`/bitacora/${aperturaId}/notas`, { method: 'POST', body: JSON.stringify(payload) }),
+   anularNota: (notaId, payload) => request(`/bitacora/notas/${notaId}/anular`, { method: 'POST', body: JSON.stringify(payload) }),
+   vincularNota: (notaId, payload) => request(`/bitacora/notas/${notaId}/vincular`, { method: 'POST', body: JSON.stringify(payload) }),
++  // Firma/aceptación de una nota por la contraparte (no la apertura; esa va por firmarApertura).
++  firmarNota: (notaId) => request(`/bitacora/notas/${notaId}/firmar`, { method: 'POST' }),
+   // HU-21: registro del pago efectuado.
+   registrarPago: (payload) => request('/pagos', { method: 'POST', body: JSON.stringify(payload) }),
+   listarPagos: (contratoId) => request(`/pagos/contrato/${contratoId}`),

@@ -829,3 +829,94 @@ DO $$ BEGIN
     ALTER TABLE contrato_documentos ADD CONSTRAINT uq_contrato_documentos_tipo UNIQUE (contrato_id, tipo);
   END IF;
 END $$;
+
+-- =====================================================================
+-- PASADA BITÁCORA (HU-08/09/10): apertura = nota #1, firma de notas, candado de
+-- emisión server-side, tipos por rol EXACTOS (art. 125 RLOPSRM), datos mínimos de
+-- apertura (art. 123 fr. III), y tag de búsqueda. ADITIVO e IDEMPOTENTE: aplica
+-- sobre BD existente (Render) sin tocar contrato/alta/A2/estimación.
+-- =====================================================================
+
+-- (B1) Datos mínimos de la apertura — art. 123 fr. III RLOPSRM: la nota especial de
+--      inicio relaciona "como mínimo... domicilios y teléfonos... y alcances descriptivos
+--      de los trabajos y de las características del sitio donde se desarrollarán". Se
+--      capturan en la apertura y se congelan también en el acta (snapshot inmutable).
+ALTER TABLE bitacora_aperturas ADD COLUMN IF NOT EXISTS domicilio_dependencia TEXT;
+ALTER TABLE bitacora_aperturas ADD COLUMN IF NOT EXISTS telefono_dependencia  TEXT;
+ALTER TABLE bitacora_aperturas ADD COLUMN IF NOT EXISTS domicilio_contratista TEXT;
+ALTER TABLE bitacora_aperturas ADD COLUMN IF NOT EXISTS telefono_contratista  TEXT;
+ALTER TABLE bitacora_aperturas ADD COLUMN IF NOT EXISTS descripcion_trabajos  TEXT;
+ALTER TABLE bitacora_aperturas ADD COLUMN IF NOT EXISTS caracteristicas_sitio TEXT;
+
+-- (B2) Catálogo de tipos = lista EXACTA del art. 125 RLOPSRM por rol (fr. I residente a–k;
+--      fr. II superintendente a–g; fr. III supervisión a–d) + apertura/cierre + 'otro'
+--      (art. 125, último párrafo). Se agrega `activo` para OCULTAR del selector los tipos
+--      "coarse" previos (autorizacion/aprobacion/solicitud/aviso) SIN romper la FK de notas
+--      ya emitidas con ellos (siguen resolviendo su etiqueta en consultas).
+ALTER TABLE bitacora_nota_tipos ADD COLUMN IF NOT EXISTS activo BOOLEAN NOT NULL DEFAULT true;
+
+INSERT INTO bitacora_nota_tipos (clave, etiqueta, rol_emisor, orden) VALUES
+  -- Residente — art. 125 fr. I a) … k) (autoriza / aprueba):
+  ('res_modificaciones',       'Autorización de modificaciones (proyecto ejecutivo, procedimiento, calidad, programa)', 'residente', 101),
+  ('res_estimaciones',         'Autorización de estimaciones',                                                          'residente', 102),
+  ('res_ajuste_costos',        'Aprobación de ajuste de costos',                                                        'residente', 103),
+  ('res_conceptos_extra',      'Aprobación de conceptos no previstos y cantidades adicionales',                         'residente', 104),
+  ('res_convenios',            'Autorización de convenios modificatorios',                                              'residente', 105),
+  ('res_terminacion_rescision','Terminación anticipada o rescisión administrativa del contrato',                        'residente', 106),
+  ('res_sustitucion',          'Sustitución del superintendente, del residente anterior o de la supervisión',          'residente', 107),
+  ('res_suspension',           'Suspensión de trabajos',                                                                'residente', 108),
+  ('res_conciliacion',         'Conciliaciones y, en su caso, convenios respectivos',                                   'residente', 109),
+  ('res_caso_fortuito',        'Caso fortuito o fuerza mayor que afecta el programa de ejecución',                       'residente', 110),
+  ('res_terminacion',          'Terminación de los trabajos',                                                           'residente', 111),
+  -- Superintendente — art. 125 fr. II a) … g) (solicita / avisa):
+  ('sup_modificaciones',       'Solicitud de modificaciones (proyecto ejecutivo, procedimiento, calidad, programa)',    'superintendente', 201),
+  ('sup_estimaciones',         'Solicitud de aprobación de estimaciones',                                               'superintendente', 202),
+  ('sup_falta_pago',           'Falta o atraso en el pago de estimaciones',                                             'superintendente', 203),
+  ('sup_ajuste_costos',        'Solicitud de ajuste de costos',                                                         'superintendente', 204),
+  ('sup_conceptos_extra',      'Solicitud de conceptos no previstos y cantidades adicionales',                          'superintendente', 205),
+  ('sup_convenios',            'Solicitud de convenios modificatorios',                                                 'superintendente', 206),
+  ('sup_aviso_terminacion',    'Aviso de terminación de los trabajos',                                                  'superintendente', 207)
+ON CONFLICT (clave) DO NOTHING;
+
+-- Supervisión (art. 125 fr. III a–d) ya era granular (avance/calidad/seguridad/junta) → se
+-- conserva. apertura/cierre/otro se conservan. Se OCULTAN (no se borran) los coarse previos.
+UPDATE bitacora_nota_tipos SET activo = false WHERE clave IN ('autorizacion','aprobacion','solicitud','aviso');
+-- Reordenar supervisión y especiales para que queden agrupados al final del selector.
+UPDATE bitacora_nota_tipos SET orden = 301 WHERE clave = 'avance';
+UPDATE bitacora_nota_tipos SET orden = 302 WHERE clave = 'calidad';
+UPDATE bitacora_nota_tipos SET orden = 303 WHERE clave = 'seguridad';
+UPDATE bitacora_nota_tipos SET orden = 304 WHERE clave = 'junta';
+UPDATE bitacora_nota_tipos SET orden = 400 WHERE clave = 'apertura';
+UPDATE bitacora_nota_tipos SET orden = 401 WHERE clave = 'cierre';
+UPDATE bitacora_nota_tipos SET orden = 999 WHERE clave = 'otro';
+
+-- (B3) Tag de búsqueda por nota (lo pidió el profe: como los tipos van embebidos en el
+--      texto, un tag estructurado hace la búsqueda eficiente). Opcional; lo captura el emisor.
+ALTER TABLE bitacora_notas ADD COLUMN IF NOT EXISTS tag VARCHAR(60);
+CREATE INDEX IF NOT EXISTS idx_bitacora_notas_tag ON bitacora_notas(tag);
+
+-- (B4) Firmas de NOTAS — distintas de la firma conjunta de la APERTURA (que vive en
+--      bitacora_firmantes). art. 123 fr. III: "se establecerá un plazo máximo para la firma
+--      de las notas... se tendrán por aceptadas una vez vencido el plazo". Cada parte del
+--      contrato que NO es el emisor puede firmar (aceptar) la nota. Append-only (UNIQUE por
+--      nota+usuario; UPDATE bloqueado). La aceptación tácita al vencer el plazo se sigue
+--      DERIVANDO en la consulta (no requiere fila).
+CREATE TABLE IF NOT EXISTS bitacora_nota_firmas (
+  id SERIAL PRIMARY KEY,
+  nota_id INTEGER NOT NULL REFERENCES bitacora_notas(id) ON DELETE CASCADE,
+  usuario_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+  rol_en_firma TEXT,
+  firmado_en TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (nota_id, usuario_id)
+);
+CREATE INDEX IF NOT EXISTS idx_bitacora_nota_firmas_nota ON bitacora_nota_firmas(nota_id);
+
+CREATE OR REPLACE FUNCTION sigecop_nota_firma_inmutable() RETURNS trigger AS $func$
+BEGIN
+  RAISE EXCEPTION 'La firma de una nota de bitácora es append-only y no puede modificarse';
+END;
+$func$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS trg_bitacora_nota_firmas_inmutable ON bitacora_nota_firmas;
+CREATE TRIGGER trg_bitacora_nota_firmas_inmutable
+  BEFORE UPDATE ON bitacora_nota_firmas
+  FOR EACH ROW EXECUTE FUNCTION sigecop_nota_firma_inmutable();

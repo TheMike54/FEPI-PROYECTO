@@ -80,7 +80,9 @@ export function useFiltrosNotas(notas, { excluirIds, filtrosIniciales } = {}) {
       if (filtros.vinculo === 'Vinculadas' && !n.vinculada_a) return false;
       if (filtros.vinculo === 'Sin vínculo' && n.vinculada_a) return false;
       if (palabra) {
-        const haystack = normalizarTexto(`${n.asunto || ''} ${n.contenido || ''}`);
+        // Incluye el TAG estructurado y la etiqueta del tipo (lo pidió el profe: búsqueda
+        // eficiente sin tener que leer el texto embebido).
+        const haystack = normalizarTexto(`${n.asunto || ''} ${n.contenido || ''} ${n.tag || ''} ${n.tipo_etiqueta || ''}`);
         if (!haystack.includes(palabra)) return false;
       }
       return true;
@@ -153,7 +155,7 @@ export default function BuscadorNotas({
             <label className="sg-label">Palabra clave</label>
             <input
               className="sg-input"
-              placeholder="Busca en asunto y contenido (sin acentos)"
+              placeholder="Busca en asunto, contenido, tag y tipo (sin acentos)"
               value={filtros.palabraClave}
               onChange={setFiltro('palabraClave')}
               data-testid={tid('filtro-palabra')}
@@ -214,6 +216,7 @@ export default function BuscadorNotas({
                         <span className="inline-block px-2 py-0.5 bg-sigecop-blue-light text-sigecop-blue text-xs font-semibold rounded">
                           {n.tipo_etiqueta || n.tipo}
                         </span>
+                        {n.tag && <span className="ml-1 inline-block px-2 py-0.5 bg-violet-100 text-violet-800 text-[11px] font-semibold rounded" data-testid={`tag-resultado-${n.numero}`}>#{n.tag}</span>}
                       </td>
                       <td className="p-3">{soloFecha(n.fecha)}</td>
                       <td className="p-3">{n.emisor_nombre || '—'}</td>

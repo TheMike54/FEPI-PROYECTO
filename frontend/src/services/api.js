@@ -91,6 +91,8 @@ export const api = {
   emitirNota: (aperturaId, payload) => request(`/bitacora/${aperturaId}/notas`, { method: 'POST', body: JSON.stringify(payload) }),
   anularNota: (notaId, payload) => request(`/bitacora/notas/${notaId}/anular`, { method: 'POST', body: JSON.stringify(payload) }),
   vincularNota: (notaId, payload) => request(`/bitacora/notas/${notaId}/vincular`, { method: 'POST', body: JSON.stringify(payload) }),
+  // Firma/aceptación de una nota por la contraparte (no la apertura; esa va por firmarApertura).
+  firmarNota: (notaId) => request(`/bitacora/notas/${notaId}/firmar`, { method: 'POST' }),
   // HU-21: registro del pago efectuado.
   registrarPago: (payload) => request('/pagos', { method: 'POST', body: JSON.stringify(payload) }),
   listarPagos: (contratoId) => request(`/pagos/contrato/${contratoId}`),

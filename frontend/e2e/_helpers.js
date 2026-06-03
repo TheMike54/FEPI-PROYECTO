@@ -154,3 +154,17 @@ export async function altaAdjuntarPdfFirmado(page, nombre = 'contrato-firmado-e2
   await page.getByTestId('pdf-firmado-pendiente-file').waitFor({ state: 'visible' });
 }
 
+/**
+ * alta-v4: en el paso "Garantías", con anticipo > umbral, adjunta el PDF de autorización del
+ * anticipo en memoria (input `anticipo-pdf-input`). Queda retenido (se sube al guardar) y
+ * satisface el gate del paso 4. Requiere que el aviso del anticipo ya esté visible (anticipo>umbral).
+ */
+export async function altaAdjuntarPdfAnticipo(page, nombre = 'autorizacion-anticipo-e2e.pdf') {
+  await page.getByTestId('anticipo-pdf-input').setInputFiles({
+    name: nombre,
+    mimeType: 'application/pdf',
+    buffer: Buffer.from('%PDF-1.4\n%E2E-ANT\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n')
+  });
+  await page.getByTestId('anticipo-pdf-pendiente-file').waitFor({ state: 'visible' });
+}
+

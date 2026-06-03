@@ -25,9 +25,12 @@ const MAX_CANTIDAD = 1e11;
 const MAX_PU = 1e12;
 const MAX_MONTO = 1e16;
 
-// --- 4.4: umbral de % de anticipo que EXIGE/HABILITA el PDF de autorización ---
-// Default 30% (art. 50 fr. IV LOPSRM: autorización escrita del titular). PARAMETRIZABLE:
-// el umbral exacto y si el PDF es obligatorio o solo habilitado los confirma el profe (ver doc).
+// --- 4.4 + alta-v4: umbral de % de anticipo que EXIGE el PDF de autorización ---
+// D-5 RESUELTA (Maiki): por ENCIMA del umbral el PDF de autorización es OBLIGATORIO (bloquea
+// avance y guardado del paso de garantías), igual que el PDF firmado. PARAMETRIZABLE: este es
+// el ÚNICO knob del umbral. El % exacto y su fundamento legal son [validar] con el profe — NO se
+// asume artículo del umbral (la exigencia de autorización escrita del titular se apoya, en la
+// vista, en art. 50 fr. IV LOPSRM, pero el valor 30 lo confirma el profe).
 const ANTICIPO_UMBRAL_PDF = 30;
 
 // --- Reglas de dominio HU-01 ---
@@ -73,7 +76,7 @@ const garantiaVacia = (g) => !(
   String(g.vigencia || '').trim()
 );
 
-const ERR0 = { campos: {}, conceptoIdx: null, programaError: false, garantiaIdx: null, catalogoMonto: false, pdfFirmadoFalta: false };
+const ERR0 = { campos: {}, conceptoIdx: null, programaError: false, garantiaIdx: null, catalogoMonto: false, pdfFirmadoFalta: false, anticipoPdfFalta: false };
 
 // alta-v2 (4.2): valores iniciales VACÍOS (también usados por "Cancelar"). El contrato nuevo
 // arranca en blanco; el `tipo` mantiene la primera opción del select (campo obligatorio que
@@ -458,7 +461,8 @@ function AnticipoAutorizacionPDF({ contratoId, soloLectura, pendingFile, onPickF
   }
   return (
     <div className="mt-2" data-testid="anticipo-pdf-uploader">
-      <p className="text-sm font-semibold text-blue-900 mb-1">Adjunta la autorización escrita (PDF):</p>
+      {/* alta-v4: el PDF de autorización es OBLIGATORIO sobre el umbral (bloquea avance y guardado). */}
+      <p className="text-sm font-semibold text-blue-900 mb-1">Adjunta la autorización escrita (PDF) <span className="text-red-600">*</span>:</p>
       {pendingFile && !contratoId ? (
         <p className="text-sm text-green-800" data-testid="anticipo-pdf-pendiente-file">📎 {pendingFile.name} — se adjuntará al guardar el contrato.{' '}
           <button type="button" className="text-red-600 hover:underline" onClick={() => onPickFile(null)} disabled={soloLectura}>quitar</button>
@@ -466,7 +470,7 @@ function AnticipoAutorizacionPDF({ contratoId, soloLectura, pendingFile, onPickF
       ) : (
         <>
           <input ref={inputRef} type="file" accept="application/pdf,.pdf" onChange={onArchivo} disabled={soloLectura || subiendo} className="block text-sm" data-testid="anticipo-pdf-input" />
-          {!contratoId && <p className="text-xs text-slate-500 mt-1">Puedes adjuntarla ahora (durante la captura); se guardará al crear el contrato.</p>}
+          {!contratoId && <p className="text-xs text-amber-700 mt-1" data-testid="anticipo-pdf-requerido"><strong>Obligatorio:</strong> sin este PDF no se puede avanzar ni guardar (anticipo &gt; {ANTICIPO_UMBRAL_PDF}%). <span className="text-slate-400">[validar el umbral con el profe]</span></p>}
           {subiendo && <p className="text-sm text-sigecop-accent mt-1">Subiendo…</p>}
         </>
       )}
@@ -1035,6 +1039,12 @@ export default function AltaContrato() {
 
   const [errores, setErrores] = useState(ERR0);
   const [tabActivo, setTabActivo] = useState(0);
+  // alta-v4 (gating estrictamente secuencial): máximo paso del wizard alcanzado legítimamente.
+  // Solo avanza vía irAPaso (de a un paso, validando el actual). Es el "high-water mark": NO baja
+  // si después se invalida un paso anterior (de eso se encarga `primerPasoInvalido`). La frontera
+  // accesible = min(pasoMaxAlcanzado + 1, primerPasoInvalido): así solo se desbloquea la SIGUIENTE
+  // pestaña (no todas de golpe) y se re-bloquean las posteriores si se rompe un paso previo.
+  const [pasoMaxAlcanzado, setPasoMaxAlcanzado] = useState(0);
   // alta-v2 (1.3): mensaje de error del wizard PERSISTENTE — el usuario lo cierra con la ✕;
   // NO se auto-descarta como el Toast (que dura 3 s). Se limpia al cerrar, al avanzar bien,
   // al guardar o al cancelar.
@@ -1186,6 +1196,14 @@ export default function AltaContrato() {
       if (anticipoPct !== '' && anticipoPct !== null) {
         const a = Number(anticipoPct);
         if (!(a >= 0 && a <= 100)) return { ok: false, msg: 'El % de anticipo debe estar entre 0 y 100', errores: { ...ERR0, campos: { anticipoPct: true } } };
+        // alta-v4 (BUG REPORTADO / D-5 resuelta): anticipo > umbral ⇒ el PDF de autorización del
+        // anticipo es OBLIGATORIO. Antes solo se PEDÍA (aviso + uploader) pero NO se EXIGÍA → se
+        // podía GUARDAR sin él. Ahora bloquea el AVANCE del paso Y el GUARDADO (mismo candado que
+        // el PDF firmado, vía validar()). pdfAnticipoFile = adjuntado en captura; contratoGuardadoId
+        // = ya-guardado (se subió al guardar). Fundamento del umbral [validar] con el profe.
+        if (a > ANTICIPO_UMBRAL_PDF && !pdfAnticipoFile && !contratoGuardadoId) {
+          return { ok: false, msg: `Anticipo ${a}% supera el ${ANTICIPO_UMBRAL_PDF}%: adjunta el PDF de autorización del anticipo (obligatorio para avanzar y guardar).`, errores: { ...ERR0, anticipoPdfFalta: true } };
+        }
       }
       for (let i = 0; i < garantias.length; i++) {
         const g = garantias[i];
@@ -1221,19 +1239,26 @@ export default function AltaContrato() {
     return null;
   };
 
-  // alta-v2 (1.1/1.2): navegación UNIFORME y gateada del wizard. Atrás y las pestañas auxiliares
-  // (PDF / Registrados) son libres; AVANZAR exige que TODOS los pasos del wizard intermedios sean
-  // VÁLIDOS. Se eliminó el bypass de "sin sesión" (modo demo): ahora el gating es parejo en todas
-  // las pestañas (1.1). Los errores van al banner PERSISTENTE (1.3), no a un Toast efímero.
+  // alta-v4 (gating ESTRICTAMENTE SECUENCIAL — fix de raíz): navegación del wizard.
+  //  · Registrados (target > ULTIMO): pestaña auxiliar de consulta → libre.
+  //  · Atrás (target <= tabActivo): libre, para corregir pasos previos.
+  //  · Adelante: SOLO de a un paso sobre el máximo alcanzado (destino = min(target, max+1)) y
+  //    validando el prefijo [tabActivo, destino). El primer paso inválido detiene el avance y
+  //    muestra su error. Así una pestaña desbloquea ÚNICAMENTE la siguiente (no todas de golpe),
+  //    no se salta a una no alcanzada, y los pasos opcionales (jurídicos/garantías vacíos) ya no
+  //    abren el resto en cascada. Los errores van al banner PERSISTENTE (1.3).
   const irAPaso = (target) => {
-    if (target <= tabActivo || target > ULTIMO_PASO_WIZARD) { setTabActivo(target); return; }
-    for (let p = tabActivo; p < target; p++) {
+    if (target > ULTIMO_PASO_WIZARD) { setTabActivo(target); return; } // auxiliar (Registrados)
+    if (target <= tabActivo) { setTabActivo(target); return; }          // atrás libre
+    const destino = Math.min(target, pasoMaxAlcanzado + 1);             // solo un paso nuevo
+    for (let p = tabActivo; p < destino; p++) {
       const v = validarPaso(p);
       if (!v.ok) { setErrores(v.errores); setTabActivo(p); setErrorWizard(v.msg); return; }
     }
     setErrores(ERR0);
     setErrorWizard(null);
-    setTabActivo(target);
+    setTabActivo(destino);
+    setPasoMaxAlcanzado((m) => Math.max(m, destino));
   };
 
   const handleGuardar = async () => {
@@ -1319,6 +1344,7 @@ export default function AltaContrato() {
     setPdfFirmadoFile(null);
     setPdfAnticipoFile(null);
     setTabActivo(0);
+    setPasoMaxAlcanzado(0); // alta-v4: reinicia el gating secuencial
     setContratoGuardadoId(null);
     setDirty(false);
     montadoRef.current = false; // re-armar el detector de "sucio"
@@ -1330,25 +1356,31 @@ export default function AltaContrato() {
     if (REQ_GENERALES.some((k) => c[k]) || c.superintendente) s.add(0);
     if (errores.conceptoIdx != null || errores.catalogoMonto) s.add(1);
     if (errores.programaError) s.add(2);
-    if (c.anticipoPct || errores.garantiaIdx != null) s.add(4);
+    if (c.anticipoPct || errores.garantiaIdx != null || errores.anticipoPdfFalta) s.add(4); // alta-v4: +PDF anticipo
     if (errores.pdfFirmadoFalta) s.add(5); // alta-v3: PDF firmado obligatorio (último paso)
     return s;
   }, [errores]);
 
-  // alta-v2 (1.2): pestañas del wizard BLOQUEADAS = las posteriores al primer paso inválido.
-  // No se puede saltar a un paso posterior si los anteriores no están bien llenos; las ya
-  // válidas/visitadas sí se revisitan (atrás libre). Las auxiliares (5 PDF, 6 Registrados) nunca
-  // se bloquean (consulta / adjuntar PDF). El gating real lo aplica irAPaso; esto es el affordance.
-  const tabsBloqueados = useMemo(() => {
+  // alta-v4 (gating ESTRICTAMENTE SECUENCIAL — fix de raíz del "se desbloquean todas de golpe"):
+  //  · primerPasoInvalido: primer paso del wizard que NO valida (o ULTIMO+1 si todos validan).
+  //  · fronteraAccesible = min(pasoMaxAlcanzado + 1, primerPasoInvalido):
+  //      - "+1 sobre el máximo alcanzado" ⇒ solo se desbloquea la SIGUIENTE pestaña (aunque las
+  //        opcionales —jurídicos, garantías vacías— sean válidas, NO se abren todas en cascada);
+  //      - "min con primerPasoInvalido" ⇒ se re-bloquean las posteriores si se rompe un paso previo.
+  //  Una pestaña del wizard es accesible sii i <= fronteraAccesible; Registrados (auxiliar) siempre.
+  //  Mismo criterio que aplica irAPaso (destino = min(target, max+1) + validación del prefijo):
+  //  affordance y enforcement comparten la regla → sin asimetrías.
+  const primerPasoInvalido = (() => {
+    for (const p of PASOS_WIZARD) { if (!validarPaso(p).ok) return p; }
+    return ULTIMO_PASO_WIZARD + 1;
+  })();
+  const fronteraAccesible = Math.min(pasoMaxAlcanzado + 1, primerPasoInvalido);
+  const pasoAccesible = (i) => (i > ULTIMO_PASO_WIZARD) ? true : (i <= fronteraAccesible);
+  const tabsBloqueados = (() => {
     const s = new Set();
-    let primerInvalido = ULTIMO_PASO_WIZARD + 1;
-    for (const p of PASOS_WIZARD) { if (!validarPaso(p).ok) { primerInvalido = p; break; } }
-    for (let i = primerInvalido + 1; i <= ULTIMO_PASO_WIZARD; i++) s.add(i);
+    for (let i = 0; i <= ULTIMO_PASO_WIZARD; i++) { if (!pasoAccesible(i)) s.add(i); }
     return s;
-    // alta-v3: pdfFirmadoFile/contratoGuardadoId entran porque validarPaso(5) los lee; el
-    // resultado es invariante (el paso 5 es el último → su validez nunca bloquea otra pestaña).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [datosGenerales, datosJuridicos, anticipoPct, conceptos, celdas, ciclo, garantias, superintendenteId, supervisionId, periodos, montoDerivado, pdfFirmadoFile, contratoGuardadoId]);
+  })();
 
   const wrapTab = (node) => (<RegionEditable disabled={soloLectura}>{node}</RegionEditable>);
 
@@ -1419,7 +1451,11 @@ export default function AltaContrato() {
                 {!pdfFirmadoFile && (
                   <span className="text-xs text-amber-700" data-testid="guardar-bloqueado-hint">Adjunta el PDF firmado para habilitar el guardado.</span>
                 )}
-                <button type="button" className="sg-btn-primary" disabled={soloLectura || guardando || !pdfFirmadoFile} onClick={handleGuardar} data-testid="btn-guardar">
+                {/* alta-v4: el "disabled" refleja la validez GLOBAL (primerPasoInvalido), no solo el
+                    PDF firmado → el affordance del botón coincide con validar() y con el gating
+                    secuencial (cierra la asimetría save-vs-advance). En el paso 5 con 0–4 válidos,
+                    el único pendiente posible es el PDF firmado, así que la pista de abajo aplica. */}
+                <button type="button" className="sg-btn-primary" disabled={soloLectura || guardando || primerPasoInvalido <= ULTIMO_PASO_WIZARD} onClick={handleGuardar} data-testid="btn-guardar">
                   {guardando ? 'Guardando…' : 'Guardar contrato'}
                 </button>
               </>

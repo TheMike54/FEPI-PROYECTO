@@ -6,14 +6,23 @@ const { esParteOSupervision } = require('../lib/acceso');
 
 // Construye el acta (primera nota): snapshot inmutable de los grupos del art. 122
 // RLOPSRM, tomados del contrato + el roster de firmantes (identidad por cuenta).
-function construirActa(contrato, roster, cronograma) {
+function construirActa(contrato, roster, cronograma, datos) {
+  const d = datos || {};
   return {
     identificacion: {
       folio: contrato.folio,
       dependencia: contrato.dependencia,
-      contratista: contrato.contratista
+      contratista: contrato.contratista,
+      // art. 123 fr. III RLOPSRM: domicilios y teléfonos de las partes involucradas.
+      domicilio_dependencia: d.domicilioDependencia || null,
+      telefono_dependencia: d.telefonoDependencia || null,
+      domicilio_contratista: d.domicilioContratista || null,
+      telefono_contratista: d.telefonoContratista || null
     },
     objeto: contrato.objeto,
+    // art. 123 fr. III RLOPSRM: alcances descriptivos de los trabajos y características del sitio.
+    descripcion_trabajos: d.descripcionTrabajos || null,
+    caracteristicas_sitio: d.caracteristicasSitio || null,
     datos_financieros: {
       monto: contrato.monto,
       anticipo_pct: contrato.anticipo_pct,
@@ -51,6 +60,17 @@ async function abrirBitacora(req, res) {
   if (!Number.isInteger(plazoFirmaDias) || plazoFirmaDias < 1 || plazoFirmaDias > 60) {
     return res.status(400).json({ error: 'plazoFirmaDias debe ser un entero entre 1 y 60' });
   }
+  // Datos mínimos de la apertura (art. 123 fr. III RLOPSRM): domicilios/teléfonos de las
+  // partes + alcances/características del sitio. La vista los exige; aquí se normalizan.
+  const t = (v) => (typeof v === 'string' ? v.trim() : '') || null;
+  const minData = {
+    domicilioDependencia: t(body.domicilioDependencia),
+    telefonoDependencia: t(body.telefonoDependencia),
+    domicilioContratista: t(body.domicilioContratista),
+    telefonoContratista: t(body.telefonoContratista),
+    descripcionTrabajos: t(body.descripcionTrabajos),
+    caracteristicasSitio: t(body.caracteristicasSitio)
+  };
 
   let client;
   try {
@@ -105,13 +125,21 @@ async function abrirBitacora(req, res) {
         inicio: contrato.fecha_inicio,
         fin: contrato.fecha_termino,
         entregaSitio: fechaEntregaSitio
-      });
+      }, minData);
 
+      // fecha_apertura = fecha de INICIO del contrato: la bitácora se abre el MISMO día en que
+      // arranca el contrato (hallazgo del profe, audio 2026-06-01). La entrega del sitio se
+      // conserva aparte (acta.cronograma.entrega_sitio). [validar] la regla "mismo día".
       const ins = await client.query(
-        `INSERT INTO bitacora_aperturas (contrato_id, fecha_apertura, plazo_firma_dias, acta, aperturada_por)
-         VALUES ($1, $2, $3, $4, $5)
+        `INSERT INTO bitacora_aperturas
+           (contrato_id, fecha_apertura, plazo_firma_dias, acta, aperturada_por,
+            domicilio_dependencia, telefono_dependencia, domicilio_contratista, telefono_contratista,
+            descripcion_trabajos, caracteristicas_sitio)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          RETURNING id, contrato_id, fecha_apertura, plazo_firma_dias, apertura_en, acta, aperturada_por`,
-        [contratoId, fechaEntregaSitio, plazoFirmaDias, JSON.stringify(acta), req.user.id]
+        [contratoId, contrato.fecha_inicio, plazoFirmaDias, JSON.stringify(acta), req.user.id,
+         minData.domicilioDependencia, minData.telefonoDependencia, minData.domicilioContratista,
+         minData.telefonoContratista, minData.descripcionTrabajos, minData.caracteristicasSitio]
       );
       const bitacora = ins.rows[0];
 
@@ -122,6 +150,21 @@ async function abrirBitacora(req, res) {
           [bitacora.id, m.usuario_id, m.rol_en_firma]
         );
       }
+
+      // PUNTO 1 (profe): "¿Cuál es la primer nota? La de la apertura, es la 1". La apertura se
+      // registra COMO la nota #1 del libro (tipo 'apertura', art. 123 fr. III "se deberá iniciar
+      // con una nota especial"); las notas emitidas después arrancan en #2. Su firma es la
+      // CONJUNTA (bitacora_firmantes), no la del emisor → firmado_en NULL.
+      const resumenApertura =
+        `Apertura de bitácora del contrato ${contrato.folio}. Objeto: ${contrato.objeto}. ` +
+        `Partes: ${contrato.dependencia} (dependencia) / ${contrato.contratista} (contratista). ` +
+        `Inicio contractual ${String(contrato.fecha_inicio).slice(0, 10)}; entrega del sitio ${String(fechaEntregaSitio).slice(0, 10)}. ` +
+        `Datos mínimos (art. 123 fr. III RLOPSRM): domicilios, teléfonos y características del sitio registrados en el acta.`;
+      await client.query(
+        `INSERT INTO bitacora_notas (bitacora_id, numero, tipo, asunto, contenido, emisor_id, estado, firmado_en)
+         VALUES ($1, 1, 'apertura', 'Nota de apertura de bitácora', $2, $3, 'emitida', NULL)`,
+        [bitacora.id, resumenApertura, req.user.id]
+      );
 
       await client.query('COMMIT');
       return res.status(201).json(bitacora);
@@ -276,14 +319,14 @@ async function validarTipoParaRol(client, tipo, rolEnContrato) {
 
 // Inserta una nota con folio correlativo ATÓMICO por bitácora (advisory lock por
 // bitácora + MAX+1; el UNIQUE(bitacora_id,numero) es la red). Debe ir dentro de una tx.
-async function insertarNotaAtomica(client, { bitacoraId, tipo, asunto, contenido, emisorId, vinculadaA }) {
+async function insertarNotaAtomica(client, { bitacoraId, tipo, asunto, contenido, emisorId, vinculadaA, tag }) {
   await client.query('SELECT pg_advisory_xact_lock($1)', [bitacoraId]);
   const ins = await client.query(
-    `INSERT INTO bitacora_notas (bitacora_id, numero, tipo, asunto, contenido, emisor_id, estado, firmado_en, vinculada_a)
+    `INSERT INTO bitacora_notas (bitacora_id, numero, tipo, asunto, contenido, emisor_id, estado, firmado_en, vinculada_a, tag)
      VALUES ($1, (SELECT COALESCE(MAX(numero),0)+1 FROM bitacora_notas WHERE bitacora_id = $1),
-             $2, $3, $4, $5, 'emitida', NOW(), $6)
-     RETURNING id, bitacora_id, numero, tipo, asunto, contenido, emisor_id, estado, vinculada_a, fecha, firmado_en`,
-    [bitacoraId, tipo, asunto || null, contenido, emisorId, vinculadaA || null]
+             $2, $3, $4, $5, 'emitida', NOW(), $6, $7)
+     RETURNING id, bitacora_id, numero, tipo, asunto, contenido, emisor_id, estado, vinculada_a, fecha, firmado_en, tag`,
+    [bitacoraId, tipo, asunto || null, contenido, emisorId, vinculadaA || null, tag || null]
   );
   return ins.rows[0];
 }
@@ -292,7 +335,10 @@ function leerCamposNota(body) {
   return {
     tipo: typeof body.tipo === 'string' ? body.tipo.trim() : '',
     asunto: typeof body.asunto === 'string' ? body.asunto.trim() : '',
-    contenido: typeof body.contenido === 'string' ? body.contenido.trim() : ''
+    contenido: typeof body.contenido === 'string' ? body.contenido.trim() : '',
+    // PUNTO 4 (profe): tag de búsqueda por nota (los tipos van embebidos → un tag estructurado
+    // hace la búsqueda eficiente). Opcional.
+    tag: typeof body.tag === 'string' ? body.tag.trim() : ''
   };
 }
 
@@ -300,11 +346,14 @@ function leerCamposNota(body) {
 async function emitirNota(req, res) {
   const aperturaId = Number(req.params.aperturaId);
   if (!Number.isInteger(aperturaId) || aperturaId <= 0) return res.status(400).json({ error: 'aperturaId inválido' });
-  const { tipo, asunto, contenido } = leerCamposNota(req.body || {});
+  const { tipo, asunto, contenido, tag } = leerCamposNota(req.body || {});
   if (!tipo) return res.status(400).json({ error: 'Falta el tipo de nota' });
+  // La nota de apertura (folio #1) la genera la apertura; no se emite a mano.
+  if (tipo === 'apertura') return res.status(400).json({ error: 'La nota de apertura (folio #1) la genera la apertura de bitácora, no se emite a mano' });
   if (!contenido) return res.status(400).json({ error: 'Falta el contenido de la nota' });
   if (contenido.length > 5000) return res.status(400).json({ error: 'El contenido no puede exceder 5000 caracteres' });
   if (asunto.length > 200) return res.status(400).json({ error: 'El asunto no puede exceder 200 caracteres' });
+  if (tag.length > 60) return res.status(400).json({ error: 'El tag no puede exceder 60 caracteres' });
 
   let client;
   try {
@@ -315,10 +364,24 @@ async function emitirNota(req, res) {
       if (notFound) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'El contrato no tiene bitácora aperturada' }); }
       if (!rolEnContrato) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'No eres parte firmante de este contrato; no puedes emitir notas' }); }
 
+      // PUNTO 3 (candado de emisión, SERVER-SIDE): NO se puede emitir una nota hasta que la
+      // APERTURA esté firmada por TODOS los participantes requeridos. art. 123 fr. III: la
+      // bitácora "se deberá iniciar con una nota especial" firmada por el personal autorizado;
+      // hasta entonces no hay base para asentar notas. (Antes bastaba una sola firma → bug.)
+      const ff = await client.query(
+        'SELECT count(*) FILTER (WHERE NOT firmado) AS pendientes FROM bitacora_firmantes WHERE bitacora_id = $1',
+        [apertura.id]
+      );
+      const pendientes = Number(ff.rows[0].pendientes);
+      if (pendientes > 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: `No se pueden emitir notas hasta que la apertura esté firmada por TODOS los participantes (faltan ${pendientes} firma(s)).` });
+      }
+
       const v = await validarTipoParaRol(client, tipo, rolEnContrato);
       if (!v.ok) { await client.query('ROLLBACK'); return res.status(v.status).json({ error: v.error }); }
 
-      const nota = await insertarNotaAtomica(client, { bitacoraId: apertura.id, tipo, asunto, contenido, emisorId: req.user.id });
+      const nota = await insertarNotaAtomica(client, { bitacoraId: apertura.id, tipo, asunto, contenido, emisorId: req.user.id, tag });
       await client.query('COMMIT');
       return res.status(201).json(nota);
     } catch (e) {
@@ -348,11 +411,16 @@ async function construirPayloadNotas(apertura, userId) {
 
   const r = await pool.query(
     `SELECT n.id, n.numero, n.tipo, tp.etiqueta AS tipo_etiqueta, tp.rol_emisor,
-            n.asunto, n.contenido, n.estado, n.vinculada_a, n.fecha, n.firmado_en,
+            n.asunto, n.contenido, n.tag, n.estado, n.vinculada_a, n.fecha, n.firmado_en,
             n.emisor_id, u.nombre AS emisor_nombre, u.email AS emisor_correo,
             (NOW() > n.fecha + make_interval(days => $2::int)) AS plazo_vencido,
             EXISTS (SELECT 1 FROM bitacora_notas m
-                     WHERE m.vinculada_a = n.id AND m.emisor_id IS DISTINCT FROM n.emisor_id) AS respondida
+                     WHERE m.vinculada_a = n.id AND m.emisor_id IS DISTINCT FROM n.emisor_id) AS respondida,
+            COALESCE((SELECT json_agg(json_build_object(
+                         'usuario_id', nf.usuario_id, 'rol_en_firma', nf.rol_en_firma,
+                         'nombre', uf.nombre, 'firmado_en', nf.firmado_en) ORDER BY nf.firmado_en)
+                        FROM bitacora_nota_firmas nf LEFT JOIN usuarios uf ON uf.id = nf.usuario_id
+                       WHERE nf.nota_id = n.id), '[]'::json) AS firmas
        FROM bitacora_notas n
        LEFT JOIN bitacora_nota_tipos tp ON tp.clave = n.tipo
        LEFT JOIN usuarios u ON u.id = n.emisor_id
@@ -361,9 +429,21 @@ async function construirPayloadNotas(apertura, userId) {
     [apertura.id, apertura.plazo_firma_dias]
   );
 
+  // Firmantes de la APERTURA (firma conjunta, art. 123 fr. III): los reusa la nota #1 para
+  // mostrar quién firmó + fecha/hora y habilitar el botón de firma de la apertura.
+  const fr = await pool.query(
+    `SELECT f.usuario_id, f.rol_en_firma, f.firmado, f.firmado_en, u.nombre, u.email
+       FROM bitacora_firmantes f LEFT JOIN usuarios u ON u.id = f.usuario_id
+      WHERE f.bitacora_id = $1 ORDER BY f.id`,
+    [apertura.id]
+  );
+  const aperturaFirmantes = fr.rows;
+  const aperturaCompleta = aperturaFirmantes.length > 0 && aperturaFirmantes.every((x) => x.firmado);
+
   const notas = r.rows.map((n) => {
     let aceptacion;
     if (n.estado === 'anulada') aceptacion = 'anulada';
+    else if (n.tipo === 'apertura') aceptacion = aperturaCompleta ? 'aceptada_tacita' : 'en_plazo'; // su firma es la conjunta
     else if (n.respondida) aceptacion = 'respondida';
     else if (n.plazo_vencido) aceptacion = 'aceptada_tacita';
     else aceptacion = 'en_plazo';
@@ -375,6 +455,8 @@ async function construirPayloadNotas(apertura, userId) {
     contrato_id: apertura.contrato_id,
     plazo_firma_dias: apertura.plazo_firma_dias,
     mi_rol: miRol,
+    apertura_firmantes: aperturaFirmantes,
+    apertura_completa: aperturaCompleta,
     notas
   };
 }
@@ -468,6 +550,8 @@ async function anularNota(req, res) {
       );
       if (nres.rowCount === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Nota no encontrada' }); }
       const nota = nres.rows[0];
+      // La nota de apertura (folio #1) es el acta de inicio: no se anula (art. 123 fr. III/V/VI).
+      if (nota.tipo === 'apertura') { await client.query('ROLLBACK'); return res.status(403).json({ error: 'La nota de apertura (folio #1) no puede anularse' }); }
       if (nota.emisor_id !== req.user.id) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'Solo el emisor puede anular su nota' }); }
       if (nota.estado !== 'emitida') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'La nota ya está anulada' }); }
 
@@ -549,10 +633,55 @@ async function vincularNota(req, res) {
 // por rol. Único requisito: estar autenticado (el router ya lo exige).
 async function listarNotaTipos(req, res) {
   try {
-    const r = await pool.query('SELECT clave, etiqueta, rol_emisor, orden FROM bitacora_nota_tipos ORDER BY orden');
+    // Se devuelven TODOS (con `activo`): el UI de emisión filtra activo=true (solo los tipos
+    // vigentes del art. 125); la consulta puede resolver etiquetas de tipos viejos (inactivos).
+    const r = await pool.query('SELECT clave, etiqueta, rol_emisor, orden, activo FROM bitacora_nota_tipos ORDER BY orden');
     return res.status(200).json(r.rows);
   } catch (err) {
     console.error('[listarNotaTipos]', err);
+    return res.status(500).json({ error: 'Error interno' });
+  }
+}
+
+// POST /api/bitacora/notas/:notaId/firmar — PUNTO 2: una PARTE del contrato que NO es el
+// emisor firma (acepta) una nota dentro del plazo (art. 123 fr. III: "plazo máximo para la
+// firma de las notas"). Append-only (bitacora_nota_firmas). Distinto de la firma CONJUNTA de
+// la APERTURA (esa va por /:aperturaId/firmar, requiere a TODOS los participantes). El emisor
+// ya firmó al emitir. La aceptación tácita al vencer el plazo se sigue derivando en la consulta.
+async function firmarNota(req, res) {
+  const notaId = Number(req.params.notaId);
+  if (!Number.isInteger(notaId) || notaId <= 0) return res.status(400).json({ error: 'notaId inválido' });
+  let client;
+  try {
+    client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const nres = await client.query('SELECT id, bitacora_id, tipo, emisor_id, estado FROM bitacora_notas WHERE id = $1', [notaId]);
+      if (nres.rowCount === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Nota no encontrada' }); }
+      const nota = nres.rows[0];
+      if (nota.tipo === 'apertura') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'La apertura (nota #1) se firma en "Por firmar" (firma conjunta de TODOS los participantes)' }); }
+      if (nota.estado !== 'emitida') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'La nota está anulada; no puede firmarse' }); }
+
+      const { notFound, rolEnContrato } = await cargarAperturaYRol(client, nota.bitacora_id, req.user.id);
+      if (notFound) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'El contrato no tiene bitácora aperturada' }); }
+      if (!rolEnContrato) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'No eres parte de este contrato; no puedes firmar sus notas' }); }
+      if (nota.emisor_id === req.user.id) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'El emisor ya firmó la nota al emitirla; la firma aquí es de la contraparte' }); }
+
+      const ins = await client.query(
+        `INSERT INTO bitacora_nota_firmas (nota_id, usuario_id, rol_en_firma)
+         VALUES ($1, $2, $3) ON CONFLICT (nota_id, usuario_id) DO NOTHING
+         RETURNING id, firmado_en`,
+        [notaId, req.user.id, rolEnContrato]
+      );
+      if (ins.rowCount === 0) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'Ya firmaste esta nota' }); }
+      await client.query('COMMIT');
+      return res.status(201).json({ nota_id: notaId, firmado: true, firmado_en: ins.rows[0].firmado_en, rol_en_firma: rolEnContrato });
+    } catch (e) {
+      try { await client.query('ROLLBACK'); } catch (_) {}
+      throw e;
+    } finally { client.release(); }
+  } catch (err) {
+    console.error('[firmarNota]', err);
     return res.status(500).json({ error: 'Error interno' });
   }
 }
@@ -567,5 +696,6 @@ module.exports = {
   listarNotas,
   notasDeContrato,
   anularNota,
-  vincularNota
+  vincularNota,
+  firmarNota
 };

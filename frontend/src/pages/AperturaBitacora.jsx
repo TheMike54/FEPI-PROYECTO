@@ -40,7 +40,7 @@ function BitacoraReadOnly({ bitacora }) {
       <div className="bg-sigecop-green-bg border-l-4 border-sigecop-green-validation px-4 py-3 rounded-r-md mb-6">
         <div className="text-sm font-semibold text-sigecop-green-validation">✓ Bitácora aperturada</div>
         <p className="text-sm text-slate-800 mt-1">
-          Evento formal registrado el <strong>{aperturaEn}</strong> (entrega del sitio: {soloFecha(bitacora.fecha_apertura)}). La fecha y hora son <strong>inalterables</strong>.
+          Evento formal registrado el <strong>{aperturaEn}</strong>. Fecha de apertura (inicio del contrato): <strong>{soloFecha(bitacora.fecha_apertura)}</strong> · entrega del sitio: {soloFecha(cron.entrega_sitio)}. La fecha y hora son <strong>inalterables</strong>.
         </p>
       </div>
 
@@ -59,7 +59,21 @@ function BitacoraReadOnly({ bitacora }) {
             <Dato label="Contratista" valor={ident.contratista} />
           </div>
         </Grupo>
+        <Grupo titulo="Domicilios y teléfonos de las partes (art. 123 fr. III RLOPSRM)">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3" data-testid="acta-domicilios">
+            <Dato label="Domicilio dependencia" valor={ident.domicilio_dependencia} />
+            <Dato label="Teléfono dependencia" valor={ident.telefono_dependencia} />
+            <Dato label="Domicilio contratista" valor={ident.domicilio_contratista} />
+            <Dato label="Teléfono contratista" valor={ident.telefono_contratista} />
+          </div>
+        </Grupo>
         <Grupo titulo="Objeto de los trabajos"><div className="text-sm text-slate-800">{acta.objeto || '—'}</div></Grupo>
+        <Grupo titulo="Alcance de los trabajos y características del sitio (art. 123 fr. III RLOPSRM)">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Dato label="Descripción de los trabajos" valor={acta.descripcion_trabajos} />
+            <Dato label="Características del sitio" valor={acta.caracteristicas_sitio} />
+          </div>
+        </Grupo>
         <Grupo titulo="Datos financieros">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <Dato label="Monto contractual" valor={mxn(fin.monto)} />
@@ -108,6 +122,12 @@ export default function AperturaBitacora() {
   const [aperturando, setAperturando] = useState(false);
   const [fechaEntregaSitio, setFechaEntregaSitio] = useState('');
   const [plazoFirmaDias, setPlazoFirmaDias] = useState(2);
+  // Datos mínimos de la apertura — art. 123 fr. III RLOPSRM (el profe: "esos son los que al
+  // menos deberían contemplar"): domicilios y teléfonos de las partes + alcance/sitio.
+  const MIN_KEYS = ['domicilioDependencia', 'telefonoDependencia', 'domicilioContratista', 'telefonoContratista', 'descripcionTrabajos', 'caracteristicasSitio'];
+  const [minData, setMinData] = useState({ domicilioDependencia: '', telefonoDependencia: '', domicilioContratista: '', telefonoContratista: '', descripcionTrabajos: '', caracteristicasSitio: '' });
+  const setMD = (k) => (e) => setMinData((p) => ({ ...p, [k]: e.target.value }));
+  const minDataCompleta = MIN_KEYS.every((k) => String(minData[k] || '').trim() !== '');
 
   const contratoSel = contratos.find((c) => String(c.id) === String(contratoId)) || null;
   const soyResidenteDelContrato = !!contratoSel && contratoSel.residente_id === usuario?.id;
@@ -136,13 +156,13 @@ export default function AperturaBitacora() {
     }
   }, [contratos, showToast]);
 
-  const puedeAperturar = !soloLectura && soyResidenteDelContrato && tieneSuperintendente && !bitacora && !cargando && !!fechaEntregaSitio && !aperturando;
+  const puedeAperturar = !soloLectura && soyResidenteDelContrato && tieneSuperintendente && !bitacora && !cargando && !!fechaEntregaSitio && minDataCompleta && !aperturando;
 
   const handleAperturar = async () => {
     if (!puedeAperturar) return;
     setAperturando(true);
     try {
-      await api.abrirBitacora({ contratoId: Number(contratoId), fechaEntregaSitio, plazoFirmaDias: Number(plazoFirmaDias) || 2 });
+      await api.abrirBitacora({ contratoId: Number(contratoId), fechaEntregaSitio, plazoFirmaDias: Number(plazoFirmaDias) || 2, ...minData });
       showToast('Bitácora aperturada. Cada parte ya puede firmar desde "Por firmar".');
       const b = await api.bitacoraDeContrato(contratoId);
       setBitacora(b);
@@ -246,6 +266,18 @@ export default function AperturaBitacora() {
                         <p className="text-[11px] text-slate-500 mt-1">Vencido el plazo sin respuesta, las notas se tienen por aceptadas (art. 123 fr. III RLOPSRM). Default 2.</p>
                       </div>
                     </div>
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Datos mínimos de la apertura — art. 123 fr. III RLOPSRM <span className="text-red-600">*</span></div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div><label className="sg-label">Domicilio de la dependencia <span className="text-red-600">*</span></label><input className="sg-input" value={minData.domicilioDependencia} onChange={setMD('domicilioDependencia')} disabled={soloLectura} data-testid="md-domicilio-dependencia" /></div>
+                      <div><label className="sg-label">Teléfono de la dependencia <span className="text-red-600">*</span></label><input className="sg-input" value={minData.telefonoDependencia} onChange={setMD('telefonoDependencia')} disabled={soloLectura} data-testid="md-telefono-dependencia" /></div>
+                      <div><label className="sg-label">Domicilio del contratista <span className="text-red-600">*</span></label><input className="sg-input" value={minData.domicilioContratista} onChange={setMD('domicilioContratista')} disabled={soloLectura} data-testid="md-domicilio-contratista" /></div>
+                      <div><label className="sg-label">Teléfono del contratista <span className="text-red-600">*</span></label><input className="sg-input" value={minData.telefonoContratista} onChange={setMD('telefonoContratista')} disabled={soloLectura} data-testid="md-telefono-contratista" /></div>
+                      <div className="md:col-span-2"><label className="sg-label">Alcance/descripción de los trabajos <span className="text-red-600">*</span></label><textarea className="sg-input" rows={2} value={minData.descripcionTrabajos} onChange={setMD('descripcionTrabajos')} disabled={soloLectura} data-testid="md-descripcion-trabajos" /></div>
+                      <div className="md:col-span-2"><label className="sg-label">Características del sitio <span className="text-red-600">*</span></label><textarea className="sg-input" rows={2} value={minData.caracteristicasSitio} onChange={setMD('caracteristicasSitio')} disabled={soloLectura} data-testid="md-caracteristicas-sitio" /></div>
+                    </div>
+                    {!minDataCompleta && <p className="text-[11px] text-amber-700 mt-2" data-testid="md-incompleto">Captura los datos mínimos (domicilios, teléfonos, alcance y sitio) para poder aperturar (art. 123 fr. III RLOPSRM).</p>}
                   </div>
                 </div>
               </RegionEditable>

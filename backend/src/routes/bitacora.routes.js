@@ -10,7 +10,8 @@ const {
   listarNotas,
   notasDeContrato,
   anularNota,
-  vincularNota
+  vincularNota,
+  firmarNota
 } = require('../controllers/bitacora.controller');
 
 const router = express.Router();
@@ -41,5 +42,8 @@ router.post('/:aperturaId/notas', emitirNota);
 router.get('/:aperturaId/notas', listarNotas);
 router.post('/notas/:notaId/anular', anularNota);
 router.post('/notas/:notaId/vincular', vincularNota);
+// Firma/aceptación de una nota por la contraparte (no la apertura). Cualquier autenticado entra;
+// el controller valida participación + que no sea el emisor (art. 123 fr. III).
+router.post('/notas/:notaId/firmar', firmarNota);
 
 module.exports = router;
