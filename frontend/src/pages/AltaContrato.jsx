@@ -6,7 +6,8 @@ import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import RegionEditable from '../components/vista/RegionEditable.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { api } from '../services/api.js';
-import { conceptosDummy, polizasGarantiaDummy } from '../data/dummy.js';
+// alta-v2 (4.2): el alta arranca VACÍA (sin datos dummy). Ya no se importa conceptosDummy
+// ni polizasGarantiaDummy.
 
 const formatoMXN = new Intl.NumberFormat('es-MX', {
   style: 'currency',
@@ -35,7 +36,11 @@ const IVA_RATE = 0.16;            // IVA derivado (solo se muestra, NO se guarda
 // Cuadre EXACTO (A1.3): el monto se DERIVA del catálogo = Σ ROUND(cantidad×pu, 2). No hay
 // captura de monto ni tolerancia. round2/round4 replican el redondeo del backend (NUMERIC).
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+const round3 = (n) => Math.round((Number(n) + Number.EPSILON) * 1e3) / 1e3;
 const round4 = (n) => Math.round((Number(n) + Number.EPSILON) * 1e4) / 1e4;
+// alta-v2 (punto 3): regla del 100% del programa. La cantidad del programa es NUMERIC(14,3);
+// la tolerancia de redondeo es media milésima (igual que el backend: ABS(Δ) > 0.0005).
+const TOL_PROGRAMA = 0.0005;
 // Importe del renglón = ROUND(cantidad×pu, 2) como STRING '0.00' ('' si falta cantidad/pu).
 const importeDe = (cantidad, pu) => {
   const cant = Number(cantidad);
@@ -68,26 +73,27 @@ const garantiaVacia = (g) => !(
   String(g.vigencia || '').trim()
 );
 
-const ERR0 = { campos: {}, conceptoIdx: null, programaError: false, garantiaIdx: null, catalogoMonto: false };
+const ERR0 = { campos: {}, conceptoIdx: null, programaError: false, garantiaIdx: null, catalogoMonto: false, pdfFirmadoFalta: false };
 
-// Valores iniciales (también usados por "Cancelar"). Consistentes con las reglas:
-// monto = Σ del catálogo dummy; plazo cubre el programa.
+// alta-v2 (4.2): valores iniciales VACÍOS (también usados por "Cancelar"). El contrato nuevo
+// arranca en blanco; el `tipo` mantiene la primera opción del select (campo obligatorio que
+// siempre tiene un valor válido).
 const DATOS_INICIALES = {
-  folio: 'C-2026-0042',
+  folio: '',
   tipo: 'Obra pública sobre la base de precios unitarios',
-  objeto: 'Construcción de edificio administrativo en av. principal',
-  contratista: 'Constructora XYZ S.A. de C.V.',
-  dependencia: 'Secretaría de Obras Públicas',
-  plazoDias: 181,
-  fechaInicio: '2026-06-01'
+  objeto: '',
+  contratista: '',
+  dependencia: '',
+  plazoDias: '',
+  fechaInicio: ''
 };
 const JURIDICOS_INICIALES = {
-  firmanteDependencia: 'Lic. María Pérez García',
-  cargoFirmante: 'Directora de Obras',
-  representanteLegal: 'Lic. Juan Ramírez Soto',
-  cedulaProfesional: '8475612',
-  poderNotarial: 'Escritura Núm. 12,345',
-  notaria: 'Notaría Pública Núm. 47 — Acapulco, Gro.'
+  firmanteDependencia: '',
+  cargoFirmante: '',
+  representanteLegal: '',
+  cedulaProfesional: '',
+  poderNotarial: '',
+  notaria: ''
 };
 
 const inputCls = (err) => `sg-input${err ? ' border-red-500 ring-1 ring-red-400' : ''}`;
@@ -114,7 +120,7 @@ function TabDatosGenerales({ datos, set, err, equipo, montoDerivado }) {
       <h3 className="text-lg font-bold text-sigecop-blue mb-4">Datos generales del contrato</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <Field label="Folio del contrato" required>
-          <input className={inputCls(e.folio)} maxLength={50} value={datos.folio} onChange={set('folio')} />
+          <input className={inputCls(e.folio)} maxLength={50} value={datos.folio} onChange={set('folio')} data-testid="dg-folio" />
         </Field>
         <Field label="Tipo de contrato" required>
           <select className={inputCls(e.tipo)} value={datos.tipo} onChange={set('tipo')}>
@@ -125,23 +131,23 @@ function TabDatosGenerales({ datos, set, err, equipo, montoDerivado }) {
         </Field>
         <div className="md:col-span-2">
           <Field label="Objeto del contrato" required>
-            <input className={inputCls(e.objeto)} value={datos.objeto} onChange={set('objeto')} />
+            <input className={inputCls(e.objeto)} value={datos.objeto} onChange={set('objeto')} data-testid="dg-objeto" />
           </Field>
         </div>
         <Field label="Contratista" required>
-          <input className={inputCls(e.contratista)} maxLength={200} value={datos.contratista} onChange={set('contratista')} />
+          <input className={inputCls(e.contratista)} maxLength={200} value={datos.contratista} onChange={set('contratista')} data-testid="dg-contratista" />
         </Field>
         <Field label="Dependencia" required>
-          <input className={inputCls(e.dependencia)} maxLength={200} value={datos.dependencia} onChange={set('dependencia')} />
+          <input className={inputCls(e.dependencia)} maxLength={200} value={datos.dependencia} onChange={set('dependencia')} data-testid="dg-dependencia" />
         </Field>
         <Field label="Monto del contrato (derivado del catálogo)" hint="Σ de los importes del catálogo (sin IVA). No se captura; se deriva al centavo.">
           <input className="sg-input bg-slate-100 text-slate-700" value={montoNum ? formatoMXN.format(montoNum) : '—'} readOnly data-testid="monto-derivado" />
         </Field>
         <Field label="Plazo (días naturales)" required>
-          <input type="number" min="1" step="1" className={inputCls(e.plazoDias)} value={datos.plazoDias} onChange={set('plazoDias')} />
+          <input type="number" min="1" step="1" className={inputCls(e.plazoDias)} value={datos.plazoDias} onChange={set('plazoDias')} data-testid="dg-plazo" />
         </Field>
         <Field label="Fecha de inicio" required>
-          <input type="date" lang="es-MX" className={inputCls(e.fechaInicio)} value={datos.fechaInicio} onChange={set('fechaInicio')} />
+          <input type="date" lang="es-MX" className={inputCls(e.fechaInicio)} value={datos.fechaInicio} onChange={set('fechaInicio')} data-testid="dg-fecha" />
         </Field>
         <Field label="Fecha de término (calculada)" hint="Se deriva del inicio + plazo (LOPSRM 31-V). No editable.">
           <input className="sg-input bg-slate-100 text-slate-700" value={terminoDerivado ? fmtFechaES(terminoDerivado) : '—'} readOnly data-testid="termino-derivado" />
@@ -217,11 +223,11 @@ function TabCatalogo({ rows, onCell, onPatch, onAdd, onRemove, soloLectura, errI
               return (
                 <tr key={c.rid} className={`border-t border-slate-200 ${errIdx === i ? 'bg-red-50' : ''}`}>
                   <td className="px-2 py-1 align-top"><input className="sg-input font-mono text-xs" maxLength={40} placeholder="p.ej. AD.01" value={c.clave || ''} onChange={onCell(i, 'clave')} disabled={soloLectura} data-testid={`concepto-clave-${i}`} /></td>
-                  <td className="px-2 py-1 align-top"><input className="sg-input" value={c.concepto} onChange={onCell(i, 'concepto')} disabled={soloLectura} /></td>
+                  <td className="px-2 py-1 align-top"><input className="sg-input" value={c.concepto} onChange={onCell(i, 'concepto')} disabled={soloLectura} data-testid={`concepto-concepto-${i}`} /></td>
                   <td className="px-2 py-1 align-top">
                     <select className="sg-input" value={unidadSel}
                       onChange={(e) => { const v = e.target.value; if (v === 'Otro') onPatch(i, { unidadOtro: true, unidad: '' }); else onPatch(i, { unidadOtro: false, unidad: v }); }}
-                      disabled={soloLectura}>
+                      disabled={soloLectura} data-testid={`concepto-unidad-${i}`}>
                       <option value="">—</option>
                       {UNIDADES.map((u) => <option key={u} value={u}>{u}</option>)}
                       <option value="Otro">Otro…</option>
@@ -298,17 +304,19 @@ function generarPeriodosC(fechaInicio, plazoDias, ciclo) {
 // con el restante recalculándose en vivo (lo pidió el profe; el backend lo revalida en SQL).
 function TabProgramaMatriz({ conceptos, periodos, ciclo, setCiclo, celdas, setCelda, soloLectura }) {
   const resumen = conceptos.map((c) => {
-    const contratado = Number(c.cantidad) || 0;
-    const planeado = round2(periodos.reduce((s, p) => s + (Number(celdas[`${c.rid}:${p.numero}`]) || 0), 0));
-    const restante = round2(contratado - planeado);
+    const contratado = round3(Number(c.cantidad) || 0);
+    const planeado = round3(periodos.reduce((s, p) => s + (Number(celdas[`${c.rid}:${p.numero}`]) || 0), 0));
+    const restante = round3(contratado - planeado);
     return { rid: c.rid, contratado, planeado, restante };
   });
-  const hayExceso = resumen.some((r) => r.restante < 0);
+  // alta-v2 (punto 3): regla del 100% — cada concepto debe CUADRAR (|restante| <= tolerancia).
+  const noCuadra = resumen.some((r) => Math.abs(r.restante) > TOL_PROGRAMA);
+  const conceptosOk = resumen.length > 0 && periodos.length > 0 && !noCuadra;
   return (
     <div>
       <h3 className="text-lg font-bold text-sigecop-blue mb-1">Programa de obra (catálogo × periodos)</h3>
       <p className="text-sm text-slate-600 mb-3">
-        El programa son los <strong>conceptos del catálogo</strong> repartidos en los <strong>periodos del ciclo</strong> (no actividades de texto libre). La celda es la <strong>cantidad</strong> que planeas ejecutar de ese concepto en ese periodo. La suma por concepto <strong>no puede exceder lo contratado</strong> (art. 118 RLOPSRM); el restante se recalcula en vivo.
+        El programa son los <strong>conceptos del catálogo</strong> repartidos en los <strong>periodos del ciclo</strong>. La celda es la <strong>cantidad</strong> que planeas ejecutar de ese concepto en ese periodo. La suma por concepto debe <strong>cuadrar al 100% de lo contratado</strong> (programa convenido del total de los conceptos: RLOPSRM art. 45-A-X + LOPSRM art. 52); el restante se recalcula en vivo y debe quedar en <strong>0</strong>.
       </p>
 
       <div className="flex flex-wrap items-center gap-3 mb-4">
@@ -349,9 +357,10 @@ function TabProgramaMatriz({ conceptos, periodos, ciclo, setCiclo, celdas, setCe
             <tbody>
               {conceptos.map((c, i) => {
                 const r = resumen[i];
-                const restCls = r.restante < 0 ? 'text-red-700 font-bold' : r.restante === 0 ? 'text-green-700 font-semibold' : 'text-amber-700';
+                const cuadra = Math.abs(r.restante) <= TOL_PROGRAMA;
+                const restCls = cuadra ? 'text-green-700 font-semibold' : r.restante < 0 ? 'text-red-700 font-bold' : 'text-amber-700';
                 return (
-                  <tr key={c.rid} className={`border-t border-slate-200 ${r.restante < 0 ? 'bg-red-50' : ''}`}>
+                  <tr key={c.rid} className={`border-t border-slate-200 ${!cuadra ? (r.restante < 0 ? 'bg-red-50' : 'bg-amber-50') : ''}`}>
                     <td className="px-3 py-1 font-mono text-xs sticky left-0 bg-white">{c.clave || '—'}</td>
                     <td className="px-3 py-1 truncate max-w-[14rem]" title={c.concepto}>{c.concepto || '—'}</td>
                     {periodos.map((p) => (
@@ -375,9 +384,14 @@ function TabProgramaMatriz({ conceptos, periodos, ciclo, setCiclo, celdas, setCe
         </div>
       )}
 
-      {hayExceso && (
-        <div className="mt-3 px-3 py-2 rounded border text-sm font-medium text-red-700 bg-red-50 border-red-300" data-testid="programa-exceso">
-          Hay conceptos cuyo programa <strong>excede lo contratado</strong> (restante negativo). No se puede guardar: ajusta las cantidades (art. 118 RLOPSRM).
+      {resumen.length > 0 && periodos.length > 0 && noCuadra && (
+        <div className="mt-3 px-3 py-2 rounded border text-sm font-medium text-red-700 bg-red-50 border-red-300" data-testid="programa-descuadre">
+          El programa <strong>no cuadra al 100%</strong>: hay conceptos con restante ≠ 0 (faltante o exceso). No se puede guardar/avanzar hasta que cada concepto sume <strong>exactamente lo contratado</strong> (RLOPSRM art. 45-A-X + LOPSRM art. 52).
+        </div>
+      )}
+      {conceptosOk && (
+        <div className="mt-3 px-3 py-2 rounded border text-sm font-medium text-green-700 bg-green-50 border-green-300" data-testid="programa-cuadra">
+          ✓ El programa cuadra al 100%: cada concepto suma exactamente lo contratado.
         </div>
       )}
     </div>
@@ -406,7 +420,10 @@ function TabJuridicos({ datos, set }) {
 // 4.4: subida de la AUTORIZACIÓN del anticipo (PDF). Reutiliza el patrón de PDF del
 // contrato (BYTEA, append-only), con `tipo='anticipo_autorizacion'`. El sistema NO valida
 // el contenido (responsabilidad del residente); solo lo guarda ligado al contrato.
-function AnticipoAutorizacionPDF({ contratoId, soloLectura }) {
+// 4.4 + alta-v2 (1.6): subida de la AUTORIZACIÓN del anticipo (PDF). Con el contrato ya
+// guardado sube directo (BYTEA, append-only). DURANTE la captura (sin contrato aún) retiene el
+// File en el padre (pendingFile/onPickFile) y se sube al guardar. tipo='anticipo_autorizacion'.
+function AnticipoAutorizacionPDF({ contratoId, soloLectura, pendingFile, onPickFile }) {
   const { showToast } = useToast();
   const [meta, setMeta] = useState(null);
   const [subiendo, setSubiendo] = useState(false);
@@ -419,32 +436,45 @@ function AnticipoAutorizacionPDF({ contratoId, soloLectura }) {
   }, [contratoId, showToast]);
   useEffect(() => { cargarMeta(); }, [cargarMeta]);
 
+  const validarPdf = (file) => {
+    if (file.type !== 'application/pdf') { showToast('Solo se permiten archivos PDF'); return false; }
+    if (file.size > 10 * 1024 * 1024) { showToast('El PDF excede el límite de 10 MB'); return false; }
+    return true;
+  };
+
   const onArchivo = async (e) => {
     const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    if (file.type !== 'application/pdf') { showToast('Solo se permiten archivos PDF'); if (inputRef.current) inputRef.current.value = ''; return; }
-    if (file.size > 10 * 1024 * 1024) { showToast('El PDF excede el límite de 10 MB'); if (inputRef.current) inputRef.current.value = ''; return; }
+    if (inputRef.current) inputRef.current.value = '';
+    if (!file || !validarPdf(file)) return;
+    if (!contratoId) { onPickFile(file); return; } // 1.6: retener hasta guardar
     setSubiendo(true);
     try { await api.subirDocumento(contratoId, file, 'anticipo_autorizacion'); showToast('Autorización del anticipo adjuntada'); await cargarMeta(); }
     catch (err) { showToast(err.message || 'No se pudo subir la autorización'); }
-    finally { setSubiendo(false); if (inputRef.current) inputRef.current.value = ''; }
+    finally { setSubiendo(false); }
   };
 
-  if (!contratoId) {
-    return <p className="text-xs text-amber-800 mt-2" data-testid="anticipo-pdf-pendiente">Guarda primero el contrato; luego podrás adjuntar aquí la <strong>autorización del anticipo</strong> (PDF).</p>;
+  if (meta) {
+    return <p className="text-sm text-green-800 mt-2" data-testid="anticipo-pdf-ok">✓ Autorización adjuntada: <strong>{meta.nombre}</strong> ({(Number(meta.tamano) / 1024).toFixed(0)} KB). Es inmutable.</p>;
   }
-  return meta ? (
-    <p className="text-sm text-green-800 mt-2" data-testid="anticipo-pdf-ok">✓ Autorización adjuntada: <strong>{meta.nombre}</strong> ({(Number(meta.tamano) / 1024).toFixed(0)} KB). Es inmutable.</p>
-  ) : (
+  return (
     <div className="mt-2" data-testid="anticipo-pdf-uploader">
       <p className="text-sm font-semibold text-blue-900 mb-1">Adjunta la autorización escrita (PDF):</p>
-      <input ref={inputRef} type="file" accept="application/pdf,.pdf" onChange={onArchivo} disabled={soloLectura || subiendo} className="block text-sm" />
-      {subiendo && <p className="text-sm text-sigecop-accent mt-1">Subiendo…</p>}
+      {pendingFile && !contratoId ? (
+        <p className="text-sm text-green-800" data-testid="anticipo-pdf-pendiente-file">📎 {pendingFile.name} — se adjuntará al guardar el contrato.{' '}
+          <button type="button" className="text-red-600 hover:underline" onClick={() => onPickFile(null)} disabled={soloLectura}>quitar</button>
+        </p>
+      ) : (
+        <>
+          <input ref={inputRef} type="file" accept="application/pdf,.pdf" onChange={onArchivo} disabled={soloLectura || subiendo} className="block text-sm" data-testid="anticipo-pdf-input" />
+          {!contratoId && <p className="text-xs text-slate-500 mt-1">Puedes adjuntarla ahora (durante la captura); se guardará al crear el contrato.</p>}
+          {subiendo && <p className="text-sm text-sigecop-accent mt-1">Subiendo…</p>}
+        </>
+      )}
     </div>
   );
 }
 
-function TabGarantias({ rows, onCell, onAdd, onRemove, anticipoPct, setAnticipoPct, soloLectura, errIdx, errAnticipo, contratoId }) {
+function TabGarantias({ rows, onCell, onAdd, onRemove, anticipoPct, setAnticipoPct, soloLectura, errIdx, errAnticipo, contratoId, montoContrato, pdfAnticipoFile, setPdfAnticipoFile }) {
   const hoy = new Date();
   const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
   const ap = Number(anticipoPct) || 0;
@@ -462,8 +492,8 @@ function TabGarantias({ rows, onCell, onAdd, onRemove, anticipoPct, setAnticipoP
             <p>Conforme al <strong>art. 50 fr. IV de la LOPSRM</strong>, un anticipo mayor al {ANTICIPO_UMBRAL_PDF}% requiere <strong>autorización escrita del titular</strong> de la dependencia o entidad. <strong>Adjunta el PDF de la autorización</strong> (el sistema lo guarda ligado al contrato; no valida su contenido — es responsabilidad del residente).</p>
             {ap > 50 && <p>Además, conforme al <strong>art. 139 del RLOPSRM</strong>, un anticipo mayor al 50% debe informarse a la Secretaría (SFP) antes de su entrega.</p>}
             {ap >= 100 && <p>El 100% solo procede en contrato plurianual que inicia en el último trimestre (art. 50 fr. V LOPSRM).</p>}
-            {/* 4.4: el aviso deja de ser solo informativo → HABILITA subir la autorización. */}
-            <AnticipoAutorizacionPDF contratoId={contratoId} soloLectura={soloLectura} />
+            {/* 4.4 + 1.6: el aviso HABILITA subir la autorización (durante la captura o post-guardado). */}
+            <AnticipoAutorizacionPDF contratoId={contratoId} soloLectura={soloLectura} pendingFile={pdfAnticipoFile} onPickFile={setPdfAnticipoFile} />
           </div>
         )}
       </div>
@@ -483,12 +513,17 @@ function TabGarantias({ rows, onCell, onAdd, onRemove, anticipoPct, setAnticipoP
           <tbody>
             {rows.map((p, i) => {
               const vencida = p.vigencia && p.vigencia < hoyStr;
+              // alta-v2 (1.4): marca EN VIVO si la garantía excede el monto del contrato.
+              const excede = Number(p.monto) > 0 && montoContrato > 0 && Number(p.monto) > montoContrato;
               return (
-                <tr key={p.rid} className={`border-t border-slate-200 ${errIdx === i ? 'bg-red-50' : ''}`}>
+                <tr key={p.rid} className={`border-t border-slate-200 ${(errIdx === i || excede) ? 'bg-red-50' : ''}`}>
                   <td className="px-2 py-1 align-top"><input className="sg-input" value={p.tipo} onChange={onCell(i, 'tipo')} disabled={soloLectura} /></td>
                   <td className="px-2 py-1 align-top"><input className="sg-input" value={p.afianzadora} onChange={onCell(i, 'afianzadora')} disabled={soloLectura} /></td>
                   <td className="px-2 py-1 align-top"><input className="sg-input font-mono text-xs" value={p.poliza} onChange={onCell(i, 'poliza')} disabled={soloLectura} /></td>
-                  <td className="px-2 py-1 align-top"><input type="number" min="0" step="0.01" className="sg-input text-right" value={p.monto} onChange={onCell(i, 'monto')} disabled={soloLectura} /></td>
+                  <td className="px-2 py-1 align-top">
+                    <input type="number" min="0" step="0.01" className={`sg-input text-right${excede ? ' border-red-500 ring-1 ring-red-400' : ''}`} value={p.monto} onChange={onCell(i, 'monto')} disabled={soloLectura} data-testid={`garantia-monto-${i}`} />
+                    {excede && <span className="block text-xs text-red-600 mt-1" data-testid={`garantia-excede-${i}`}>⚠ excede el monto del contrato</span>}
+                  </td>
                   <td className="px-2 py-1 align-top">
                     <input type="date" lang="es-MX" className="sg-input" value={p.vigencia} onChange={onCell(i, 'vigencia')} disabled={soloLectura} />
                     {vencida && <span className="block text-xs text-amber-600 mt-1">⚠ vigencia vencida</span>}
@@ -519,7 +554,10 @@ function TabGarantias({ rows, onCell, onAdd, onRemove, anticipoPct, setAnticipoP
   );
 }
 
-function TabPdfFirmado({ contratoId, soloLectura }) {
+// 1.5: PDF firmado del contrato. Con el contrato ya guardado, sube/consulta directo (BYTEA,
+// append-only). DURANTE la captura (sin contrato aún) retiene el File en el padre
+// (pendingFile/onPickFile) y se sube al guardar — el usuario puede adjuntarlo sin guardar antes.
+function TabPdfFirmado({ contratoId, soloLectura, pendingFile, onPickFile }) {
   const { showToast } = useToast();
   const [meta, setMeta] = useState(null);
   const [cargando, setCargando] = useState(false);
@@ -536,15 +574,21 @@ function TabPdfFirmado({ contratoId, soloLectura }) {
 
   useEffect(() => { cargarMeta(); }, [cargarMeta]);
 
+  const validarPdf = (file) => {
+    if (file.type !== 'application/pdf') { showToast('Solo se permiten archivos PDF'); return false; }
+    if (file.size > 10 * 1024 * 1024) { showToast('El PDF excede el límite de 10 MB'); return false; }
+    return true;
+  };
+
   const onArchivo = async (e) => {
     const file = e.target.files && e.target.files[0];
-    if (!file) return;
-    if (file.type !== 'application/pdf') { showToast('Solo se permiten archivos PDF'); if (inputRef.current) inputRef.current.value = ''; return; }
-    if (file.size > 10 * 1024 * 1024) { showToast('El PDF excede el límite de 10 MB'); if (inputRef.current) inputRef.current.value = ''; return; }
+    if (inputRef.current) inputRef.current.value = '';
+    if (!file || !validarPdf(file)) return;
+    if (!contratoId) { onPickFile(file); return; } // 1.5: retener hasta guardar
     setSubiendo(true);
     try { await api.subirDocumento(contratoId, file); showToast('PDF firmado adjuntado: ' + file.name); await cargarMeta(); }
     catch (err) { showToast(err.message || 'No se pudo subir el PDF'); }
-    finally { setSubiendo(false); if (inputRef.current) inputRef.current.value = ''; }
+    finally { setSubiendo(false); }
   };
 
   const obtener = async (descargar) => {
@@ -563,8 +607,20 @@ function TabPdfFirmado({ contratoId, soloLectura }) {
     <div>
       <h3 className="text-lg font-bold text-sigecop-blue mb-4">PDF firmado del contrato</h3>
       {!contratoId ? (
-        <div className="bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 text-sm text-slate-800">
-          Guarda primero el contrato (botón <strong>Guardar contrato</strong>); el PDF firmado se liga después, una vez que el contrato existe.
+        <div className="border-2 border-dashed border-slate-300 rounded-md p-6 bg-white" data-testid="pdf-firmado-precaptura">
+          {/* alta-v3: PDF firmado OBLIGATORIO — es el último paso del wizard y gatea el guardado. */}
+          <p className="text-sm font-semibold text-slate-800 mb-2">Adjunta el PDF firmado del contrato <span className="text-red-600">*</span> (obligatorio para guardar):</p>
+          {pendingFile ? (
+            <p className="text-sm text-green-800" data-testid="pdf-firmado-pendiente-file">📎 {pendingFile.name} — se adjuntará al guardar el contrato.{' '}
+              <button type="button" className="text-red-600 hover:underline" onClick={() => onPickFile(null)} disabled={soloLectura}>quitar</button>
+            </p>
+          ) : (
+            <>
+              <input ref={inputRef} type="file" accept="application/pdf,.pdf" onChange={onArchivo} disabled={soloLectura} className="block text-sm" data-testid="pdf-firmado-input-precaptura" />
+              <p className="text-xs text-amber-700 mt-2" data-testid="pdf-firmado-requerido">Sin el PDF firmado <strong>no se puede registrar</strong> el contrato (se formaliza con la firma). <span className="text-slate-400">[validar el fundamento con el profe]</span></p>
+            </>
+          )}
+          <p className="text-xs text-slate-400 mt-3">PDF firmado por las partes (máx. 10 MB). Se guarda en la base de datos al crear el contrato; una vez ligado es inmutable.</p>
         </div>
       ) : (
         <>
@@ -599,11 +655,241 @@ function TabPdfFirmado({ contratoId, soloLectura }) {
   );
 }
 
+// alta-v2 (2.2): bloque de documentos del contrato (PDF firmado + autorización de anticipo),
+// solo Ver/Descargar. Consulta documentoMeta por tipo para saber si cada uno existe.
+function DocumentosDetalle({ contratoId }) {
+  const { showToast } = useToast();
+  const [metas, setMetas] = useState({ contrato: undefined, anticipo_autorizacion: undefined });
+
+  useEffect(() => {
+    let vivo = true;
+    const pedir = async (tipo) => {
+      try { const m = await api.documentoMeta(contratoId, tipo === 'contrato' ? undefined : tipo); return m; }
+      catch (_) { return null; }
+    };
+    (async () => {
+      const [c, a] = await Promise.all([pedir('contrato'), pedir('anticipo_autorizacion')]);
+      if (vivo) setMetas({ contrato: c, anticipo_autorizacion: a });
+    })();
+    return () => { vivo = false; };
+  }, [contratoId]);
+
+  const verPdf = async (tipo, descargar) => {
+    try {
+      const tipoQuery = tipo === 'contrato' ? undefined : tipo;
+      let nombre = 'documento.pdf';
+      if (descargar) { try { const m = await api.documentoMeta(contratoId, tipoQuery); if (m?.nombre) nombre = m.nombre; } catch (_) { /* default */ } }
+      const blob = await api.descargarDocumento(contratoId, tipoQuery);
+      const url = URL.createObjectURL(blob);
+      if (descargar) { const a = document.createElement('a'); a.href = url; a.download = nombre; document.body.appendChild(a); a.click(); a.remove(); }
+      else window.open(url, '_blank', 'noopener');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) { showToast(e.message || 'No se pudo obtener el PDF'); }
+  };
+
+  const fila = (tipo, etiqueta) => {
+    const m = metas[tipo];
+    return (
+      <div className="flex items-center justify-between gap-3 border border-slate-200 rounded px-3 py-2" data-testid={`doc-${tipo}`}>
+        <div className="min-w-0">
+          <div className="font-semibold text-slate-800">{etiqueta}</div>
+          <div className="text-xs text-slate-500 truncate">{m === undefined ? 'Consultando…' : m ? `${m.nombre} · ${(Number(m.tamano) / 1024).toFixed(0)} KB` : 'Sin documento'}</div>
+        </div>
+        {m && (
+          <div className="flex gap-3 flex-shrink-0">
+            <button type="button" onClick={() => verPdf(tipo, false)} className="text-sm text-sigecop-accent hover:underline">Ver</button>
+            <button type="button" onClick={() => verPdf(tipo, true)} className="text-sm text-sigecop-accent hover:underline">Descargar</button>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-2">
+      {fila('contrato', 'PDF firmado del contrato')}
+      {fila('anticipo_autorizacion', 'Autorización del anticipo (PDF)')}
+    </div>
+  );
+}
+
+// alta-v2 (2.1): modal de DETALLE en SOLO LECTURA. Reúne todo lo capturado del contrato
+// (detalleContrato: cabecera + conceptos + garantías + jurídicos) y la matriz del programa
+// (leerProgramaObra), sin inputs editables. (2.2) muestra/descarga ambos PDFs.
+function ModalDetalleContrato({ contratoId, onClose }) {
+  const [data, setData] = useState(null);
+  const [programa, setPrograma] = useState(null);
+  const [cargando, setCargando] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      setCargando(true); setError(null);
+      try {
+        const d = await api.detalleContrato(contratoId);
+        if (vivo) setData(d);
+        try { const p = await api.leerProgramaObra(contratoId); if (vivo) setPrograma(p); } catch (_) { /* contrato sin programa */ }
+      } catch (e) { if (vivo) setError(e.message || 'No se pudo cargar el contrato'); }
+      finally { if (vivo) setCargando(false); }
+    })();
+    return () => { vivo = false; };
+  }, [contratoId]);
+
+  const jur = data && data.datos_juridicos
+    ? (typeof data.datos_juridicos === 'string' ? (() => { try { return JSON.parse(data.datos_juridicos); } catch { return null; } })() : data.datos_juridicos)
+    : null;
+
+  const Campo = ({ label, valor }) => (
+    <div>
+      <div className="text-[11px] uppercase tracking-wider text-slate-500">{label}</div>
+      <div className="text-slate-800">{valor === '' || valor === null || valor === undefined ? '—' : valor}</div>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto" onClick={onClose} data-testid="modal-detalle">
+      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full my-8" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 sticky top-0 bg-white rounded-t-lg z-10">
+          <h3 className="text-lg font-bold text-sigecop-blue">Información del contrato{data?.folio ? ` · ${data.folio}` : ''}</h3>
+          <button type="button" onClick={onClose} className="text-slate-500 hover:text-slate-900 text-xl font-bold leading-none" aria-label="Cerrar" data-testid="modal-detalle-cerrar">✕</button>
+        </div>
+        <div className="px-6 py-5 space-y-6 text-sm">
+          <div className="bg-slate-50 border border-slate-200 rounded px-3 py-2 text-xs text-slate-600">Vista de <strong>solo lectura</strong> — refleja lo capturado al dar de alta el contrato. No es editable.</div>
+          {cargando && <p className="text-slate-500">Cargando…</p>}
+          {error && <p className="text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</p>}
+          {data && (
+            <>
+              <section>
+                <h4 className="font-bold text-sigecop-blue mb-3">Datos generales</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <Campo label="Folio" valor={data.folio} />
+                  <Campo label="Tipo" valor={data.tipo} />
+                  <Campo label="Objeto" valor={data.objeto} />
+                  <Campo label="Contratista" valor={data.contratista} />
+                  <Campo label="Dependencia" valor={data.dependencia} />
+                  <Campo label="Monto del contrato" valor={formatoMXN.format(Number(data.monto) || 0)} />
+                  <Campo label="Plazo (días)" valor={data.plazo_dias} />
+                  <Campo label="Inicio" valor={fmtFechaES(data.fecha_inicio)} />
+                  <Campo label="Término" valor={fmtFechaES(data.fecha_termino)} />
+                  <Campo label="Anticipo" valor={data.anticipo_pct != null ? `${data.anticipo_pct}%` : '—'} />
+                  <Campo label="Ciclo de estimación" valor={data.ciclo_estimacion || '—'} />
+                  <Campo label="Residente" valor={data.residente_nombre} />
+                  <Campo label="Superintendente" valor={data.superintendente_nombre} />
+                  <Campo label="Supervisión" valor={data.supervision_nombre} />
+                </div>
+              </section>
+
+              {Array.isArray(data.conceptos) && data.conceptos.length > 0 && (
+                <section>
+                  <h4 className="font-bold text-sigecop-blue mb-3">Catálogo de conceptos</h4>
+                  <div className="overflow-x-auto border border-slate-200 rounded">
+                    <table className="w-full text-sm">
+                      <thead className="bg-sigecop-blue-light text-sigecop-blue"><tr>
+                        <th className="text-left px-3 py-2">Clave</th><th className="text-left px-3 py-2">Concepto</th>
+                        <th className="text-left px-3 py-2">Unidad</th><th className="text-right px-3 py-2">Cantidad</th>
+                        <th className="text-right px-3 py-2">P.U.</th><th className="text-right px-3 py-2">Importe</th>
+                      </tr></thead>
+                      <tbody>
+                        {data.conceptos.map((c) => (
+                          <tr key={c.id} className="border-t border-slate-200">
+                            <td className="px-3 py-1 font-mono text-xs">{c.clave || '—'}</td>
+                            <td className="px-3 py-1">{c.concepto}</td>
+                            <td className="px-3 py-1">{c.unidad}</td>
+                            <td className="px-3 py-1 text-right">{c.cantidad}</td>
+                            <td className="px-3 py-1 text-right">{formatoMXN.format(Number(c.pu) || 0)}</td>
+                            <td className="px-3 py-1 text-right">{formatoMXN.format(round2((Number(c.cantidad) || 0) * (Number(c.pu) || 0)))}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
+
+              {programa && Array.isArray(programa.reconciliacion) && programa.reconciliacion.length > 0 && (
+                <section>
+                  <h4 className="font-bold text-sigecop-blue mb-3">Programa de obra (resumen por concepto)</h4>
+                  <div className="overflow-x-auto border border-slate-200 rounded">
+                    <table className="w-full text-sm">
+                      <thead className="bg-sigecop-blue-light text-sigecop-blue"><tr>
+                        <th className="text-left px-3 py-2">Clave</th><th className="text-left px-3 py-2">Concepto</th>
+                        <th className="text-right px-3 py-2">Contratado</th><th className="text-right px-3 py-2">Planeado</th><th className="text-right px-3 py-2">Restante</th>
+                      </tr></thead>
+                      <tbody>
+                        {programa.reconciliacion.map((r) => (
+                          <tr key={r.contrato_concepto_id} className="border-t border-slate-200">
+                            <td className="px-3 py-1 font-mono text-xs">{r.clave || '—'}</td>
+                            <td className="px-3 py-1">{r.concepto}</td>
+                            <td className="px-3 py-1 text-right">{r.contratado}</td>
+                            <td className="px-3 py-1 text-right">{r.planeado}</td>
+                            <td className="px-3 py-1 text-right">{r.restante}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">Ciclo: {programa.ciclo || '—'} · {Array.isArray(programa.periodos) ? programa.periodos.length : 0} periodo(s).</p>
+                </section>
+              )}
+
+              {Array.isArray(data.garantias) && data.garantias.length > 0 && (
+                <section>
+                  <h4 className="font-bold text-sigecop-blue mb-3">Garantías</h4>
+                  <div className="overflow-x-auto border border-slate-200 rounded">
+                    <table className="w-full text-sm">
+                      <thead className="bg-sigecop-blue-light text-sigecop-blue"><tr>
+                        <th className="text-left px-3 py-2">Tipo</th><th className="text-left px-3 py-2">Afianzadora</th>
+                        <th className="text-left px-3 py-2">No. póliza</th><th className="text-right px-3 py-2">Monto</th><th className="text-left px-3 py-2">Vigencia</th>
+                      </tr></thead>
+                      <tbody>
+                        {data.garantias.map((g) => (
+                          <tr key={g.id} className="border-t border-slate-200">
+                            <td className="px-3 py-1">{g.tipo}</td>
+                            <td className="px-3 py-1">{g.afianzadora || '—'}</td>
+                            <td className="px-3 py-1 font-mono text-xs">{g.poliza || '—'}</td>
+                            <td className="px-3 py-1 text-right">{formatoMXN.format(Number(g.monto) || 0)}</td>
+                            <td className="px-3 py-1">{fmtFechaES(g.vigencia)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </section>
+              )}
+
+              {jur && (jur.firmanteDependencia || jur.representanteLegal || jur.cedulaProfesional || jur.poderNotarial || jur.notaria || jur.cargoFirmante) && (
+                <section>
+                  <h4 className="font-bold text-sigecop-blue mb-3">Datos jurídicos</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <Campo label="Firmante de la dependencia" valor={jur.firmanteDependencia} />
+                    <Campo label="Cargo del firmante" valor={jur.cargoFirmante} />
+                    <Campo label="Representante legal" valor={jur.representanteLegal} />
+                    <Campo label="Cédula profesional" valor={jur.cedulaProfesional} />
+                    <Campo label="Poder notarial" valor={jur.poderNotarial} />
+                    <Campo label="Notaría" valor={jur.notaria} />
+                  </div>
+                </section>
+              )}
+
+              <section>
+                <h4 className="font-bold text-sigecop-blue mb-3">Documentos</h4>
+                <DocumentosDetalle contratoId={contratoId} />
+              </section>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TabRegistrados({ contratos, loading, errorMsg, sinSesion, onRecargar, soloLectura }) {
   const { showToast } = useToast();
   const inputRef = useRef(null);
   const [targetId, setTargetId] = useState(null);
   const [subiendoId, setSubiendoId] = useState(null);
+  const [detalleId, setDetalleId] = useState(null); // alta-v2 (2.1): contrato abierto en el modal
 
   const pedirArchivo = (id) => { setTargetId(id); if (inputRef.current) inputRef.current.click(); };
 
@@ -637,7 +923,7 @@ function TabRegistrados({ contratos, loading, errorMsg, sinSesion, onRecargar, s
       <div>
         <h3 className="text-lg font-bold text-sigecop-blue mb-4">Contratos registrados</h3>
         <p className="text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-md px-4 py-6 text-center">
-          Inicia sesión en modo aplicación para ver los contratos guardados.
+          Inicia sesión para ver los contratos guardados.
         </p>
       </div>
     );
@@ -663,6 +949,7 @@ function TabRegistrados({ contratos, loading, errorMsg, sinSesion, onRecargar, s
                 <th className="text-right px-3 py-2 w-36">Monto</th>
                 <th className="text-right px-3 py-2 w-24">Plazo</th>
                 <th className="text-left px-3 py-2 w-32">Inicio</th>
+                <th className="text-left px-3 py-2 w-44">Información</th>
                 <th className="text-left px-3 py-2 w-56">PDF firmado</th>
               </tr>
             </thead>
@@ -675,6 +962,9 @@ function TabRegistrados({ contratos, loading, errorMsg, sinSesion, onRecargar, s
                   <td className="px-3 py-2 text-right">{formatoMXN.format(Number(c.monto))}</td>
                   <td className="px-3 py-2 text-right">{c.plazo_dias} d</td>
                   <td className="px-3 py-2">{fmtFechaES(c.fecha_inicio)}</td>
+                  <td className="px-3 py-2">
+                    <button type="button" onClick={() => setDetalleId(c.id)} className="text-xs text-sigecop-accent hover:underline" data-testid={`ver-info-${c.id}`}>Ver info del contrato</button>
+                  </td>
                   <td className="px-3 py-2">
                     {subiendoId === c.id ? (
                       <span className="text-xs text-sigecop-accent">Subiendo…</span>
@@ -696,15 +986,18 @@ function TabRegistrados({ contratos, loading, errorMsg, sinSesion, onRecargar, s
           </table>
         </div>
       )}
+      {detalleId && <ModalDetalleContrato contratoId={detalleId} onClose={() => setDetalleId(null)} />}
     </div>
   );
 }
 
 const REQ_GENERALES = ['folio', 'tipo', 'objeto', 'contratista', 'dependencia', 'plazoDias', 'fechaInicio'];
-// 4.1: pasos del WIZARD de creación (captura). PDF firmado (5) y Registrados (6) son
-// auxiliares (post-guardado), fuera de la progresión obligatoria.
-const PASOS_WIZARD = [0, 1, 2, 3, 4];
-const ULTIMO_PASO_WIZARD = 4;
+// 4.1 + alta-v3 (PDF firmado OBLIGATORIO): pasos del WIZARD de creación (captura). El PDF
+// firmado (5) es ahora el ÚLTIMO paso del wizard: el botón "Guardar contrato" vive ahí y queda
+// GATEADO (deshabilitado hasta adjuntar el PDF firmado; validarPaso(5)). Solo "Registrados" (6)
+// queda como pestaña auxiliar de consulta, fuera de la progresión obligatoria.
+const PASOS_WIZARD = [0, 1, 2, 3, 4, 5];
+const ULTIMO_PASO_WIZARD = 5;
 
 export default function AltaContrato() {
   const { showToast } = useToast();
@@ -714,12 +1007,13 @@ export default function AltaContrato() {
 
   const ridCounter = useRef(0);
   const nextRid = () => (ridCounter.current += 1);
-  const conceptosIniciales = () => conceptosDummy.map((c) => ({ rid: nextRid(), clave: c.clave || '', concepto: c.concepto, unidad: c.unidad, cantidad: c.cantidad, pu: c.pu, importe: importeDe(c.cantidad, c.pu) }));
-  const garantiasIniciales = () => polizasGarantiaDummy.map((g) => ({ rid: nextRid(), tipo: g.tipo, afianzadora: g.afianzadora, poliza: g.poliza, monto: g.monto, vigencia: g.vigencia }));
+  // alta-v2 (4.2): el alta arranca SIN conceptos ni garantías (contrato vacío).
+  const conceptosIniciales = () => [];
+  const garantiasIniciales = () => [];
 
   const [datosGenerales, setDatosGenerales] = useState(() => ({ ...DATOS_INICIALES }));
   const [datosJuridicos, setDatosJuridicos] = useState(() => ({ ...JURIDICOS_INICIALES }));
-  const [anticipoPct, setAnticipoPct] = useState(30);
+  const [anticipoPct, setAnticipoPct] = useState(''); // alta-v2 (4.2): arranca vacío
   const [conceptos, setConceptos] = useState(conceptosIniciales);
   // A2: programa de obra = matriz concepto × periodo. ciclo (mensual/quincenal) define las
   // columnas; celdas[`${rid}:${numero}`] = cantidad planeada del concepto en el periodo.
@@ -741,6 +1035,16 @@ export default function AltaContrato() {
 
   const [errores, setErrores] = useState(ERR0);
   const [tabActivo, setTabActivo] = useState(0);
+  // alta-v2 (1.3): mensaje de error del wizard PERSISTENTE — el usuario lo cierra con la ✕;
+  // NO se auto-descarta como el Toast (que dura 3 s). Se limpia al cerrar, al avanzar bien,
+  // al guardar o al cancelar.
+  const [errorWizard, setErrorWizard] = useState(null);
+  // alta-v2 (1.5/1.6): PDFs SELECCIONADOS DURANTE la captura (antes de guardar). Se retienen
+  // en el padre (sobreviven al cambio de pestaña) y se suben automáticamente tras crear el
+  // contrato (el documento se liga a un contrato existente: BYTEA + FK, así que la persistencia
+  // ocurre al guardar, pero el usuario puede adjuntar sin haber guardado primero).
+  const [pdfFirmadoFile, setPdfFirmadoFile] = useState(null);
+  const [pdfAnticipoFile, setPdfAnticipoFile] = useState(null);
 
   const setDatosGen = (k) => (e) => setDatosGenerales((prev) => ({ ...prev, [k]: e.target.value }));
   const setDatosJur = (k) => (e) => setDatosJuridicos((prev) => ({ ...prev, [k]: e.target.value }));
@@ -851,17 +1155,28 @@ export default function AltaContrato() {
       return { ok: true };
     }
     if (idx === 2) {
-      // A2: programa = matriz concepto × periodo. Σ por concepto ≤ contratado (art. 118
-      // RLOPSRM); sin negativos ("menos dos metros no existe"). Parcial permitido (aviso).
+      // alta-v2 (punto 3): REGLA DEL 100%. El programa = matriz concepto × periodo debe
+      // distribuir Σ planeado = contratado por CADA concepto (± tolerancia de redondeo).
+      // Fundamento: RLOPSRM art. 45 ap. A fr. X (programa conforme al catálogo, del total de
+      // los conceptos) + LOPSRM art. 52 (base para medir el avance). Sin negativos. El backend
+      // (guardarMatriz, C7) revalida el cuadre en SQL. (Antes: parcial permitido, solo exceso.)
       if (Object.values(celdas).some((v) => v !== '' && Number(v) < 0)) {
         return { ok: false, msg: 'El programa de obra no admite cantidades negativas.', errores: { ...ERR0, programaError: true } };
       }
+      if (conceptos.length === 0) {
+        return { ok: false, msg: 'Captura primero el catálogo de conceptos: el programa los reparte en los periodos.', errores: { ...ERR0, programaError: true } };
+      }
+      if (periodos.length === 0) {
+        return { ok: false, msg: 'Define la fecha de inicio, el plazo y el ciclo para generar los periodos del programa.', errores: { ...ERR0, programaError: true } };
+      }
       for (let i = 0; i < conceptos.length; i++) {
         const c = conceptos[i];
-        const contratado = Number(c.cantidad) || 0;
-        const planeado = round2(periodos.reduce((s, p) => s + (Number(celdas[`${c.rid}:${p.numero}`]) || 0), 0));
-        if (planeado > contratado) {
-          return { ok: false, msg: `Programa: el concepto "${c.clave || c.concepto}" planea ${planeado} > contratado ${contratado} (art. 118 RLOPSRM).`, errores: { ...ERR0, programaError: true } };
+        const contratado = round3(Number(c.cantidad) || 0);
+        const planeado = round3(periodos.reduce((s, p) => s + (Number(celdas[`${c.rid}:${p.numero}`]) || 0), 0));
+        const restante = round3(contratado - planeado);
+        if (Math.abs(restante) > TOL_PROGRAMA) {
+          const detalle = restante > 0 ? `faltan ${restante}` : `sobran ${round3(-restante)}`;
+          return { ok: false, msg: `Programa: el concepto "${c.clave || c.concepto}" debe sumar el 100% (planeado ${planeado} vs contratado ${contratado}; ${detalle}). RLOPSRM art. 45-A-X + LOPSRM art. 52.`, errores: { ...ERR0, programaError: true } };
         }
       }
       return { ok: true };
@@ -877,6 +1192,20 @@ export default function AltaContrato() {
         if (garantiaVacia(g)) continue; // fila completamente vacía → se ignora
         if (!String(g.tipo).trim()) return { ok: false, msg: `Garantía #${i + 1}: el tipo es obligatorio`, errores: { ...ERR0, garantiaIdx: i } };
         if (!(Number(g.monto) > 0)) return { ok: false, msg: `Garantía #${i + 1}: si capturas la póliza, indica un monto mayor a 0`, errores: { ...ERR0, garantiaIdx: i } };
+        // alta-v2 (1.4): una garantía no puede exceder el monto del contrato (la vista la marca
+        // EN VIVO; aquí se bloquea el avance; el backend la revalida).
+        if (Number(g.monto) > montoDerivado) return { ok: false, msg: `Garantía #${i + 1}: el monto (${formatoMXN.format(Number(g.monto))}) no puede exceder el monto del contrato (${formatoMXN.format(montoDerivado)}).`, errores: { ...ERR0, garantiaIdx: i } };
+      }
+      return { ok: true };
+    }
+    if (idx === 5) {
+      // alta-v3: el PDF firmado es OBLIGATORIO para registrar el contrato. Debe estar
+      // adjuntado (retenido durante la captura, 1.5) ANTES de guardar; el botón "Guardar"
+      // también queda deshabilitado sin él (doble gateo: vista + validación). [validar] — el
+      // fundamento (el contrato se formaliza/existe una vez firmado) lo CONFIRMA el profe;
+      // NO se asume número de artículo. `contratoGuardadoId` cubre el caso ya-guardado.
+      if (!pdfFirmadoFile && !contratoGuardadoId) {
+        return { ok: false, msg: 'El PDF firmado del contrato es obligatorio: adjúntalo en el último paso para poder guardar.', errores: { ...ERR0, pdfFirmadoFalta: true } };
       }
       return { ok: true };
     }
@@ -892,27 +1221,29 @@ export default function AltaContrato() {
     return null;
   };
 
-  // 4.1: navegación del wizard. Atrás y los pasos auxiliares (PDF/Registrados) son libres;
-  // avanzar exige que los pasos intermedios sean VÁLIDOS (validación en la vista). En modo
-  // demostración (sin sesión real) la navegación es libre: sin token no hay superintendente
-  // asignable, así que el wizard no puede gatear; el gating aplica con sesión real.
+  // alta-v2 (1.1/1.2): navegación UNIFORME y gateada del wizard. Atrás y las pestañas auxiliares
+  // (PDF / Registrados) son libres; AVANZAR exige que TODOS los pasos del wizard intermedios sean
+  // VÁLIDOS. Se eliminó el bypass de "sin sesión" (modo demo): ahora el gating es parejo en todas
+  // las pestañas (1.1). Los errores van al banner PERSISTENTE (1.3), no a un Toast efímero.
   const irAPaso = (target) => {
-    if (sinSesion || target <= tabActivo || target > ULTIMO_PASO_WIZARD) { setTabActivo(target); return; }
+    if (target <= tabActivo || target > ULTIMO_PASO_WIZARD) { setTabActivo(target); return; }
     for (let p = tabActivo; p < target; p++) {
       const v = validarPaso(p);
-      if (!v.ok) { setErrores(v.errores); setTabActivo(p); showToast(v.msg); return; }
+      if (!v.ok) { setErrores(v.errores); setTabActivo(p); setErrorWizard(v.msg); return; }
     }
     setErrores(ERR0);
+    setErrorWizard(null);
     setTabActivo(target);
   };
 
   const handleGuardar = async () => {
     if (guardando || soloLectura) return;
     const v = validar();
-    if (v) { setErrores(v.errores); setTabActivo(v.tab); showToast(v.msg); return; }
+    if (v) { setErrores(v.errores); setTabActivo(v.tab); setErrorWizard(v.msg); return; }
     // 4.1: confirmación explícita antes de guardar (último paso del wizard).
     if (!window.confirm('¿Seguro de guardar el contrato?')) return;
     setErrores(ERR0);
+    setErrorWizard(null);
     setGuardando(true);
     try {
       const payload = {
@@ -941,20 +1272,33 @@ export default function AltaContrato() {
         garantias: garantias.filter((g) => !garantiaVacia(g)).map((g) => ({ tipo: g.tipo, afianzadora: g.afianzadora, poliza: g.poliza, monto: g.monto, vigencia: g.vigencia }))
       };
       const creado = await api.crearContrato(payload);
-      if (creado && creado.id) setContratoGuardadoId(creado.id);
+      const nuevoId = creado && creado.id ? creado.id : null;
+      if (nuevoId) setContratoGuardadoId(nuevoId);
       setDirty(false); // 4.1: ya guardado, no avisar al salir
+      // alta-v2 (1.5/1.6): sube los PDFs que el usuario adjuntó DURANTE la captura. El contrato
+      // ya existe → ahora se ligan (BYTEA + FK). Si alguno falla, el contrato igual quedó guardado.
+      if (nuevoId && pdfFirmadoFile) {
+        try { await api.subirDocumento(nuevoId, pdfFirmadoFile); setPdfFirmadoFile(null); }
+        catch (e) { showToast('Contrato guardado, pero el PDF firmado no se adjuntó: ' + (e.message || 'error')); }
+      }
+      if (nuevoId && pdfAnticipoFile) {
+        try { await api.subirDocumento(nuevoId, pdfAnticipoFile, 'anticipo_autorizacion'); setPdfAnticipoFile(null); }
+        catch (e) { showToast('Contrato guardado, pero la autorización del anticipo no se adjuntó: ' + (e.message || 'error')); }
+      }
+      setErrorWizard(null);
       showToast('Contrato guardado: ' + payload.folio);
       cargarContratos();
     } catch (err) {
-      if (err.status === 409) { setErrores({ ...ERR0, campos: { folio: true } }); setTabActivo(0); showToast('El folio ya existe'); }
+      // alta-v2 (1.3): los errores del guardado también van al banner PERSISTENTE.
+      if (err.status === 409) { setErrores({ ...ERR0, campos: { folio: true } }); setTabActivo(0); setErrorWizard('El folio ya existe; usa uno distinto.'); }
       else if (err.status === 400) {
         const f = err.payload?.faltantes;
-        if (f && f.length) { const campos = {}; f.forEach((k) => { campos[k] = true; }); setErrores({ ...ERR0, campos }); setTabActivo(0); showToast(`Faltan campos: ${f.join(', ')}`); }
-        else { showToast(err.message || 'Revisa los datos del formulario'); }
+        if (f && f.length) { const campos = {}; f.forEach((k) => { campos[k] = true; }); setErrores({ ...ERR0, campos }); setTabActivo(0); setErrorWizard(`Faltan campos: ${f.join(', ')}`); }
+        else { setErrorWizard(err.message || 'Revisa los datos del formulario'); }
       }
-      else if (err.status === 403) showToast('Solo el residente puede crear contratos');
-      else if (err.status === 401) showToast('Tu sesión expiró. Vuelve a iniciar sesión.');
-      else showToast('No se pudo guardar el contrato');
+      else if (err.status === 403) setErrorWizard('Solo el residente puede crear contratos.');
+      else if (err.status === 401) setErrorWizard('Tu sesión expiró. Vuelve a iniciar sesión.');
+      else setErrorWizard('No se pudo guardar el contrato.');
     } finally { setGuardando(false); }
   };
 
@@ -963,7 +1307,7 @@ export default function AltaContrato() {
     if (!window.confirm('¿Descartar los cambios y reiniciar el formulario?')) return;
     setDatosGenerales({ ...DATOS_INICIALES });
     setDatosJuridicos({ ...JURIDICOS_INICIALES });
-    setAnticipoPct(30);
+    setAnticipoPct('');
     setSuperintendenteId('');
     setSupervisionId('');
     setConceptos(conceptosIniciales());
@@ -971,6 +1315,9 @@ export default function AltaContrato() {
     setCeldas({});
     setGarantias(garantiasIniciales());
     setErrores(ERR0);
+    setErrorWizard(null);
+    setPdfFirmadoFile(null);
+    setPdfAnticipoFile(null);
     setTabActivo(0);
     setContratoGuardadoId(null);
     setDirty(false);
@@ -984,8 +1331,24 @@ export default function AltaContrato() {
     if (errores.conceptoIdx != null || errores.catalogoMonto) s.add(1);
     if (errores.programaError) s.add(2);
     if (c.anticipoPct || errores.garantiaIdx != null) s.add(4);
+    if (errores.pdfFirmadoFalta) s.add(5); // alta-v3: PDF firmado obligatorio (último paso)
     return s;
   }, [errores]);
+
+  // alta-v2 (1.2): pestañas del wizard BLOQUEADAS = las posteriores al primer paso inválido.
+  // No se puede saltar a un paso posterior si los anteriores no están bien llenos; las ya
+  // válidas/visitadas sí se revisitan (atrás libre). Las auxiliares (5 PDF, 6 Registrados) nunca
+  // se bloquean (consulta / adjuntar PDF). El gating real lo aplica irAPaso; esto es el affordance.
+  const tabsBloqueados = useMemo(() => {
+    const s = new Set();
+    let primerInvalido = ULTIMO_PASO_WIZARD + 1;
+    for (const p of PASOS_WIZARD) { if (!validarPaso(p).ok) { primerInvalido = p; break; } }
+    for (let i = primerInvalido + 1; i <= ULTIMO_PASO_WIZARD; i++) s.add(i);
+    return s;
+    // alta-v3: pdfFirmadoFile/contratoGuardadoId entran porque validarPaso(5) los lee; el
+    // resultado es invariante (el paso 5 es el último → su validez nunca bloquea otra pestaña).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [datosGenerales, datosJuridicos, anticipoPct, conceptos, celdas, ciclo, garantias, superintendenteId, supervisionId, periodos, montoDerivado, pdfFirmadoFile, contratoGuardadoId]);
 
   const wrapTab = (node) => (<RegionEditable disabled={soloLectura}>{node}</RegionEditable>);
 
@@ -1007,9 +1370,9 @@ export default function AltaContrato() {
     ) },
     { label: 'Datos jurídicos', content: wrapTab(<TabJuridicos datos={datosJuridicos} set={setDatosJur} />) },
     { label: 'Garantías, penalizaciones y amortización', content: wrapTab(
-      <TabGarantias rows={garantias} onCell={mkCell(setGarantias)} onAdd={mkAdd(setGarantias, { tipo: '', afianzadora: '', poliza: '', monto: '', vigencia: '' })} onRemove={mkRemove(setGarantias)} anticipoPct={anticipoPct} setAnticipoPct={setAnticipoPct} soloLectura={soloLectura} errIdx={errores.garantiaIdx} errAnticipo={errores.campos.anticipoPct} contratoId={contratoGuardadoId} />
+      <TabGarantias rows={garantias} onCell={mkCell(setGarantias)} onAdd={mkAdd(setGarantias, { tipo: '', afianzadora: '', poliza: '', monto: '', vigencia: '' })} onRemove={mkRemove(setGarantias)} anticipoPct={anticipoPct} setAnticipoPct={setAnticipoPct} soloLectura={soloLectura} errIdx={errores.garantiaIdx} errAnticipo={errores.campos.anticipoPct} contratoId={contratoGuardadoId} montoContrato={montoDerivado} pdfAnticipoFile={pdfAnticipoFile} setPdfAnticipoFile={setPdfAnticipoFile} />
     ) },
-    { label: 'PDF firmado', content: wrapTab(<TabPdfFirmado contratoId={contratoGuardadoId} soloLectura={soloLectura} />) },
+    { label: 'PDF firmado', content: wrapTab(<TabPdfFirmado contratoId={contratoGuardadoId} soloLectura={soloLectura} pendingFile={pdfFirmadoFile} onPickFile={setPdfFirmadoFile} />) },
     { label: 'Registrados', content: (
       <TabRegistrados contratos={contratos} loading={loadingLista} errorMsg={errorLista} sinSesion={sinSesion} onRecargar={cargarContratos} soloLectura={soloLectura} />
     ) }
@@ -1024,10 +1387,20 @@ export default function AltaContrato() {
         breadcrumb={[{ label: 'Inicio', href: '/' }, { label: 'Contratos' }, { label: 'Alta de contratos' }]}
       />
 
-      <Tabs tabs={tabs} active={tabActivo} onTabChange={irAPaso} tabsConError={tabsConError} />
+      <Tabs tabs={tabs} active={tabActivo} onTabChange={irAPaso} tabsConError={tabsConError} tabsBloqueados={tabsBloqueados} />
 
-      {/* 4.1: barra del wizard. "Siguiente" por paso (gated por validación en la vista);
-          "Guardar contrato" SOLO en el último paso de captura; tras guardar → adjuntar PDF. */}
+      {/* alta-v2 (1.3): banner de error del wizard PERSISTENTE — no se auto-descarta; el usuario
+          lo cierra con la ✕. Reemplaza al Toast efímero para los errores de validación/guardado. */}
+      {errorWizard && (
+        <div role="alert" data-testid="error-wizard" className="mt-4 flex items-start gap-3 rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <span className="flex-1">{errorWizard}</span>
+          <button type="button" onClick={() => setErrorWizard(null)} className="text-red-600 hover:text-red-900 font-bold leading-none" aria-label="Cerrar mensaje de error" data-testid="error-wizard-cerrar">✕</button>
+        </div>
+      )}
+
+      {/* 4.1 + alta-v3: barra del wizard. "Siguiente" por paso (gateado en la vista) en los pasos
+          1–5; "Guardar contrato" SOLO en el último paso (6 · PDF firmado) y DESHABILITADO hasta
+          adjuntar el PDF firmado (obligatorio). Tras guardar → consulta en "Registrados". */}
       <div className="mt-6 flex items-center justify-between gap-3">
         <button type="button" onClick={handleCancelar} disabled={soloLectura} className="px-4 py-2 text-slate-600 hover:text-slate-900 disabled:opacity-40">Cancelar</button>
         <div className="flex items-center gap-3">
@@ -1038,11 +1411,18 @@ export default function AltaContrato() {
             <button type="button" onClick={() => irAPaso(tabActivo + 1)} disabled={soloLectura} className="sg-btn-primary" data-testid="btn-siguiente">Siguiente →</button>
           ) : tabActivo === ULTIMO_PASO_WIZARD ? (
             contratoGuardadoId ? (
-              <button type="button" onClick={() => irAPaso(5)} className="sg-btn-primary" data-testid="btn-ir-pdf">Adjuntar PDF firmado →</button>
+              // alta-v3: contrato YA guardado con su PDF firmado adjunto → solo consulta.
+              <button type="button" onClick={() => irAPaso(6)} className="sg-btn-primary" data-testid="btn-ver-registrados">Ver contratos registrados →</button>
             ) : (
-              <button type="button" className="sg-btn-primary" disabled={soloLectura || guardando} onClick={handleGuardar} data-testid="btn-guardar">
-                {guardando ? 'Guardando…' : 'Guardar contrato'}
-              </button>
+              <>
+                {/* alta-v3: el PDF firmado es OBLIGATORIO; sin él el botón "Guardar" está bloqueado. */}
+                {!pdfFirmadoFile && (
+                  <span className="text-xs text-amber-700" data-testid="guardar-bloqueado-hint">Adjunta el PDF firmado para habilitar el guardado.</span>
+                )}
+                <button type="button" className="sg-btn-primary" disabled={soloLectura || guardando || !pdfFirmadoFile} onClick={handleGuardar} data-testid="btn-guardar">
+                  {guardando ? 'Guardando…' : 'Guardar contrato'}
+                </button>
+              </>
             )
           ) : null}
         </div>

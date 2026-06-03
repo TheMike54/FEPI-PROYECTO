@@ -2,36 +2,9 @@ import { Link } from 'react-router-dom';
 import { useSesion } from '../../context/SesionContext.jsx';
 import { ROLES } from '../../data/permisos.js';
 
-function ToggleModo() {
-  const { modo, setModo } = useSesion();
-  const baseBtn = 'px-3 py-1 text-xs font-semibold rounded-md transition-colors';
-  return (
-    <div
-      className="inline-flex items-center bg-white/10 rounded-lg p-0.5"
-      role="group"
-      aria-label="Modo de visualización"
-    >
-      <button
-        type="button"
-        onClick={() => setModo('proyecto')}
-        className={`${baseBtn} ${modo === 'proyecto' ? 'bg-white text-sigecop-blue' : 'text-white/80 hover:text-white'}`}
-      >
-        Modo proyecto
-      </button>
-      <button
-        type="button"
-        onClick={() => setModo('aplicacion')}
-        className={`${baseBtn} ${modo === 'aplicacion' ? 'bg-white text-sigecop-blue' : 'text-white/80 hover:text-white'}`}
-      >
-        Modo aplicación
-      </button>
-    </div>
-  );
-}
-
 function UsuarioBadge() {
-  const { modo, rol, usuario, logout } = useSesion();
-  if (modo !== 'aplicacion' || !rol) return null;
+  const { rol, usuario, logout } = useSesion();
+  if (!rol) return null;
   const nombreRol = ROLES.find((r) => r.id === rol)?.nombre || rol;
   const etiqueta = usuario ? usuario.nombre : nombreRol;
   return (
@@ -66,7 +39,6 @@ export default function Header() {
           </div>
         </Link>
         <div className="flex items-center gap-3">
-          <ToggleModo />
           <UsuarioBadge />
         </div>
       </div>

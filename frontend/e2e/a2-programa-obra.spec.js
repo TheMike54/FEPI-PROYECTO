@@ -1,54 +1,65 @@
 // @ts-check
-// A2 — Programa de obra = matriz CONCEPTO × PERIODO (reemplaza el viejo "actividades").
-// Verifica la VALIDACIÓN EN LA VISTA que pidió el profesor (audio 2026-06-01):
-//  - el ciclo (mensual/quincenal) define las columnas (periodos, art. 54);
-//  - la celda es la cantidad del concepto en el periodo (NO un %peso);
-//  - el restante por concepto se recalcula en vivo y Σ no puede exceder lo contratado
-//    (art. 118: "no puede poner más de los que están autorizados").
-// Corre frontend-only (datos dummy), como el resto de la suite (sin backend).
+// A2 + alta-v2 (punto 3) — Programa de obra = matriz CONCEPTO × PERIODO con la REGLA DEL 100%.
+// Σ planeado por concepto debe IGUALAR lo contratado (RLOPSRM art. 45-A-X + LOPSRM art. 52);
+// el faltante y el exceso bloquean. Flujo con LOGIN REAL: la app arranca vacía, así que se
+// capturan datos generales + 1 concepto antes de llegar al programa. Requiere backend+BD.
 import { test, expect } from '@playwright/test';
-import { freshHome, enterAppMode, goToViaSidebar } from './_helpers.js';
+import { freshHome, enterAppMode, goToViaSidebar, altaLlenarDatosGenerales, altaAgregarConcepto } from './_helpers.js';
 
-test.describe('A2 — programa de obra como matriz concepto × periodo', () => {
+test.skip(!!process.env.CI, 'alta-v2: login real requiere backend+BD; se corre en local');
+
+test.describe('A2/alta-v2 — programa de obra: regla del 100%', () => {
   test.beforeEach(async ({ page }) => {
     await freshHome(page);
-    await enterAppMode(page, 'residente');           // HU-01 = E (editable) para residente
+    await enterAppMode(page, 'residente');          // HU-01 = E (editable) para residente
     await goToViaSidebar(page, '/contratos/alta');
-    await page.getByRole('button', { name: 'Programa de obra' }).click();
+    await altaLlenarDatosGenerales(page, { plazo: 60, fechaInicio: '2026-06-01' }); // → 2 periodos mensual
+    await page.getByTestId('btn-siguiente').click();        // → catálogo (paso 1)
+    await altaAgregarConcepto(page, 0, { clave: 'A1', cantidad: 100, pu: 50 });
+    await page.getByTestId('btn-siguiente').click();        // → programa (paso 2)
   });
 
   test('el ciclo genera periodos (columnas) y el quincenal da más que el mensual', async ({ page }) => {
     const ciclo = page.getByTestId('select-ciclo');
     const count = page.getByTestId('periodos-count');
     await expect(ciclo).toHaveValue('mensual');
-    // Dummy: inicio 2026-06-01, plazo 181 → 6 periodos mensuales.
-    await expect(count).toContainText('6 periodos');
-    // La matriz pinta una columna por periodo: la celda del primer concepto, periodo 1 y 6.
+    await expect(count).toContainText('2 periodo');         // plazo 60, mensual → 2 periodos
     await expect(page.getByTestId('celda-0-1')).toBeVisible();
-    await expect(page.getByTestId('celda-0-6')).toBeVisible();
-
-    await ciclo.selectOption('quincenal');           // cada 15 días → más columnas
-    await expect(count).toContainText('13 periodos');
-    await expect(page.getByTestId('celda-0-13')).toBeVisible();
+    await ciclo.selectOption('quincenal');                  // cada 15 días → más columnas
+    await expect(count).toContainText('4 periodo');         // 60 / 15 → 4 periodos
+    await expect(page.getByTestId('celda-0-4')).toBeVisible();
   });
 
-  test('el restante por concepto se recalcula en vivo y bloquea el exceso (art. 118)', async ({ page }) => {
-    const celda = page.getByTestId('celda-0-1');
-    const planeado = page.getByTestId('planeado-0');
+  test('regla del 100%: faltante bloquea (descuadre), cuadre habilita, exceso bloquea', async ({ page }) => {
     const restante = page.getByTestId('restante-0');
+    // Contratado 100, nada asignado → restante 100 y descuadre.
+    await expect(restante).toHaveText('100');
+    await expect(page.getByTestId('programa-descuadre')).toBeVisible();
 
-    // Concepto 0 del dummy: contratado = 1250. Sin asignar, restante = contratado.
-    await expect(restante).toHaveText('1250');
+    // Parcial (60) → restante 40, SIGUE descuadre (la regla nueva NO permite parcial).
+    await page.getByTestId('celda-0-1').fill('60');
+    await expect(restante).toHaveText('40');
+    await expect(page.getByTestId('programa-descuadre')).toBeVisible();
+    await expect(page.getByTestId('programa-cuadra')).toHaveCount(0);
 
-    // Asigno 1000 en el periodo 1 → planeado 1000, restante 250 (parcial, permitido).
-    await celda.fill('1000');
-    await expect(planeado).toHaveText('1000');
-    await expect(restante).toHaveText('250');
-    await expect(page.getByTestId('programa-exceso')).toHaveCount(0);
+    // Completar al 100% (60 + 40) → restante 0 y CUADRA.
+    await page.getByTestId('celda-0-2').fill('40');
+    await expect(restante).toHaveText('0');
+    await expect(page.getByTestId('programa-cuadra')).toBeVisible();
+    await expect(page.getByTestId('programa-descuadre')).toHaveCount(0);
 
-    // Asigno 2000 (> 1250 contratado) → restante negativo y aviso de exceso (bloquea guardar).
-    await celda.fill('2000');
-    await expect(restante).toHaveText('-750');
-    await expect(page.getByTestId('programa-exceso')).toBeVisible();
+    // Exceso (> contratado) → vuelve a descuadre.
+    await page.getByTestId('celda-0-2').fill('200');
+    await expect(page.getByTestId('programa-descuadre')).toBeVisible();
+  });
+
+  test('avanzar/guardar bloqueado si el programa no cuadra al 100%', async ({ page }) => {
+    // Parcial → al pulsar Siguiente NO avanza (sigue en programa) y aparece el banner persistente.
+    await page.getByTestId('celda-0-1').fill('60');
+    await page.getByTestId('btn-siguiente').click();
+    await expect(page.getByTestId('error-wizard')).toBeVisible();
+    await expect(page.getByTestId('error-wizard')).toContainText('100%');
+    // Aún en el paso programa (la matriz sigue visible).
+    await expect(page.getByTestId('select-ciclo')).toBeVisible();
   });
 });

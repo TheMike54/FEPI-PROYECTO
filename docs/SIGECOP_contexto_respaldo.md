@@ -109,9 +109,11 @@ libre. Desbloquea HU-05, HU-06 y el versionado de HU-03.
 
 | | |
 |---|---|
-| **HECHO** | A1 completo. **A2 construido y probado en local** (Claude Code, 6 capas verdes; SIN commit/push/deploy, `main` intacto en `d840855`): `contrato_periodos` + `programa_obra` + `contratos.ciclo_estimacion` reemplazan a `contrato_actividades`; matriz concepto×periodo, celda=cantidad, Σ≤contratado en SQL (art. 118); C1–C7 plegadas en `lib/programa.js: guardarMatriz`. Periodos anclados a `masUnMes` → cada periodo es válido para estimación (art. 54). Entregable: `docs/A2_ENTREGABLE_Maiki.md` + `docs/A2_DIFFS.patch`. |
-| **PENDIENTE — la "otra mitad" de A2** | (1) ⚠️ **HU-12 NO valida aún** estimado ≤ planeado-del-periodo contra `programa_obra` (hoy solo art. 118 acumulado) — es el punto del profe ("sin esto no validas estimaciones"); toca el core financiero congelado, Code lo dejó **propuesto, no hecho**. (2) **HU-05 (curva)** queda huérfana al deprecar `contrato_actividades` → releer desde `programa_obra`. (3) Revisar `A2_DIFFS.patch` y **aplicar** con runbook (aún sin commit). |
-| **SIGUIENTE PASO** | Revisar el diff → decidir "distribuir TODO vs parcial" (ver §9) → aplicar A2 → construir la validación de estimación contra el programa (HU-12) + re-cablear HU-05. |
+| **HECHO** | A1 completo. **A2 construido y probado en local** (Claude Code, 6 capas verdes; SIN commit/push/deploy, `main` intacto en `d840855`): `contrato_periodos` + `programa_obra` + `contratos.ciclo_estimacion` reemplazan a `contrato_actividades`; matriz concepto×periodo, celda=cantidad, Σ≤contratado en SQL (art. 118); C1–C7 plegadas en `lib/programa.js: guardarMatriz`. Periodos anclados a `masUnMes` → cada periodo es válido para estimación (art. 54). El **selector de ciclo mensual/quincenal ya está incluido en A2** (confirmado). Entregable: `docs/A2_ENTREGABLE_Maiki.md` + `docs/A2_DIFFS.patch`. **Además: paquete 4.x del alta construido y probado (sin commit)** — wizard (Siguiente + validación por paso + Guardar solo al final + popup); errores que dicen el campo (+ `contratos.monto` → `NUMERIC(18,2)` para obras muy grandes); anticipo→uploader de PDF (`contrato_documentos.tipo`, UNIQUE por tipo). Entregables `docs/CORRECCION_ALTA_4x_*`. |
+| **PENDIENTE — la "otra mitad" de A2** | (1) ⚠️ **HU-12 NO valida aún** estimado ≤ planeado-del-periodo contra `programa_obra` (hoy solo art. 118 acumulado) — es el punto del profe ("sin esto no validas estimaciones"); toca el core financiero congelado, Code lo dejó **propuesto, no hecho**. (2) **HU-05 (curva)** queda huérfana al deprecar `contrato_actividades` → releer desde `programa_obra`. |
+| **YA INTEGRADO (en `main`, desplegado)** | A2 + 4.x en commit `553cda0`. **Deploy a Render verificado ✅** (tablas + columnas `monto`/`ciclo_estimacion`/`tipo` confirmadas en Render). |
+| **CONSTRUIDO, SIN INTEGRAR (alta v2)** | Claude Code, probado local, `main` intacto en `553cda0`. Incluye: gating de pestañas uniforme (🔒), banner de error que el usuario cierra, garantía bloqueada si excede el contrato, ambos PDFs (firmado + autorización anticipo) cargables durante la captura, "ver info del contrato" en solo lectura, **regla del 100% (Σ planeado = contratado, ±0.0005)**, **modo proyecto ELIMINADO**, seed a 6 cuentas, migraciones endurecidas (ALTERs idempotentes). Entregable `docs/ALTA_v2_Maiki.md` + `docs/ALTA_v2_DIFFS.patch`. |
+| **SIGUIENTE PASO** | Smoke local (BD ya reseteada) → integrar alta v2 a `main` → ejecutar el runbook §D de **reset de Render** → verificar. Luego: validación de estimación contra `programa_obra` (HU-12) + re-cablear HU-05 + convertir los 8 tests `fixme` a integración. |
 
 > **Confirmado por el profesor (audio 2026-06-01):** el programa de obra son **conceptos** (no
 > "actividades") repartidos en periodos; el ciclo es **mes o quincena** elegido al configurar el
@@ -132,8 +134,8 @@ libre. Desbloquea HU-05, HU-06 y el versionado de HU-03.
 | Bitácora apertura: datos mínimos (fecha, partes, nombre/firma autorizada, domicilios/teléfonos, datos del contrato, alcance descriptivo) | art. 123 fr. III | PENDIENTE — verificar HU-08 ("tienen que añadir eso") |
 | Notas tipificadas por rol (~5 por rol; el contratista hace más que "solicitud") | art. 122 / 125 | PENDIENTE — ampliar/verificar HU-09 |
 | Tag/clave para búsqueda eficiente de notas | — | Confirmar en HU-10 (el profe quiere el tag) |
-| Anticipo sobre umbral exige **justificación firmada (PDF) obligatoria**; el sistema lo REQUIERE, no solo informa | (verificar art.) | PENDIENTE — hoy es informativo |
-| Alertas/umbrales = **reglas de negocio que bloquean**, no banners informativos | — | PENDIENTE |
+| Anticipo sobre umbral: PDF de autorización (no solo aviso) | (verificar art. — ¿50?) | ✅ **RESUELTO en 4.x** — el aviso habilita el uploader (`contrato_documentos.tipo`). Parametrizable/para el profe: umbral (30 vs 50), obligatorio-vs-habilitado, autorización del titular vs residente |
+| Validar en la vista por campo + errores que dicen dónde + "Siguiente"/Guardar solo al final | queja del profe | ✅ **RESUELTO en 4.x** — wizard con validación por paso, Guardar al final + popup, errores mapeados al campo |
 | Fecha de apertura de bitácora = día de inicio del contrato | — | PENDIENTE (regla de negocio) |
 | CMIC / aportación de capacitación visible en la estimación | LFD/CMIC (no LOPSRM) | A confirmar tasa — el profe confirma que VA; mostrará estimaciones reales para la cifra |
 | Plazo de firma de notas en **días naturales**, está en la LEY (no reglamento) | LOPSRM (verificar art. y nº de días) | A verificar |
@@ -175,24 +177,29 @@ specs de Paquete 1 (CI verde, precondición), arrancar equipos.
 ## 9. Bloqueos y dudas abiertas
 
 **Bloqueos (por impacto):**
-1. **A2 — a medias.** Modelo + captura construidos y probados (sin aplicar). Falta la **otra mitad**:
-   validación de estimación contra `programa_obra` (HU-12, core financiero congelado) y re-cableo de
-   **HU-05** (curva, huérfana al deprecar `contrato_actividades`). Revisar diff → aplicar. *Fundación.*
+1. **A2 — falta la otra mitad.** Modelo + captura construidos, probados e **integrados** (553cda0).
+   Falta: validación de estimación contra `programa_obra` (HU-12, core financiero congelado) y re-cableo
+   de **HU-05** (curva, huérfana). *Fundación.*
 2. **Sustitución de personas (`contrato_roster`, art. 125)** — requisito legal NO cumplido (punteros
    escalares sin histórico; tabla en borrador). Riesgo en la defensa. *Fundación.*
-3. **CI rojo** — limpiar specs de Paquete 1 (precondición para el trabajo en equipos).
-4. **Modo proyecto sin remover.** *Fundación.*
-5. **Branch protection no confirmada** en GitHub.
+3. **CI** — alta v2 limpió ~20 specs viejas + reescribió 3 de alta; quedan **8 tests en `test.fixme`**
+   (HU-08 firmar, HU-12 inputs, HU-21 pago) a convertir en tests de integración (rompieron al quitar el
+   modo demo; las pantallas funcionan). Además las 4 specs lentas (~15 min) siguen siendo riesgo de timeout.
+4. **Modo proyecto: ELIMINADO en alta v2** (pendiente de integrar/desplegar). Antes era bloqueo; ya resuelto.
+5. **Branch protection: EXISTE** (regla PR, confirmada en el push del 553cda0). Enforcea para el equipo
+   (no-admins → PR obligatorio); Maiki la **bypassa como owner** (sus pushes saltan PR y el gate de CI).
 6. **Deadline Render 25 jun** (PostgreSQL gratis expira).
 
 **Para el profe (Nivel 1):**
-- ⭐ **Programa: ¿distribuir TODO o parcial?** Code implementó **parcial** (Σ ≤ contratado, se pueden
-  dejar conceptos sin repartir del todo); el **dibujo del profe distribuye todo** (Σ = contratado).
-  Confirmar — cambia la invariante de `≤` a `=`.
-- **CMIC / 2 al millar:** base LFD/CMIC (no LOPSRM); tasa y aplicabilidad a confirmar. Si entra, meterla
-  también al trigger de inmutabilidad de estimación.
-- **Convenios (HU-03):** alcance art. 59 / 59 Bis (versionado) — depende de A2.
-- **Plazo de firma de notas:** nº de días naturales (¿ley o convenio?) — verificar artículo.
+- ✅ **Programa al 100% — RESUELTO** (Σ planeado = contratado; construido en alta v2). Soporte literal
+  **firme: RLOPSRM art. 45 A fr. X + LOPSRM art. 52** (certeza alta). ⚠️ **Citas a corregir antes de
+  presentar:** NO usar RLOPSRM art. 59 (es revisión de proposiciones) ni RLOPSRM 64-A-I-a (es licitación);
+  los convenios son **art. 59 LOPSRM** (la ley). Las variaciones de obra se ajustan después por convenio.
+- ⚠️ **Convenio — artículo a verificar:** el código de A2 usa **art. 99 LOPSRM** para la excepción de
+  convenio, pero los convenios modificatorios son **art. 59 LOPSRM**. Confirmar cuál aplica contra el
+  texto literal (los números chocan entre LOPSRM y RLOPSRM).
+- **CMIC / 2 al millar:** base LFD/CMIC (no LOPSRM); tasa y aplicabilidad a confirmar.
+- **Plazo de firma de notas:** nº de días naturales — verificar artículo.
 - **Notificaciones (U3):** alcance Etapa 1 (hoy solo indicadores in-app).
 - **Folio del contrato (C4):** ya es captura UNIQUE — solo confirmar.
 

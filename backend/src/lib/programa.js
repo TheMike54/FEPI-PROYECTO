@@ -91,11 +91,20 @@ function errProgramaCongelado() {
 function errProgramaAjeno(msg) {
   return Object.assign(new Error(msg), { code: 'PROGRAMA_AJENO' });
 }
-function errProgramaExcede(detalles) {
-  const txt = detalles.map((r) => `${r.clave}: planeado ${r.planeado} > contratado ${r.contratado}`).join('; ');
+// Regla del 100% (paquete alta-v2): por concepto, Σ planeado DEBE IGUALAR lo contratado
+// (programa convenido "del total de los conceptos de trabajo" — RLOPSRM art. 45 ap. A
+// fr. X; el programa es la base para medir el avance — LOPSRM art. 52). Antes solo se
+// bloqueaba el exceso (art. 118); ahora también el faltante. El descuadre puede ser por
+// SOBRA (> contratado) o por FALTA (< contratado, incluido el concepto sin ninguna celda).
+function errProgramaDescuadre(detalles) {
+  const txt = detalles.map((r) => {
+    const dif = Number(r.contratado) - Number(r.planeado);
+    const detalle = dif > 0 ? `faltan ${dif.toFixed(3)}` : `sobran ${(-dif).toFixed(3)}`;
+    return `${r.clave}: planeado ${r.planeado} vs contratado ${r.contratado} (${detalle})`;
+  }).join('; ');
   return Object.assign(
-    new Error(`El programa excede lo contratado (art. 118 RLOPSRM) en — ${txt}`),
-    { code: 'PROGRAMA_EXCEDE', detalles }
+    new Error(`El programa de obra debe distribuir el 100% de cada concepto (Σ planeado = contratado): RLOPSRM art. 45 ap. A fr. X + LOPSRM art. 52. Conceptos sin cuadrar — ${txt}`),
+    { code: 'PROGRAMA_DESCUADRE', detalles }
   );
 }
 
@@ -114,7 +123,8 @@ function errProgramaExcede(detalles) {
  *  C1 — distingue origen: edicion_manual (sin convenioId) vs enmienda_convenio (con convenioId).
  *  C3 — freeze = EXISTS(estimaciones con estado <> 'rechazada'), no estado='integrada'.
  *  C5 — reemplazo por DELETE de TODAS las celdas de los conceptos del contrato (subconsulta).
- *  C7 — invariante Σ planeado <= contratado VALIDADO EN SQL NUMERIC (3 dec, sin epsilon), art. 118.
+ *  C7 — Regla del 100%: Σ planeado = contratado por concepto, VALIDADO EN SQL NUMERIC (3 dec,
+ *       tolerancia 0.0005). Cubre faltante y exceso (RLOPSRM 45-A-X + LOPSRM 52; exceso art. 118).
  *  (C4/C6 viven en el llamador: traduce clave→id con RETURNING y rechaza huérfanos antes de llamar.)
  */
 async function guardarMatriz(client, contratoId, celdas, opts = {}) {
@@ -168,9 +178,12 @@ async function guardarMatriz(client, contratoId, celdas, opts = {}) {
     insertadas += 1;
   }
 
-  // C7: invariante en SQL NUMERIC (3 decimales, SIN epsilon): por concepto, Σ planeado
-  // no puede exceder lo contratado del catálogo (art. 118 RLOPSRM). La comparación la hace
-  // Postgres sobre NUMERIC(14,3), así no hay falsos positivos por flotantes de JS.
+  // C7 — Regla del 100% (alta-v2): por concepto, Σ planeado DEBE IGUALAR lo contratado del
+  // catálogo, con tolerancia de redondeo en la escala NUMERIC(14,3) (|Δ| > 0.0005 ⇒ descuadre).
+  // La comparación la hace Postgres sobre NUMERIC(14,3) (sin flotantes de JS). Cubre faltante Y
+  // exceso, e incluye conceptos SIN ninguna celda (LEFT JOIN → planeado 0 → descuadre). El exceso
+  // sigue cubierto (art. 118 RLOPSRM); el faltante es la regla nueva (RLOPSRM art. 45-A-X + LOPSRM
+  // art. 52: el programa convenido cubre el total de los conceptos y es la base del avance).
   const inv = await client.query(
     `SELECT cc.clave,
             cc.cantidad                       AS contratado,
@@ -179,10 +192,10 @@ async function guardarMatriz(client, contratoId, celdas, opts = {}) {
        LEFT JOIN programa_obra po ON po.contrato_concepto_id = cc.id
       WHERE cc.contrato_id = $1
       GROUP BY cc.id, cc.clave, cc.cantidad
-     HAVING COALESCE(SUM(po.cantidad), 0) > cc.cantidad`,
+     HAVING ABS(COALESCE(SUM(po.cantidad), 0) - cc.cantidad) > 0.0005`,
     [cid]
   );
-  if (inv.rowCount > 0) throw errProgramaExcede(inv.rows);
+  if (inv.rowCount > 0) throw errProgramaDescuadre(inv.rows);
 
   return { celdasInsertadas: insertadas };
 }

@@ -22,6 +22,9 @@ import {
   expectMetadataAcademicaOculta
 } from './_helpers.js';
 
+// alta-v2: la suite entra con login real → requiere backend+BD; se corre en local (no en CI).
+test.skip(!!process.env.CI, 'alta-v2: login real requiere backend+BD; se corre en local');
+
 const VIEW_PATH = '/seguimiento/trabajos-terminados';
 const TITULO = 'Registro de trabajos terminados';
 const SPRINT = 'Sprint 7';
@@ -30,97 +33,6 @@ const SPRINT = 'Sprint 7';
 function inputDeFila(page, concepto) {
   return page.locator('tr', { hasText: concepto }).locator('input[type="number"]');
 }
-
-// ---------------------------------------------------------------------------
-// MODO PROYECTO
-// ---------------------------------------------------------------------------
-
-test.describe('HU-06 — modo proyecto', () => {
-  test.beforeEach(async ({ page }) => {
-    await freshHome(page);
-    await page.getByRole('button', { name: 'Modo proyecto' }).first().click();
-  });
-
-  test('card de Inicio muestra HU-06 + Sprint 7', async ({ page }) => {
-    const card = cardInInicioFor(page, VIEW_PATH);
-    await expect(card).toBeVisible();
-    const text = (await card.textContent()) ?? '';
-    expect(text).toContain('HU-06');
-    expect(text).toContain(SPRINT);
-    expect(text).toContain('trabajos terminados');
-  });
-
-  test('sidebar contiene enlace a la vista', async ({ page }) => {
-    await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
-  });
-
-  test('la vista carga con badge, subtitulo y heading', async ({ page }) => {
-    await goToViaSidebar(page, VIEW_PATH);
-    await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
-    await expect(page.locator('span', { hasText: 'HU-06' }).first()).toBeVisible();
-    await expect(page.locator('span', { hasText: SPRINT }).first()).toBeVisible();
-    await expect(page.getByText('Rol: Contratista')).toBeVisible();
-  });
-
-  test('criterios de aceptacion visibles al pie', async ({ page }) => {
-    await goToViaSidebar(page, VIEW_PATH);
-    await expect(page.getByRole('heading', { name: 'Criterios de aceptación' })).toBeVisible();
-    await expect(page.getByText('ligada al concepto del catálogo')).toBeVisible();
-    await expect(page.getByText('bloquea el registro cuando la cantidad acumulada excede')).toBeVisible();
-  });
-
-  // CHECK DISTINTIVO 1: el botón Guardar queda disabled hasta tener al menos
-  // una cantidad capturada con nota seleccionada y sin exceso.
-  test('Guardar disabled: requiere cantidad + nota + sin exceso', async ({ page }) => {
-    await goToViaSidebar(page, VIEW_PATH);
-
-    const cap = inputDeFila(page, 'Excavación');
-    const btn = page.getByTestId('btn-guardar-avance');
-
-    // Inicial: 0 capturado, nota placeholder → disabled.
-    await expect(btn).toBeDisabled();
-
-    // 500 sobre acumPrevio=600 → 1100 > 1000 → exceso, sigue disabled.
-    await cap.fill('500');
-    await expect(page.getByText(/La cantidad acumulada excede la contratada/)).toBeVisible();
-    await expect(btn).toBeDisabled();
-
-    // 100 sobre 600 → 700, sin exceso, falta nota → aviso amarillo y disabled.
-    await cap.fill('100');
-    await expect(page.getByText(/Falta seleccionar la nota/)).toBeVisible();
-    await expect(btn).toBeDisabled();
-
-    // Seleccionar nota válida → habilitado.
-    const notaSel = page.locator('tr', { hasText: 'Excavación' }).locator('select');
-    await notaSel.selectOption({ index: 1 });
-    await expect(btn).toBeEnabled();
-  });
-
-  // CHECK DISTINTIVO 2: al guardar aparece el banner verde y el botón
-  // desaparece (el periodo queda en lectura).
-  test('al guardar: aviso-avance-guardado visible y boton oculto', async ({ page }) => {
-    await goToViaSidebar(page, VIEW_PATH);
-
-    await inputDeFila(page, 'Excavación').fill('100');
-    await page
-      .locator('tr', { hasText: 'Excavación' })
-      .locator('select')
-      .selectOption({ index: 1 });
-
-    await page.getByTestId('btn-guardar-avance').click();
-
-    const aviso = page.getByTestId('aviso-avance-guardado');
-    await expect(aviso).toBeVisible();
-    await expect(aviso).toContainText('Avance del periodo Mayo 2026 guardado');
-
-    await expect(page.getByTestId('btn-guardar-avance')).toHaveCount(0);
-  });
-
-  test('fundamento art. 118 RLOPSRM visible al pie', async ({ page }) => {
-    await goToViaSidebar(page, VIEW_PATH);
-    await expect(page.getByText(/Fundamento: art\. 118 RLOPSRM/)).toBeVisible();
-  });
-});
 
 // ---------------------------------------------------------------------------
 // MODO APLICACION — Contratista ejecuta

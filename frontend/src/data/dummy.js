@@ -512,17 +512,8 @@ export const soportesPagoDummy = [
 // real con today - diasDesdeAutorizacion y muestra "Dia X de 20".
 export const fechaAutorizacionOffsetDias = 13;
 
-// Vistas propuestas — fuera del backlog de 22 HU. Solo se muestran en modo proyecto.
-export const vistasPropuesta = [
-  {
-    id: 'solicitud-acceso',
-    titulo: 'Solicitud de registro',
-    descripcion: 'Inscripción de nuevos usuarios al sistema. Requiere aprobación de la dependencia. Vista propuesta para validación.',
-    icono: '📝',
-    ruta: '/solicitud-acceso',
-    etiqueta: 'Propuesta · a validar'
-  }
-];
+// alta-v2: el export `vistasPropuesta` (vistas "Propuesta" del modo proyecto) se eliminó
+// junto con el modo proyecto. La ruta /solicitud-acceso ahora es PÚBLICA (ver App.jsx).
 
 // HU-21 — Estimaciones disponibles para pago y pagos ya registrados.
 export const estimacionesParaPagoDummy = [

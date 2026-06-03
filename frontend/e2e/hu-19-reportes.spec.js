@@ -23,6 +23,9 @@ import {
   expectMetadataAcademicaOculta
 } from './_helpers.js';
 
+// alta-v2: la suite entra con login real → requiere backend+BD; se corre en local (no en CI).
+test.skip(!!process.env.CI, 'alta-v2: login real requiere backend+BD; se corre en local');
+
 const VIEW_PATH = '/reportes';
 const TITULO = 'Exportación de reportes';
 const SPRINT = 'Sprint 9';
@@ -37,82 +40,6 @@ const REPORTES = [
   { id: 6, slug: 'modificatorios',    formatos: ['xlsx']         },
   { id: 7, slug: 'penalizaciones',    formatos: ['xlsx']         }
 ];
-
-// ---------------------------------------------------------------------------
-// MODO PROYECTO
-// ---------------------------------------------------------------------------
-
-test.describe('HU-19 — modo proyecto', () => {
-  test.beforeEach(async ({ page }) => {
-    await freshHome(page);
-    await page.getByRole('button', { name: 'Modo proyecto' }).first().click();
-  });
-
-  test('card de Inicio muestra HU-19 + Sprint 9', async ({ page }) => {
-    const card = cardInInicioFor(page, VIEW_PATH);
-    await expect(card).toBeVisible();
-    const text = (await card.textContent()) ?? '';
-    expect(text).toContain('HU-19');
-    expect(text).toContain(SPRINT);
-    expect(text).toContain('Exportación');
-  });
-
-  test('sidebar contiene enlace a la vista', async ({ page }) => {
-    await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
-  });
-
-  test('la vista carga con badge, subtitulo y heading', async ({ page }) => {
-    await goToViaSidebar(page, VIEW_PATH);
-    await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
-    await expect(page.locator('span', { hasText: 'HU-19' }).first()).toBeVisible();
-    await expect(page.locator('span', { hasText: SPRINT }).first()).toBeVisible();
-    await expect(page.getByText('Rol: Residente')).toBeVisible();
-  });
-
-  test('criterios de aceptacion visibles al pie', async ({ page }) => {
-    await goToViaSidebar(page, VIEW_PATH);
-    await expect(page.getByRole('heading', { name: 'Criterios de aceptación' })).toBeVisible();
-    // "7 reportes definidos" se repite como subtítulo de la tabla y como
-    // comienzo del criterio 1. Uso el resto del criterio para anclar.
-    await expect(page.getByText('genera un archivo descargable en el formato establecido')).toBeVisible();
-    await expect(page.getByText('mensual, trimestral, acumulado')).toBeVisible();
-  });
-
-  test('selector de periodo muestra Mensual / Trimestral / Acumulado', async ({ page }) => {
-    await goToViaSidebar(page, VIEW_PATH);
-    const sel = page.getByTestId('select-periodo-reporte');
-    await expect(sel).toBeVisible();
-    const options = await sel.locator('option').allTextContents();
-    expect(options).toEqual(['Mensual', 'Trimestral', 'Acumulado']);
-  });
-
-  // CHECK DISTINTIVO: cada boton dispara una descarga real con extension y
-  // patron de nombre esperados.
-  for (const r of REPORTES) {
-    for (const f of r.formatos) {
-      test(`reporte ${r.id} formato ${f} dispara descarga con extension correcta`, async ({ page }) => {
-        await goToViaSidebar(page, VIEW_PATH);
-        const dl = page.waitForEvent('download');
-        await page.getByTestId(`btn-exportar-${r.id}-${f === 'xlsx' ? 'excel' : 'pdf'}`).click();
-        const file = await dl;
-        const name = file.suggestedFilename();
-        expect(name).toContain(`reporte_${r.id}_${r.slug}`);
-        expect(name).toMatch(new RegExp(`\\.${f}$`));
-        // Periodo default = Mensual.
-        expect(name).toContain('_mensual_');
-      });
-    }
-  }
-
-  test('cambiar el periodo cambia la etiqueta del archivo descargado', async ({ page }) => {
-    await goToViaSidebar(page, VIEW_PATH);
-    await page.getByTestId('select-periodo-reporte').selectOption('Trimestral');
-    const dl = page.waitForEvent('download');
-    await page.getByTestId('btn-exportar-1-pdf').click();
-    const file = await dl;
-    expect(file.suggestedFilename()).toContain('_trimestral_');
-  });
-});
 
 // ---------------------------------------------------------------------------
 // MODO APLICACION — Residente ejecuta

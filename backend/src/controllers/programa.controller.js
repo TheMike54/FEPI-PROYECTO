@@ -107,7 +107,8 @@ async function reemplazarPrograma(req, res) {
       }
 
       // guardarMatriz: lock (C2), freeze manual/enmienda (C1/C3), DELETE+INSERT (C5),
-      // invariante Σ<=contratado en SQL (C7, art. 118).
+      // regla del 100% en SQL (C7): Σ planeado = contratado por concepto (RLOPSRM 45-A-X +
+      // LOPSRM 52; exceso art. 118). Reemplazar la matriz también debe cuadrar al 100%.
       const r = await guardarMatriz(client, id, celdas, { convenioId });
       await client.query('COMMIT');
       return res.status(200).json({ ok: true, contrato_id: id, ...r });
@@ -119,7 +120,7 @@ async function reemplazarPrograma(req, res) {
     }
   } catch (err) {
     if (err.code === 'PROGRAMA_CONGELADO') return res.status(409).json({ error: err.message });
-    if (err.code === 'PROGRAMA_EXCEDE' || err.code === 'PROGRAMA_AJENO') return res.status(400).json({ error: err.message, detalles: err.detalles });
+    if (err.code === 'PROGRAMA_DESCUADRE' || err.code === 'PROGRAMA_EXCEDE' || err.code === 'PROGRAMA_AJENO') return res.status(400).json({ error: err.message, detalles: err.detalles });
     console.error('[reemplazarPrograma]', err);
     return res.status(500).json({ error: 'Error interno' });
   }

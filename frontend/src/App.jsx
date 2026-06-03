@@ -61,14 +61,6 @@ function SoloRol({ roles, children }) {
   return <Layout>{children}</Layout>;
 }
 
-// Vistas marcadas como Propuesta (fuera del backlog de HU). En modo aplicación
-// se redirige al inicio porque no son parte del flujo operativo por rol.
-function SoloModoProyecto({ children }) {
-  const { modo } = useSesion();
-  if (modo === 'aplicacion') return <Navigate to="/" replace />;
-  return <WithLayout>{children}</WithLayout>;
-}
-
 export default function App() {
   return (
     <SesionProvider>
@@ -98,7 +90,9 @@ export default function App() {
             <Route path="/seguimiento/alertas" element={<WithLayout><AlertasAtraso /></WithLayout>} />
             <Route path="/seguimiento/curva-avance" element={<WithLayout><CurvaAvance /></WithLayout>} />
             <Route path="/seguimiento/trabajos-terminados" element={<WithLayout><TrabajosTerminados /></WithLayout>} />
-            <Route path="/solicitud-acceso" element={<SoloModoProyecto><SolicitudRegistro /></SoloModoProyecto>} />
+            {/* alta-v2 (4.3): registro de acceso PÚBLICO (sin login). Usa el backend real
+                POST /auth/register. Reemplaza la antigua ruta envuelta en SoloModoProyecto. */}
+            <Route path="/solicitud-acceso" element={<SolicitudRegistro />} />
             <Route path="/usuarios/solicitudes" element={<SoloRol roles={['dependencia']}><SolicitudesRegistro /></SoloRol>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

@@ -2,15 +2,15 @@ import { createContext, useContext, useState, useCallback, useMemo, useEffect } 
 import { nivelDe } from '../data/permisos.js';
 import { api } from '../services/api.js';
 
-// El rol HOY puede venir del login real (HU-00) o del atajo de demostración.
-// Las vistas consumen useSesion() / useVistaHU() sin enterarse de cuál.
+// alta-v2: se eliminó el "modo proyecto". La app es SIEMPRE modo aplicación; el rol viene
+// del login real (HU-00). Ya no hay atajo de demostración ni toggle de modo.
+// Las vistas consumen useSesion() / useVistaHU().
 
 const SesionContext = createContext(null);
 const TOKEN_KEY = 'sigecop_token';
 const USER_KEY = 'sigecop_user';
 
 export function SesionProvider({ children }) {
-  const [modo, setModo] = useState('proyecto');
   const [rol, setRol] = useState(null);
   const [usuario, setUsuario] = useState(null);
   const [token, setToken] = useState(null);
@@ -25,7 +25,6 @@ export function SesionProvider({ children }) {
       setToken(t);
       setUsuario(parsed);
       setRol(parsed.rol);
-      setModo('aplicacion');
     } catch {
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
@@ -39,7 +38,6 @@ export function SesionProvider({ children }) {
     setToken(tk);
     setUsuario(user);
     setRol(user.rol);
-    setModo('aplicacion');
   }, []);
 
   const logout = useCallback(() => {
@@ -48,19 +46,13 @@ export function SesionProvider({ children }) {
     setToken(null);
     setUsuario(null);
     setRol(null);
-    setModo('proyecto');
   }, []);
 
   const salirRol = useCallback(() => setRol(null), []);
 
-  // Alternar modo NO borra el rol: el rol se conserva al pasar de proyecto a
-  // aplicación y viceversa. El rol solo se limpia con logout o "Cambiar de rol"
-  // (salirRol), que llevan al selector. Así "modo proyecto" también opera con un rol.
-  const cambiarModo = useCallback((nuevoModo) => setModo(nuevoModo), []);
-
   const value = useMemo(
-    () => ({ modo, rol, usuario, token, setModo: cambiarModo, setRol, salirRol, login, logout }),
-    [modo, rol, usuario, token, cambiarModo, salirRol, login, logout]
+    () => ({ rol, usuario, token, setRol, salirRol, login, logout }),
+    [rol, usuario, token, salirRol, login, logout]
   );
 
   return (
@@ -76,20 +68,16 @@ export function useSesion() {
   return ctx;
 }
 
-// Hook que cada vista usa para decidir qué renderizar en función del modo y rol.
-// huId: 'HU-XX'.
-// Devuelve: { enModoApp, mostrarMeta, soloLectura, nivel }
+// Hook que cada vista usa para decidir qué renderizar en función del rol.
+// huId: 'HU-XX'. (alta-v2: se eliminó el "modo proyecto"; la app es siempre modo aplicación.)
+// Devuelve: { soloLectura, sinAcceso, nivel }
 export function useVistaHU(huId) {
-  const { modo, rol } = useSesion();
-  const enModoApp = modo === 'aplicacion';
+  const { rol } = useSesion();
   const nivel = nivelDe(huId, rol);
-  // El control de acceso por rol aplica en AMBOS modos (proyecto y aplicación):
-  // solo 'E' (ejecuta) permite editar; 'C' (consulta) y null (sin acceso) quedan en
-  // solo lectura. 'sinAcceso' lo usa el ruteo para bloquear el deep-link a una HU
-  // que el rol no puede ver.
+  // Control de acceso por rol: solo 'E' (ejecuta) permite editar; 'C' (consulta) y null (sin
+  // acceso) quedan en solo lectura. 'sinAcceso' lo usa el ruteo para bloquear el deep-link a
+  // una HU que el rol no puede ver.
   return {
-    enModoApp,
-    mostrarMeta: !enModoApp,
     soloLectura: nivel !== 'E',
     sinAcceso: nivel === null,
     nivel

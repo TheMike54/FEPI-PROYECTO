@@ -1,16 +1,14 @@
 import { NavLink } from 'react-router-dom';
-import { historiasUsuario, vistasPropuesta } from '../../data/dummy.js';
+import { historiasUsuario } from '../../data/dummy.js';
 import { ROLES, nivelDe } from '../../data/permisos.js';
 import { useSesion } from '../../context/SesionContext.jsx';
 
 export default function Sidebar() {
-  const { modo, rol, salirRol } = useSesion();
-  const enModoApp = modo === 'aplicacion';
+  const { rol, salirRol } = useSesion();
 
-  // El control por rol aplica en AMBOS modos: solo se listan las HU accesibles para
-  // el rol (nivel != null), ocultando HU-00 (login transversal). En modo proyecto se
-  // conserva la presentación (código de HU, Propuestas) pero ya filtrada por rol; así
-  // el menú no muestra enlaces que la guarda de ruta rebotaría al inicio.
+  // Control por rol: solo se listan las HU accesibles para el rol (nivel != null),
+  // ocultando HU-00 (login transversal). Así el menú no muestra enlaces que la guarda
+  // de ruta rebotaría al inicio.
   const entradas = historiasUsuario
     .filter((hu) => hu.codigo !== 'HU-00' && nivelDe(hu.codigo, rol) !== null)
     .map((hu) => ({ ...hu, nivel: nivelDe(hu.codigo, rol) }));
@@ -39,7 +37,7 @@ export default function Sidebar() {
         )}
 
         <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 px-3 mb-2">
-          {enModoApp ? 'Pantallas disponibles' : 'Historias de usuario'}
+          Pantallas disponibles
         </div>
 
         <nav className="space-y-1">
@@ -57,9 +55,6 @@ export default function Sidebar() {
             >
               <span className="text-lg leading-none flex-shrink-0">{hu.icono}</span>
               <div className="flex-1 min-w-0">
-                {!enModoApp && (
-                  <div className="text-xs font-semibold opacity-70">{hu.codigo}</div>
-                )}
                 <div className="text-sm leading-tight flex items-center gap-2">
                   {hu.titulo}
                   {hu.nivel === 'C' && (
@@ -127,47 +122,6 @@ export default function Sidebar() {
           </div>
         )}
 
-        {!enModoApp && (
-          <>
-            <div className="mt-6 pt-4 border-t border-slate-200">
-              <div className="text-xs font-semibold uppercase tracking-wider text-purple-700 px-3 mb-2">
-                Propuestas
-              </div>
-              <nav className="space-y-1">
-                {vistasPropuesta.map((v) => (
-                  <NavLink
-                    key={v.id}
-                    to={v.ruta}
-                    className={({ isActive }) =>
-                      `flex items-start gap-3 px-3 py-2.5 rounded-md text-sm transition-colors border-l-4 ${
-                        isActive
-                          ? 'bg-purple-100/60 text-purple-900 border-purple-500 font-semibold'
-                          : 'border-transparent text-slate-700 hover:bg-slate-50 hover:text-purple-700'
-                      }`
-                    }
-                  >
-                    <span className="text-lg leading-none flex-shrink-0">{v.icono}</span>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-[10px] font-semibold uppercase tracking-wider text-purple-600">
-                        Propuesta
-                      </div>
-                      <div className="text-sm leading-tight">{v.titulo}</div>
-                    </div>
-                  </NavLink>
-                ))}
-              </nav>
-            </div>
-
-            <div className="mt-6 pt-4 border-t border-slate-200 px-3">
-              <div className="text-xs uppercase tracking-wider text-slate-500 mb-2">Leyenda</div>
-              <div className="text-xs space-y-1 text-slate-600">
-                <div>• Botones azules = acción primaria</div>
-                <div>• Cajas verdes = criterios de aceptación</div>
-                <div>• Vistas huecas — sin backend</div>
-              </div>
-            </div>
-          </>
-        )}
       </div>
     </aside>
   );

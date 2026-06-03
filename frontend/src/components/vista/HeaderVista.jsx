@@ -1,52 +1,32 @@
 import Breadcrumb from '../ui/Breadcrumb.jsx';
-import BadgeSprint from '../ui/BadgeSprint.jsx';
 import AvisoSoloLectura from '../ui/AvisoSoloLectura.jsx';
 import { useVistaHU } from '../../context/SesionContext.jsx';
 
-// Encapsula el header de las vistas internas (breadcrumb + título + badge HU/sprint
-// + opcional "Rol: X" o descripción + AvisoSoloLectura). Replica el markup actual.
+// Encabezado de las vistas internas: breadcrumb + título + AvisoSoloLectura.
+// alta-v2: se eliminó la metadata académica (badge HU/sprint, "Rol: X", descripción de
+// maqueta) que solo existía en el "modo proyecto". Las props `sprint`, `rolAcademico` y
+// `descripcion` se conservan en la firma por COMPATIBILIDAD con las páginas (que las siguen
+// pasando), pero ya NO se renderizan — así no hay que tocar las HU prototipo.
 //
 // Props:
-//   huId, titulo, sprint, breadcrumb — obligatorios.
-//   rolAcademico — opcional, renderiza <p>Rol: {rolAcademico}</p> bajo el título.
-//   descripcion  — opcional, renderiza <p>{descripcion}</p> bajo el título (sin
-//                  prefijo "Rol:"). Útil cuando la vista tiene un texto explicativo
-//                  en lugar de un rol (ej. HU-09 "Tipo de nota disponible según
-//                  rol autorizado..."). Mutuamente excluyente con rolAcademico.
+//   huId, titulo, breadcrumb — usados.
+//   sprint, rolAcademico, descripcion — inertes (compat).
 export default function HeaderVista({
   huId,
   titulo,
-  sprint,
-  rolAcademico,
-  descripcion,
+  sprint,        // inerte (compat)
+  rolAcademico,  // inerte (compat)
+  descripcion,   // inerte (compat)
   breadcrumb
 }) {
-  const { soloLectura, mostrarMeta } = useVistaHU(huId);
-
-  // rolAcademico es metadata de la HU (el rol "dueño" en el backlog, no el rol
-  // del usuario). descripcion es texto explicativo de la maqueta. Ambos solo
-  // tienen sentido en modo proyecto; en modo aplicación se ocultan.
-  const mostrarRolAcademico = mostrarMeta && !!rolAcademico;
-  const mostrarDescripcion = mostrarMeta && !!descripcion;
-
-  // Cuando hay subtítulo (rol o descripción), el contenedor del título cierra
-  // con mb-1 (porque el <p> ya aporta mb-6 abajo). Sin subtítulo, mb-6.
-  const tieneSubtitulo = mostrarRolAcademico || mostrarDescripcion;
-  const mbTitulo = tieneSubtitulo ? 'mb-1' : 'mb-6';
+  const { soloLectura } = useVistaHU(huId);
 
   return (
     <>
       <Breadcrumb items={breadcrumb} />
-      <div className={`flex items-start justify-between ${mbTitulo}`}>
+      <div className="flex items-start justify-between mb-6">
         <h1 className="text-2xl font-bold text-sigecop-blue">{titulo}</h1>
-        <BadgeSprint codigo={huId} sprint={sprint} />
       </div>
-      {mostrarRolAcademico && (
-        <p className="text-sm text-slate-600 mb-6">Rol: {rolAcademico}</p>
-      )}
-      {mostrarDescripcion && (
-        <p className="text-sm text-slate-600 mb-6">{descripcion}</p>
-      )}
       {soloLectura && <AvisoSoloLectura />}
     </>
   );

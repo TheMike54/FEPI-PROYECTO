@@ -163,6 +163,12 @@ async function crearContrato(req, res) {
     if (gm === null || gm <= 0) {
       return res.status(400).json({ error: `Garantía #${i + 1}: si capturas la póliza, indica un monto mayor a 0` });
     }
+    // alta-v2 (1.4): una garantía/póliza no puede exceder el monto del contrato (una fianza
+    // por encima del 100% del contrato es incoherente). Validación de COHERENCIA; el monto del
+    // contrato es el derivado del catálogo. La vista lo marca EN VIVO; aquí es la barrera real.
+    if (gm > Number(monto)) {
+      return res.status(400).json({ error: `Garantía #${i + 1}: el monto (${gm}) no puede exceder el monto del contrato (${monto})` });
+    }
   }
 
   // --- A2: ciclo de estimación + programa de obra (matriz concepto × periodo) ------
@@ -285,17 +291,17 @@ async function crearContrato(req, res) {
           );
           numeroToPeriodoId.set(p.numero, ip.rows[0].id);
         }
-        if (programaCeldas.length > 0) {
-          // C6: el alta ya tradujo clave→id y numero→id; guardarMatriz hace lock (C2),
-          // freeze (C1/C3, aquí inerte: contrato sin estimaciones), DELETE+INSERT (C5) y
-          // valida Σ planeado <= contratado en SQL (C7, art. 118).
-          const celdas = programaCeldas.map((cell) => ({
-            contrato_concepto_id: claveToConceptoId.get(cell.clave),
-            contrato_periodo_id: numeroToPeriodoId.get(cell.periodoNumero),
-            cantidad: cell.cantidad
-          }));
-          await guardarMatriz(client, contratoId, celdas);
-        }
+        // alta-v2: SIEMPRE valida la matriz (aunque venga vacía o parcial) para exigir el
+        // 100% por concepto (Σ planeado = contratado). C6: el alta ya tradujo clave→id y
+        // numero→id; guardarMatriz hace lock (C2), freeze (C1/C3, aquí inerte: contrato sin
+        // estimaciones), DELETE+INSERT (C5) y valida el cuadre en SQL (C7). Con conceptos y
+        // celdas faltantes → PROGRAMA_DESCUADRE (400); el frontend ya lo bloquea antes de enviar.
+        const celdas = programaCeldas.map((cell) => ({
+          contrato_concepto_id: claveToConceptoId.get(cell.clave),
+          contrato_periodo_id: numeroToPeriodoId.get(cell.periodoNumero),
+          cantidad: cell.cantidad
+        }));
+        await guardarMatriz(client, contratoId, celdas);
       }
 
       await client.query('COMMIT');
@@ -307,8 +313,10 @@ async function crearContrato(req, res) {
       client.release(); // SIEMPRE devolver el client al pool (max: 10)
     }
   } catch (err) {
-    // A2: errores de dominio del programa de obra (lanzados por guardarMatriz / traducción).
-    if (err.code === 'PROGRAMA_EXCEDE' || err.code === 'PROGRAMA_AJENO') {
+    // A2/alta-v2: errores de dominio del programa de obra (lanzados por guardarMatriz /
+    // traducción). PROGRAMA_DESCUADRE = no cuadra al 100% (faltante/exceso); PROGRAMA_EXCEDE
+    // se conserva por compatibilidad; PROGRAMA_AJENO = concepto/periodo de otro contrato.
+    if (err.code === 'PROGRAMA_DESCUADRE' || err.code === 'PROGRAMA_EXCEDE' || err.code === 'PROGRAMA_AJENO') {
       return res.status(400).json({ error: err.message, detalles: err.detalles });
     }
     if (err.code === 'PROGRAMA_CONGELADO') {

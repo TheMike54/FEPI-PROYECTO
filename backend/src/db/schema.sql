@@ -656,14 +656,20 @@ END $$;
 -- Hashes bcrypt reales (algoritmo $2a$, cost 10) generados con bcryptjs.
 -- =====================================================================
 
--- El hash de los 4 usuarios demo corresponde a la contraseña Sigecop2026!
+-- El hash de los usuarios demo corresponde a la contraseña Sigecop2026!
 -- (algoritmo $2a$, cost 10, bcryptjs). El usuario 'dependencia' es el que aprueba
 -- las solicitudes de registro; nace 'activo' por el DEFAULT de la columna estado.
+-- alta-v2 (5.1): se añade la cuenta del profesor (csilvasa@ipn.mx, rol residente, misma
+-- contraseña Sigecop2026! → reusa el hash del residente). Estas 5 cuentas existen en
+-- AMBAS bases (local y Render). La cuenta de finanzas (Isha) es SOLO LOCAL y se crea con
+-- scripts/crear-usuario.js (NO se versiona su contraseña). Ver docs/Cuentas_Prueba_SIGECOP.md.
 INSERT INTO usuarios (nombre, email, password_hash, rol) VALUES
   ('Ing. Residente Demo', 'residente@sigecop.test', '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'residente'),
   ('Contratista Demo S.A.', 'contratista@sigecop.test', '$2a$10$h7eLpWBwF5O3smp/egT3wupSylCFRXlwQQIeHbnvCdJOmM5xAhdgK', 'contratista'),
   ('Supervisión Externa Demo', 'supervision@sigecop.test', '$2a$10$zpUoEVcL3IZhAtpS4kexoemneAaX93X7.A3kbLPYOBwgw51eZC33e', 'supervision'),
-  ('Dependencia Demo', 'dependencia@sigecop.test', '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'dependencia')
+  ('Dependencia Demo', 'dependencia@sigecop.test', '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'dependencia'),
+  ('Profesor (Sistemas)', 'csilvasa@ipn.mx', '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'residente'),
+  ('Finanzas Demo', 'finanzas@sigecop.test', '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'finanzas')
 ON CONFLICT (email) DO NOTHING;
 
 INSERT INTO contratos (folio, tipo, objeto, contratista, dependencia, monto, plazo_dias, fecha_inicio, fecha_termino, created_by)
@@ -771,7 +777,9 @@ CREATE INDEX IF NOT EXISTS idx_contrato_periodos_contrato ON contrato_periodos(c
 --     append-only: la matriz se EDITA por DELETE+INSERT (lib/programa.js: guardarMatriz)
 --     hasta que el contrato tiene su primera estimación; después se congela salvo enmienda
 --     por convenio (art. 99) — ese freeze es de aplicación, no un trigger, para permitir la
---     excepción legal. La invariante Σ planeado <= contratado (art. 118) se valida en SQL.
+--     excepción legal. Regla del 100% (alta-v2): Σ planeado = contratado por concepto, validada
+--     en SQL (lib/programa.js: guardarMatriz, tolerancia 0.0005). Fundamento RLOPSRM 45-A-X +
+--     LOPSRM 52; el exceso sigue cubierto por art. 118.
 CREATE TABLE IF NOT EXISTS programa_obra (
   id                   SERIAL PRIMARY KEY,
   contrato_concepto_id INTEGER NOT NULL REFERENCES contrato_conceptos(id) ON DELETE CASCADE,

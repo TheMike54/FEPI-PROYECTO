@@ -4,22 +4,6 @@ import { ROLES } from '../data/permisos.js';
 import { useSesion } from '../context/SesionContext.jsx';
 import { api } from '../services/api.js';
 
-const ICONOS = {
-  residente:   '👷',
-  contratista: '🏗️',
-  supervision: '🔎',
-  dependencia: '🏛️',
-  finanzas:    '💰'
-};
-
-const DESCRIPCIONES = {
-  residente:   'Supervisa la obra por la dependencia, autoriza estimaciones y abre bitácora.',
-  contratista: 'Integra estimaciones, captura generadores y emite notas técnicas.',
-  supervision: 'Revisa técnicamente las estimaciones y emite observaciones.',
-  dependencia: 'Carga fianzas, da seguimiento al expediente y valida tránsito a pago.',
-  finanzas:    'Verifica suficiencia presupuestal y registra los pagos efectuados.'
-};
-
 // Banner inline reutilizable para mensajes de error/éxito de autenticación.
 function MensajeAuth({ mensaje }) {
   if (!mensaje) return null;
@@ -261,7 +245,6 @@ function FormRegistro({ onIrLogin, setMensaje }) {
 }
 
 export default function SeleccionRol() {
-  const { setRol } = useSesion();
   const [vista, setVista] = useState('login'); // 'login' | 'registro'
   const [mensaje, setMensaje] = useState(null);
 
@@ -294,50 +277,6 @@ export default function SeleccionRol() {
             />
           )}
 
-          {/* Separador */}
-          <div className="flex items-center gap-4 my-8">
-            <div className="flex-1 h-px bg-slate-300" />
-            <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">
-              — o entra en modo demostración —
-            </span>
-            <div className="flex-1 h-px bg-slate-300" />
-          </div>
-
-          {/* Bloque demo */}
-          <div className="bg-blue-50 border border-sigecop-accent/30 rounded-xl p-6">
-            <p className="text-sm text-slate-700 mb-5">
-              Atajo para explorar el sistema sin credenciales reales. Elige el rol
-              con el que quieres entrar; este selector existe solo en modo
-              demostración (<strong>HU-00</strong>) — en producción el rol se
-              deduce del usuario autenticado.
-            </p>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {ROLES.map((r) => (
-                <button
-                  key={r.id}
-                  type="button"
-                  onClick={() => setRol(r.id)}
-                  className="bg-white rounded-lg border border-slate-200 hover:border-sigecop-accent hover:shadow-md transition-all text-left p-4 group"
-                >
-                  <div className="flex items-start gap-3 mb-2">
-                    <div className="text-2xl flex-shrink-0">{ICONOS[r.id]}</div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="font-bold text-sigecop-blue group-hover:underline text-sm leading-tight">
-                        {r.nombre}
-                      </h3>
-                    </div>
-                  </div>
-                  <p className="text-xs text-slate-600 leading-snug">
-                    {DESCRIPCIONES[r.id]}
-                  </p>
-                  <div className="mt-3 text-xs font-semibold text-sigecop-accent">
-                    Entrar como este rol →
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
       </main>
     </div>

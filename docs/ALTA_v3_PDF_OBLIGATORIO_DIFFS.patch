@@ -1,0 +1,242 @@
+diff --git a/frontend/src/pages/AltaContrato.jsx b/frontend/src/pages/AltaContrato.jsx
+--- a/frontend/src/pages/AltaContrato.jsx
++++ b/frontend/src/pages/AltaContrato.jsx
+@@ -73,7 +73,7 @@
+   String(g.vigencia || '').trim()
+ );
+ 
+-const ERR0 = { campos: {}, conceptoIdx: null, programaError: false, garantiaIdx: null, catalogoMonto: false };
++const ERR0 = { campos: {}, conceptoIdx: null, programaError: false, garantiaIdx: null, catalogoMonto: false, pdfFirmadoFalta: false };
+ 
+ // alta-v2 (4.2): valores iniciales VACÍOS (también usados por "Cancelar"). El contrato nuevo
+ // arranca en blanco; el `tipo` mantiene la primera opción del select (campo obligatorio que
+@@ -608,13 +608,17 @@
+       <h3 className="text-lg font-bold text-sigecop-blue mb-4">PDF firmado del contrato</h3>
+       {!contratoId ? (
+         <div className="border-2 border-dashed border-slate-300 rounded-md p-6 bg-white" data-testid="pdf-firmado-precaptura">
+-          <p className="text-sm font-semibold text-slate-800 mb-2">Adjunta el PDF firmado (puedes hacerlo ahora, durante la captura):</p>
++          {/* alta-v3: PDF firmado OBLIGATORIO — es el último paso del wizard y gatea el guardado. */}
++          <p className="text-sm font-semibold text-slate-800 mb-2">Adjunta el PDF firmado del contrato <span className="text-red-600">*</span> (obligatorio para guardar):</p>
+           {pendingFile ? (
+             <p className="text-sm text-green-800" data-testid="pdf-firmado-pendiente-file">📎 {pendingFile.name} — se adjuntará al guardar el contrato.{' '}
+               <button type="button" className="text-red-600 hover:underline" onClick={() => onPickFile(null)} disabled={soloLectura}>quitar</button>
+             </p>
+           ) : (
+-            <input ref={inputRef} type="file" accept="application/pdf,.pdf" onChange={onArchivo} disabled={soloLectura} className="block text-sm" data-testid="pdf-firmado-input-precaptura" />
++            <>
++              <input ref={inputRef} type="file" accept="application/pdf,.pdf" onChange={onArchivo} disabled={soloLectura} className="block text-sm" data-testid="pdf-firmado-input-precaptura" />
++              <p className="text-xs text-amber-700 mt-2" data-testid="pdf-firmado-requerido">Sin el PDF firmado <strong>no se puede registrar</strong> el contrato (se formaliza con la firma). <span className="text-slate-400">[validar el fundamento con el profe]</span></p>
++            </>
+           )}
+           <p className="text-xs text-slate-400 mt-3">PDF firmado por las partes (máx. 10 MB). Se guarda en la base de datos al crear el contrato; una vez ligado es inmutable.</p>
+         </div>
+@@ -988,10 +992,12 @@
+ }
+ 
+ const REQ_GENERALES = ['folio', 'tipo', 'objeto', 'contratista', 'dependencia', 'plazoDias', 'fechaInicio'];
+-// 4.1: pasos del WIZARD de creación (captura). PDF firmado (5) y Registrados (6) son
+-// auxiliares (post-guardado), fuera de la progresión obligatoria.
+-const PASOS_WIZARD = [0, 1, 2, 3, 4];
+-const ULTIMO_PASO_WIZARD = 4;
++// 4.1 + alta-v3 (PDF firmado OBLIGATORIO): pasos del WIZARD de creación (captura). El PDF
++// firmado (5) es ahora el ÚLTIMO paso del wizard: el botón "Guardar contrato" vive ahí y queda
++// GATEADO (deshabilitado hasta adjuntar el PDF firmado; validarPaso(5)). Solo "Registrados" (6)
++// queda como pestaña auxiliar de consulta, fuera de la progresión obligatoria.
++const PASOS_WIZARD = [0, 1, 2, 3, 4, 5];
++const ULTIMO_PASO_WIZARD = 5;
+ 
+ export default function AltaContrato() {
+   const { showToast } = useToast();
+@@ -1192,6 +1198,17 @@
+       }
+       return { ok: true };
+     }
++    if (idx === 5) {
++      // alta-v3: el PDF firmado es OBLIGATORIO para registrar el contrato. Debe estar
++      // adjuntado (retenido durante la captura, 1.5) ANTES de guardar; el botón "Guardar"
++      // también queda deshabilitado sin él (doble gateo: vista + validación). [validar] — el
++      // fundamento (el contrato se formaliza/existe una vez firmado) lo CONFIRMA el profe;
++      // NO se asume número de artículo. `contratoGuardadoId` cubre el caso ya-guardado.
++      if (!pdfFirmadoFile && !contratoGuardadoId) {
++        return { ok: false, msg: 'El PDF firmado del contrato es obligatorio: adjúntalo en el último paso para poder guardar.', errores: { ...ERR0, pdfFirmadoFalta: true } };
++      }
++      return { ok: true };
++    }
+     return { ok: true };
+   };
+ 
+@@ -1314,6 +1331,7 @@
+     if (errores.conceptoIdx != null || errores.catalogoMonto) s.add(1);
+     if (errores.programaError) s.add(2);
+     if (c.anticipoPct || errores.garantiaIdx != null) s.add(4);
++    if (errores.pdfFirmadoFalta) s.add(5); // alta-v3: PDF firmado obligatorio (último paso)
+     return s;
+   }, [errores]);
+ 
+@@ -1327,8 +1345,10 @@
+     for (const p of PASOS_WIZARD) { if (!validarPaso(p).ok) { primerInvalido = p; break; } }
+     for (let i = primerInvalido + 1; i <= ULTIMO_PASO_WIZARD; i++) s.add(i);
+     return s;
++    // alta-v3: pdfFirmadoFile/contratoGuardadoId entran porque validarPaso(5) los lee; el
++    // resultado es invariante (el paso 5 es el último → su validez nunca bloquea otra pestaña).
+     // eslint-disable-next-line react-hooks/exhaustive-deps
+-  }, [datosGenerales, datosJuridicos, anticipoPct, conceptos, celdas, ciclo, garantias, superintendenteId, supervisionId, periodos, montoDerivado]);
++  }, [datosGenerales, datosJuridicos, anticipoPct, conceptos, celdas, ciclo, garantias, superintendenteId, supervisionId, periodos, montoDerivado, pdfFirmadoFile, contratoGuardadoId]);
+ 
+   const wrapTab = (node) => (<RegionEditable disabled={soloLectura}>{node}</RegionEditable>);
+ 
+@@ -1378,8 +1398,9 @@
+         </div>
+       )}
+ 
+-      {/* 4.1: barra del wizard. "Siguiente" por paso (gated por validación en la vista);
+-          "Guardar contrato" SOLO en el último paso de captura; tras guardar → adjuntar PDF. */}
++      {/* 4.1 + alta-v3: barra del wizard. "Siguiente" por paso (gateado en la vista) en los pasos
++          1–5; "Guardar contrato" SOLO en el último paso (6 · PDF firmado) y DESHABILITADO hasta
++          adjuntar el PDF firmado (obligatorio). Tras guardar → consulta en "Registrados". */}
+       <div className="mt-6 flex items-center justify-between gap-3">
+         <button type="button" onClick={handleCancelar} disabled={soloLectura} className="px-4 py-2 text-slate-600 hover:text-slate-900 disabled:opacity-40">Cancelar</button>
+         <div className="flex items-center gap-3">
+@@ -1390,11 +1411,18 @@
+             <button type="button" onClick={() => irAPaso(tabActivo + 1)} disabled={soloLectura} className="sg-btn-primary" data-testid="btn-siguiente">Siguiente →</button>
+           ) : tabActivo === ULTIMO_PASO_WIZARD ? (
+             contratoGuardadoId ? (
+-              <button type="button" onClick={() => irAPaso(5)} className="sg-btn-primary" data-testid="btn-ir-pdf">Adjuntar PDF firmado →</button>
++              // alta-v3: contrato YA guardado con su PDF firmado adjunto → solo consulta.
++              <button type="button" onClick={() => irAPaso(6)} className="sg-btn-primary" data-testid="btn-ver-registrados">Ver contratos registrados →</button>
+             ) : (
+-              <button type="button" className="sg-btn-primary" disabled={soloLectura || guardando} onClick={handleGuardar} data-testid="btn-guardar">
+-                {guardando ? 'Guardando…' : 'Guardar contrato'}
+-              </button>
++              <>
++                {/* alta-v3: el PDF firmado es OBLIGATORIO; sin él el botón "Guardar" está bloqueado. */}
++                {!pdfFirmadoFile && (
++                  <span className="text-xs text-amber-700" data-testid="guardar-bloqueado-hint">Adjunta el PDF firmado para habilitar el guardado.</span>
++                )}
++                <button type="button" className="sg-btn-primary" disabled={soloLectura || guardando || !pdfFirmadoFile} onClick={handleGuardar} data-testid="btn-guardar">
++                  {guardando ? 'Guardando…' : 'Guardar contrato'}
++                </button>
++              </>
+             )
+           ) : null}
+         </div>
+diff --git a/frontend/e2e/_helpers.js b/frontend/e2e/_helpers.js
+--- a/frontend/e2e/_helpers.js
++++ b/frontend/e2e/_helpers.js
+@@ -140,3 +140,17 @@
+   await page.getByTestId(`concepto-pu-${i}`).fill(String(pu));
+ }
+ 
++/**
++ * alta-v3: en el último paso ("PDF firmado") adjunta un PDF en memoria (sin fixture en disco,
++ * vía setInputFiles con buffer). El archivo queda RETENIDO (se sube al guardar el contrato) y
++ * habilita el botón "Guardar". Requiere estar en el paso PDF firmado (sin contrato aún guardado).
++ */
++export async function altaAdjuntarPdfFirmado(page, nombre = 'contrato-firmado-e2e.pdf') {
++  await page.getByTestId('pdf-firmado-input-precaptura').setInputFiles({
++    name: nombre,
++    mimeType: 'application/pdf',
++    buffer: Buffer.from('%PDF-1.4\n%E2E\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n')
++  });
++  await page.getByTestId('pdf-firmado-pendiente-file').waitFor({ state: 'visible' });
++}
++
+diff --git a/frontend/e2e/hu-01-alta-catalogo.spec.js b/frontend/e2e/hu-01-alta-catalogo.spec.js
+--- a/frontend/e2e/hu-01-alta-catalogo.spec.js
++++ b/frontend/e2e/hu-01-alta-catalogo.spec.js
+@@ -6,7 +6,7 @@
+ //  - tras guardar, "Ver info del contrato" abre el detalle de solo lectura.
+ // Requiere backend+BD.
+ import { test, expect } from '@playwright/test';
+-import { freshHome, enterAppMode, goToViaSidebar, altaLlenarDatosGenerales, altaAgregarConcepto } from './_helpers.js';
++import { freshHome, enterAppMode, goToViaSidebar, altaLlenarDatosGenerales, altaAgregarConcepto, altaAdjuntarPdfFirmado } from './_helpers.js';
+ 
+ test.skip(!!process.env.CI, 'alta-v2: login real requiere backend+BD; se corre en local');
+ 
+@@ -48,7 +48,7 @@
+     expect(await monto.inputValue()).toContain('$');
+   });
+ 
+-  test('2.1/2.2 guardar y "Ver info del contrato" abre el detalle en SOLO LECTURA', async ({ page }) => {
++  test('2.1/2.2 guardar (PDF firmado obligatorio) y "Ver info del contrato" en SOLO LECTURA', async ({ page }) => {
+     page.on('dialog', (d) => d.accept()); // confirma "¿Seguro de guardar el contrato?"
+     const folio = `E2E-VER-${Date.now()}`;
+     await altaLlenarDatosGenerales(page, { folio });
+@@ -57,13 +57,18 @@
+     await page.getByTestId('btn-siguiente').click();          // programa
+     await page.getByTestId('celda-0-1').fill('100');          // 100% (plazo 60 → 2 periodos; todo en P1)
+     await page.getByTestId('btn-siguiente').click();          // jurídicos
+-    await page.getByTestId('btn-siguiente').click();          // garantías (último)
++    await page.getByTestId('btn-siguiente').click();          // garantías
++    await page.getByTestId('btn-siguiente').click();          // PDF firmado (último paso)
++    // alta-v3: sin PDF firmado el guardado está BLOQUEADO; adjuntarlo lo habilita.
++    await expect(page.getByTestId('btn-guardar')).toBeDisabled();
++    await altaAdjuntarPdfFirmado(page);
++    await expect(page.getByTestId('btn-guardar')).toBeEnabled();
+     await page.getByTestId('btn-guardar').click();            // guardar
+-    // tras guardar aparece "Adjuntar PDF firmado →" (contrato creado)
+-    await expect(page.getByTestId('btn-ir-pdf')).toBeVisible();
++    // tras guardar: contrato creado CON su PDF firmado → botón de consulta.
++    await expect(page.getByTestId('btn-ver-registrados')).toBeVisible();
+ 
+-    // Registrados → abrir el detalle del contrato recién creado
+-    await page.getByRole('button', { name: 'Registrados' }).click();
++    // Registrados → abrir el detalle del contrato recién creado (el botón post-guardado navega ahí)
++    await page.getByTestId('btn-ver-registrados').click();
+     const fila = page.locator('tr', { hasText: folio });
+     await expect(fila).toBeVisible();
+     await fila.locator('[data-testid^="ver-info-"]').click();
+diff --git a/frontend/e2e/4x-alta-correcciones.spec.js b/frontend/e2e/4x-alta-correcciones.spec.js
+--- a/frontend/e2e/4x-alta-correcciones.spec.js
++++ b/frontend/e2e/4x-alta-correcciones.spec.js
+@@ -7,7 +7,7 @@
+ //  · 4.1 "Siguiente" por paso, "Atrás", "Guardar" solo en el último paso.
+ // Requiere backend+BD (login real + cuentas semilla).
+ import { test, expect } from '@playwright/test';
+-import { freshHome, enterAppMode, goToViaSidebar, altaLlenarDatosGenerales, altaAgregarConcepto } from './_helpers.js';
++import { freshHome, enterAppMode, goToViaSidebar, altaLlenarDatosGenerales, altaAgregarConcepto, altaAdjuntarPdfFirmado } from './_helpers.js';
+ 
+ test.skip(!!process.env.CI, 'alta-v2: login real requiere backend+BD; se corre en local');
+ 
+@@ -43,7 +43,7 @@
+     await expect(banner).toHaveCount(0);
+   });
+ 
+-  test('4.1 wizard: Siguiente por paso, Atrás, Guardar solo al final', async ({ page }) => {
++  test('4.1 + alta-v3 wizard: Siguiente por paso, Atrás, Guardar solo en el paso PDF', async ({ page }) => {
+     // Paso 0: hay "Siguiente"; no hay "Guardar" ni "Atrás".
+     await expect(page.getByTestId('btn-siguiente')).toBeVisible();
+     await expect(page.getByTestId('btn-guardar')).toHaveCount(0);
+@@ -54,10 +54,30 @@
+     await expect(page.getByTestId('btn-atras')).toBeVisible();
+     await page.getByTestId('btn-atras').click();               // ← datos generales
+     await expect(page.getByTestId('btn-atras')).toHaveCount(0);
+-    // Llegar al último paso (garantías): aparece "Guardar", desaparece "Siguiente".
++    // alta-v3: garantías YA NO es el último paso → sigue habiendo "Siguiente", aún no "Guardar".
+     await avanzarHastaGarantias(page);
+-    await expect(page.getByTestId('btn-guardar')).toBeVisible();
++    await expect(page.getByTestId('btn-siguiente')).toBeVisible();
++    await expect(page.getByTestId('btn-guardar')).toHaveCount(0);
++    // Último paso = PDF firmado: aparece "Guardar" (DESHABILITADO sin PDF), desaparece "Siguiente".
++    await page.getByTestId('btn-siguiente').click();           // → PDF firmado (último)
+     await expect(page.getByTestId('btn-siguiente')).toHaveCount(0);
++    await expect(page.getByTestId('btn-guardar')).toBeVisible();
++    await expect(page.getByTestId('btn-guardar')).toBeDisabled();
++  });
++
++  test('alta-v3 el PDF firmado es OBLIGATORIO para guardar (gate del botón)', async ({ page }) => {
++    await avanzarHastaGarantias(page);
++    await page.getByTestId('btn-siguiente').click();           // → PDF firmado (último paso)
++    // Sin PDF: botón bloqueado + pista visible.
++    await expect(page.getByTestId('btn-guardar')).toBeDisabled();
++    await expect(page.getByTestId('guardar-bloqueado-hint')).toBeVisible();
++    // Adjuntar el PDF firmado lo habilita y la pista desaparece.
++    await altaAdjuntarPdfFirmado(page);
++    await expect(page.getByTestId('btn-guardar')).toBeEnabled();
++    await expect(page.getByTestId('guardar-bloqueado-hint')).toHaveCount(0);
++    // Quitar el PDF vuelve a bloquear el guardado.
++    await page.getByTestId('pdf-firmado-precaptura').getByRole('button', { name: 'quitar' }).click();
++    await expect(page.getByTestId('btn-guardar')).toBeDisabled();
+   });
+ 
+   test('1.6 anticipo > umbral: el aviso HABILITA adjuntar la autorización durante la captura', async ({ page }) => {

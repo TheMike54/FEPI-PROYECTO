@@ -25,10 +25,8 @@ const PWD_NUEVO = 'Test1234!';
 const DEP_EMAIL = 'dependencia@sigecop.test';
 const DEP_PWD = 'Sigecop2026!';
 
-/** Entra a modo aplicación (muestra la pantalla de login real). */
-async function irAModoApp(page) {
-  await page.getByRole('button', { name: 'Modo aplicación' }).first().click();
-}
+// alta-v2: se eliminó el toggle de modo; tras freshHome la pantalla de login ya se muestra
+// directamente (no hace falta "entrar a modo aplicación").
 
 /** Llena y envía el formulario de login real. */
 async function loginReal(page, email, password) {
@@ -42,7 +40,6 @@ test('HU-Registro — auto-registro, rechazo por pendiente, aprobación y acceso
   const nombre = `Usuario E2E ${Date.now()}`;
 
   await freshHome(page);
-  await irAModoApp(page);
 
   // --- 1) Auto-registro ---------------------------------------------------
   await page.getByTestId('link-registro').click();
@@ -92,7 +89,6 @@ test('HU-Registro — auto-registro, rechazo por pendiente, aprobación y acceso
 
   // --- 4) El usuario aprobado ya puede entrar -----------------------------
   await page.getByRole('button', { name: 'Salir' }).click();
-  await irAModoApp(page);
   await loginReal(page, email, PWD_NUEVO);
 
   // Entró al sistema: login fuera y el header muestra su nombre.

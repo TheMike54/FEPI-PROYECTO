@@ -25,112 +25,12 @@ import {
   expectMetadataAcademicaOculta
 } from './_helpers.js';
 
+// alta-v2: la suite entra con login real → requiere backend+BD; se corre en local (no en CI).
+test.skip(!!process.env.CI, 'alta-v2: login real requiere backend+BD; se corre en local');
+
 const VIEW_PATH = '/estimaciones/reingreso';
 const TITULO = 'Reingreso de estimación tras rechazo';
 const SPRINT = 'Sprint 8';
-
-// ---------------------------------------------------------------------------
-// MODO PROYECTO
-// ---------------------------------------------------------------------------
-
-test.describe('HU-16 — modo proyecto', () => {
-  test.beforeEach(async ({ page }) => {
-    await freshHome(page);
-    await page.getByRole('button', { name: 'Modo proyecto' }).first().click();
-  });
-
-  test('card de Inicio muestra HU-16 + Sprint 8', async ({ page }) => {
-    const card = cardInInicioFor(page, VIEW_PATH);
-    await expect(card).toBeVisible();
-    const text = (await card.textContent()) ?? '';
-    expect(text).toContain('HU-16');
-    expect(text).toContain(SPRINT);
-    expect(text).toContain('Reingreso');
-  });
-
-  test('sidebar contiene enlace a la vista', async ({ page }) => {
-    await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
-  });
-
-  test('la vista carga con badge, subtitulo y heading', async ({ page }) => {
-    await goToViaSidebar(page, VIEW_PATH);
-    await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
-    await expect(page.locator('span', { hasText: 'HU-16' }).first()).toBeVisible();
-    await expect(page.locator('span', { hasText: SPRINT }).first()).toBeVisible();
-    await expect(page.getByText('Rol: Contratista')).toBeVisible();
-  });
-
-  test('criterios de aceptacion visibles al pie', async ({ page }) => {
-    await goToViaSidebar(page, VIEW_PATH);
-    await expect(page.getByRole('heading', { name: 'Criterios de aceptación' })).toBeVisible();
-    // Uso frases que solo aparecen en los criterios; "histórico vinculado" se
-    // repite en el subtítulo del histórico, así que apunto a las frases ancla
-    // de cada criterio (que son distintas a los subtítulos de la vista).
-    await expect(page.getByText('como bloque completo independiente y').first()).toBeVisible();
-    await expect(page.getByText('descarga en PDF o Excel')).toBeVisible();
-    await expect(page.getByText('sin reiniciar el plazo de presentación')).toBeVisible();
-  });
-
-  // CHECK DISTINTIVO 1: el botón "Reingresar" disabled hasta nota + confirm.
-  test('boton Reingresar disabled hasta tener nota y confirmacion marcada', async ({ page }) => {
-    await goToViaSidebar(page, VIEW_PATH);
-    const btn = page.getByTestId('btn-reingresar');
-    await expect(btn).toBeDisabled();
-
-    await page.getByTestId('textarea-nota').fill('Atendidas las 3 observaciones de la v1.');
-    await expect(btn).toBeDisabled();
-
-    await page.getByTestId('chk-confirmado').check();
-    await expect(btn).toBeEnabled();
-
-    // Quitar la confirmacion vuelve a disabled.
-    await page.getByTestId('chk-confirmado').uncheck();
-    await expect(btn).toBeDisabled();
-  });
-
-  // CHECK DISTINTIVO 2: descargas reales (jsPDF y SheetJS).
-  test('Descargar PDF dispara descarga .pdf con observaciones', async ({ page }) => {
-    await goToViaSidebar(page, VIEW_PATH);
-    const dl = page.waitForEvent('download');
-    await page.getByTestId('btn-descargar-obs-pdf').click();
-    const f = await dl;
-    expect(f.suggestedFilename()).toMatch(/observaciones_.*\.pdf$/);
-  });
-
-  test('Descargar Excel dispara descarga .xlsx con observaciones', async ({ page }) => {
-    await goToViaSidebar(page, VIEW_PATH);
-    const dl = page.waitForEvent('download');
-    await page.getByTestId('btn-descargar-obs-excel').click();
-    const f = await dl;
-    expect(f.suggestedFilename()).toMatch(/observaciones_.*\.xlsx$/);
-  });
-
-  // CHECK DISTINTIVO 3: flujo de reingreso → banner verde + tabla de trazabilidad.
-  test('flujo: completar nota + confirmar + reingresar → banner + trazabilidad', async ({ page }) => {
-    await goToViaSidebar(page, VIEW_PATH);
-
-    await page.getByTestId('textarea-nota').fill('Atendidas las 3 observaciones.');
-    await page.getByTestId('chk-confirmado').check();
-    await page.getByTestId('btn-reingresar').click();
-
-    const aviso = page.getByTestId('aviso-reingreso');
-    await expect(aviso).toBeVisible();
-    await expect(aviso).toContainText('Nueva versión v2');
-    await expect(aviso).toContainText('versión rechazada v1');
-    await expect(aviso).toContainText('plazo de presentación NO se reinicia');
-
-    const traza = page.getByTestId('tabla-trazabilidad');
-    await expect(traza).toBeVisible();
-    await expect(traza).toContainText('v1');
-    await expect(traza).toContainText('Rechazada');
-    await expect(traza).toContainText('v2');
-    await expect(traza).toContainText('En proceso');
-
-    // Tras reingresar, el boton queda disabled y la captura bloqueada.
-    await expect(page.getByTestId('btn-reingresar')).toBeDisabled();
-    await expect(page.getByTestId('textarea-nota')).toBeDisabled();
-  });
-});
 
 // ---------------------------------------------------------------------------
 // MODO APLICACION — Contratista ejecuta

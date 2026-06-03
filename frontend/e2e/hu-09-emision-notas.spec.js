@@ -25,64 +25,12 @@ import {
   cardInInicioFor,
   expectMetadataAcademicaOculta
 } from './_helpers.js';
+// alta-v2: la suite entra con login real → requiere backend+BD; se corre en local (no en CI).
+test.skip(!!process.env.CI, 'alta-v2: login real requiere backend+BD; se corre en local');
 
 const VIEW_PATH = '/bitacora/notas';
 const TITULO = 'Emisión y respuesta de notas tipificadas con firma';
 const SPRINT = 'Sprint 2';
-
-// ---------------------------------------------------------------------------
-// MODO PROYECTO
-// ---------------------------------------------------------------------------
-
-test.describe('HU-09 — modo proyecto', () => {
-  test.beforeEach(async ({ page }) => {
-    await freshHome(page);
-    await page.getByRole('button', { name: 'Modo proyecto' }).first().click();
-  });
-
-  test('card de Inicio muestra HU-09 + Sprint 2', async ({ page }) => {
-    const card = cardInInicioFor(page, VIEW_PATH);
-    await expect(card).toBeVisible();
-    const text = (await card.textContent()) ?? '';
-    expect(text).toContain('HU-09');
-    expect(text).toContain(SPRINT);
-    expect(text).toContain('notas');
-  });
-
-  test('sidebar contiene enlace a la vista', async ({ page }) => {
-    await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
-  });
-
-  test('la vista carga con badge, subtitulo y heading', async ({ page }) => {
-    await goToViaSidebar(page, VIEW_PATH);
-    await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
-    await expect(page.locator('span', { hasText: 'HU-09' }).first()).toBeVisible();
-    await expect(page.locator('span', { hasText: SPRINT }).first()).toBeVisible();
-  });
-
-  test('criterios de aceptacion: los 3 textos al pie', async ({ page }) => {
-    await goToViaSidebar(page, VIEW_PATH);
-    const seccion = page.locator('section').filter({
-      has: page.getByRole('heading', { name: 'Criterios de aceptación' })
-    });
-    await expect(seccion.getByText(/incorporar también otro tipo de nota/)).toBeVisible();
-    await expect(seccion.getByText(/dice \/ debe decir/)).toBeVisible();
-    await expect(seccion.getByText(/folio correlativo, fecha, firma del emisor/)).toBeVisible();
-  });
-
-  test('fundamento arts. 122, 123 y 125 RLOPSRM visible al pie', async ({ page }) => {
-    await goToViaSidebar(page, VIEW_PATH);
-    await expect(page.getByText(/Fundamento: arts\. 122, 123 y 125 RLOPSRM/)).toBeVisible();
-  });
-
-  // Sin sesión (modo proyecto) NO hay libro ni formulario: el libro y la emisión
-  // viven sobre el backend, así que la vista pide iniciar sesión en modo aplicación.
-  test('sin sesión, la vista solicita iniciar sesión (no hay selector de contrato)', async ({ page }) => {
-    await goToViaSidebar(page, VIEW_PATH);
-    await expect(page.getByText(/Inicia sesión en modo aplicación/)).toBeVisible();
-    await expect(page.getByTestId('select-contrato')).toHaveCount(0);
-  });
-});
 
 // ---------------------------------------------------------------------------
 // MODO APLICACION — Residente / Contratista / Supervisión ejecutan (shell + permisos)
