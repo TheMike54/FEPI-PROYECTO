@@ -6,7 +6,7 @@ import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import RegionEditable from '../components/vista/RegionEditable.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { api } from '../services/api.js';
-import { conceptosDummy, programaObraDummy, polizasGarantiaDummy } from '../data/dummy.js';
+import { conceptosDummy, polizasGarantiaDummy } from '../data/dummy.js';
 
 const formatoMXN = new Intl.NumberFormat('es-MX', {
   style: 'currency',
@@ -15,6 +15,19 @@ const formatoMXN = new Intl.NumberFormat('es-MX', {
 });
 
 const UNIDADES = ['m', 'm²', 'm³', 'ml', 'cm', 'kg', 'ton', 'pza', 'lote', 'jornal', '%'];
+
+// --- 4.2: límites de las columnas NUMERIC (DEBEN ir en sintonía con schema.sql) ---
+// cantidad NUMERIC(14,3) → 11 enteros (<10^11); pu NUMERIC(16,4) → 12 enteros (<10^12);
+// monto NUMERIC(18,2) (ENSANCHADO en 4.2, antes 14,2) → 16 enteros (<10^16). Validar en la
+// vista contra estos topes evita el error crudo 22003 de Postgres al guardar.
+const MAX_CANTIDAD = 1e11;
+const MAX_PU = 1e12;
+const MAX_MONTO = 1e16;
+
+// --- 4.4: umbral de % de anticipo que EXIGE/HABILITA el PDF de autorización ---
+// Default 30% (art. 50 fr. IV LOPSRM: autorización escrita del titular). PARAMETRIZABLE:
+// el umbral exacto y si el PDF es obligatorio o solo habilitado los confirma el profe (ver doc).
+const ANTICIPO_UMBRAL_PDF = 30;
 
 // --- Reglas de dominio HU-01 ---
 const IVA_RATE = 0.16;            // IVA derivado (solo se muestra, NO se guarda)
@@ -55,7 +68,7 @@ const garantiaVacia = (g) => !(
   String(g.vigencia || '').trim()
 );
 
-const ERR0 = { campos: {}, conceptoIdx: null, actividadIdx: null, garantiaIdx: null, catalogoMonto: false };
+const ERR0 = { campos: {}, conceptoIdx: null, programaError: false, garantiaIdx: null, catalogoMonto: false };
 
 // Valores iniciales (también usados por "Cancelar"). Consistentes con las reglas:
 // monto = Σ del catálogo dummy; plazo cubre el programa.
@@ -253,54 +266,120 @@ function TabCatalogo({ rows, onCell, onPatch, onAdd, onRemove, soloLectura, errI
   );
 }
 
-function TabPrograma({ rows, onCell, onAdd, onRemove, soloLectura, errIdx }) {
-  const total = Math.round(rows.reduce((s, p) => s + (Number(p.peso) || 0), 0) * 100) / 100;
-  let avisoCls = '';
-  let avisoMsg = '';
-  if (rows.length > 0) {
-    if (total > 100) { avisoCls = 'text-red-700 bg-red-50 border-red-300'; avisoMsg = `Suma de %peso: ${total}% — excede 100%. No se puede guardar; ajusta los pesos.`; }
-    else if (total === 100) { avisoCls = 'text-green-700 bg-green-50 border-green-300'; avisoMsg = `Suma de %peso: ${total}% ✓`; }
-    else { avisoCls = 'text-amber-800 bg-amber-50 border-amber-300'; avisoMsg = `Suma de %peso: ${total}% — parcial (faltan ${Math.round((100 - total) * 100) / 100}% para llegar a 100%).`; }
+// --- A2: generador de periodos en cliente (ESPEJO de backend/src/lib/programa.js) ---
+// Solo para pintar la matriz en vivo; el backend regenera de forma autoritativa.
+function masUnMesC(iso) {
+  const [y, m, d] = String(iso).split('-').map(Number);
+  let ny = y, nm = m + 1; if (nm > 12) { nm = 1; ny += 1; }
+  const ult = new Date(Date.UTC(ny, nm, 0)).getUTCDate();
+  return `${ny}-${String(nm).padStart(2, '0')}-${String(Math.min(d, ult)).padStart(2, '0')}`;
+}
+function addDiasC(iso, n) {
+  const [y, m, d] = String(iso).split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d)); dt.setUTCDate(dt.getUTCDate() + n);
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
+}
+function generarPeriodosC(fechaInicio, plazoDias, ciclo) {
+  if (!fechaInicio || !(Number(plazoDias) > 0) || (ciclo !== 'mensual' && ciclo !== 'quincenal')) return [];
+  const termino = addDiasC(fechaInicio, Number(plazoDias) - 1);
+  const out = []; let inicio = String(fechaInicio).slice(0, 10); let n = 0;
+  while (inicio <= termino && n < 1000) {
+    n += 1;
+    const corte = ciclo === 'mensual' ? masUnMesC(inicio) : addDiasC(inicio, 15);
+    let fin = addDiasC(corte, -1); if (fin > termino) fin = termino;
+    out.push({ numero: n, inicio, fin }); inicio = addDiasC(fin, 1);
   }
+  return out;
+}
+
+// A2 — Programa de obra = matriz CONCEPTO × PERIODO (art. 45 fr. X RLOPSRM).
+// Filas = conceptos del catálogo (con su clave); columnas = periodos del ciclo (art. 54);
+// celda = cantidad planeada. Validación EN LA VISTA: Σ por concepto ≤ contratado (art. 118),
+// con el restante recalculándose en vivo (lo pidió el profe; el backend lo revalida en SQL).
+function TabProgramaMatriz({ conceptos, periodos, ciclo, setCiclo, celdas, setCelda, soloLectura }) {
+  const resumen = conceptos.map((c) => {
+    const contratado = Number(c.cantidad) || 0;
+    const planeado = round2(periodos.reduce((s, p) => s + (Number(celdas[`${c.rid}:${p.numero}`]) || 0), 0));
+    const restante = round2(contratado - planeado);
+    return { rid: c.rid, contratado, planeado, restante };
+  });
+  const hayExceso = resumen.some((r) => r.restante < 0);
   return (
     <div>
-      <h3 className="text-lg font-bold text-sigecop-blue mb-4">Programa de obra</h3>
+      <h3 className="text-lg font-bold text-sigecop-blue mb-1">Programa de obra (catálogo × periodos)</h3>
       <p className="text-sm text-slate-600 mb-3">
-        Actividades calendarizadas. Cada actividad debe caer dentro del plazo del contrato. Bloque opcional.
+        El programa son los <strong>conceptos del catálogo</strong> repartidos en los <strong>periodos del ciclo</strong> (no actividades de texto libre). La celda es la <strong>cantidad</strong> que planeas ejecutar de ese concepto en ese periodo. La suma por concepto <strong>no puede exceder lo contratado</strong> (art. 118 RLOPSRM); el restante se recalcula en vivo.
       </p>
-      <div className="overflow-x-auto border border-slate-200 rounded-md">
-        <table className="w-full text-sm">
-          <thead className="bg-sigecop-blue-light text-sigecop-blue">
-            <tr>
-              <th className="text-left px-3 py-2">Actividad</th>
-              <th className="text-left px-3 py-2 w-44">Inicio</th>
-              <th className="text-left px-3 py-2 w-44">Término</th>
-              <th className="text-right px-3 py-2 w-28">% peso</th>
-              <th className="w-10 px-2 py-2"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((p, i) => (
-              <tr key={p.rid} className={`border-t border-slate-200 ${errIdx === i ? 'bg-red-50' : ''}`}>
-                <td className="px-2 py-1"><input className="sg-input" value={p.actividad} onChange={onCell(i, 'actividad')} disabled={soloLectura} /></td>
-                <td className="px-2 py-1"><input type="date" lang="es-MX" className="sg-input" value={p.inicio} onChange={onCell(i, 'inicio')} disabled={soloLectura} /></td>
-                <td className="px-2 py-1"><input type="date" lang="es-MX" className="sg-input" value={p.termino} onChange={onCell(i, 'termino')} disabled={soloLectura} /></td>
-                <td className="px-2 py-1"><input type="number" min="0" max="100" step="0.01" className="sg-input text-right" value={p.peso} onChange={onCell(i, 'peso')} disabled={soloLectura} /></td>
-                <td className="px-2 py-1 text-center">
-                  <button type="button" onClick={() => onRemove(i)} disabled={soloLectura} className="text-red-500 hover:text-red-700 disabled:opacity-30" title="Quitar actividad">✕</button>
-                </td>
-              </tr>
-            ))}
-            {rows.length === 0 && (
-              <tr><td colSpan={5} className="px-3 py-4 text-center text-slate-400">Sin actividades. Agrega una o deja el bloque vacío.</td></tr>
-            )}
-          </tbody>
-        </table>
+
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <label className="text-sm font-medium text-slate-700">Ciclo de estimación (art. 54):</label>
+        <select className="sg-input w-auto" value={ciclo} onChange={(e) => setCiclo(e.target.value)} disabled={soloLectura} data-testid="select-ciclo">
+          <option value="mensual">Mensual (cada ~30 días)</option>
+          <option value="quincenal">Quincenal (cada 15 días)</option>
+        </select>
+        <span className="text-sm text-slate-500" data-testid="periodos-count">{periodos.length} periodo{periodos.length === 1 ? '' : 's'}</span>
       </div>
-      {avisoMsg && <div className={`mt-3 px-3 py-2 rounded border text-sm font-medium ${avisoCls}`}>{avisoMsg}</div>}
-      <button type="button" onClick={onAdd} disabled={soloLectura} className="mt-3 text-sm text-sigecop-accent hover:underline disabled:opacity-40">
-        + Agregar actividad
-      </button>
+
+      {conceptos.length === 0 ? (
+        <div className="bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 text-sm text-slate-800">
+          Captura primero el <strong>catálogo de conceptos</strong>: el programa reparte esos conceptos en los periodos.
+        </div>
+      ) : periodos.length === 0 ? (
+        <div className="bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 text-sm text-slate-800">
+          Define la <strong>fecha de inicio</strong>, el <strong>plazo</strong> (Datos generales) y el <strong>ciclo</strong> para generar los periodos.
+        </div>
+      ) : (
+        <div className="overflow-x-auto border border-slate-200 rounded-md">
+          <table className="text-sm">
+            <thead className="bg-sigecop-blue-light text-sigecop-blue">
+              <tr>
+                <th className="text-left px-3 py-2 sticky left-0 bg-sigecop-blue-light w-28">Clave</th>
+                <th className="text-left px-3 py-2 w-56">Concepto</th>
+                {periodos.map((p) => (
+                  <th key={p.numero} className="text-right px-2 py-2 w-24" title={`${fmtFechaES(p.inicio)} – ${fmtFechaES(p.fin)}`}>
+                    P{p.numero}
+                    <div className="text-[10px] font-normal text-blue-700">{fmtFechaES(p.inicio).slice(0, 5)}</div>
+                  </th>
+                ))}
+                <th className="text-right px-2 py-2 w-24">Σ planeado</th>
+                <th className="text-right px-2 py-2 w-24">Contratado</th>
+                <th className="text-right px-2 py-2 w-24">Restante</th>
+              </tr>
+            </thead>
+            <tbody>
+              {conceptos.map((c, i) => {
+                const r = resumen[i];
+                const restCls = r.restante < 0 ? 'text-red-700 font-bold' : r.restante === 0 ? 'text-green-700 font-semibold' : 'text-amber-700';
+                return (
+                  <tr key={c.rid} className={`border-t border-slate-200 ${r.restante < 0 ? 'bg-red-50' : ''}`}>
+                    <td className="px-3 py-1 font-mono text-xs sticky left-0 bg-white">{c.clave || '—'}</td>
+                    <td className="px-3 py-1 truncate max-w-[14rem]" title={c.concepto}>{c.concepto || '—'}</td>
+                    {periodos.map((p) => (
+                      <td key={p.numero} className="px-1 py-1">
+                        <input type="number" min="0" step="0.001"
+                          className="sg-input text-right text-xs w-20"
+                          value={celdas[`${c.rid}:${p.numero}`] || ''}
+                          onChange={(e) => setCelda(c.rid, p.numero, e.target.value)}
+                          disabled={soloLectura}
+                          data-testid={`celda-${i}-${p.numero}`} />
+                      </td>
+                    ))}
+                    <td className="px-2 py-1 text-right font-semibold" data-testid={`planeado-${i}`}>{r.planeado}</td>
+                    <td className="px-2 py-1 text-right text-slate-600">{r.contratado}</td>
+                    <td className={`px-2 py-1 text-right ${restCls}`} data-testid={`restante-${i}`}>{r.restante}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {hayExceso && (
+        <div className="mt-3 px-3 py-2 rounded border text-sm font-medium text-red-700 bg-red-50 border-red-300" data-testid="programa-exceso">
+          Hay conceptos cuyo programa <strong>excede lo contratado</strong> (restante negativo). No se puede guardar: ajusta las cantidades (art. 118 RLOPSRM).
+        </div>
+      )}
     </div>
   );
 }
@@ -324,7 +403,48 @@ function TabJuridicos({ datos, set }) {
   );
 }
 
-function TabGarantias({ rows, onCell, onAdd, onRemove, anticipoPct, setAnticipoPct, soloLectura, errIdx, errAnticipo }) {
+// 4.4: subida de la AUTORIZACIÓN del anticipo (PDF). Reutiliza el patrón de PDF del
+// contrato (BYTEA, append-only), con `tipo='anticipo_autorizacion'`. El sistema NO valida
+// el contenido (responsabilidad del residente); solo lo guarda ligado al contrato.
+function AnticipoAutorizacionPDF({ contratoId, soloLectura }) {
+  const { showToast } = useToast();
+  const [meta, setMeta] = useState(null);
+  const [subiendo, setSubiendo] = useState(false);
+  const inputRef = useRef(null);
+
+  const cargarMeta = useCallback(async () => {
+    if (!contratoId) { setMeta(null); return; }
+    try { setMeta(await api.documentoMeta(contratoId, 'anticipo_autorizacion')); }
+    catch (err) { if (err.status === 404) setMeta(null); else showToast('No se pudo consultar la autorización del anticipo'); }
+  }, [contratoId, showToast]);
+  useEffect(() => { cargarMeta(); }, [cargarMeta]);
+
+  const onArchivo = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    if (file.type !== 'application/pdf') { showToast('Solo se permiten archivos PDF'); if (inputRef.current) inputRef.current.value = ''; return; }
+    if (file.size > 10 * 1024 * 1024) { showToast('El PDF excede el límite de 10 MB'); if (inputRef.current) inputRef.current.value = ''; return; }
+    setSubiendo(true);
+    try { await api.subirDocumento(contratoId, file, 'anticipo_autorizacion'); showToast('Autorización del anticipo adjuntada'); await cargarMeta(); }
+    catch (err) { showToast(err.message || 'No se pudo subir la autorización'); }
+    finally { setSubiendo(false); if (inputRef.current) inputRef.current.value = ''; }
+  };
+
+  if (!contratoId) {
+    return <p className="text-xs text-amber-800 mt-2" data-testid="anticipo-pdf-pendiente">Guarda primero el contrato; luego podrás adjuntar aquí la <strong>autorización del anticipo</strong> (PDF).</p>;
+  }
+  return meta ? (
+    <p className="text-sm text-green-800 mt-2" data-testid="anticipo-pdf-ok">✓ Autorización adjuntada: <strong>{meta.nombre}</strong> ({(Number(meta.tamano) / 1024).toFixed(0)} KB). Es inmutable.</p>
+  ) : (
+    <div className="mt-2" data-testid="anticipo-pdf-uploader">
+      <p className="text-sm font-semibold text-blue-900 mb-1">Adjunta la autorización escrita (PDF):</p>
+      <input ref={inputRef} type="file" accept="application/pdf,.pdf" onChange={onArchivo} disabled={soloLectura || subiendo} className="block text-sm" />
+      {subiendo && <p className="text-sm text-sigecop-accent mt-1">Subiendo…</p>}
+    </div>
+  );
+}
+
+function TabGarantias({ rows, onCell, onAdd, onRemove, anticipoPct, setAnticipoPct, soloLectura, errIdx, errAnticipo, contratoId }) {
   const hoy = new Date();
   const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
   const ap = Number(anticipoPct) || 0;
@@ -336,12 +456,14 @@ function TabGarantias({ rows, onCell, onAdd, onRemove, anticipoPct, setAnticipoP
         <Field label="% de anticipo otorgado" hint="Base de la amortización (art. 50 LOPSRM). 0–100%.">
           <input type="number" min="0" max="100" step="0.01" className={inputCls(errAnticipo)} value={anticipoPct} onChange={(e) => setAnticipoPct(e.target.value)} disabled={soloLectura} data-testid="anticipo-input" />
         </Field>
-        {ap > 30 && (
+        {ap > ANTICIPO_UMBRAL_PDF && (
           <div className="mt-3 bg-blue-50 border-l-4 border-blue-500 px-4 py-3 text-sm text-blue-900 space-y-2" data-testid="avisos-anticipo">
-            <div className="text-xs font-bold uppercase tracking-wider text-blue-700">Aviso legal</div>
-            <p>Conforme al art. 50 fr. IV de la LOPSRM, un anticipo mayor al 30% requiere autorización escrita del titular de la dependencia o entidad. El sistema solo lo informa; el trámite se realiza fuera del sistema.</p>
-            {ap > 50 && <p>Conforme al art. 139 del RLOPSRM, un anticipo mayor al 50% debe informarse a la Secretaría antes de su entrega. El sistema solo lo informa; el trámite se realiza fuera del sistema.</p>}
+            <div className="text-xs font-bold uppercase tracking-wider text-blue-700">Autorización requerida</div>
+            <p>Conforme al <strong>art. 50 fr. IV de la LOPSRM</strong>, un anticipo mayor al {ANTICIPO_UMBRAL_PDF}% requiere <strong>autorización escrita del titular</strong> de la dependencia o entidad. <strong>Adjunta el PDF de la autorización</strong> (el sistema lo guarda ligado al contrato; no valida su contenido — es responsabilidad del residente).</p>
+            {ap > 50 && <p>Además, conforme al <strong>art. 139 del RLOPSRM</strong>, un anticipo mayor al 50% debe informarse a la Secretaría (SFP) antes de su entrega.</p>}
             {ap >= 100 && <p>El 100% solo procede en contrato plurianual que inicia en el último trimestre (art. 50 fr. V LOPSRM).</p>}
+            {/* 4.4: el aviso deja de ser solo informativo → HABILITA subir la autorización. */}
+            <AnticipoAutorizacionPDF contratoId={contratoId} soloLectura={soloLectura} />
           </div>
         )}
       </div>
@@ -579,6 +701,10 @@ function TabRegistrados({ contratos, loading, errorMsg, sinSesion, onRecargar, s
 }
 
 const REQ_GENERALES = ['folio', 'tipo', 'objeto', 'contratista', 'dependencia', 'plazoDias', 'fechaInicio'];
+// 4.1: pasos del WIZARD de creación (captura). PDF firmado (5) y Registrados (6) son
+// auxiliares (post-guardado), fuera de la progresión obligatoria.
+const PASOS_WIZARD = [0, 1, 2, 3, 4];
+const ULTIMO_PASO_WIZARD = 4;
 
 export default function AltaContrato() {
   const { showToast } = useToast();
@@ -589,15 +715,23 @@ export default function AltaContrato() {
   const ridCounter = useRef(0);
   const nextRid = () => (ridCounter.current += 1);
   const conceptosIniciales = () => conceptosDummy.map((c) => ({ rid: nextRid(), clave: c.clave || '', concepto: c.concepto, unidad: c.unidad, cantidad: c.cantidad, pu: c.pu, importe: importeDe(c.cantidad, c.pu) }));
-  const programaIniciales = () => programaObraDummy.map((a) => ({ rid: nextRid(), actividad: a.actividad, inicio: a.inicio, termino: a.termino, peso: a.peso }));
   const garantiasIniciales = () => polizasGarantiaDummy.map((g) => ({ rid: nextRid(), tipo: g.tipo, afianzadora: g.afianzadora, poliza: g.poliza, monto: g.monto, vigencia: g.vigencia }));
 
   const [datosGenerales, setDatosGenerales] = useState(() => ({ ...DATOS_INICIALES }));
   const [datosJuridicos, setDatosJuridicos] = useState(() => ({ ...JURIDICOS_INICIALES }));
   const [anticipoPct, setAnticipoPct] = useState(30);
   const [conceptos, setConceptos] = useState(conceptosIniciales);
-  const [programa, setPrograma] = useState(programaIniciales);
+  // A2: programa de obra = matriz concepto × periodo. ciclo (mensual/quincenal) define las
+  // columnas; celdas[`${rid}:${numero}`] = cantidad planeada del concepto en el periodo.
+  const [ciclo, setCiclo] = useState('mensual');
+  const [celdas, setCeldas] = useState({});
+  const setCelda = (rid, numero, value) => setCeldas((prev) => ({ ...prev, [`${rid}:${numero}`]: value }));
   const [garantias, setGarantias] = useState(garantiasIniciales);
+
+  const periodos = useMemo(
+    () => generarPeriodosC(datosGenerales.fechaInicio, datosGenerales.plazoDias, ciclo),
+    [datosGenerales.fechaInicio, datosGenerales.plazoDias, ciclo]
+  );
 
   // Equipo del contrato (ligado a cuentas). El residente es el usuario actual.
   const [superintendenteId, setSuperintendenteId] = useState('');
@@ -633,7 +767,7 @@ export default function AltaContrato() {
   }));
   const montoDerivado = round2(conceptos.reduce((s, c) => s + (Number(importeDe(c.cantidad, c.pu)) || 0), 0));
 
-  useEffect(() => { setErrores(ERR0); }, [datosGenerales, datosJuridicos, anticipoPct, conceptos, programa, garantias, superintendenteId, supervisionId]);
+  useEffect(() => { setErrores(ERR0); }, [datosGenerales, datosJuridicos, anticipoPct, conceptos, celdas, ciclo, garantias, superintendenteId, supervisionId]);
 
   // Cuentas asignables al equipo (solo el residente puede consultarlas; si el rol
   // no es residente la API responde 403 y dejamos las listas vacías).
@@ -648,6 +782,9 @@ export default function AltaContrato() {
   const [errorLista, setErrorLista] = useState(null);
   const [guardando, setGuardando] = useState(false);
   const [contratoGuardadoId, setContratoGuardadoId] = useState(null);
+  // 4.1: "sucio" = el usuario tocó el formulario y aún no guardó (para el aviso de salir).
+  const [dirty, setDirty] = useState(false);
+  const montadoRef = useRef(false);
 
   const cargarContratos = useCallback(async () => {
     if (sinSesion) return;
@@ -659,65 +796,122 @@ export default function AltaContrato() {
 
   useEffect(() => { cargarContratos(); }, [cargarContratos]);
 
-  // Validacion en cliente con reglas de dominio. Requeridos todos juntos; el resto localizado.
+  // 4.1: marca el formulario como "sucio" en el primer cambio real (no en el montaje).
+  // (Va DESPUÉS de declarar dirty/montadoRef/contratoGuardadoId: sus dependencias se
+  // evalúan en orden de código, así que referenciarlas antes daría TDZ.)
+  useEffect(() => {
+    if (!montadoRef.current) { montadoRef.current = true; return; }
+    setDirty(true);
+  }, [datosGenerales, datosJuridicos, anticipoPct, conceptos, celdas, ciclo, garantias, superintendenteId, supervisionId]);
+
+  // 4.1: aviso del navegador "¿seguro de salir?" ante recarga/cierre con cambios sin guardar.
+  // (Persistencia del borrador ante recarga = NO implementada — opcional; ver doc.)
+  useEffect(() => {
+    const handler = (e) => { if (dirty && !contratoGuardadoId) { e.preventDefault(); e.returnValue = ''; } };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [dirty, contratoGuardadoId]);
+
+  // 4.1/4.2: validación POR PASO (en la vista). Cada paso del wizard se valida antes de
+  // avanzar; `validar()` (abajo) corre todos los pasos para el guardado final. Devuelve
+  // { ok } o { ok:false, msg, errores }. Pasos: 0 generales · 1 catálogo · 2 programa ·
+  // 3 jurídicos · 4 garantías/anticipo.
+  const validarPaso = (idx) => {
+    if (idx === 0) {
+      const faltan = REQ_GENERALES.filter((k) => String(datosGenerales[k] ?? '').trim() === '');
+      if (faltan.length) {
+        const campos = {}; faltan.forEach((k) => { campos[k] = true; });
+        return { ok: false, msg: `Faltan campos: ${faltan.join(', ')}`, errores: { ...ERR0, campos } };
+      }
+      if (!(Number.isInteger(Number(datosGenerales.plazoDias)) && Number(datosGenerales.plazoDias) > 0)) return { ok: false, msg: 'El plazo debe ser un entero mayor a 0', errores: { ...ERR0, campos: { plazoDias: true } } };
+      if (!superintendenteId) return { ok: false, msg: 'Asigna un superintendente al equipo del contrato', errores: { ...ERR0, campos: { superintendente: true } } };
+      return { ok: true };
+    }
+    if (idx === 1) {
+      // El monto se DERIVA del catálogo → se exige al menos un concepto.
+      if (conceptos.length === 0) return { ok: false, msg: 'Captura al menos un concepto: el monto del contrato se deriva del catálogo.', errores: { ...ERR0, catalogoMonto: true } };
+      const claves = new Set();
+      for (let i = 0; i < conceptos.length; i++) {
+        const c = conceptos[i];
+        const cant = Number(c.cantidad); const pu = Number(c.pu);
+        const clave = String(c.clave || '').trim();
+        if (!clave) return { ok: false, msg: `Concepto #${i + 1}: la clave es obligatoria (la defines tú).`, errores: { ...ERR0, conceptoIdx: i } };
+        if (clave.length > 40) return { ok: false, msg: `Concepto #${i + 1}: la clave excede 40 caracteres.`, errores: { ...ERR0, conceptoIdx: i } };
+        if (claves.has(clave)) return { ok: false, msg: `Concepto #${i + 1}: la clave "${clave}" está repetida; cada clave debe ser única.`, errores: { ...ERR0, conceptoIdx: i } };
+        claves.add(clave);
+        if (!String(c.concepto).trim() || !String(c.unidad).trim() || c.cantidad === '' || c.pu === '' || !(cant > 0) || !(pu > 0)) {
+          return { ok: false, msg: `Concepto #${i + 1}: concepto, unidad y cantidad/P.U. mayores a 0`, errores: { ...ERR0, conceptoIdx: i } };
+        }
+        // 4.2: topes de las columnas NUMERIC (evita el 22003 crudo al guardar; di DÓNDE).
+        if (cant >= MAX_CANTIDAD) return { ok: false, msg: `Concepto #${i + 1}: la cantidad es demasiado grande (máx. ${MAX_CANTIDAD.toLocaleString('es-MX')}).`, errores: { ...ERR0, conceptoIdx: i } };
+        if (pu >= MAX_PU) return { ok: false, msg: `Concepto #${i + 1}: el precio unitario es demasiado grande (máx. ${MAX_PU.toLocaleString('es-MX')}).`, errores: { ...ERR0, conceptoIdx: i } };
+      }
+      // 4.2: el monto derivado no puede exceder la capacidad de la columna.
+      if (montoDerivado >= MAX_MONTO) return { ok: false, msg: `El monto del contrato (${formatoMXN.format(montoDerivado)}) excede el máximo permitido. Revisa cantidades y precios unitarios.`, errores: { ...ERR0, catalogoMonto: true } };
+      return { ok: true };
+    }
+    if (idx === 2) {
+      // A2: programa = matriz concepto × periodo. Σ por concepto ≤ contratado (art. 118
+      // RLOPSRM); sin negativos ("menos dos metros no existe"). Parcial permitido (aviso).
+      if (Object.values(celdas).some((v) => v !== '' && Number(v) < 0)) {
+        return { ok: false, msg: 'El programa de obra no admite cantidades negativas.', errores: { ...ERR0, programaError: true } };
+      }
+      for (let i = 0; i < conceptos.length; i++) {
+        const c = conceptos[i];
+        const contratado = Number(c.cantidad) || 0;
+        const planeado = round2(periodos.reduce((s, p) => s + (Number(celdas[`${c.rid}:${p.numero}`]) || 0), 0));
+        if (planeado > contratado) {
+          return { ok: false, msg: `Programa: el concepto "${c.clave || c.concepto}" planea ${planeado} > contratado ${contratado} (art. 118 RLOPSRM).`, errores: { ...ERR0, programaError: true } };
+        }
+      }
+      return { ok: true };
+    }
+    if (idx === 3) return { ok: true }; // datos jurídicos: bloque opcional
+    if (idx === 4) {
+      if (anticipoPct !== '' && anticipoPct !== null) {
+        const a = Number(anticipoPct);
+        if (!(a >= 0 && a <= 100)) return { ok: false, msg: 'El % de anticipo debe estar entre 0 y 100', errores: { ...ERR0, campos: { anticipoPct: true } } };
+      }
+      for (let i = 0; i < garantias.length; i++) {
+        const g = garantias[i];
+        if (garantiaVacia(g)) continue; // fila completamente vacía → se ignora
+        if (!String(g.tipo).trim()) return { ok: false, msg: `Garantía #${i + 1}: el tipo es obligatorio`, errores: { ...ERR0, garantiaIdx: i } };
+        if (!(Number(g.monto) > 0)) return { ok: false, msg: `Garantía #${i + 1}: si capturas la póliza, indica un monto mayor a 0`, errores: { ...ERR0, garantiaIdx: i } };
+      }
+      return { ok: true };
+    }
+    return { ok: true };
+  };
+
+  // Validación completa para el guardado final: corre todos los pasos del wizard.
   const validar = () => {
-    const faltan = REQ_GENERALES.filter((k) => String(datosGenerales[k] ?? '').trim() === '');
-    if (faltan.length) {
-      const campos = {}; faltan.forEach((k) => { campos[k] = true; });
-      return { tab: 0, msg: `Faltan campos: ${faltan.join(', ')}`, errores: { ...ERR0, campos } };
-    }
-    if (!(Number.isInteger(Number(datosGenerales.plazoDias)) && Number(datosGenerales.plazoDias) > 0)) return { tab: 0, msg: 'El plazo debe ser un entero mayor a 0', errores: { ...ERR0, campos: { plazoDias: true } } };
-    // Equipo: superintendente obligatorio.
-    if (!superintendenteId) return { tab: 0, msg: 'Asigna un superintendente al equipo del contrato', errores: { ...ERR0, campos: { superintendente: true } } };
-    if (anticipoPct !== '' && anticipoPct !== null) {
-      const a = Number(anticipoPct);
-      if (!(a >= 0 && a <= 100)) return { tab: 4, msg: 'El % de anticipo debe estar entre 0 y 100', errores: { ...ERR0, campos: { anticipoPct: true } } };
-    }
-    // El monto se DERIVA del catálogo → se exige al menos un concepto.
-    if (conceptos.length === 0) {
-      return { tab: 1, msg: 'Captura al menos un concepto: el monto del contrato se deriva del catálogo.', errores: { ...ERR0, catalogoMonto: true } };
-    }
-    // Cada concepto: clave (obligatoria, ≤40, única por contrato), concepto, unidad, cantidad>0, PU>0.
-    const claves = new Set();
-    for (let i = 0; i < conceptos.length; i++) {
-      const c = conceptos[i];
-      const cant = Number(c.cantidad); const pu = Number(c.pu);
-      const clave = String(c.clave || '').trim();
-      if (!clave) return { tab: 1, msg: `Concepto #${i + 1}: la clave es obligatoria (la defines tú).`, errores: { ...ERR0, conceptoIdx: i } };
-      if (clave.length > 40) return { tab: 1, msg: `Concepto #${i + 1}: la clave excede 40 caracteres.`, errores: { ...ERR0, conceptoIdx: i } };
-      if (claves.has(clave)) return { tab: 1, msg: `Concepto #${i + 1}: la clave "${clave}" está repetida; cada clave debe ser única.`, errores: { ...ERR0, conceptoIdx: i } };
-      claves.add(clave);
-      if (!String(c.concepto).trim() || !String(c.unidad).trim() || c.cantidad === '' || c.pu === '' || !(cant > 0) || !(pu > 0)) {
-        return { tab: 1, msg: `Concepto #${i + 1}: concepto, unidad y cantidad/P.U. mayores a 0`, errores: { ...ERR0, conceptoIdx: i } };
-      }
-    }
-    // Regla 5: actividades dentro del plazo del contrato.
-    const terminoDerivado = derivarTermino(datosGenerales.fechaInicio, Number(datosGenerales.plazoDias));
-    for (let i = 0; i < programa.length; i++) {
-      const a = programa[i];
-      if (!String(a.actividad).trim() || !a.inicio || !a.termino || a.peso === '') return { tab: 2, msg: `Actividad #${i + 1}: revisa actividad, fechas y peso`, errores: { ...ERR0, actividadIdx: i } };
-      if (a.termino < a.inicio) return { tab: 2, msg: `Actividad #${i + 1}: el término no puede ser anterior al inicio`, errores: { ...ERR0, actividadIdx: i } };
-      const pp = Number(a.peso);
-      if (!(pp >= 0 && pp <= 100)) return { tab: 2, msg: `Actividad #${i + 1}: el peso debe estar entre 0 y 100`, errores: { ...ERR0, actividadIdx: i } };
-      if (a.inicio < datosGenerales.fechaInicio || a.termino > terminoDerivado) {
-        return { tab: 2, msg: `Actividad #${i + 1}: debe estar dentro del plazo del contrato (${datosGenerales.fechaInicio} a ${terminoDerivado})`, errores: { ...ERR0, actividadIdx: i } };
-      }
-    }
-    const sumaPeso = Math.round(programa.reduce((s, a) => s + (Number(a.peso) || 0), 0) * 100) / 100;
-    if (sumaPeso > 100) return { tab: 2, msg: `El programa de obra suma ${sumaPeso}% (excede 100%). Ajusta los pesos antes de guardar.`, errores: ERR0 };
-    for (let i = 0; i < garantias.length; i++) {
-      const g = garantias[i];
-      if (garantiaVacia(g)) continue; // fila completamente vacía → se ignora
-      if (!String(g.tipo).trim()) return { tab: 4, msg: `Garantía #${i + 1}: el tipo es obligatorio`, errores: { ...ERR0, garantiaIdx: i } };
-      if (!(Number(g.monto) > 0)) return { tab: 4, msg: `Garantía #${i + 1}: si capturas la póliza, indica un monto mayor a 0`, errores: { ...ERR0, garantiaIdx: i } };
+    for (const p of PASOS_WIZARD) {
+      const v = validarPaso(p);
+      if (!v.ok) return { tab: p, msg: v.msg, errores: v.errores };
     }
     return null;
+  };
+
+  // 4.1: navegación del wizard. Atrás y los pasos auxiliares (PDF/Registrados) son libres;
+  // avanzar exige que los pasos intermedios sean VÁLIDOS (validación en la vista). En modo
+  // demostración (sin sesión real) la navegación es libre: sin token no hay superintendente
+  // asignable, así que el wizard no puede gatear; el gating aplica con sesión real.
+  const irAPaso = (target) => {
+    if (sinSesion || target <= tabActivo || target > ULTIMO_PASO_WIZARD) { setTabActivo(target); return; }
+    for (let p = tabActivo; p < target; p++) {
+      const v = validarPaso(p);
+      if (!v.ok) { setErrores(v.errores); setTabActivo(p); showToast(v.msg); return; }
+    }
+    setErrores(ERR0);
+    setTabActivo(target);
   };
 
   const handleGuardar = async () => {
     if (guardando || soloLectura) return;
     const v = validar();
     if (v) { setErrores(v.errores); setTabActivo(v.tab); showToast(v.msg); return; }
+    // 4.1: confirmación explícita antes de guardar (último paso del wizard).
+    if (!window.confirm('¿Seguro de guardar el contrato?')) return;
     setErrores(ERR0);
     setGuardando(true);
     try {
@@ -735,11 +929,20 @@ export default function AltaContrato() {
         juridicos: datosJuridicos,
         // monto NO se envía: el backend lo deriva = Σ ROUND(cantidad×pu,2). clave por concepto.
         conceptos: conceptos.map((c) => ({ clave: String(c.clave || '').trim(), concepto: c.concepto, unidad: c.unidad, cantidad: c.cantidad, pu: c.pu })),
-        actividades: programa.map((a) => ({ actividad: a.actividad, inicio: a.inicio, termino: a.termino, peso: a.peso })),
+        // A2: ciclo + programa de obra (matriz). Solo celdas con cantidad > 0; el backend
+        // genera los periodos y valida Σ ≤ contratado (art. 118).
+        ciclo,
+        programa: conceptos.flatMap((c) => periodos.map((p) => {
+          const v = celdas[`${c.rid}:${p.numero}`];
+          return (v !== undefined && v !== '' && Number(v) > 0)
+            ? { clave: String(c.clave || '').trim(), periodoNumero: p.numero, cantidad: Number(v) }
+            : null;
+        }).filter(Boolean)),
         garantias: garantias.filter((g) => !garantiaVacia(g)).map((g) => ({ tipo: g.tipo, afianzadora: g.afianzadora, poliza: g.poliza, monto: g.monto, vigencia: g.vigencia }))
       };
       const creado = await api.crearContrato(payload);
       if (creado && creado.id) setContratoGuardadoId(creado.id);
+      setDirty(false); // 4.1: ya guardado, no avisar al salir
       showToast('Contrato guardado: ' + payload.folio);
       cargarContratos();
     } catch (err) {
@@ -764,11 +967,14 @@ export default function AltaContrato() {
     setSuperintendenteId('');
     setSupervisionId('');
     setConceptos(conceptosIniciales());
-    setPrograma(programaIniciales());
+    setCiclo('mensual');
+    setCeldas({});
     setGarantias(garantiasIniciales());
     setErrores(ERR0);
     setTabActivo(0);
     setContratoGuardadoId(null);
+    setDirty(false);
+    montadoRef.current = false; // re-armar el detector de "sucio"
   };
 
   const tabsConError = useMemo(() => {
@@ -776,7 +982,7 @@ export default function AltaContrato() {
     const c = errores.campos || {};
     if (REQ_GENERALES.some((k) => c[k]) || c.superintendente) s.add(0);
     if (errores.conceptoIdx != null || errores.catalogoMonto) s.add(1);
-    if (errores.actividadIdx != null) s.add(2);
+    if (errores.programaError) s.add(2);
     if (c.anticipoPct || errores.garantiaIdx != null) s.add(4);
     return s;
   }, [errores]);
@@ -797,11 +1003,11 @@ export default function AltaContrato() {
         onRemove={mkRemove(setConceptos)} soloLectura={soloLectura} errIdx={errores.conceptoIdx} montoDerivado={montoDerivado} />
     ) },
     { label: 'Programa de obra', content: wrapTab(
-      <TabPrograma rows={programa} onCell={mkCell(setPrograma)} onAdd={mkAdd(setPrograma, { actividad: '', inicio: '', termino: '', peso: '' })} onRemove={mkRemove(setPrograma)} soloLectura={soloLectura} errIdx={errores.actividadIdx} />
+      <TabProgramaMatriz conceptos={conceptos} periodos={periodos} ciclo={ciclo} setCiclo={setCiclo} celdas={celdas} setCelda={setCelda} soloLectura={soloLectura} />
     ) },
     { label: 'Datos jurídicos', content: wrapTab(<TabJuridicos datos={datosJuridicos} set={setDatosJur} />) },
     { label: 'Garantías, penalizaciones y amortización', content: wrapTab(
-      <TabGarantias rows={garantias} onCell={mkCell(setGarantias)} onAdd={mkAdd(setGarantias, { tipo: '', afianzadora: '', poliza: '', monto: '', vigencia: '' })} onRemove={mkRemove(setGarantias)} anticipoPct={anticipoPct} setAnticipoPct={setAnticipoPct} soloLectura={soloLectura} errIdx={errores.garantiaIdx} errAnticipo={errores.campos.anticipoPct} />
+      <TabGarantias rows={garantias} onCell={mkCell(setGarantias)} onAdd={mkAdd(setGarantias, { tipo: '', afianzadora: '', poliza: '', monto: '', vigencia: '' })} onRemove={mkRemove(setGarantias)} anticipoPct={anticipoPct} setAnticipoPct={setAnticipoPct} soloLectura={soloLectura} errIdx={errores.garantiaIdx} errAnticipo={errores.campos.anticipoPct} contratoId={contratoGuardadoId} />
     ) },
     { label: 'PDF firmado', content: wrapTab(<TabPdfFirmado contratoId={contratoGuardadoId} soloLectura={soloLectura} />) },
     { label: 'Registrados', content: (
@@ -818,13 +1024,28 @@ export default function AltaContrato() {
         breadcrumb={[{ label: 'Inicio', href: '/' }, { label: 'Contratos' }, { label: 'Alta de contratos' }]}
       />
 
-      <Tabs tabs={tabs} active={tabActivo} onTabChange={setTabActivo} tabsConError={tabsConError} />
+      <Tabs tabs={tabs} active={tabActivo} onTabChange={irAPaso} tabsConError={tabsConError} />
 
-      <div className="mt-6 flex justify-end gap-3">
+      {/* 4.1: barra del wizard. "Siguiente" por paso (gated por validación en la vista);
+          "Guardar contrato" SOLO en el último paso de captura; tras guardar → adjuntar PDF. */}
+      <div className="mt-6 flex items-center justify-between gap-3">
         <button type="button" onClick={handleCancelar} disabled={soloLectura} className="px-4 py-2 text-slate-600 hover:text-slate-900 disabled:opacity-40">Cancelar</button>
-        <button type="button" className="sg-btn-primary" disabled={soloLectura || guardando} onClick={handleGuardar}>
-          {guardando ? 'Guardando…' : 'Guardar contrato'}
-        </button>
+        <div className="flex items-center gap-3">
+          {tabActivo > 0 && tabActivo <= ULTIMO_PASO_WIZARD && (
+            <button type="button" onClick={() => irAPaso(tabActivo - 1)} disabled={soloLectura} className="px-4 py-2 text-slate-600 hover:text-slate-900 disabled:opacity-40" data-testid="btn-atras">← Atrás</button>
+          )}
+          {tabActivo < ULTIMO_PASO_WIZARD ? (
+            <button type="button" onClick={() => irAPaso(tabActivo + 1)} disabled={soloLectura} className="sg-btn-primary" data-testid="btn-siguiente">Siguiente →</button>
+          ) : tabActivo === ULTIMO_PASO_WIZARD ? (
+            contratoGuardadoId ? (
+              <button type="button" onClick={() => irAPaso(5)} className="sg-btn-primary" data-testid="btn-ir-pdf">Adjuntar PDF firmado →</button>
+            ) : (
+              <button type="button" className="sg-btn-primary" disabled={soloLectura || guardando} onClick={handleGuardar} data-testid="btn-guardar">
+                {guardando ? 'Guardando…' : 'Guardar contrato'}
+              </button>
+            )
+          ) : null}
+        </div>
       </div>
 
       <SeccionCriterios

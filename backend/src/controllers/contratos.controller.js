@@ -3,6 +3,9 @@
 // rompiendo la atomicidad).
 const { pool } = require('../db/pool');
 const { ROLES_VEN_TODO, esParteOSupervision } = require('../lib/acceso');
+// A2: el programa de obra (matriz concepto×periodo) se genera y guarda con la lib
+// compartida; el alta traduce clave→id antes de llamar a guardarMatriz (C6).
+const { generarPeriodos, guardarMatriz } = require('../lib/programa');
 
 // 'monto' NO se captura: se DERIVA del catálogo (Σ ROUND(cantidad×pu,2), art. 45 fr. IX
 // RLOPSRM: el catálogo con sus importes ES el presupuesto). Sin catálogo (precio alzado)
@@ -119,7 +122,9 @@ async function crearContrato(req, res) {
     const vals = conceptos.map((_, i) => `($${i * 2 + 1}::numeric(14,3), $${i * 2 + 2}::numeric(16,4))`).join(', ');
     const prm = conceptos.flatMap((c) => [numOrNull(c.cantidad), numOrNull(c.pu)]);
     const mr = await pool.query(
-      `SELECT COALESCE(SUM(ROUND(t.cant * t.pu, 2)), 0)::numeric(14,2) AS monto
+      // 4.2: monto a NUMERIC(18,2) (antes 14,2). Obras grandes (Σ importes ≥ 10^12)
+      // desbordaban la columna 14,2 → error crudo 22003. Ahora cabe (< 10^16).
+      `SELECT COALESCE(SUM(ROUND(t.cant * t.pu, 2)), 0)::numeric(18,2) AS monto
          FROM (VALUES ${vals}) AS t(cant, pu)`,
       prm
     );
@@ -160,6 +165,40 @@ async function crearContrato(req, res) {
     }
   }
 
+  // --- A2: ciclo de estimación + programa de obra (matriz concepto × periodo) ------
+  // El programa son CONCEPTOS del catálogo repartidos en los periodos del ciclo (art. 45
+  // fr. X RLOPSRM), NO "actividades" de texto libre. Celda = cantidad planeada del concepto
+  // en el periodo; el invariante Σ por concepto <= contratado (art. 118) lo valida
+  // guardarMatriz en SQL. Los periodos los genera el backend (no se confía en el cliente).
+  const ciclo = (body.ciclo === 'mensual' || body.ciclo === 'quincenal') ? body.ciclo : null;
+  const programaRaw = Array.isArray(body.programa) ? body.programa : [];
+  let periodos = [];
+  const programaCeldas = [];
+  if (programaRaw.length > 0) {
+    if (!ciclo) return res.status(400).json({ error: 'Define el ciclo de estimación (mensual o quincenal) para el programa de obra (art. 54)' });
+    if (conceptos.length === 0) return res.status(400).json({ error: 'El programa de obra requiere un catálogo de conceptos' });
+    if (programaRaw.length > 20000) return res.status(400).json({ error: 'El programa de obra tiene demasiadas celdas' });
+    try { periodos = generarPeriodos(body.fechaInicio, plazoDias, ciclo); }
+    catch (e) { return res.status(400).json({ error: 'No se pudieron generar los periodos del ciclo: ' + e.message }); }
+    const clavesCatalogo = new Set(conceptos.map((c) => String(c.clave || '').trim()));
+    const maxNumero = periodos.length;
+    for (const [i, cell] of programaRaw.entries()) {
+      const clave = String(cell.clave || '').trim();
+      const pnum = Number(cell.periodoNumero);
+      const cant = numOrNull(cell.cantidad);
+      if (!clave || !clavesCatalogo.has(clave)) return res.status(400).json({ error: `Celda #${i + 1}: la clave "${clave}" no está en el catálogo` });
+      if (!Number.isInteger(pnum) || pnum < 1 || pnum > maxNumero) return res.status(400).json({ error: `Celda #${i + 1}: periodo ${cell.periodoNumero} fuera de rango (1..${maxNumero})` });
+      if (cant === null || cant < 0) return res.status(400).json({ error: `Celda #${i + 1}: la cantidad no puede ser negativa` });
+      if (cant === 0) continue; // celda vacía: el concepto no se asigna a ese periodo
+      programaCeldas.push({ clave, periodoNumero: pnum, cantidad: cant });
+    }
+  } else if (ciclo) {
+    // Sin celdas pero con ciclo definido: igual se generan los periodos (matriz vacía,
+    // se podrá llenar luego con PUT /:id/programa).
+    try { periodos = generarPeriodos(body.fechaInicio, plazoDias, ciclo); }
+    catch (e) { return res.status(400).json({ error: 'No se pudieron generar los periodos del ciclo: ' + e.message }); }
+  }
+
   // Equipo del contrato: residente = usuario del token; superintendente (cuenta
   // 'contratista' aprobada) OBLIGATORIO; supervisión (cuenta 'supervision' aprobada)
   // OPCIONAL. Se validan rol y estado contra la BD (no se confía en el cliente).
@@ -195,25 +234,29 @@ async function crearContrato(req, res) {
         `INSERT INTO contratos
            (folio, tipo, objeto, contratista, dependencia, monto, plazo_dias,
             fecha_inicio, fecha_termino, created_by, datos_juridicos, anticipo_pct,
-            residente_id, superintendente_id, supervision_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+            residente_id, superintendente_id, supervision_id, ciclo_estimacion)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
          RETURNING id`,
         [
           folio, tipo, objeto, contratista, dependencia, monto, plazoDias,
           fechaInicio, fechaTerminoDerivada, req.user.id,
           juridicos ? JSON.stringify(juridicos) : null,
           anticipoPct,
-          req.user.id, superintendenteId, supervisionId
+          req.user.id, superintendenteId, supervisionId, ciclo
         ]
       );
       const contratoId = cab.rows[0].id;
 
+      // clave→id de cada concepto: lo usa A2 para traducir las celdas del programa (C4/C6).
+      const claveToConceptoId = new Map();
       for (const [i, c] of conceptos.entries()) {
-        await client.query(
+        const clave = String(c.clave).trim();
+        const ins = await client.query(
           `INSERT INTO contrato_conceptos (contrato_id, orden, clave, concepto, unidad, cantidad, pu)
-           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-          [contratoId, i + 1, String(c.clave).trim(), c.concepto, c.unidad, numOrNull(c.cantidad), numOrNull(c.pu)]
+           VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
+          [contratoId, i + 1, clave, c.concepto, c.unidad, numOrNull(c.cantidad), numOrNull(c.pu)]
         );
+        claveToConceptoId.set(clave, ins.rows[0].id);
       }
       for (const [i, a] of actividades.entries()) {
         await client.query(
@@ -231,6 +274,30 @@ async function crearContrato(req, res) {
         );
       }
 
+      // A2: periodos del ciclo (columnas de la matriz) + programa de obra (celdas).
+      if (periodos.length > 0) {
+        const numeroToPeriodoId = new Map();
+        for (const p of periodos) {
+          const ip = await client.query(
+            `INSERT INTO contrato_periodos (contrato_id, numero, inicio, fin)
+             VALUES ($1,$2,$3,$4) RETURNING id`,
+            [contratoId, p.numero, p.inicio, p.fin]
+          );
+          numeroToPeriodoId.set(p.numero, ip.rows[0].id);
+        }
+        if (programaCeldas.length > 0) {
+          // C6: el alta ya tradujo clave→id y numero→id; guardarMatriz hace lock (C2),
+          // freeze (C1/C3, aquí inerte: contrato sin estimaciones), DELETE+INSERT (C5) y
+          // valida Σ planeado <= contratado en SQL (C7, art. 118).
+          const celdas = programaCeldas.map((cell) => ({
+            contrato_concepto_id: claveToConceptoId.get(cell.clave),
+            contrato_periodo_id: numeroToPeriodoId.get(cell.periodoNumero),
+            cantidad: cell.cantidad
+          }));
+          await guardarMatriz(client, contratoId, celdas);
+        }
+      }
+
       await client.query('COMMIT');
       return res.status(201).json({ id: contratoId, folio });
     } catch (e) {
@@ -240,6 +307,13 @@ async function crearContrato(req, res) {
       client.release(); // SIEMPRE devolver el client al pool (max: 10)
     }
   } catch (err) {
+    // A2: errores de dominio del programa de obra (lanzados por guardarMatriz / traducción).
+    if (err.code === 'PROGRAMA_EXCEDE' || err.code === 'PROGRAMA_AJENO') {
+      return res.status(400).json({ error: err.message, detalles: err.detalles });
+    }
+    if (err.code === 'PROGRAMA_CONGELADO') {
+      return res.status(409).json({ error: err.message });
+    }
     if (err.code === '23505') {
       if (err.constraint && err.constraint.includes('folio')) {
         return res.status(409).json({ error: 'El folio ya existe' });
@@ -259,7 +333,8 @@ async function crearContrato(req, res) {
       return res.status(400).json({ error: 'Un campo de texto excede el límite de caracteres permitido.' });
     }
     if (err.code === '22003') {
-      return res.status(400).json({ error: 'Un valor numérico está fuera de rango (demasiado grande).' });
+      // 4.2: nunca el error crudo de Postgres; di DÓNDE mirar.
+      return res.status(400).json({ error: 'Un valor numérico excede el máximo permitido. Revisa la cantidad o el precio unitario de algún concepto, o que el monto total del contrato no sea demasiado grande.' });
     }
     console.error('[crearContrato]', err);
     return res.status(500).json({ error: 'Error interno' });
@@ -353,6 +428,9 @@ async function subirDocumento(req, res) {
     if (!req.file) {
       return res.status(400).json({ error: 'Falta el archivo PDF (campo "documento")' });
     }
+    // 4.4: tipo de documento. Allowlist; default 'contrato' (compatibilidad). El
+    // 'anticipo_autorizacion' guarda la autorización escrita del titular (art. 50 fr. IV).
+    const tipo = req.query.tipo === 'anticipo_autorizacion' ? 'anticipo_autorizacion' : 'contrato';
     const { buffer, originalname, mimetype, size } = req.file;
     // Backstop: revalidar magic bytes %PDF (no confiar solo en el mimetype declarado).
     if (!buffer || buffer.length < 4 || buffer.subarray(0, 4).toString('latin1') !== '%PDF') {
@@ -370,17 +448,18 @@ async function subirDocumento(req, res) {
     if (cres.rows[0].residente_id !== req.user.id) {
       return res.status(403).json({ error: 'Solo el residente asignado al contrato puede subir su documento' });
     }
-    // Append-only: si ya hay un documento, es inmutable y no se reemplaza.
-    const ya = await pool.query('SELECT id FROM contrato_documentos WHERE contrato_id = $1 LIMIT 1', [id]);
+    // Append-only POR TIPO: si ya hay un documento de ese tipo, es inmutable y no se reemplaza.
+    const ya = await pool.query('SELECT id FROM contrato_documentos WHERE contrato_id = $1 AND tipo = $2 LIMIT 1', [id, tipo]);
     if (ya.rowCount > 0) {
-      return res.status(409).json({ error: 'El contrato ya tiene un documento firmado; es inmutable y no se puede reemplazar' });
+      const cual = tipo === 'anticipo_autorizacion' ? 'la autorización del anticipo' : 'el documento firmado';
+      return res.status(409).json({ error: `El contrato ya tiene ${cual}; es inmutable y no se puede reemplazar` });
     }
 
     const r = await pool.query(
-      `INSERT INTO contrato_documentos (contrato_id, nombre, mime, tamano, contenido)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, nombre, mime, tamano, subido_en`,
-      [id, originalname, mimetype, size, buffer]
+      `INSERT INTO contrato_documentos (contrato_id, tipo, nombre, mime, tamano, contenido)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       RETURNING id, tipo, nombre, mime, tamano, subido_en`,
+      [id, tipo, originalname, mimetype, size, buffer]
     );
     return res.status(201).json(r.rows[0]);
   } catch (err) {
@@ -410,11 +489,12 @@ async function documentoMeta(req, res) {
     const acc = await asegurarAccesoContrato(req, id);
     if (acc.error === 404) return res.status(404).json({ error: 'Contrato no encontrado' });
     if (acc.error === 403) return res.status(403).json({ error: 'No tienes acceso a este contrato' });
+    const tipo = req.query.tipo === 'anticipo_autorizacion' ? 'anticipo_autorizacion' : 'contrato'; // 4.4
     const r = await pool.query(
-      `SELECT id, nombre, mime, tamano, subido_en
-         FROM contrato_documentos WHERE contrato_id = $1
+      `SELECT id, tipo, nombre, mime, tamano, subido_en
+         FROM contrato_documentos WHERE contrato_id = $1 AND tipo = $2
         ORDER BY subido_en DESC LIMIT 1`,
-      [id]
+      [id, tipo]
     );
     if (r.rowCount === 0) {
       return res.status(404).json({ error: 'El contrato no tiene PDF ligado' });
@@ -436,11 +516,12 @@ async function descargarDocumento(req, res) {
     const acc = await asegurarAccesoContrato(req, id);
     if (acc.error === 404) return res.status(404).json({ error: 'Contrato no encontrado' });
     if (acc.error === 403) return res.status(403).json({ error: 'No tienes acceso a este contrato' });
+    const tipo = req.query.tipo === 'anticipo_autorizacion' ? 'anticipo_autorizacion' : 'contrato'; // 4.4
     const r = await pool.query(
       `SELECT nombre, mime, tamano, contenido
-         FROM contrato_documentos WHERE contrato_id = $1
+         FROM contrato_documentos WHERE contrato_id = $1 AND tipo = $2
         ORDER BY subido_en DESC LIMIT 1`,
-      [id]
+      [id, tipo]
     );
     if (r.rowCount === 0) {
       return res.status(404).json({ error: 'El contrato no tiene PDF ligado' });

@@ -9,6 +9,8 @@ const {
   documentoMeta,
   descargarDocumento
 } = require('../controllers/contratos.controller');
+// A2: programa de obra (matriz concepto×periodo). Controller NUEVO (no congelado).
+const { leerPrograma, reemplazarPrograma } = require('../controllers/programa.controller');
 
 const router = express.Router();
 
@@ -42,6 +44,11 @@ router.use(authMiddleware);
 router.post('/', requireRole('residente'), crearContrato);
 router.get('/', listarContratos);
 router.get('/:id', detalleContrato);
+
+// A2: programa de obra. Lectura acotada por participación (helper en el controller);
+// edición SOLO el residente asignado (lo revalida el controller contra el JWT).
+router.get('/:id/programa', leerPrograma);
+router.put('/:id/programa', requireRole('residente'), reemplazarPrograma);
 
 // PDF firmado: se liga DESPUES de crear el contrato. Subida solo el residente
 // ASIGNADO (lo valida el controller); lectura acotada por participación (helper).

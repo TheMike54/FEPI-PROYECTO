@@ -35,15 +35,21 @@ export const api = {
   crearContrato: (payload) => request('/contratos', { method: 'POST', body: JSON.stringify(payload) }),
   listarContratos: () => request('/contratos'),
   detalleContrato: (id) => request(`/contratos/${id}`),
+  // A2: programa de obra (matriz concepto × periodo). Lectura por participación; edición
+  // solo el residente asignado (lo valida el backend).
+  leerProgramaObra: (contratoId) => request(`/contratos/${contratoId}/programa`),
+  guardarProgramaObra: (contratoId, payload) => request(`/contratos/${contratoId}/programa`, { method: 'PUT', body: JSON.stringify(payload) }),
   // PDF firmado del contrato (HU-01). La subida es multipart y la descarga binaria,
   // asi que NO pasan por request() (que asume JSON).
-  documentoMeta: (id) => request(`/contratos/${id}/documento/meta`),
-  subirDocumento: (id, file) => {
+  // 4.4: `tipo` opcional ('contrato' por defecto | 'anticipo_autorizacion'). Sin tipo se
+  // comporta igual que antes (compatibilidad).
+  documentoMeta: (id, tipo) => request(`/contratos/${id}/documento/meta${tipo ? `?tipo=${encodeURIComponent(tipo)}` : ''}`),
+  subirDocumento: (id, file, tipo) => {
     const fd = new FormData();
     fd.append('documento', file);
     const token = localStorage.getItem('sigecop_token');
     // OJO: no fijar Content-Type; el navegador pone el boundary del multipart.
-    return fetch(`${API_URL}/contratos/${id}/documento`, {
+    return fetch(`${API_URL}/contratos/${id}/documento${tipo ? `?tipo=${encodeURIComponent(tipo)}` : ''}`, {
       method: 'POST',
       headers: token ? { Authorization: `Bearer ${token}` } : {},
       body: fd
@@ -58,9 +64,9 @@ export const api = {
       return data;
     });
   },
-  descargarDocumento: async (id) => {
+  descargarDocumento: async (id, tipo) => {
     const token = localStorage.getItem('sigecop_token');
-    const res = await fetch(`${API_URL}/contratos/${id}/documento`, {
+    const res = await fetch(`${API_URL}/contratos/${id}/documento${tipo ? `?tipo=${encodeURIComponent(tipo)}` : ''}`, {
       headers: token ? { Authorization: `Bearer ${token}` } : {}
     });
     if (!res.ok) {

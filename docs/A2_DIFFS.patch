@@ -1,0 +1,592 @@
+diff --git a/backend/src/controllers/contratos.controller.js b/backend/src/controllers/contratos.controller.js
+index 3585c1e..d9b8d42 100644
+--- a/backend/src/controllers/contratos.controller.js
++++ b/backend/src/controllers/contratos.controller.js
+@@ -3,6 +3,9 @@
+ // rompiendo la atomicidad).
+ const { pool } = require('../db/pool');
+ const { ROLES_VEN_TODO, esParteOSupervision } = require('../lib/acceso');
++// A2: el programa de obra (matriz concepto×periodo) se genera y guarda con la lib
++// compartida; el alta traduce clave→id antes de llamar a guardarMatriz (C6).
++const { generarPeriodos, guardarMatriz } = require('../lib/programa');
+ 
+ // 'monto' NO se captura: se DERIVA del catálogo (Σ ROUND(cantidad×pu,2), art. 45 fr. IX
+ // RLOPSRM: el catálogo con sus importes ES el presupuesto). Sin catálogo (precio alzado)
+@@ -160,6 +163,40 @@ async function crearContrato(req, res) {
+     }
+   }
+ 
++  // --- A2: ciclo de estimación + programa de obra (matriz concepto × periodo) ------
++  // El programa son CONCEPTOS del catálogo repartidos en los periodos del ciclo (art. 45
++  // fr. X RLOPSRM), NO "actividades" de texto libre. Celda = cantidad planeada del concepto
++  // en el periodo; el invariante Σ por concepto <= contratado (art. 118) lo valida
++  // guardarMatriz en SQL. Los periodos los genera el backend (no se confía en el cliente).
++  const ciclo = (body.ciclo === 'mensual' || body.ciclo === 'quincenal') ? body.ciclo : null;
++  const programaRaw = Array.isArray(body.programa) ? body.programa : [];
++  let periodos = [];
++  const programaCeldas = [];
++  if (programaRaw.length > 0) {
++    if (!ciclo) return res.status(400).json({ error: 'Define el ciclo de estimación (mensual o quincenal) para el programa de obra (art. 54)' });
++    if (conceptos.length === 0) return res.status(400).json({ error: 'El programa de obra requiere un catálogo de conceptos' });
++    if (programaRaw.length > 20000) return res.status(400).json({ error: 'El programa de obra tiene demasiadas celdas' });
++    try { periodos = generarPeriodos(body.fechaInicio, plazoDias, ciclo); }
++    catch (e) { return res.status(400).json({ error: 'No se pudieron generar los periodos del ciclo: ' + e.message }); }
++    const clavesCatalogo = new Set(conceptos.map((c) => String(c.clave || '').trim()));
++    const maxNumero = periodos.length;
++    for (const [i, cell] of programaRaw.entries()) {
++      const clave = String(cell.clave || '').trim();
++      const pnum = Number(cell.periodoNumero);
++      const cant = numOrNull(cell.cantidad);
++      if (!clave || !clavesCatalogo.has(clave)) return res.status(400).json({ error: `Celda #${i + 1}: la clave "${clave}" no está en el catálogo` });
++      if (!Number.isInteger(pnum) || pnum < 1 || pnum > maxNumero) return res.status(400).json({ error: `Celda #${i + 1}: periodo ${cell.periodoNumero} fuera de rango (1..${maxNumero})` });
++      if (cant === null || cant < 0) return res.status(400).json({ error: `Celda #${i + 1}: la cantidad no puede ser negativa` });
++      if (cant === 0) continue; // celda vacía: el concepto no se asigna a ese periodo
++      programaCeldas.push({ clave, periodoNumero: pnum, cantidad: cant });
++    }
++  } else if (ciclo) {
++    // Sin celdas pero con ciclo definido: igual se generan los periodos (matriz vacía,
++    // se podrá llenar luego con PUT /:id/programa).
++    try { periodos = generarPeriodos(body.fechaInicio, plazoDias, ciclo); }
++    catch (e) { return res.status(400).json({ error: 'No se pudieron generar los periodos del ciclo: ' + e.message }); }
++  }
++
+   // Equipo del contrato: residente = usuario del token; superintendente (cuenta
+   // 'contratista' aprobada) OBLIGATORIO; supervisión (cuenta 'supervision' aprobada)
+   // OPCIONAL. Se validan rol y estado contra la BD (no se confía en el cliente).
+@@ -195,25 +232,29 @@ async function crearContrato(req, res) {
+         `INSERT INTO contratos
+            (folio, tipo, objeto, contratista, dependencia, monto, plazo_dias,
+             fecha_inicio, fecha_termino, created_by, datos_juridicos, anticipo_pct,
+-            residente_id, superintendente_id, supervision_id)
+-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
++            residente_id, superintendente_id, supervision_id, ciclo_estimacion)
++         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+          RETURNING id`,
+         [
+           folio, tipo, objeto, contratista, dependencia, monto, plazoDias,
+           fechaInicio, fechaTerminoDerivada, req.user.id,
+           juridicos ? JSON.stringify(juridicos) : null,
+           anticipoPct,
+-          req.user.id, superintendenteId, supervisionId
++          req.user.id, superintendenteId, supervisionId, ciclo
+         ]
+       );
+       const contratoId = cab.rows[0].id;
+ 
++      // clave→id de cada concepto: lo usa A2 para traducir las celdas del programa (C4/C6).
++      const claveToConceptoId = new Map();
+       for (const [i, c] of conceptos.entries()) {
+-        await client.query(
++        const clave = String(c.clave).trim();
++        const ins = await client.query(
+           `INSERT INTO contrato_conceptos (contrato_id, orden, clave, concepto, unidad, cantidad, pu)
+-           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+-          [contratoId, i + 1, String(c.clave).trim(), c.concepto, c.unidad, numOrNull(c.cantidad), numOrNull(c.pu)]
++           VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
++          [contratoId, i + 1, clave, c.concepto, c.unidad, numOrNull(c.cantidad), numOrNull(c.pu)]
+         );
++        claveToConceptoId.set(clave, ins.rows[0].id);
+       }
+       for (const [i, a] of actividades.entries()) {
+         await client.query(
+@@ -231,6 +272,30 @@ async function crearContrato(req, res) {
+         );
+       }
+ 
++      // A2: periodos del ciclo (columnas de la matriz) + programa de obra (celdas).
++      if (periodos.length > 0) {
++        const numeroToPeriodoId = new Map();
++        for (const p of periodos) {
++          const ip = await client.query(
++            `INSERT INTO contrato_periodos (contrato_id, numero, inicio, fin)
++             VALUES ($1,$2,$3,$4) RETURNING id`,
++            [contratoId, p.numero, p.inicio, p.fin]
++          );
++          numeroToPeriodoId.set(p.numero, ip.rows[0].id);
++        }
++        if (programaCeldas.length > 0) {
++          // C6: el alta ya tradujo clave→id y numero→id; guardarMatriz hace lock (C2),
++          // freeze (C1/C3, aquí inerte: contrato sin estimaciones), DELETE+INSERT (C5) y
++          // valida Σ planeado <= contratado en SQL (C7, art. 118).
++          const celdas = programaCeldas.map((cell) => ({
++            contrato_concepto_id: claveToConceptoId.get(cell.clave),
++            contrato_periodo_id: numeroToPeriodoId.get(cell.periodoNumero),
++            cantidad: cell.cantidad
++          }));
++          await guardarMatriz(client, contratoId, celdas);
++        }
++      }
++
+       await client.query('COMMIT');
+       return res.status(201).json({ id: contratoId, folio });
+     } catch (e) {
+@@ -240,6 +305,13 @@ async function crearContrato(req, res) {
+       client.release(); // SIEMPRE devolver el client al pool (max: 10)
+     }
+   } catch (err) {
++    // A2: errores de dominio del programa de obra (lanzados por guardarMatriz / traducción).
++    if (err.code === 'PROGRAMA_EXCEDE' || err.code === 'PROGRAMA_AJENO') {
++      return res.status(400).json({ error: err.message, detalles: err.detalles });
++    }
++    if (err.code === 'PROGRAMA_CONGELADO') {
++      return res.status(409).json({ error: err.message });
++    }
+     if (err.code === '23505') {
+       if (err.constraint && err.constraint.includes('folio')) {
+         return res.status(409).json({ error: 'El folio ya existe' });
+diff --git a/backend/src/db/schema.sql b/backend/src/db/schema.sql
+index 75fd726..107d44d 100644
+--- a/backend/src/db/schema.sql
++++ b/backend/src/db/schema.sql
+@@ -725,3 +725,60 @@ DO $$ BEGIN
+     ALTER TABLE estimacion_generadores ALTER COLUMN pu_snapshot TYPE NUMERIC(16,4);
+   END IF;
+ END $$;
++
++-- =====================================================================
++-- Paquete A2: PROGRAMA DE OBRA = matriz CONCEPTO × PERIODO.
++-- Aditivo e idempotente. Reemplaza el modelo VIEJO de `contrato_actividades`
++-- (texto libre con %peso) por el programa REAL: los conceptos del catálogo (A1)
++-- repartidos en los periodos del ciclo de ejecución. (`contrato_actividades` se
++-- DEPRECA — ya no la escribe el alta — pero NO se borra: conserva datos viejos.)
++-- Fundamento Nivel 1 (literal, RLOPSRM/LOPSRM): art. 45 fr. X (programa de ejecución
++-- conforme al catálogo, calendarizado y cuantificado por periodos); art. 54 (la
++-- estimación es cíclica: cada 30 o 15 días); art. 118 (no se planea/estima más de lo
++-- contratado). El monto a cobrar por periodo = Σ (cantidad_celda × pu) — el programa
++-- es lo que permite VALIDAR las estimaciones (palabras del profesor, audio 2026-06-01).
++-- =====================================================================
++
++-- (1) Ciclo de estimación del contrato: 'mensual' o 'quincenal' (art. 54: cada 30/15
++--     días). Lo elige el usuario al configurar el contrato. Nullable: los contratos
++--     viejos quedan NULL; las altas nuevas CON programa lo exigen (lo valida la app).
++ALTER TABLE contratos ADD COLUMN IF NOT EXISTS ciclo_estimacion VARCHAR(10);
++DO $$ BEGIN
++  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_contratos_ciclo') THEN
++    ALTER TABLE contratos ADD CONSTRAINT chk_contratos_ciclo
++      CHECK (ciclo_estimacion IS NULL OR ciclo_estimacion IN ('mensual','quincenal'));
++  END IF;
++END $$;
++
++-- (2) Periodos del ciclo = COLUMNAS de la matriz. Los genera el backend con el algoritmo
++--     de periodos (lib/programa.js: generarPeriodos), un mosaico contiguo sin huecos ni
++--     solapes; cada periodo cumple por construcción periodo_fin <= masUnMes(inicio), así
++--     ES un periodo válido de estimación (art. 54) y alinea con HU-12.
++CREATE TABLE IF NOT EXISTS contrato_periodos (
++  id          SERIAL PRIMARY KEY,
++  contrato_id INTEGER NOT NULL REFERENCES contratos(id) ON DELETE CASCADE,
++  numero      INTEGER NOT NULL CHECK (numero >= 1),       -- 1..N en orden cronológico
++  inicio      DATE NOT NULL,
++  fin         DATE NOT NULL,
++  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
++  CONSTRAINT uq_contrato_periodos_numero UNIQUE (contrato_id, numero),
++  CONSTRAINT chk_contrato_periodos_fechas CHECK (fin >= inicio)
++);
++CREATE INDEX IF NOT EXISTS idx_contrato_periodos_contrato ON contrato_periodos(contrato_id);
++
++-- (3) programa_obra = CELDAS de la matriz (tabla HOJA). Celda = cantidad PLANEADA del
++--     concepto en el periodo, en la MISMA escala que el catálogo (NUMERIC(14,3)). NO es
++--     append-only: la matriz se EDITA por DELETE+INSERT (lib/programa.js: guardarMatriz)
++--     hasta que el contrato tiene su primera estimación; después se congela salvo enmienda
++--     por convenio (art. 99) — ese freeze es de aplicación, no un trigger, para permitir la
++--     excepción legal. La invariante Σ planeado <= contratado (art. 118) se valida en SQL.
++CREATE TABLE IF NOT EXISTS programa_obra (
++  id                   SERIAL PRIMARY KEY,
++  contrato_concepto_id INTEGER NOT NULL REFERENCES contrato_conceptos(id) ON DELETE CASCADE,
++  contrato_periodo_id  INTEGER NOT NULL REFERENCES contrato_periodos(id)  ON DELETE CASCADE,
++  cantidad             NUMERIC(14,3) NOT NULL CHECK (cantidad >= 0),  -- no negativos ("menos dos metros no existe")
++  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
++  CONSTRAINT uq_programa_obra_celda UNIQUE (contrato_concepto_id, contrato_periodo_id)  -- una celda por (concepto, periodo)
++);
++CREATE INDEX IF NOT EXISTS idx_programa_obra_concepto ON programa_obra(contrato_concepto_id);
++CREATE INDEX IF NOT EXISTS idx_programa_obra_periodo  ON programa_obra(contrato_periodo_id);
+diff --git a/backend/src/routes/contratos.routes.js b/backend/src/routes/contratos.routes.js
+index ffa8d60..bda3d12 100644
+--- a/backend/src/routes/contratos.routes.js
++++ b/backend/src/routes/contratos.routes.js
+@@ -9,6 +9,8 @@ const {
+   documentoMeta,
+   descargarDocumento
+ } = require('../controllers/contratos.controller');
++// A2: programa de obra (matriz concepto×periodo). Controller NUEVO (no congelado).
++const { leerPrograma, reemplazarPrograma } = require('../controllers/programa.controller');
+ 
+ const router = express.Router();
+ 
+@@ -43,6 +45,11 @@ router.post('/', requireRole('residente'), crearContrato);
+ router.get('/', listarContratos);
+ router.get('/:id', detalleContrato);
+ 
++// A2: programa de obra. Lectura acotada por participación (helper en el controller);
++// edición SOLO el residente asignado (lo revalida el controller contra el JWT).
++router.get('/:id/programa', leerPrograma);
++router.put('/:id/programa', requireRole('residente'), reemplazarPrograma);
++
+ // PDF firmado: se liga DESPUES de crear el contrato. Subida solo el residente
+ // ASIGNADO (lo valida el controller); lectura acotada por participación (helper).
+ router.post('/:id/documento', requireRole('residente'), subirPdf, subirDocumento);
+diff --git a/docs/Borrador_DDL_Tablas_Nuevas_SIGECOP.md b/docs/Borrador_DDL_Tablas_Nuevas_SIGECOP.md
+index 3e3456b..f30e9b0 100644
+--- a/docs/Borrador_DDL_Tablas_Nuevas_SIGECOP.md
++++ b/docs/Borrador_DDL_Tablas_Nuevas_SIGECOP.md
+@@ -270,3 +270,47 @@ CREATE INDEX IF NOT EXISTS idx_instruccion_estimacion ON instruccion_pago(estima
+ 3. **A.3 convenios** (tras A2) y el resto de tablas de Parte B/C según las pida cada equipo.
+ 
+ Cada bloque entra como migración **aditiva e idempotente** dentro de `schema.sql`, aplicada por Maiki con el runbook (backup → `--single-transaction -v ON_ERROR_STOP=1` → verificar código viejo sobre esquema nuevo → push). Ninguna de estas migraciones reescribe datos existentes (todas son `ADD COLUMN ... DEFAULT`/`CREATE TABLE IF NOT EXISTS`).
++
++---
++
++## Parte A2 — Programa de obra = matriz CONCEPTO × PERIODO  ✅ YA INTEGRADO en `schema.sql`
++
++> **Estado: CONSTRUIDO Y PROBADO EN LOCAL** (no en `main` aún). A diferencia del resto de este
++> borrador, A2 **ya está en `schema.sql`** (sección "Paquete A2") porque era el prerrequisito que
++> bloquea HU-05/06/03. Se deja aquí registrado por completitud. Reemplaza el modelo viejo
++> `contrato_actividades` (texto libre con %peso), que se **DEPRECA** (no se borra: conserva datos viejos).
++> Fundamento Nivel 1: **art. 45 fr. X** RLOPSRM (programa conforme al catálogo, por periodos),
++> **art. 54** LOPSRM (ciclo 30/15 días), **art. 118** RLOPSRM (no exceder lo contratado),
++> **art. 99** LOPSRM (enmienda del programa por convenio).
++
++```sql
++-- (1) Ciclo de estimación del contrato (lo elige el usuario en el alta).
++ALTER TABLE contratos ADD COLUMN IF NOT EXISTS ciclo_estimacion VARCHAR(10);  -- CHECK IN ('mensual','quincenal')
++
++-- (2) Periodos del ciclo = COLUMNAS de la matriz (los genera lib/programa.js: generarPeriodos).
++CREATE TABLE IF NOT EXISTS contrato_periodos (
++  id SERIAL PRIMARY KEY,
++  contrato_id INTEGER NOT NULL REFERENCES contratos(id) ON DELETE CASCADE,
++  numero INTEGER NOT NULL CHECK (numero >= 1),
++  inicio DATE NOT NULL, fin DATE NOT NULL,
++  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
++  CONSTRAINT uq_contrato_periodos_numero UNIQUE (contrato_id, numero),
++  CONSTRAINT chk_contrato_periodos_fechas CHECK (fin >= inicio)
++);
++
++-- (3) programa_obra = CELDAS de la matriz (tabla HOJA, escala = catálogo NUMERIC(14,3)).
++CREATE TABLE IF NOT EXISTS programa_obra (
++  id SERIAL PRIMARY KEY,
++  contrato_concepto_id INTEGER NOT NULL REFERENCES contrato_conceptos(id) ON DELETE CASCADE,
++  contrato_periodo_id  INTEGER NOT NULL REFERENCES contrato_periodos(id)  ON DELETE CASCADE,
++  cantidad NUMERIC(14,3) NOT NULL CHECK (cantidad >= 0),
++  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
++  CONSTRAINT uq_programa_obra_celda UNIQUE (contrato_concepto_id, contrato_periodo_id)
++);
++```
++
++**Diseño (red-team C1–C7, en `lib/programa.js: guardarMatriz`):** edición por **DELETE+INSERT** (la matriz es hoja); **freeze de aplicación** (no trigger) = bloquea edición manual si hay estimación `<> 'rechazada'`, salvo **enmienda por convenio** (`convenioId`, art. 99); **lock** `pg_advisory_xact_lock(2, contrato_id)` (mismo que la integración de estimación → cierra el TOCTOU); invariante **Σ planeado ≤ contratado validado en SQL NUMERIC** (art. 118, sin epsilon).
++
++**Alineación con HU-12 (definición de "periodo"):** cada fila de `contrato_periodos` cumple por construcción `fin ≤ masUnMes(inicio)`, así que **es un periodo válido de estimación** (art. 54); una estimación de HU-12 corresponde a un `contrato_periodos.numero`, y la celda `programa_obra(concepto, periodo)` es la cantidad planeada contra la que se podrá validar el avance estimado (cableado fino de HU-12 contra `programa_obra` = follow-on, fuera de A2).
++
++**Decisión de producto PENDIENTE (no la decide Code):** ¿el programa DEBE distribuir todo (Σ = contratado) o se permite parcial / Σ=0 con aviso? El dibujo del profe distribuye todo; hoy se implementó **parcial permitido con aviso** (solo se bloquea el exceso, art. 118). **Confirmar con el profe.**
+diff --git a/frontend/src/pages/AltaContrato.jsx b/frontend/src/pages/AltaContrato.jsx
+index 124703d..20bda34 100644
+--- a/frontend/src/pages/AltaContrato.jsx
++++ b/frontend/src/pages/AltaContrato.jsx
+@@ -6,7 +6,7 @@ import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
+ import RegionEditable from '../components/vista/RegionEditable.jsx';
+ import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
+ import { api } from '../services/api.js';
+-import { conceptosDummy, programaObraDummy, polizasGarantiaDummy } from '../data/dummy.js';
++import { conceptosDummy, polizasGarantiaDummy } from '../data/dummy.js';
+ 
+ const formatoMXN = new Intl.NumberFormat('es-MX', {
+   style: 'currency',
+@@ -55,7 +55,7 @@ const garantiaVacia = (g) => !(
+   String(g.vigencia || '').trim()
+ );
+ 
+-const ERR0 = { campos: {}, conceptoIdx: null, actividadIdx: null, garantiaIdx: null, catalogoMonto: false };
++const ERR0 = { campos: {}, conceptoIdx: null, programaError: false, garantiaIdx: null, catalogoMonto: false };
+ 
+ // Valores iniciales (también usados por "Cancelar"). Consistentes con las reglas:
+ // monto = Σ del catálogo dummy; plazo cubre el programa.
+@@ -253,54 +253,120 @@ function TabCatalogo({ rows, onCell, onPatch, onAdd, onRemove, soloLectura, errI
+   );
+ }
+ 
+-function TabPrograma({ rows, onCell, onAdd, onRemove, soloLectura, errIdx }) {
+-  const total = Math.round(rows.reduce((s, p) => s + (Number(p.peso) || 0), 0) * 100) / 100;
+-  let avisoCls = '';
+-  let avisoMsg = '';
+-  if (rows.length > 0) {
+-    if (total > 100) { avisoCls = 'text-red-700 bg-red-50 border-red-300'; avisoMsg = `Suma de %peso: ${total}% — excede 100%. No se puede guardar; ajusta los pesos.`; }
+-    else if (total === 100) { avisoCls = 'text-green-700 bg-green-50 border-green-300'; avisoMsg = `Suma de %peso: ${total}% ✓`; }
+-    else { avisoCls = 'text-amber-800 bg-amber-50 border-amber-300'; avisoMsg = `Suma de %peso: ${total}% — parcial (faltan ${Math.round((100 - total) * 100) / 100}% para llegar a 100%).`; }
++// --- A2: generador de periodos en cliente (ESPEJO de backend/src/lib/programa.js) ---
++// Solo para pintar la matriz en vivo; el backend regenera de forma autoritativa.
++function masUnMesC(iso) {
++  const [y, m, d] = String(iso).split('-').map(Number);
++  let ny = y, nm = m + 1; if (nm > 12) { nm = 1; ny += 1; }
++  const ult = new Date(Date.UTC(ny, nm, 0)).getUTCDate();
++  return `${ny}-${String(nm).padStart(2, '0')}-${String(Math.min(d, ult)).padStart(2, '0')}`;
++}
++function addDiasC(iso, n) {
++  const [y, m, d] = String(iso).split('-').map(Number);
++  const dt = new Date(Date.UTC(y, m - 1, d)); dt.setUTCDate(dt.getUTCDate() + n);
++  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, '0')}-${String(dt.getUTCDate()).padStart(2, '0')}`;
++}
++function generarPeriodosC(fechaInicio, plazoDias, ciclo) {
++  if (!fechaInicio || !(Number(plazoDias) > 0) || (ciclo !== 'mensual' && ciclo !== 'quincenal')) return [];
++  const termino = addDiasC(fechaInicio, Number(plazoDias) - 1);
++  const out = []; let inicio = String(fechaInicio).slice(0, 10); let n = 0;
++  while (inicio <= termino && n < 1000) {
++    n += 1;
++    const corte = ciclo === 'mensual' ? masUnMesC(inicio) : addDiasC(inicio, 15);
++    let fin = addDiasC(corte, -1); if (fin > termino) fin = termino;
++    out.push({ numero: n, inicio, fin }); inicio = addDiasC(fin, 1);
+   }
++  return out;
++}
++
++// A2 — Programa de obra = matriz CONCEPTO × PERIODO (art. 45 fr. X RLOPSRM).
++// Filas = conceptos del catálogo (con su clave); columnas = periodos del ciclo (art. 54);
++// celda = cantidad planeada. Validación EN LA VISTA: Σ por concepto ≤ contratado (art. 118),
++// con el restante recalculándose en vivo (lo pidió el profe; el backend lo revalida en SQL).
++function TabProgramaMatriz({ conceptos, periodos, ciclo, setCiclo, celdas, setCelda, soloLectura }) {
++  const resumen = conceptos.map((c) => {
++    const contratado = Number(c.cantidad) || 0;
++    const planeado = round2(periodos.reduce((s, p) => s + (Number(celdas[`${c.rid}:${p.numero}`]) || 0), 0));
++    const restante = round2(contratado - planeado);
++    return { rid: c.rid, contratado, planeado, restante };
++  });
++  const hayExceso = resumen.some((r) => r.restante < 0);
+   return (
+     <div>
+-      <h3 className="text-lg font-bold text-sigecop-blue mb-4">Programa de obra</h3>
++      <h3 className="text-lg font-bold text-sigecop-blue mb-1">Programa de obra (catálogo × periodos)</h3>
+       <p className="text-sm text-slate-600 mb-3">
+-        Actividades calendarizadas. Cada actividad debe caer dentro del plazo del contrato. Bloque opcional.
++        El programa son los <strong>conceptos del catálogo</strong> repartidos en los <strong>periodos del ciclo</strong> (no actividades de texto libre). La celda es la <strong>cantidad</strong> que planeas ejecutar de ese concepto en ese periodo. La suma por concepto <strong>no puede exceder lo contratado</strong> (art. 118 RLOPSRM); el restante se recalcula en vivo.
+       </p>
+-      <div className="overflow-x-auto border border-slate-200 rounded-md">
+-        <table className="w-full text-sm">
+-          <thead className="bg-sigecop-blue-light text-sigecop-blue">
+-            <tr>
+-              <th className="text-left px-3 py-2">Actividad</th>
+-              <th className="text-left px-3 py-2 w-44">Inicio</th>
+-              <th className="text-left px-3 py-2 w-44">Término</th>
+-              <th className="text-right px-3 py-2 w-28">% peso</th>
+-              <th className="w-10 px-2 py-2"></th>
+-            </tr>
+-          </thead>
+-          <tbody>
+-            {rows.map((p, i) => (
+-              <tr key={p.rid} className={`border-t border-slate-200 ${errIdx === i ? 'bg-red-50' : ''}`}>
+-                <td className="px-2 py-1"><input className="sg-input" value={p.actividad} onChange={onCell(i, 'actividad')} disabled={soloLectura} /></td>
+-                <td className="px-2 py-1"><input type="date" lang="es-MX" className="sg-input" value={p.inicio} onChange={onCell(i, 'inicio')} disabled={soloLectura} /></td>
+-                <td className="px-2 py-1"><input type="date" lang="es-MX" className="sg-input" value={p.termino} onChange={onCell(i, 'termino')} disabled={soloLectura} /></td>
+-                <td className="px-2 py-1"><input type="number" min="0" max="100" step="0.01" className="sg-input text-right" value={p.peso} onChange={onCell(i, 'peso')} disabled={soloLectura} /></td>
+-                <td className="px-2 py-1 text-center">
+-                  <button type="button" onClick={() => onRemove(i)} disabled={soloLectura} className="text-red-500 hover:text-red-700 disabled:opacity-30" title="Quitar actividad">✕</button>
+-                </td>
+-              </tr>
+-            ))}
+-            {rows.length === 0 && (
+-              <tr><td colSpan={5} className="px-3 py-4 text-center text-slate-400">Sin actividades. Agrega una o deja el bloque vacío.</td></tr>
+-            )}
+-          </tbody>
+-        </table>
++
++      <div className="flex flex-wrap items-center gap-3 mb-4">
++        <label className="text-sm font-medium text-slate-700">Ciclo de estimación (art. 54):</label>
++        <select className="sg-input w-auto" value={ciclo} onChange={(e) => setCiclo(e.target.value)} disabled={soloLectura} data-testid="select-ciclo">
++          <option value="mensual">Mensual (cada ~30 días)</option>
++          <option value="quincenal">Quincenal (cada 15 días)</option>
++        </select>
++        <span className="text-sm text-slate-500" data-testid="periodos-count">{periodos.length} periodo{periodos.length === 1 ? '' : 's'}</span>
+       </div>
+-      {avisoMsg && <div className={`mt-3 px-3 py-2 rounded border text-sm font-medium ${avisoCls}`}>{avisoMsg}</div>}
+-      <button type="button" onClick={onAdd} disabled={soloLectura} className="mt-3 text-sm text-sigecop-accent hover:underline disabled:opacity-40">
+-        + Agregar actividad
+-      </button>
++
++      {conceptos.length === 0 ? (
++        <div className="bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 text-sm text-slate-800">
++          Captura primero el <strong>catálogo de conceptos</strong>: el programa reparte esos conceptos en los periodos.
++        </div>
++      ) : periodos.length === 0 ? (
++        <div className="bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 text-sm text-slate-800">
++          Define la <strong>fecha de inicio</strong>, el <strong>plazo</strong> (Datos generales) y el <strong>ciclo</strong> para generar los periodos.
++        </div>
++      ) : (
++        <div className="overflow-x-auto border border-slate-200 rounded-md">
++          <table className="text-sm">
++            <thead className="bg-sigecop-blue-light text-sigecop-blue">
++              <tr>
++                <th className="text-left px-3 py-2 sticky left-0 bg-sigecop-blue-light w-28">Clave</th>
++                <th className="text-left px-3 py-2 w-56">Concepto</th>
++                {periodos.map((p) => (
++                  <th key={p.numero} className="text-right px-2 py-2 w-24" title={`${fmtFechaES(p.inicio)} – ${fmtFechaES(p.fin)}`}>
++                    P{p.numero}
++                    <div className="text-[10px] font-normal text-blue-700">{fmtFechaES(p.inicio).slice(0, 5)}</div>
++                  </th>
++                ))}
++                <th className="text-right px-2 py-2 w-24">Σ planeado</th>
++                <th className="text-right px-2 py-2 w-24">Contratado</th>
++                <th className="text-right px-2 py-2 w-24">Restante</th>
++              </tr>
++            </thead>
++            <tbody>
++              {conceptos.map((c, i) => {
++                const r = resumen[i];
++                const restCls = r.restante < 0 ? 'text-red-700 font-bold' : r.restante === 0 ? 'text-green-700 font-semibold' : 'text-amber-700';
++                return (
++                  <tr key={c.rid} className={`border-t border-slate-200 ${r.restante < 0 ? 'bg-red-50' : ''}`}>
++                    <td className="px-3 py-1 font-mono text-xs sticky left-0 bg-white">{c.clave || '—'}</td>
++                    <td className="px-3 py-1 truncate max-w-[14rem]" title={c.concepto}>{c.concepto || '—'}</td>
++                    {periodos.map((p) => (
++                      <td key={p.numero} className="px-1 py-1">
++                        <input type="number" min="0" step="0.001"
++                          className="sg-input text-right text-xs w-20"
++                          value={celdas[`${c.rid}:${p.numero}`] || ''}
++                          onChange={(e) => setCelda(c.rid, p.numero, e.target.value)}
++                          disabled={soloLectura}
++                          data-testid={`celda-${i}-${p.numero}`} />
++                      </td>
++                    ))}
++                    <td className="px-2 py-1 text-right font-semibold" data-testid={`planeado-${i}`}>{r.planeado}</td>
++                    <td className="px-2 py-1 text-right text-slate-600">{r.contratado}</td>
++                    <td className={`px-2 py-1 text-right ${restCls}`} data-testid={`restante-${i}`}>{r.restante}</td>
++                  </tr>
++                );
++              })}
++            </tbody>
++          </table>
++        </div>
++      )}
++
++      {hayExceso && (
++        <div className="mt-3 px-3 py-2 rounded border text-sm font-medium text-red-700 bg-red-50 border-red-300" data-testid="programa-exceso">
++          Hay conceptos cuyo programa <strong>excede lo contratado</strong> (restante negativo). No se puede guardar: ajusta las cantidades (art. 118 RLOPSRM).
++        </div>
++      )}
+     </div>
+   );
+ }
+@@ -589,16 +655,24 @@ export default function AltaContrato() {
+   const ridCounter = useRef(0);
+   const nextRid = () => (ridCounter.current += 1);
+   const conceptosIniciales = () => conceptosDummy.map((c) => ({ rid: nextRid(), clave: c.clave || '', concepto: c.concepto, unidad: c.unidad, cantidad: c.cantidad, pu: c.pu, importe: importeDe(c.cantidad, c.pu) }));
+-  const programaIniciales = () => programaObraDummy.map((a) => ({ rid: nextRid(), actividad: a.actividad, inicio: a.inicio, termino: a.termino, peso: a.peso }));
+   const garantiasIniciales = () => polizasGarantiaDummy.map((g) => ({ rid: nextRid(), tipo: g.tipo, afianzadora: g.afianzadora, poliza: g.poliza, monto: g.monto, vigencia: g.vigencia }));
+ 
+   const [datosGenerales, setDatosGenerales] = useState(() => ({ ...DATOS_INICIALES }));
+   const [datosJuridicos, setDatosJuridicos] = useState(() => ({ ...JURIDICOS_INICIALES }));
+   const [anticipoPct, setAnticipoPct] = useState(30);
+   const [conceptos, setConceptos] = useState(conceptosIniciales);
+-  const [programa, setPrograma] = useState(programaIniciales);
++  // A2: programa de obra = matriz concepto × periodo. ciclo (mensual/quincenal) define las
++  // columnas; celdas[`${rid}:${numero}`] = cantidad planeada del concepto en el periodo.
++  const [ciclo, setCiclo] = useState('mensual');
++  const [celdas, setCeldas] = useState({});
++  const setCelda = (rid, numero, value) => setCeldas((prev) => ({ ...prev, [`${rid}:${numero}`]: value }));
+   const [garantias, setGarantias] = useState(garantiasIniciales);
+ 
++  const periodos = useMemo(
++    () => generarPeriodosC(datosGenerales.fechaInicio, datosGenerales.plazoDias, ciclo),
++    [datosGenerales.fechaInicio, datosGenerales.plazoDias, ciclo]
++  );
++
+   // Equipo del contrato (ligado a cuentas). El residente es el usuario actual.
+   const [superintendenteId, setSuperintendenteId] = useState('');
+   const [supervisionId, setSupervisionId] = useState('');
+@@ -633,7 +707,7 @@ export default function AltaContrato() {
+   }));
+   const montoDerivado = round2(conceptos.reduce((s, c) => s + (Number(importeDe(c.cantidad, c.pu)) || 0), 0));
+ 
+-  useEffect(() => { setErrores(ERR0); }, [datosGenerales, datosJuridicos, anticipoPct, conceptos, programa, garantias, superintendenteId, supervisionId]);
++  useEffect(() => { setErrores(ERR0); }, [datosGenerales, datosJuridicos, anticipoPct, conceptos, celdas, ciclo, garantias, superintendenteId, supervisionId]);
+ 
+   // Cuentas asignables al equipo (solo el residente puede consultarlas; si el rol
+   // no es residente la API responde 403 y dejamos las listas vacías).
+@@ -691,20 +765,20 @@ export default function AltaContrato() {
+         return { tab: 1, msg: `Concepto #${i + 1}: concepto, unidad y cantidad/P.U. mayores a 0`, errores: { ...ERR0, conceptoIdx: i } };
+       }
+     }
+-    // Regla 5: actividades dentro del plazo del contrato.
+-    const terminoDerivado = derivarTermino(datosGenerales.fechaInicio, Number(datosGenerales.plazoDias));
+-    for (let i = 0; i < programa.length; i++) {
+-      const a = programa[i];
+-      if (!String(a.actividad).trim() || !a.inicio || !a.termino || a.peso === '') return { tab: 2, msg: `Actividad #${i + 1}: revisa actividad, fechas y peso`, errores: { ...ERR0, actividadIdx: i } };
+-      if (a.termino < a.inicio) return { tab: 2, msg: `Actividad #${i + 1}: el término no puede ser anterior al inicio`, errores: { ...ERR0, actividadIdx: i } };
+-      const pp = Number(a.peso);
+-      if (!(pp >= 0 && pp <= 100)) return { tab: 2, msg: `Actividad #${i + 1}: el peso debe estar entre 0 y 100`, errores: { ...ERR0, actividadIdx: i } };
+-      if (a.inicio < datosGenerales.fechaInicio || a.termino > terminoDerivado) {
+-        return { tab: 2, msg: `Actividad #${i + 1}: debe estar dentro del plazo del contrato (${datosGenerales.fechaInicio} a ${terminoDerivado})`, errores: { ...ERR0, actividadIdx: i } };
++    // A2: programa de obra = matriz concepto × periodo. Σ por concepto ≤ contratado
++    // (art. 118 RLOPSRM); sin negativos ("menos dos metros no existe"). El reparto
++    // parcial (Σ < contratado) se permite con aviso (decisión de producto a confirmar).
++    if (Object.values(celdas).some((v) => v !== '' && Number(v) < 0)) {
++      return { tab: 2, msg: 'El programa de obra no admite cantidades negativas.', errores: { ...ERR0, programaError: true } };
++    }
++    for (let i = 0; i < conceptos.length; i++) {
++      const c = conceptos[i];
++      const contratado = Number(c.cantidad) || 0;
++      const planeado = round2(periodos.reduce((s, p) => s + (Number(celdas[`${c.rid}:${p.numero}`]) || 0), 0));
++      if (planeado > contratado) {
++        return { tab: 2, msg: `Programa: el concepto "${c.clave || c.concepto}" planea ${planeado} > contratado ${contratado} (art. 118 RLOPSRM).`, errores: { ...ERR0, programaError: true } };
+       }
+     }
+-    const sumaPeso = Math.round(programa.reduce((s, a) => s + (Number(a.peso) || 0), 0) * 100) / 100;
+-    if (sumaPeso > 100) return { tab: 2, msg: `El programa de obra suma ${sumaPeso}% (excede 100%). Ajusta los pesos antes de guardar.`, errores: ERR0 };
+     for (let i = 0; i < garantias.length; i++) {
+       const g = garantias[i];
+       if (garantiaVacia(g)) continue; // fila completamente vacía → se ignora
+@@ -735,7 +809,15 @@ export default function AltaContrato() {
+         juridicos: datosJuridicos,
+         // monto NO se envía: el backend lo deriva = Σ ROUND(cantidad×pu,2). clave por concepto.
+         conceptos: conceptos.map((c) => ({ clave: String(c.clave || '').trim(), concepto: c.concepto, unidad: c.unidad, cantidad: c.cantidad, pu: c.pu })),
+-        actividades: programa.map((a) => ({ actividad: a.actividad, inicio: a.inicio, termino: a.termino, peso: a.peso })),
++        // A2: ciclo + programa de obra (matriz). Solo celdas con cantidad > 0; el backend
++        // genera los periodos y valida Σ ≤ contratado (art. 118).
++        ciclo,
++        programa: conceptos.flatMap((c) => periodos.map((p) => {
++          const v = celdas[`${c.rid}:${p.numero}`];
++          return (v !== undefined && v !== '' && Number(v) > 0)
++            ? { clave: String(c.clave || '').trim(), periodoNumero: p.numero, cantidad: Number(v) }
++            : null;
++        }).filter(Boolean)),
+         garantias: garantias.filter((g) => !garantiaVacia(g)).map((g) => ({ tipo: g.tipo, afianzadora: g.afianzadora, poliza: g.poliza, monto: g.monto, vigencia: g.vigencia }))
+       };
+       const creado = await api.crearContrato(payload);
+@@ -764,7 +846,8 @@ export default function AltaContrato() {
+     setSuperintendenteId('');
+     setSupervisionId('');
+     setConceptos(conceptosIniciales());
+-    setPrograma(programaIniciales());
++    setCiclo('mensual');
++    setCeldas({});
+     setGarantias(garantiasIniciales());
+     setErrores(ERR0);
+     setTabActivo(0);
+@@ -776,7 +859,7 @@ export default function AltaContrato() {
+     const c = errores.campos || {};
+     if (REQ_GENERALES.some((k) => c[k]) || c.superintendente) s.add(0);
+     if (errores.conceptoIdx != null || errores.catalogoMonto) s.add(1);
+-    if (errores.actividadIdx != null) s.add(2);
++    if (errores.programaError) s.add(2);
+     if (c.anticipoPct || errores.garantiaIdx != null) s.add(4);
+     return s;
+   }, [errores]);
+@@ -797,7 +880,7 @@ export default function AltaContrato() {
+         onRemove={mkRemove(setConceptos)} soloLectura={soloLectura} errIdx={errores.conceptoIdx} montoDerivado={montoDerivado} />
+     ) },
+     { label: 'Programa de obra', content: wrapTab(
+-      <TabPrograma rows={programa} onCell={mkCell(setPrograma)} onAdd={mkAdd(setPrograma, { actividad: '', inicio: '', termino: '', peso: '' })} onRemove={mkRemove(setPrograma)} soloLectura={soloLectura} errIdx={errores.actividadIdx} />
++      <TabProgramaMatriz conceptos={conceptos} periodos={periodos} ciclo={ciclo} setCiclo={setCiclo} celdas={celdas} setCelda={setCelda} soloLectura={soloLectura} />
+     ) },
+     { label: 'Datos jurídicos', content: wrapTab(<TabJuridicos datos={datosJuridicos} set={setDatosJur} />) },
+     { label: 'Garantías, penalizaciones y amortización', content: wrapTab(
+diff --git a/frontend/src/services/api.js b/frontend/src/services/api.js
+index 5e6023b..db80790 100644
+--- a/frontend/src/services/api.js
++++ b/frontend/src/services/api.js
+@@ -35,6 +35,10 @@ export const api = {
+   crearContrato: (payload) => request('/contratos', { method: 'POST', body: JSON.stringify(payload) }),
+   listarContratos: () => request('/contratos'),
+   detalleContrato: (id) => request(`/contratos/${id}`),
++  // A2: programa de obra (matriz concepto × periodo). Lectura por participación; edición
++  // solo el residente asignado (lo valida el backend).
++  leerProgramaObra: (contratoId) => request(`/contratos/${contratoId}/programa`),
++  guardarProgramaObra: (contratoId, payload) => request(`/contratos/${contratoId}/programa`, { method: 'PUT', body: JSON.stringify(payload) }),
+   // PDF firmado del contrato (HU-01). La subida es multipart y la descarga binaria,
+   // asi que NO pasan por request() (que asume JSON).
+   documentoMeta: (id) => request(`/contratos/${id}/documento/meta`),

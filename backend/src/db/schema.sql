@@ -725,3 +725,99 @@ DO $$ BEGIN
     ALTER TABLE estimacion_generadores ALTER COLUMN pu_snapshot TYPE NUMERIC(16,4);
   END IF;
 END $$;
+
+-- =====================================================================
+-- Paquete A2: PROGRAMA DE OBRA = matriz CONCEPTO × PERIODO.
+-- Aditivo e idempotente. Reemplaza el modelo VIEJO de `contrato_actividades`
+-- (texto libre con %peso) por el programa REAL: los conceptos del catálogo (A1)
+-- repartidos en los periodos del ciclo de ejecución. (`contrato_actividades` se
+-- DEPRECA — ya no la escribe el alta — pero NO se borra: conserva datos viejos.)
+-- Fundamento Nivel 1 (literal, RLOPSRM/LOPSRM): art. 45 fr. X (programa de ejecución
+-- conforme al catálogo, calendarizado y cuantificado por periodos); art. 54 (la
+-- estimación es cíclica: cada 30 o 15 días); art. 118 (no se planea/estima más de lo
+-- contratado). El monto a cobrar por periodo = Σ (cantidad_celda × pu) — el programa
+-- es lo que permite VALIDAR las estimaciones (palabras del profesor, audio 2026-06-01).
+-- =====================================================================
+
+-- (1) Ciclo de estimación del contrato: 'mensual' o 'quincenal' (art. 54: cada 30/15
+--     días). Lo elige el usuario al configurar el contrato. Nullable: los contratos
+--     viejos quedan NULL; las altas nuevas CON programa lo exigen (lo valida la app).
+ALTER TABLE contratos ADD COLUMN IF NOT EXISTS ciclo_estimacion VARCHAR(10);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_contratos_ciclo') THEN
+    ALTER TABLE contratos ADD CONSTRAINT chk_contratos_ciclo
+      CHECK (ciclo_estimacion IS NULL OR ciclo_estimacion IN ('mensual','quincenal'));
+  END IF;
+END $$;
+
+-- (2) Periodos del ciclo = COLUMNAS de la matriz. Los genera el backend con el algoritmo
+--     de periodos (lib/programa.js: generarPeriodos), un mosaico contiguo sin huecos ni
+--     solapes; cada periodo cumple por construcción periodo_fin <= masUnMes(inicio), así
+--     ES un periodo válido de estimación (art. 54) y alinea con HU-12.
+CREATE TABLE IF NOT EXISTS contrato_periodos (
+  id          SERIAL PRIMARY KEY,
+  contrato_id INTEGER NOT NULL REFERENCES contratos(id) ON DELETE CASCADE,
+  numero      INTEGER NOT NULL CHECK (numero >= 1),       -- 1..N en orden cronológico
+  inicio      DATE NOT NULL,
+  fin         DATE NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT uq_contrato_periodos_numero UNIQUE (contrato_id, numero),
+  CONSTRAINT chk_contrato_periodos_fechas CHECK (fin >= inicio)
+);
+CREATE INDEX IF NOT EXISTS idx_contrato_periodos_contrato ON contrato_periodos(contrato_id);
+
+-- (3) programa_obra = CELDAS de la matriz (tabla HOJA). Celda = cantidad PLANEADA del
+--     concepto en el periodo, en la MISMA escala que el catálogo (NUMERIC(14,3)). NO es
+--     append-only: la matriz se EDITA por DELETE+INSERT (lib/programa.js: guardarMatriz)
+--     hasta que el contrato tiene su primera estimación; después se congela salvo enmienda
+--     por convenio (art. 99) — ese freeze es de aplicación, no un trigger, para permitir la
+--     excepción legal. La invariante Σ planeado <= contratado (art. 118) se valida en SQL.
+CREATE TABLE IF NOT EXISTS programa_obra (
+  id                   SERIAL PRIMARY KEY,
+  contrato_concepto_id INTEGER NOT NULL REFERENCES contrato_conceptos(id) ON DELETE CASCADE,
+  contrato_periodo_id  INTEGER NOT NULL REFERENCES contrato_periodos(id)  ON DELETE CASCADE,
+  cantidad             NUMERIC(14,3) NOT NULL CHECK (cantidad >= 0),  -- no negativos ("menos dos metros no existe")
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT uq_programa_obra_celda UNIQUE (contrato_concepto_id, contrato_periodo_id)  -- una celda por (concepto, periodo)
+);
+CREATE INDEX IF NOT EXISTS idx_programa_obra_concepto ON programa_obra(contrato_concepto_id);
+CREATE INDEX IF NOT EXISTS idx_programa_obra_periodo  ON programa_obra(contrato_periodo_id);
+
+-- =====================================================================
+-- Paquete 4.x: CORRECCIÓN DEL ALTA DE CONTRATOS (independiente de A2).
+-- Aditivo e idempotente.
+-- =====================================================================
+
+-- (4.2) Ensanche de contratos.monto NUMERIC(14,2) -> NUMERIC(18,2). El 14,2 topa en
+--   < 10^12 (≈1 billón): una obra grande (Σ importes ≥ 10^12, p. ej. 1,000,000 m² ×
+--   $1,500,000) desbordaba con error crudo 22003. 18,2 = 16 enteros (< 10^16), holgura
+--   para cualquier contrato real. No-destructivo (reinterpreta el valor). Guard por
+--   information_schema para no reescribir la tabla en cada arranque (como las migraciones
+--   de A1). El cast del monto derivado en contratos.controller.js también pasó a (18,2).
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.columns
+              WHERE table_name = 'contratos' AND column_name = 'monto'
+                AND (numeric_precision <> 18 OR numeric_scale <> 2)) THEN
+    ALTER TABLE contratos ALTER COLUMN monto TYPE NUMERIC(18,2);
+  END IF;
+END $$;
+
+-- (4.4) Tipo de documento del contrato: 'contrato' (PDF firmado, compatibilidad) o
+--   'anticipo_autorizacion' (autorización escrita del titular cuando el anticipo supera el
+--   umbral, art. 50 fr. IV LOPSRM). Permite DOS PDFs por contrato (uno por tipo), cada uno
+--   inmutable (el trigger append-only existente bloquea UPDATE; el control de "uno por tipo"
+--   lo hace el controller + el UNIQUE de abajo). Las filas existentes quedan 'contrato'.
+ALTER TABLE contrato_documentos ADD COLUMN IF NOT EXISTS tipo VARCHAR(40) NOT NULL DEFAULT 'contrato';
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_contrato_documentos_tipo') THEN
+    ALTER TABLE contrato_documentos ADD CONSTRAINT chk_contrato_documentos_tipo
+      CHECK (tipo IN ('contrato','anticipo_autorizacion'));
+  END IF;
+END $$;
+-- Un documento por (contrato, tipo). Las filas previas (≤1 por contrato, ahora 'contrato')
+-- no violan el UNIQUE. Guard explícito sobre pg_constraint (idempotente).
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_contrato_documentos_tipo') THEN
+    ALTER TABLE contrato_documentos ADD CONSTRAINT uq_contrato_documentos_tipo UNIQUE (contrato_id, tipo);
+  END IF;
+END $$;

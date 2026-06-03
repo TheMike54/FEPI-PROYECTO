@@ -270,3 +270,47 @@ CREATE INDEX IF NOT EXISTS idx_instruccion_estimacion ON instruccion_pago(estima
 3. **A.3 convenios** (tras A2) y el resto de tablas de Parte B/C según las pida cada equipo.
 
 Cada bloque entra como migración **aditiva e idempotente** dentro de `schema.sql`, aplicada por Maiki con el runbook (backup → `--single-transaction -v ON_ERROR_STOP=1` → verificar código viejo sobre esquema nuevo → push). Ninguna de estas migraciones reescribe datos existentes (todas son `ADD COLUMN ... DEFAULT`/`CREATE TABLE IF NOT EXISTS`).
+
+---
+
+## Parte A2 — Programa de obra = matriz CONCEPTO × PERIODO  ✅ YA INTEGRADO en `schema.sql`
+
+> **Estado: CONSTRUIDO Y PROBADO EN LOCAL** (no en `main` aún). A diferencia del resto de este
+> borrador, A2 **ya está en `schema.sql`** (sección "Paquete A2") porque era el prerrequisito que
+> bloquea HU-05/06/03. Se deja aquí registrado por completitud. Reemplaza el modelo viejo
+> `contrato_actividades` (texto libre con %peso), que se **DEPRECA** (no se borra: conserva datos viejos).
+> Fundamento Nivel 1: **art. 45 fr. X** RLOPSRM (programa conforme al catálogo, por periodos),
+> **art. 54** LOPSRM (ciclo 30/15 días), **art. 118** RLOPSRM (no exceder lo contratado),
+> **art. 99** LOPSRM (enmienda del programa por convenio).
+
+```sql
+-- (1) Ciclo de estimación del contrato (lo elige el usuario en el alta).
+ALTER TABLE contratos ADD COLUMN IF NOT EXISTS ciclo_estimacion VARCHAR(10);  -- CHECK IN ('mensual','quincenal')
+
+-- (2) Periodos del ciclo = COLUMNAS de la matriz (los genera lib/programa.js: generarPeriodos).
+CREATE TABLE IF NOT EXISTS contrato_periodos (
+  id SERIAL PRIMARY KEY,
+  contrato_id INTEGER NOT NULL REFERENCES contratos(id) ON DELETE CASCADE,
+  numero INTEGER NOT NULL CHECK (numero >= 1),
+  inicio DATE NOT NULL, fin DATE NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT uq_contrato_periodos_numero UNIQUE (contrato_id, numero),
+  CONSTRAINT chk_contrato_periodos_fechas CHECK (fin >= inicio)
+);
+
+-- (3) programa_obra = CELDAS de la matriz (tabla HOJA, escala = catálogo NUMERIC(14,3)).
+CREATE TABLE IF NOT EXISTS programa_obra (
+  id SERIAL PRIMARY KEY,
+  contrato_concepto_id INTEGER NOT NULL REFERENCES contrato_conceptos(id) ON DELETE CASCADE,
+  contrato_periodo_id  INTEGER NOT NULL REFERENCES contrato_periodos(id)  ON DELETE CASCADE,
+  cantidad NUMERIC(14,3) NOT NULL CHECK (cantidad >= 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT uq_programa_obra_celda UNIQUE (contrato_concepto_id, contrato_periodo_id)
+);
+```
+
+**Diseño (red-team C1–C7, en `lib/programa.js: guardarMatriz`):** edición por **DELETE+INSERT** (la matriz es hoja); **freeze de aplicación** (no trigger) = bloquea edición manual si hay estimación `<> 'rechazada'`, salvo **enmienda por convenio** (`convenioId`, art. 99); **lock** `pg_advisory_xact_lock(2, contrato_id)` (mismo que la integración de estimación → cierra el TOCTOU); invariante **Σ planeado ≤ contratado validado en SQL NUMERIC** (art. 118, sin epsilon).
+
+**Alineación con HU-12 (definición de "periodo"):** cada fila de `contrato_periodos` cumple por construcción `fin ≤ masUnMes(inicio)`, así que **es un periodo válido de estimación** (art. 54); una estimación de HU-12 corresponde a un `contrato_periodos.numero`, y la celda `programa_obra(concepto, periodo)` es la cantidad planeada contra la que se podrá validar el avance estimado (cableado fino de HU-12 contra `programa_obra` = follow-on, fuera de A2).
+
+**Decisión de producto PENDIENTE (no la decide Code):** ¿el programa DEBE distribuir todo (Σ = contratado) o se permite parcial / Σ=0 con aviso? El dibujo del profe distribuye todo; hoy se implementó **parcial permitido con aviso** (solo se bloquea el exceso, art. 118). **Confirmar con el profe.**

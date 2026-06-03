@@ -1,0 +1,508 @@
+--- a/frontend/src/pages/AltaContrato.jsx
++++ b/frontend/src/pages/AltaContrato.jsx
+@@ -16,6 +16,19 @@
+ 
+ const UNIDADES = ['m', 'm²', 'm³', 'ml', 'cm', 'kg', 'ton', 'pza', 'lote', 'jornal', '%'];
+ 
++// --- 4.2: límites de las columnas NUMERIC (DEBEN ir en sintonía con schema.sql) ---
++// cantidad NUMERIC(14,3) → 11 enteros (<10^11); pu NUMERIC(16,4) → 12 enteros (<10^12);
++// monto NUMERIC(18,2) (ENSANCHADO en 4.2, antes 14,2) → 16 enteros (<10^16). Validar en la
++// vista contra estos topes evita el error crudo 22003 de Postgres al guardar.
++const MAX_CANTIDAD = 1e11;
++const MAX_PU = 1e12;
++const MAX_MONTO = 1e16;
++
++// --- 4.4: umbral de % de anticipo que EXIGE/HABILITA el PDF de autorización ---
++// Default 30% (art. 50 fr. IV LOPSRM: autorización escrita del titular). PARAMETRIZABLE:
++// el umbral exacto y si el PDF es obligatorio o solo habilitado los confirma el profe (ver doc).
++const ANTICIPO_UMBRAL_PDF = 30;
++
+ // --- Reglas de dominio HU-01 ---
+ const IVA_RATE = 0.16;            // IVA derivado (solo se muestra, NO se guarda)
+ 
+@@ -390,7 +403,48 @@
+   );
+ }
+ 
+-function TabGarantias({ rows, onCell, onAdd, onRemove, anticipoPct, setAnticipoPct, soloLectura, errIdx, errAnticipo }) {
++// 4.4: subida de la AUTORIZACIÓN del anticipo (PDF). Reutiliza el patrón de PDF del
++// contrato (BYTEA, append-only), con `tipo='anticipo_autorizacion'`. El sistema NO valida
++// el contenido (responsabilidad del residente); solo lo guarda ligado al contrato.
++function AnticipoAutorizacionPDF({ contratoId, soloLectura }) {
++  const { showToast } = useToast();
++  const [meta, setMeta] = useState(null);
++  const [subiendo, setSubiendo] = useState(false);
++  const inputRef = useRef(null);
++
++  const cargarMeta = useCallback(async () => {
++    if (!contratoId) { setMeta(null); return; }
++    try { setMeta(await api.documentoMeta(contratoId, 'anticipo_autorizacion')); }
++    catch (err) { if (err.status === 404) setMeta(null); else showToast('No se pudo consultar la autorización del anticipo'); }
++  }, [contratoId, showToast]);
++  useEffect(() => { cargarMeta(); }, [cargarMeta]);
++
++  const onArchivo = async (e) => {
++    const file = e.target.files && e.target.files[0];
++    if (!file) return;
++    if (file.type !== 'application/pdf') { showToast('Solo se permiten archivos PDF'); if (inputRef.current) inputRef.current.value = ''; return; }
++    if (file.size > 10 * 1024 * 1024) { showToast('El PDF excede el límite de 10 MB'); if (inputRef.current) inputRef.current.value = ''; return; }
++    setSubiendo(true);
++    try { await api.subirDocumento(contratoId, file, 'anticipo_autorizacion'); showToast('Autorización del anticipo adjuntada'); await cargarMeta(); }
++    catch (err) { showToast(err.message || 'No se pudo subir la autorización'); }
++    finally { setSubiendo(false); if (inputRef.current) inputRef.current.value = ''; }
++  };
++
++  if (!contratoId) {
++    return <p className="text-xs text-amber-800 mt-2" data-testid="anticipo-pdf-pendiente">Guarda primero el contrato; luego podrás adjuntar aquí la <strong>autorización del anticipo</strong> (PDF).</p>;
++  }
++  return meta ? (
++    <p className="text-sm text-green-800 mt-2" data-testid="anticipo-pdf-ok">✓ Autorización adjuntada: <strong>{meta.nombre}</strong> ({(Number(meta.tamano) / 1024).toFixed(0)} KB). Es inmutable.</p>
++  ) : (
++    <div className="mt-2" data-testid="anticipo-pdf-uploader">
++      <p className="text-sm font-semibold text-blue-900 mb-1">Adjunta la autorización escrita (PDF):</p>
++      <input ref={inputRef} type="file" accept="application/pdf,.pdf" onChange={onArchivo} disabled={soloLectura || subiendo} className="block text-sm" />
++      {subiendo && <p className="text-sm text-sigecop-accent mt-1">Subiendo…</p>}
++    </div>
++  );
++}
++
++function TabGarantias({ rows, onCell, onAdd, onRemove, anticipoPct, setAnticipoPct, soloLectura, errIdx, errAnticipo, contratoId }) {
+   const hoy = new Date();
+   const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+   const ap = Number(anticipoPct) || 0;
+@@ -402,12 +456,14 @@
+         <Field label="% de anticipo otorgado" hint="Base de la amortización (art. 50 LOPSRM). 0–100%.">
+           <input type="number" min="0" max="100" step="0.01" className={inputCls(errAnticipo)} value={anticipoPct} onChange={(e) => setAnticipoPct(e.target.value)} disabled={soloLectura} data-testid="anticipo-input" />
+         </Field>
+-        {ap > 30 && (
++        {ap > ANTICIPO_UMBRAL_PDF && (
+           <div className="mt-3 bg-blue-50 border-l-4 border-blue-500 px-4 py-3 text-sm text-blue-900 space-y-2" data-testid="avisos-anticipo">
+-            <div className="text-xs font-bold uppercase tracking-wider text-blue-700">Aviso legal</div>
+-            <p>Conforme al art. 50 fr. IV de la LOPSRM, un anticipo mayor al 30% requiere autorización escrita del titular de la dependencia o entidad. El sistema solo lo informa; el trámite se realiza fuera del sistema.</p>
+-            {ap > 50 && <p>Conforme al art. 139 del RLOPSRM, un anticipo mayor al 50% debe informarse a la Secretaría antes de su entrega. El sistema solo lo informa; el trámite se realiza fuera del sistema.</p>}
++            <div className="text-xs font-bold uppercase tracking-wider text-blue-700">Autorización requerida</div>
++            <p>Conforme al <strong>art. 50 fr. IV de la LOPSRM</strong>, un anticipo mayor al {ANTICIPO_UMBRAL_PDF}% requiere <strong>autorización escrita del titular</strong> de la dependencia o entidad. <strong>Adjunta el PDF de la autorización</strong> (el sistema lo guarda ligado al contrato; no valida su contenido — es responsabilidad del residente).</p>
++            {ap > 50 && <p>Además, conforme al <strong>art. 139 del RLOPSRM</strong>, un anticipo mayor al 50% debe informarse a la Secretaría (SFP) antes de su entrega.</p>}
+             {ap >= 100 && <p>El 100% solo procede en contrato plurianual que inicia en el último trimestre (art. 50 fr. V LOPSRM).</p>}
++            {/* 4.4: el aviso deja de ser solo informativo → HABILITA subir la autorización. */}
++            <AnticipoAutorizacionPDF contratoId={contratoId} soloLectura={soloLectura} />
+           </div>
+         )}
+       </div>
+@@ -645,6 +701,10 @@
+ }
+ 
+ const REQ_GENERALES = ['folio', 'tipo', 'objeto', 'contratista', 'dependencia', 'plazoDias', 'fechaInicio'];
++// 4.1: pasos del WIZARD de creación (captura). PDF firmado (5) y Registrados (6) son
++// auxiliares (post-guardado), fuera de la progresión obligatoria.
++const PASOS_WIZARD = [0, 1, 2, 3, 4];
++const ULTIMO_PASO_WIZARD = 4;
+ 
+ export default function AltaContrato() {
+   const { showToast } = useToast();
+@@ -722,6 +782,9 @@
+   const [errorLista, setErrorLista] = useState(null);
+   const [guardando, setGuardando] = useState(false);
+   const [contratoGuardadoId, setContratoGuardadoId] = useState(null);
++  // 4.1: "sucio" = el usuario tocó el formulario y aún no guardó (para el aviso de salir).
++  const [dirty, setDirty] = useState(false);
++  const montadoRef = useRef(false);
+ 
+   const cargarContratos = useCallback(async () => {
+     if (sinSesion) return;
+@@ -733,65 +796,122 @@
+ 
+   useEffect(() => { cargarContratos(); }, [cargarContratos]);
+ 
+-  // Validacion en cliente con reglas de dominio. Requeridos todos juntos; el resto localizado.
+-  const validar = () => {
+-    const faltan = REQ_GENERALES.filter((k) => String(datosGenerales[k] ?? '').trim() === '');
+-    if (faltan.length) {
+-      const campos = {}; faltan.forEach((k) => { campos[k] = true; });
+-      return { tab: 0, msg: `Faltan campos: ${faltan.join(', ')}`, errores: { ...ERR0, campos } };
+-    }
+-    if (!(Number.isInteger(Number(datosGenerales.plazoDias)) && Number(datosGenerales.plazoDias) > 0)) return { tab: 0, msg: 'El plazo debe ser un entero mayor a 0', errores: { ...ERR0, campos: { plazoDias: true } } };
+-    // Equipo: superintendente obligatorio.
+-    if (!superintendenteId) return { tab: 0, msg: 'Asigna un superintendente al equipo del contrato', errores: { ...ERR0, campos: { superintendente: true } } };
+-    if (anticipoPct !== '' && anticipoPct !== null) {
+-      const a = Number(anticipoPct);
+-      if (!(a >= 0 && a <= 100)) return { tab: 4, msg: 'El % de anticipo debe estar entre 0 y 100', errores: { ...ERR0, campos: { anticipoPct: true } } };
+-    }
+-    // El monto se DERIVA del catálogo → se exige al menos un concepto.
+-    if (conceptos.length === 0) {
+-      return { tab: 1, msg: 'Captura al menos un concepto: el monto del contrato se deriva del catálogo.', errores: { ...ERR0, catalogoMonto: true } };
++  // 4.1: marca el formulario como "sucio" en el primer cambio real (no en el montaje).
++  // (Va DESPUÉS de declarar dirty/montadoRef/contratoGuardadoId: sus dependencias se
++  // evalúan en orden de código, así que referenciarlas antes daría TDZ.)
++  useEffect(() => {
++    if (!montadoRef.current) { montadoRef.current = true; return; }
++    setDirty(true);
++  }, [datosGenerales, datosJuridicos, anticipoPct, conceptos, celdas, ciclo, garantias, superintendenteId, supervisionId]);
++
++  // 4.1: aviso del navegador "¿seguro de salir?" ante recarga/cierre con cambios sin guardar.
++  // (Persistencia del borrador ante recarga = NO implementada — opcional; ver doc.)
++  useEffect(() => {
++    const handler = (e) => { if (dirty && !contratoGuardadoId) { e.preventDefault(); e.returnValue = ''; } };
++    window.addEventListener('beforeunload', handler);
++    return () => window.removeEventListener('beforeunload', handler);
++  }, [dirty, contratoGuardadoId]);
++
++  // 4.1/4.2: validación POR PASO (en la vista). Cada paso del wizard se valida antes de
++  // avanzar; `validar()` (abajo) corre todos los pasos para el guardado final. Devuelve
++  // { ok } o { ok:false, msg, errores }. Pasos: 0 generales · 1 catálogo · 2 programa ·
++  // 3 jurídicos · 4 garantías/anticipo.
++  const validarPaso = (idx) => {
++    if (idx === 0) {
++      const faltan = REQ_GENERALES.filter((k) => String(datosGenerales[k] ?? '').trim() === '');
++      if (faltan.length) {
++        const campos = {}; faltan.forEach((k) => { campos[k] = true; });
++        return { ok: false, msg: `Faltan campos: ${faltan.join(', ')}`, errores: { ...ERR0, campos } };
++      }
++      if (!(Number.isInteger(Number(datosGenerales.plazoDias)) && Number(datosGenerales.plazoDias) > 0)) return { ok: false, msg: 'El plazo debe ser un entero mayor a 0', errores: { ...ERR0, campos: { plazoDias: true } } };
++      if (!superintendenteId) return { ok: false, msg: 'Asigna un superintendente al equipo del contrato', errores: { ...ERR0, campos: { superintendente: true } } };
++      return { ok: true };
+     }
+-    // Cada concepto: clave (obligatoria, ≤40, única por contrato), concepto, unidad, cantidad>0, PU>0.
+-    const claves = new Set();
+-    for (let i = 0; i < conceptos.length; i++) {
+-      const c = conceptos[i];
+-      const cant = Number(c.cantidad); const pu = Number(c.pu);
+-      const clave = String(c.clave || '').trim();
+-      if (!clave) return { tab: 1, msg: `Concepto #${i + 1}: la clave es obligatoria (la defines tú).`, errores: { ...ERR0, conceptoIdx: i } };
+-      if (clave.length > 40) return { tab: 1, msg: `Concepto #${i + 1}: la clave excede 40 caracteres.`, errores: { ...ERR0, conceptoIdx: i } };
+-      if (claves.has(clave)) return { tab: 1, msg: `Concepto #${i + 1}: la clave "${clave}" está repetida; cada clave debe ser única.`, errores: { ...ERR0, conceptoIdx: i } };
+-      claves.add(clave);
+-      if (!String(c.concepto).trim() || !String(c.unidad).trim() || c.cantidad === '' || c.pu === '' || !(cant > 0) || !(pu > 0)) {
+-        return { tab: 1, msg: `Concepto #${i + 1}: concepto, unidad y cantidad/P.U. mayores a 0`, errores: { ...ERR0, conceptoIdx: i } };
++    if (idx === 1) {
++      // El monto se DERIVA del catálogo → se exige al menos un concepto.
++      if (conceptos.length === 0) return { ok: false, msg: 'Captura al menos un concepto: el monto del contrato se deriva del catálogo.', errores: { ...ERR0, catalogoMonto: true } };
++      const claves = new Set();
++      for (let i = 0; i < conceptos.length; i++) {
++        const c = conceptos[i];
++        const cant = Number(c.cantidad); const pu = Number(c.pu);
++        const clave = String(c.clave || '').trim();
++        if (!clave) return { ok: false, msg: `Concepto #${i + 1}: la clave es obligatoria (la defines tú).`, errores: { ...ERR0, conceptoIdx: i } };
++        if (clave.length > 40) return { ok: false, msg: `Concepto #${i + 1}: la clave excede 40 caracteres.`, errores: { ...ERR0, conceptoIdx: i } };
++        if (claves.has(clave)) return { ok: false, msg: `Concepto #${i + 1}: la clave "${clave}" está repetida; cada clave debe ser única.`, errores: { ...ERR0, conceptoIdx: i } };
++        claves.add(clave);
++        if (!String(c.concepto).trim() || !String(c.unidad).trim() || c.cantidad === '' || c.pu === '' || !(cant > 0) || !(pu > 0)) {
++          return { ok: false, msg: `Concepto #${i + 1}: concepto, unidad y cantidad/P.U. mayores a 0`, errores: { ...ERR0, conceptoIdx: i } };
++        }
++        // 4.2: topes de las columnas NUMERIC (evita el 22003 crudo al guardar; di DÓNDE).
++        if (cant >= MAX_CANTIDAD) return { ok: false, msg: `Concepto #${i + 1}: la cantidad es demasiado grande (máx. ${MAX_CANTIDAD.toLocaleString('es-MX')}).`, errores: { ...ERR0, conceptoIdx: i } };
++        if (pu >= MAX_PU) return { ok: false, msg: `Concepto #${i + 1}: el precio unitario es demasiado grande (máx. ${MAX_PU.toLocaleString('es-MX')}).`, errores: { ...ERR0, conceptoIdx: i } };
+       }
++      // 4.2: el monto derivado no puede exceder la capacidad de la columna.
++      if (montoDerivado >= MAX_MONTO) return { ok: false, msg: `El monto del contrato (${formatoMXN.format(montoDerivado)}) excede el máximo permitido. Revisa cantidades y precios unitarios.`, errores: { ...ERR0, catalogoMonto: true } };
++      return { ok: true };
+     }
+-    // A2: programa de obra = matriz concepto × periodo. Σ por concepto ≤ contratado
+-    // (art. 118 RLOPSRM); sin negativos ("menos dos metros no existe"). El reparto
+-    // parcial (Σ < contratado) se permite con aviso (decisión de producto a confirmar).
+-    if (Object.values(celdas).some((v) => v !== '' && Number(v) < 0)) {
+-      return { tab: 2, msg: 'El programa de obra no admite cantidades negativas.', errores: { ...ERR0, programaError: true } };
++    if (idx === 2) {
++      // A2: programa = matriz concepto × periodo. Σ por concepto ≤ contratado (art. 118
++      // RLOPSRM); sin negativos ("menos dos metros no existe"). Parcial permitido (aviso).
++      if (Object.values(celdas).some((v) => v !== '' && Number(v) < 0)) {
++        return { ok: false, msg: 'El programa de obra no admite cantidades negativas.', errores: { ...ERR0, programaError: true } };
++      }
++      for (let i = 0; i < conceptos.length; i++) {
++        const c = conceptos[i];
++        const contratado = Number(c.cantidad) || 0;
++        const planeado = round2(periodos.reduce((s, p) => s + (Number(celdas[`${c.rid}:${p.numero}`]) || 0), 0));
++        if (planeado > contratado) {
++          return { ok: false, msg: `Programa: el concepto "${c.clave || c.concepto}" planea ${planeado} > contratado ${contratado} (art. 118 RLOPSRM).`, errores: { ...ERR0, programaError: true } };
++        }
++      }
++      return { ok: true };
+     }
+-    for (let i = 0; i < conceptos.length; i++) {
+-      const c = conceptos[i];
+-      const contratado = Number(c.cantidad) || 0;
+-      const planeado = round2(periodos.reduce((s, p) => s + (Number(celdas[`${c.rid}:${p.numero}`]) || 0), 0));
+-      if (planeado > contratado) {
+-        return { tab: 2, msg: `Programa: el concepto "${c.clave || c.concepto}" planea ${planeado} > contratado ${contratado} (art. 118 RLOPSRM).`, errores: { ...ERR0, programaError: true } };
++    if (idx === 3) return { ok: true }; // datos jurídicos: bloque opcional
++    if (idx === 4) {
++      if (anticipoPct !== '' && anticipoPct !== null) {
++        const a = Number(anticipoPct);
++        if (!(a >= 0 && a <= 100)) return { ok: false, msg: 'El % de anticipo debe estar entre 0 y 100', errores: { ...ERR0, campos: { anticipoPct: true } } };
++      }
++      for (let i = 0; i < garantias.length; i++) {
++        const g = garantias[i];
++        if (garantiaVacia(g)) continue; // fila completamente vacía → se ignora
++        if (!String(g.tipo).trim()) return { ok: false, msg: `Garantía #${i + 1}: el tipo es obligatorio`, errores: { ...ERR0, garantiaIdx: i } };
++        if (!(Number(g.monto) > 0)) return { ok: false, msg: `Garantía #${i + 1}: si capturas la póliza, indica un monto mayor a 0`, errores: { ...ERR0, garantiaIdx: i } };
+       }
++      return { ok: true };
+     }
+-    for (let i = 0; i < garantias.length; i++) {
+-      const g = garantias[i];
+-      if (garantiaVacia(g)) continue; // fila completamente vacía → se ignora
+-      if (!String(g.tipo).trim()) return { tab: 4, msg: `Garantía #${i + 1}: el tipo es obligatorio`, errores: { ...ERR0, garantiaIdx: i } };
+-      if (!(Number(g.monto) > 0)) return { tab: 4, msg: `Garantía #${i + 1}: si capturas la póliza, indica un monto mayor a 0`, errores: { ...ERR0, garantiaIdx: i } };
++    return { ok: true };
++  };
++
++  // Validación completa para el guardado final: corre todos los pasos del wizard.
++  const validar = () => {
++    for (const p of PASOS_WIZARD) {
++      const v = validarPaso(p);
++      if (!v.ok) return { tab: p, msg: v.msg, errores: v.errores };
+     }
+     return null;
+   };
+ 
++  // 4.1: navegación del wizard. Atrás y los pasos auxiliares (PDF/Registrados) son libres;
++  // avanzar exige que los pasos intermedios sean VÁLIDOS (validación en la vista). En modo
++  // demostración (sin sesión real) la navegación es libre: sin token no hay superintendente
++  // asignable, así que el wizard no puede gatear; el gating aplica con sesión real.
++  const irAPaso = (target) => {
++    if (sinSesion || target <= tabActivo || target > ULTIMO_PASO_WIZARD) { setTabActivo(target); return; }
++    for (let p = tabActivo; p < target; p++) {
++      const v = validarPaso(p);
++      if (!v.ok) { setErrores(v.errores); setTabActivo(p); showToast(v.msg); return; }
++    }
++    setErrores(ERR0);
++    setTabActivo(target);
++  };
++
+   const handleGuardar = async () => {
+     if (guardando || soloLectura) return;
+     const v = validar();
+     if (v) { setErrores(v.errores); setTabActivo(v.tab); showToast(v.msg); return; }
++    // 4.1: confirmación explícita antes de guardar (último paso del wizard).
++    if (!window.confirm('¿Seguro de guardar el contrato?')) return;
+     setErrores(ERR0);
+     setGuardando(true);
+     try {
+@@ -822,6 +942,7 @@
+       };
+       const creado = await api.crearContrato(payload);
+       if (creado && creado.id) setContratoGuardadoId(creado.id);
++      setDirty(false); // 4.1: ya guardado, no avisar al salir
+       showToast('Contrato guardado: ' + payload.folio);
+       cargarContratos();
+     } catch (err) {
+@@ -852,6 +973,8 @@
+     setErrores(ERR0);
+     setTabActivo(0);
+     setContratoGuardadoId(null);
++    setDirty(false);
++    montadoRef.current = false; // re-armar el detector de "sucio"
+   };
+ 
+   const tabsConError = useMemo(() => {
+@@ -884,7 +1007,7 @@
+     ) },
+     { label: 'Datos jurídicos', content: wrapTab(<TabJuridicos datos={datosJuridicos} set={setDatosJur} />) },
+     { label: 'Garantías, penalizaciones y amortización', content: wrapTab(
+-      <TabGarantias rows={garantias} onCell={mkCell(setGarantias)} onAdd={mkAdd(setGarantias, { tipo: '', afianzadora: '', poliza: '', monto: '', vigencia: '' })} onRemove={mkRemove(setGarantias)} anticipoPct={anticipoPct} setAnticipoPct={setAnticipoPct} soloLectura={soloLectura} errIdx={errores.garantiaIdx} errAnticipo={errores.campos.anticipoPct} />
++      <TabGarantias rows={garantias} onCell={mkCell(setGarantias)} onAdd={mkAdd(setGarantias, { tipo: '', afianzadora: '', poliza: '', monto: '', vigencia: '' })} onRemove={mkRemove(setGarantias)} anticipoPct={anticipoPct} setAnticipoPct={setAnticipoPct} soloLectura={soloLectura} errIdx={errores.garantiaIdx} errAnticipo={errores.campos.anticipoPct} contratoId={contratoGuardadoId} />
+     ) },
+     { label: 'PDF firmado', content: wrapTab(<TabPdfFirmado contratoId={contratoGuardadoId} soloLectura={soloLectura} />) },
+     { label: 'Registrados', content: (
+@@ -901,13 +1024,28 @@
+         breadcrumb={[{ label: 'Inicio', href: '/' }, { label: 'Contratos' }, { label: 'Alta de contratos' }]}
+       />
+ 
+-      <Tabs tabs={tabs} active={tabActivo} onTabChange={setTabActivo} tabsConError={tabsConError} />
++      <Tabs tabs={tabs} active={tabActivo} onTabChange={irAPaso} tabsConError={tabsConError} />
+ 
+-      <div className="mt-6 flex justify-end gap-3">
++      {/* 4.1: barra del wizard. "Siguiente" por paso (gated por validación en la vista);
++          "Guardar contrato" SOLO en el último paso de captura; tras guardar → adjuntar PDF. */}
++      <div className="mt-6 flex items-center justify-between gap-3">
+         <button type="button" onClick={handleCancelar} disabled={soloLectura} className="px-4 py-2 text-slate-600 hover:text-slate-900 disabled:opacity-40">Cancelar</button>
+-        <button type="button" className="sg-btn-primary" disabled={soloLectura || guardando} onClick={handleGuardar}>
+-          {guardando ? 'Guardando…' : 'Guardar contrato'}
+-        </button>
++        <div className="flex items-center gap-3">
++          {tabActivo > 0 && tabActivo <= ULTIMO_PASO_WIZARD && (
++            <button type="button" onClick={() => irAPaso(tabActivo - 1)} disabled={soloLectura} className="px-4 py-2 text-slate-600 hover:text-slate-900 disabled:opacity-40" data-testid="btn-atras">← Atrás</button>
++          )}
++          {tabActivo < ULTIMO_PASO_WIZARD ? (
++            <button type="button" onClick={() => irAPaso(tabActivo + 1)} disabled={soloLectura} className="sg-btn-primary" data-testid="btn-siguiente">Siguiente →</button>
++          ) : tabActivo === ULTIMO_PASO_WIZARD ? (
++            contratoGuardadoId ? (
++              <button type="button" onClick={() => irAPaso(5)} className="sg-btn-primary" data-testid="btn-ir-pdf">Adjuntar PDF firmado →</button>
++            ) : (
++              <button type="button" className="sg-btn-primary" disabled={soloLectura || guardando} onClick={handleGuardar} data-testid="btn-guardar">
++                {guardando ? 'Guardando…' : 'Guardar contrato'}
++              </button>
++            )
++          ) : null}
++        </div>
+       </div>
+ 
+       <SeccionCriterios
+--- a/frontend/src/services/api.js
++++ b/frontend/src/services/api.js
+@@ -41,13 +41,15 @@
+   guardarProgramaObra: (contratoId, payload) => request(`/contratos/${contratoId}/programa`, { method: 'PUT', body: JSON.stringify(payload) }),
+   // PDF firmado del contrato (HU-01). La subida es multipart y la descarga binaria,
+   // asi que NO pasan por request() (que asume JSON).
+-  documentoMeta: (id) => request(`/contratos/${id}/documento/meta`),
+-  subirDocumento: (id, file) => {
++  // 4.4: `tipo` opcional ('contrato' por defecto | 'anticipo_autorizacion'). Sin tipo se
++  // comporta igual que antes (compatibilidad).
++  documentoMeta: (id, tipo) => request(`/contratos/${id}/documento/meta${tipo ? `?tipo=${encodeURIComponent(tipo)}` : ''}`),
++  subirDocumento: (id, file, tipo) => {
+     const fd = new FormData();
+     fd.append('documento', file);
+     const token = localStorage.getItem('sigecop_token');
+     // OJO: no fijar Content-Type; el navegador pone el boundary del multipart.
+-    return fetch(`${API_URL}/contratos/${id}/documento`, {
++    return fetch(`${API_URL}/contratos/${id}/documento${tipo ? `?tipo=${encodeURIComponent(tipo)}` : ''}`, {
+       method: 'POST',
+       headers: token ? { Authorization: `Bearer ${token}` } : {},
+       body: fd
+@@ -62,9 +64,9 @@
+       return data;
+     });
+   },
+-  descargarDocumento: async (id) => {
++  descargarDocumento: async (id, tipo) => {
+     const token = localStorage.getItem('sigecop_token');
+-    const res = await fetch(`${API_URL}/contratos/${id}/documento`, {
++    const res = await fetch(`${API_URL}/contratos/${id}/documento${tipo ? `?tipo=${encodeURIComponent(tipo)}` : ''}`, {
+       headers: token ? { Authorization: `Bearer ${token}` } : {}
+     });
+     if (!res.ok) {
+--- a/backend/src/controllers/contratos.controller.js
++++ b/backend/src/controllers/contratos.controller.js
+@@ -122,7 +122,9 @@
+     const vals = conceptos.map((_, i) => `($${i * 2 + 1}::numeric(14,3), $${i * 2 + 2}::numeric(16,4))`).join(', ');
+     const prm = conceptos.flatMap((c) => [numOrNull(c.cantidad), numOrNull(c.pu)]);
+     const mr = await pool.query(
+-      `SELECT COALESCE(SUM(ROUND(t.cant * t.pu, 2)), 0)::numeric(14,2) AS monto
++      // 4.2: monto a NUMERIC(18,2) (antes 14,2). Obras grandes (Σ importes ≥ 10^12)
++      // desbordaban la columna 14,2 → error crudo 22003. Ahora cabe (< 10^16).
++      `SELECT COALESCE(SUM(ROUND(t.cant * t.pu, 2)), 0)::numeric(18,2) AS monto
+          FROM (VALUES ${vals}) AS t(cant, pu)`,
+       prm
+     );
+@@ -331,7 +333,8 @@
+       return res.status(400).json({ error: 'Un campo de texto excede el límite de caracteres permitido.' });
+     }
+     if (err.code === '22003') {
+-      return res.status(400).json({ error: 'Un valor numérico está fuera de rango (demasiado grande).' });
++      // 4.2: nunca el error crudo de Postgres; di DÓNDE mirar.
++      return res.status(400).json({ error: 'Un valor numérico excede el máximo permitido. Revisa la cantidad o el precio unitario de algún concepto, o que el monto total del contrato no sea demasiado grande.' });
+     }
+     console.error('[crearContrato]', err);
+     return res.status(500).json({ error: 'Error interno' });
+@@ -425,6 +428,9 @@
+     if (!req.file) {
+       return res.status(400).json({ error: 'Falta el archivo PDF (campo "documento")' });
+     }
++    // 4.4: tipo de documento. Allowlist; default 'contrato' (compatibilidad). El
++    // 'anticipo_autorizacion' guarda la autorización escrita del titular (art. 50 fr. IV).
++    const tipo = req.query.tipo === 'anticipo_autorizacion' ? 'anticipo_autorizacion' : 'contrato';
+     const { buffer, originalname, mimetype, size } = req.file;
+     // Backstop: revalidar magic bytes %PDF (no confiar solo en el mimetype declarado).
+     if (!buffer || buffer.length < 4 || buffer.subarray(0, 4).toString('latin1') !== '%PDF') {
+@@ -442,17 +448,18 @@
+     if (cres.rows[0].residente_id !== req.user.id) {
+       return res.status(403).json({ error: 'Solo el residente asignado al contrato puede subir su documento' });
+     }
+-    // Append-only: si ya hay un documento, es inmutable y no se reemplaza.
+-    const ya = await pool.query('SELECT id FROM contrato_documentos WHERE contrato_id = $1 LIMIT 1', [id]);
++    // Append-only POR TIPO: si ya hay un documento de ese tipo, es inmutable y no se reemplaza.
++    const ya = await pool.query('SELECT id FROM contrato_documentos WHERE contrato_id = $1 AND tipo = $2 LIMIT 1', [id, tipo]);
+     if (ya.rowCount > 0) {
+-      return res.status(409).json({ error: 'El contrato ya tiene un documento firmado; es inmutable y no se puede reemplazar' });
++      const cual = tipo === 'anticipo_autorizacion' ? 'la autorización del anticipo' : 'el documento firmado';
++      return res.status(409).json({ error: `El contrato ya tiene ${cual}; es inmutable y no se puede reemplazar` });
+     }
+ 
+     const r = await pool.query(
+-      `INSERT INTO contrato_documentos (contrato_id, nombre, mime, tamano, contenido)
+-       VALUES ($1, $2, $3, $4, $5)
+-       RETURNING id, nombre, mime, tamano, subido_en`,
+-      [id, originalname, mimetype, size, buffer]
++      `INSERT INTO contrato_documentos (contrato_id, tipo, nombre, mime, tamano, contenido)
++       VALUES ($1, $2, $3, $4, $5, $6)
++       RETURNING id, tipo, nombre, mime, tamano, subido_en`,
++      [id, tipo, originalname, mimetype, size, buffer]
+     );
+     return res.status(201).json(r.rows[0]);
+   } catch (err) {
+@@ -482,11 +489,12 @@
+     const acc = await asegurarAccesoContrato(req, id);
+     if (acc.error === 404) return res.status(404).json({ error: 'Contrato no encontrado' });
+     if (acc.error === 403) return res.status(403).json({ error: 'No tienes acceso a este contrato' });
++    const tipo = req.query.tipo === 'anticipo_autorizacion' ? 'anticipo_autorizacion' : 'contrato'; // 4.4
+     const r = await pool.query(
+-      `SELECT id, nombre, mime, tamano, subido_en
+-         FROM contrato_documentos WHERE contrato_id = $1
++      `SELECT id, tipo, nombre, mime, tamano, subido_en
++         FROM contrato_documentos WHERE contrato_id = $1 AND tipo = $2
+         ORDER BY subido_en DESC LIMIT 1`,
+-      [id]
++      [id, tipo]
+     );
+     if (r.rowCount === 0) {
+       return res.status(404).json({ error: 'El contrato no tiene PDF ligado' });
+@@ -508,11 +516,12 @@
+     const acc = await asegurarAccesoContrato(req, id);
+     if (acc.error === 404) return res.status(404).json({ error: 'Contrato no encontrado' });
+     if (acc.error === 403) return res.status(403).json({ error: 'No tienes acceso a este contrato' });
++    const tipo = req.query.tipo === 'anticipo_autorizacion' ? 'anticipo_autorizacion' : 'contrato'; // 4.4
+     const r = await pool.query(
+       `SELECT nombre, mime, tamano, contenido
+-         FROM contrato_documentos WHERE contrato_id = $1
++         FROM contrato_documentos WHERE contrato_id = $1 AND tipo = $2
+         ORDER BY subido_en DESC LIMIT 1`,
+-      [id]
++      [id, tipo]
+     );
+     if (r.rowCount === 0) {
+       return res.status(404).json({ error: 'El contrato no tiene PDF ligado' });
+--- a/backend/src/db/schema.sql
++++ b/backend/src/db/schema.sql
+@@ -782,3 +782,42 @@
+ );
+ CREATE INDEX IF NOT EXISTS idx_programa_obra_concepto ON programa_obra(contrato_concepto_id);
+ CREATE INDEX IF NOT EXISTS idx_programa_obra_periodo  ON programa_obra(contrato_periodo_id);
++
++-- =====================================================================
++-- Paquete 4.x: CORRECCIÓN DEL ALTA DE CONTRATOS (independiente de A2).
++-- Aditivo e idempotente.
++-- =====================================================================
++
++-- (4.2) Ensanche de contratos.monto NUMERIC(14,2) -> NUMERIC(18,2). El 14,2 topa en
++--   < 10^12 (≈1 billón): una obra grande (Σ importes ≥ 10^12, p. ej. 1,000,000 m² ×
++--   $1,500,000) desbordaba con error crudo 22003. 18,2 = 16 enteros (< 10^16), holgura
++--   para cualquier contrato real. No-destructivo (reinterpreta el valor). Guard por
++--   information_schema para no reescribir la tabla en cada arranque (como las migraciones
++--   de A1). El cast del monto derivado en contratos.controller.js también pasó a (18,2).
++DO $$ BEGIN
++  IF EXISTS (SELECT 1 FROM information_schema.columns
++              WHERE table_name = 'contratos' AND column_name = 'monto'
++                AND (numeric_precision <> 18 OR numeric_scale <> 2)) THEN
++    ALTER TABLE contratos ALTER COLUMN monto TYPE NUMERIC(18,2);
++  END IF;
++END $$;
++
++-- (4.4) Tipo de documento del contrato: 'contrato' (PDF firmado, compatibilidad) o
++--   'anticipo_autorizacion' (autorización escrita del titular cuando el anticipo supera el
++--   umbral, art. 50 fr. IV LOPSRM). Permite DOS PDFs por contrato (uno por tipo), cada uno
++--   inmutable (el trigger append-only existente bloquea UPDATE; el control de "uno por tipo"
++--   lo hace el controller + el UNIQUE de abajo). Las filas existentes quedan 'contrato'.
++ALTER TABLE contrato_documentos ADD COLUMN IF NOT EXISTS tipo VARCHAR(40) NOT NULL DEFAULT 'contrato';
++DO $$ BEGIN
++  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_contrato_documentos_tipo') THEN
++    ALTER TABLE contrato_documentos ADD CONSTRAINT chk_contrato_documentos_tipo
++      CHECK (tipo IN ('contrato','anticipo_autorizacion'));
++  END IF;
++END $$;
++-- Un documento por (contrato, tipo). Las filas previas (≤1 por contrato, ahora 'contrato')
++-- no violan el UNIQUE. Guard explícito sobre pg_constraint (idempotente).
++DO $$ BEGIN
++  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_contrato_documentos_tipo') THEN
++    ALTER TABLE contrato_documentos ADD CONSTRAINT uq_contrato_documentos_tipo UNIQUE (contrato_id, tipo);
++  END IF;
++END $$;
