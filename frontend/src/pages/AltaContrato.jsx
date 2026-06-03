@@ -1298,8 +1298,7 @@ export default function AltaContrato() {
       };
       const creado = await api.crearContrato(payload);
       const nuevoId = creado && creado.id ? creado.id : null;
-      if (nuevoId) setContratoGuardadoId(nuevoId);
-      setDirty(false); // 4.1: ya guardado, no avisar al salir
+      setDirty(false); // ya guardado, no avisar al salir (los PDFs se suben con nuevoId, abajo)
       // alta-v2 (1.5/1.6): sube los PDFs que el usuario adjuntó DURANTE la captura. El contrato
       // ya existe → ahora se ligan (BYTEA + FK). Si alguno falla, el contrato igual quedó guardado.
       if (nuevoId && pdfFirmadoFile) {
@@ -1311,8 +1310,12 @@ export default function AltaContrato() {
         catch (e) { showToast('Contrato guardado, pero la autorización del anticipo no se adjuntó: ' + (e.message || 'error')); }
       }
       setErrorWizard(null);
-      showToast('Contrato guardado: ' + payload.folio);
-      cargarContratos();
+      // BUG 1: alta exitosa → limpia TODOS los campos (alta nueva vacía + pestañas re-bloqueadas)
+      // y REDIRIGE a "Registrados". Ya no hay estado de éxito con "Ver registrados →".
+      resetFormulario();
+      setTabActivo(6); // pestaña "Registrados"
+      await cargarContratos();
+      showToast('Contrato guardado: ' + payload.folio + '. Disponible en Registrados.');
     } catch (err) {
       // alta-v2 (1.3): los errores del guardado también van al banner PERSISTENTE.
       if (err.status === 409) { setErrores({ ...ERR0, campos: { folio: true } }); setTabActivo(0); setErrorWizard('El folio ya existe; usa uno distinto.'); }
@@ -1327,9 +1330,10 @@ export default function AltaContrato() {
     } finally { setGuardando(false); }
   };
 
-  const handleCancelar = () => {
-    if (soloLectura) return;
-    if (!window.confirm('¿Descartar los cambios y reiniciar el formulario?')) return;
+  // BUG 1: deja el wizard como un alta NUEVA — todos los campos vacíos, sin PDFs, errores
+  // limpios y el gating re-bloqueado (pasoMaxAlcanzado=0 → solo el paso 1 accesible). Lo usan
+  // "Cancelar" y el guardado exitoso. NO fija tabActivo (cada caller decide a dónde ir).
+  const resetFormulario = () => {
     setDatosGenerales({ ...DATOS_INICIALES });
     setDatosJuridicos({ ...JURIDICOS_INICIALES });
     setAnticipoPct('');
@@ -1343,11 +1347,17 @@ export default function AltaContrato() {
     setErrorWizard(null);
     setPdfFirmadoFile(null);
     setPdfAnticipoFile(null);
-    setTabActivo(0);
-    setPasoMaxAlcanzado(0); // alta-v4: reinicia el gating secuencial
+    setPasoMaxAlcanzado(0); // re-bloquea: vuelve al paso 1
     setContratoGuardadoId(null);
     setDirty(false);
     montadoRef.current = false; // re-armar el detector de "sucio"
+  };
+
+  const handleCancelar = () => {
+    if (soloLectura) return;
+    if (!window.confirm('¿Descartar los cambios y reiniciar el formulario?')) return;
+    resetFormulario();
+    setTabActivo(0);
   };
 
   const tabsConError = useMemo(() => {
@@ -1442,24 +1452,18 @@ export default function AltaContrato() {
           {tabActivo < ULTIMO_PASO_WIZARD ? (
             <button type="button" onClick={() => irAPaso(tabActivo + 1)} disabled={soloLectura} className="sg-btn-primary" data-testid="btn-siguiente">Siguiente →</button>
           ) : tabActivo === ULTIMO_PASO_WIZARD ? (
-            contratoGuardadoId ? (
-              // alta-v3: contrato YA guardado con su PDF firmado adjunto → solo consulta.
-              <button type="button" onClick={() => irAPaso(6)} className="sg-btn-primary" data-testid="btn-ver-registrados">Ver contratos registrados →</button>
-            ) : (
-              <>
-                {/* alta-v3: el PDF firmado es OBLIGATORIO; sin él el botón "Guardar" está bloqueado. */}
-                {!pdfFirmadoFile && (
-                  <span className="text-xs text-amber-700" data-testid="guardar-bloqueado-hint">Adjunta el PDF firmado para habilitar el guardado.</span>
-                )}
-                {/* alta-v4: el "disabled" refleja la validez GLOBAL (primerPasoInvalido), no solo el
-                    PDF firmado → el affordance del botón coincide con validar() y con el gating
-                    secuencial (cierra la asimetría save-vs-advance). En el paso 5 con 0–4 válidos,
-                    el único pendiente posible es el PDF firmado, así que la pista de abajo aplica. */}
-                <button type="button" className="sg-btn-primary" disabled={soloLectura || guardando || primerPasoInvalido <= ULTIMO_PASO_WIZARD} onClick={handleGuardar} data-testid="btn-guardar">
-                  {guardando ? 'Guardando…' : 'Guardar contrato'}
-                </button>
-              </>
-            )
+            <>
+              {/* alta-v3: el PDF firmado es OBLIGATORIO; sin él el botón "Guardar" está bloqueado. */}
+              {!pdfFirmadoFile && (
+                <span className="text-xs text-amber-700" data-testid="guardar-bloqueado-hint">Adjunta el PDF firmado para habilitar el guardado.</span>
+              )}
+              {/* alta-v4: el "disabled" refleja la validez GLOBAL (primerPasoInvalido), no solo el
+                  PDF firmado. BUG 1: al guardar con éxito se limpia TODO y se redirige a
+                  "Registrados" (ya NO hay estado de éxito con "Ver registrados →"). */}
+              <button type="button" className="sg-btn-primary" disabled={soloLectura || guardando || primerPasoInvalido <= ULTIMO_PASO_WIZARD} onClick={handleGuardar} data-testid="btn-guardar">
+                {guardando ? 'Guardando…' : 'Guardar contrato'}
+              </button>
+            </>
           ) : null}
         </div>
       </div>

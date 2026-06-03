@@ -440,12 +440,27 @@ async function construirPayloadNotas(apertura, userId) {
   const aperturaFirmantes = fr.rows;
   const aperturaCompleta = aperturaFirmantes.length > 0 && aperturaFirmantes.every((x) => x.firmado);
 
+  // BUG 2 (causa raíz): "firmada" se computa contra TODAS las firmas requeridas, NO solo por
+  // vencimiento del plazo. Quiénes firman una nota = las PARTES del contrato (mismo roster que
+  // firma la apertura): residente + superintendente + supervisión (si aplica). Fundamento:
+  // art. 123 fr. III RLOPSRM ("plazo máximo para la firma de las notas… las partes… se tendrán
+  // por aceptadas una vez vencido el plazo") y fr. XII ("el residente, el superintendente y, en
+  // su caso, el supervisor deberán resolver y cerrar… todas las notas que les correspondan").
+  // El emisor firma al emitir (n.firmado_en); las contrapartes vía bitacora_nota_firmas. En
+  // cuanto el conjunto de firmantes cubre al roster → 'firmada' (sin esperar al plazo). La
+  // aceptación TÁCITA por vencimiento aplica SOLO si NO se completaron las firmas.
+  // [validar] alternativa: que baste la contraparte directa (no todo el roster).
+  const rosterIds = [apertura.residente_id, apertura.superintendente_id, apertura.supervision_id].filter((x) => x != null);
+
   const notas = r.rows.map((n) => {
+    const firmantesNota = new Set([n.emisor_id, ...(n.firmas || []).map((f) => f.usuario_id)].filter((x) => x != null));
+    const todasFirmadas = rosterIds.length > 0 && rosterIds.every((id) => firmantesNota.has(id));
     let aceptacion;
     if (n.estado === 'anulada') aceptacion = 'anulada';
-    else if (n.tipo === 'apertura') aceptacion = aperturaCompleta ? 'aceptada_tacita' : 'en_plazo'; // su firma es la conjunta
+    else if (n.tipo === 'apertura') aceptacion = aperturaCompleta ? 'firmada' : 'en_plazo'; // su firma es la conjunta
+    else if (todasFirmadas) aceptacion = 'firmada';            // todas las firmas requeridas (antes del plazo)
     else if (n.respondida) aceptacion = 'respondida';
-    else if (n.plazo_vencido) aceptacion = 'aceptada_tacita';
+    else if (n.plazo_vencido) aceptacion = 'aceptada_tacita';  // tácita SOLO si no firmaron a tiempo
     else aceptacion = 'en_plazo';
     return { ...n, aceptacion };
   });

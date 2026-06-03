@@ -79,11 +79,26 @@ const login = async (email) => (await req('POST', '/auth/login', null, { email, 
   const fnR = await req('POST', `/bitacora/notas/${nota2}/firmar`, R.token);
   ok(fnR.status === 409, `el EMISOR no puede firmar su propia nota (ya firmó al emitir) → 409 (status ${fnR.status})`);
 
-  // 8) PUNTO 7: la apertura (#1) no se anula; una nota normal sí (emisor) generando correctiva.
-  const anAp = await req('POST', `/bitacora/notas/${n1.id}/anular`, R.token, { contenido: 'dice/debe decir' });
+  // BUG 2: con SOLO emisor (R) + superintendente (S) y FALTANDO supervisión (V), la nota NO está
+  // 'firmada' todavía (sigue en plazo, no tácita).
+  let notasNow = (await req('GET', `/bitacora/contrato/${contratoId}/notas`, R.token)).data;
+  let n2 = notasNow?.notas?.find((n) => n.numero === 2);
+  ok(n2 && n2.aceptacion !== 'firmada', `nota #2 con firma INCOMPLETA (falta supervisión) NO es 'firmada' (es '${n2?.aceptacion}')`);
+  // Al firmar también la supervisión se completan TODAS las firmas requeridas → 'firmada' YA (sin
+  // esperar a que venza el plazo). Esta era la causa del bug: el estado ignoraba las firmas.
+  const fnV = await req('POST', `/bitacora/notas/${nota2}/firmar`, V.token);
+  ok(fnV.status === 201, `supervisión firma la nota #2 → 201`);
+  notasNow = (await req('GET', `/bitacora/contrato/${contratoId}/notas`, R.token)).data;
+  n2 = notasNow?.notas?.find((n) => n.numero === 2);
+  ok(n2 && n2.aceptacion === 'firmada', `nota #2 con TODAS las firmas requeridas → estado 'firmada' (es '${n2?.aceptacion}')`);
+
+  // 8) PUNTO 7: la apertura (#1) no se anula; una nota normal (sin firmar) sí, generando correctiva.
+  const anAp = await req('POST', `/bitacora/notas/${n1.id}/anular`, R.token, { contenido: 'x' });
   ok(anAp.status === 403, `anular la apertura (#1) → 403 bloqueado (status ${anAp.status})`);
-  const an2 = await req('POST', `/bitacora/notas/${nota2}/anular`, R.token, { contenido: 'Dice: 1 / Debe decir: 2' });
-  ok(an2.status === 201 && an2.data?.correctiva?.numero === 3, `anular nota #2 (emisor) → correctiva #3 (status ${an2.status}, folio ${an2.data?.correctiva?.numero})`);
+  const em3 = await req('POST', `/bitacora/${aperturaId}/notas`, R.token, { tipo: 'res_estimaciones', contenido: 'nota a corregir' });
+  const nota3 = em3.data.id;
+  const an3 = await req('POST', `/bitacora/notas/${nota3}/anular`, R.token, { contenido: 'Dice: 1 / Debe decir: 2' });
+  ok(an3.status === 201 && an3.data?.correctiva?.numero === 4, `anular nota #3 (emisor) → correctiva #4 (status ${an3.status}, folio ${an3.data?.correctiva?.numero})`);
 
   // 9) tipos por rol: el catálogo activo del residente trae los granulares art. 125 fr. I.
   const tipos = (await req('GET', '/bitacora/nota-tipos', R.token)).data;

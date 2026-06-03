@@ -18,6 +18,7 @@ const ROL_LABEL = { residente: 'Residente', superintendente: 'Superintendente', 
 
 const ACEPTACION = {
   en_plazo:        { label: 'En plazo de firma',  cls: 'bg-amber-100 text-amber-800' },
+  firmada:         { label: 'Firmada',            cls: 'bg-green-100 text-sigecop-green-validation' },
   aceptada_tacita: { label: 'Aceptada (tácita)',  cls: 'bg-green-100 text-sigecop-green-validation' },
   respondida:      { label: 'Respondida',         cls: 'bg-sigecop-blue-light text-sigecop-blue' },
   anulada:         { label: 'Anulada',            cls: 'bg-slate-200 text-slate-600' }
@@ -216,7 +217,7 @@ export default function EmisionNotas() {
               <button type="button" className="text-xs text-sigecop-blue hover:underline" onClick={() => iniciarRespuesta(n.id)} data-testid={`btn-responder-${n.numero}`}>↪ Responder / vincular</button>
             )}
             {puedeAnular && (
-              <button type="button" className="text-xs text-red-600 hover:underline" onClick={() => { setAnulando(n.id); setCorreccion(''); }} data-testid={`btn-anular-${n.numero}`}>Anular (dice/debe decir)</button>
+              <button type="button" className="text-xs text-red-600 hover:underline" onClick={() => { setAnulando(n.id); setCorreccion(''); }} data-testid={`btn-anular-${n.numero}`}>Anular</button>
             )}
           </div>
         )}

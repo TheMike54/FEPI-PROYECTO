@@ -64,13 +64,10 @@ test.describe('HU-01/alta-v2 — catálogo, alta vacía y Registrados', () => {
     await altaAdjuntarPdfFirmado(page);
     await expect(page.getByTestId('btn-guardar')).toBeEnabled();
     await page.getByTestId('btn-guardar').click();            // guardar
-    // tras guardar: contrato creado CON su PDF firmado → botón de consulta.
-    await expect(page.getByTestId('btn-ver-registrados')).toBeVisible();
-
-    // Registrados → abrir el detalle del contrato recién creado (el botón post-guardado navega ahí)
-    await page.getByTestId('btn-ver-registrados').click();
+    // BUG 1: tras guardar, el wizard se limpia y REDIRIGE a "Registrados" (ya no hay "Ver registrados →").
+    await expect(page.getByTestId('btn-ver-registrados')).toHaveCount(0);
     const fila = page.locator('tr', { hasText: folio });
-    await expect(fila).toBeVisible();
+    await expect(fila).toBeVisible();                          // ya estamos en Registrados; el contrato aparece
     await fila.locator('[data-testid^="ver-info-"]').click();
     const modal = page.getByTestId('modal-detalle');
     await expect(modal).toBeVisible();
@@ -79,5 +76,27 @@ test.describe('HU-01/alta-v2 — catálogo, alta vacía y Registrados', () => {
     // cerrar
     await page.getByTestId('modal-detalle-cerrar').click();
     await expect(modal).toHaveCount(0);
+  });
+
+  test('BUG 1 — guardar: redirige a Registrados, limpia campos y re-bloquea las pestañas', async ({ page }) => {
+    page.on('dialog', (d) => d.accept());
+    const folio = `E2E-RESET-${Date.now()}`;
+    await altaLlenarDatosGenerales(page, { folio });
+    await page.getByTestId('btn-siguiente').click();          // catálogo
+    await altaAgregarConcepto(page, 0, { cantidad: 100, pu: 50 });
+    await page.getByTestId('btn-siguiente').click();          // programa
+    await page.getByTestId('celda-0-1').fill('100');
+    await page.getByTestId('btn-siguiente').click();          // jurídicos
+    await page.getByTestId('btn-siguiente').click();          // garantías
+    await page.getByTestId('btn-siguiente').click();          // PDF firmado
+    await altaAdjuntarPdfFirmado(page);
+    await page.getByTestId('btn-guardar').click();
+    // (1) redirige a Registrados: el contrato aparece en la tabla.
+    await expect(page.locator('tr', { hasText: folio })).toBeVisible();
+    // (2) limpia campos + re-bloquea: al volver a "Datos generales", folio vacío y pestañas re-bloqueadas.
+    await page.getByRole('button', { name: /Datos generales/ }).click();
+    await expect(page.getByTestId('dg-folio')).toHaveValue('');
+    await expect(page.getByRole('button', { name: /Programa de obra/ })).toBeDisabled();
+    await expect(page.getByRole('button', { name: /Catálogo de conceptos/ })).toBeDisabled();
   });
 });

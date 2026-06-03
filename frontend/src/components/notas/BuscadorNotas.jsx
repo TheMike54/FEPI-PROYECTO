@@ -33,6 +33,7 @@ const OPCIONES_VINCULO = ['Todas', 'Vinculadas', 'Sin vínculo'];
 // Etiquetas legibles del estado de aceptación derivado por el backend.
 export const ETIQUETA_ACEPTACION = {
   en_plazo: 'En plazo',
+  firmada: 'Firmada',
   aceptada_tacita: 'Aceptada (tácita)',
   respondida: 'Respondida',
   anulada: 'Anulada'
@@ -40,6 +41,7 @@ export const ETIQUETA_ACEPTACION = {
 
 const CLASE_ACEPTACION = {
   en_plazo: 'bg-amber-100 text-amber-800',
+  firmada: 'bg-green-100 text-sigecop-green-validation',
   aceptada_tacita: 'bg-green-100 text-sigecop-green-validation',
   respondida: 'bg-sigecop-blue-light text-sigecop-blue',
   anulada: 'bg-slate-200 text-slate-600'

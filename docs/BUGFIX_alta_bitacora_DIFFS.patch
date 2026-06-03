@@ -1,0 +1,311 @@
+diff --git a/backend/scripts/smoke-bitacora-v2.mjs b/backend/scripts/smoke-bitacora-v2.mjs
+index a514c2b..735137e 100644
+--- a/backend/scripts/smoke-bitacora-v2.mjs
++++ b/backend/scripts/smoke-bitacora-v2.mjs
+@@ -79,11 +79,26 @@ const login = async (email) => (await req('POST', '/auth/login', null, { email,
+   const fnR = await req('POST', `/bitacora/notas/${nota2}/firmar`, R.token);
+   ok(fnR.status === 409, `el EMISOR no puede firmar su propia nota (ya firmó al emitir) → 409 (status ${fnR.status})`);
+ 
+-  // 8) PUNTO 7: la apertura (#1) no se anula; una nota normal sí (emisor) generando correctiva.
+-  const anAp = await req('POST', `/bitacora/notas/${n1.id}/anular`, R.token, { contenido: 'dice/debe decir' });
++  // BUG 2: con SOLO emisor (R) + superintendente (S) y FALTANDO supervisión (V), la nota NO está
++  // 'firmada' todavía (sigue en plazo, no tácita).
++  let notasNow = (await req('GET', `/bitacora/contrato/${contratoId}/notas`, R.token)).data;
++  let n2 = notasNow?.notas?.find((n) => n.numero === 2);
++  ok(n2 && n2.aceptacion !== 'firmada', `nota #2 con firma INCOMPLETA (falta supervisión) NO es 'firmada' (es '${n2?.aceptacion}')`);
++  // Al firmar también la supervisión se completan TODAS las firmas requeridas → 'firmada' YA (sin
++  // esperar a que venza el plazo). Esta era la causa del bug: el estado ignoraba las firmas.
++  const fnV = await req('POST', `/bitacora/notas/${nota2}/firmar`, V.token);
++  ok(fnV.status === 201, `supervisión firma la nota #2 → 201`);
++  notasNow = (await req('GET', `/bitacora/contrato/${contratoId}/notas`, R.token)).data;
++  n2 = notasNow?.notas?.find((n) => n.numero === 2);
++  ok(n2 && n2.aceptacion === 'firmada', `nota #2 con TODAS las firmas requeridas → estado 'firmada' (es '${n2?.aceptacion}')`);
++
++  // 8) PUNTO 7: la apertura (#1) no se anula; una nota normal (sin firmar) sí, generando correctiva.
++  const anAp = await req('POST', `/bitacora/notas/${n1.id}/anular`, R.token, { contenido: 'x' });
+   ok(anAp.status === 403, `anular la apertura (#1) → 403 bloqueado (status ${anAp.status})`);
+-  const an2 = await req('POST', `/bitacora/notas/${nota2}/anular`, R.token, { contenido: 'Dice: 1 / Debe decir: 2' });
+-  ok(an2.status === 201 && an2.data?.correctiva?.numero === 3, `anular nota #2 (emisor) → correctiva #3 (status ${an2.status}, folio ${an2.data?.correctiva?.numero})`);
++  const em3 = await req('POST', `/bitacora/${aperturaId}/notas`, R.token, { tipo: 'res_estimaciones', contenido: 'nota a corregir' });
++  const nota3 = em3.data.id;
++  const an3 = await req('POST', `/bitacora/notas/${nota3}/anular`, R.token, { contenido: 'Dice: 1 / Debe decir: 2' });
++  ok(an3.status === 201 && an3.data?.correctiva?.numero === 4, `anular nota #3 (emisor) → correctiva #4 (status ${an3.status}, folio ${an3.data?.correctiva?.numero})`);
+ 
+   // 9) tipos por rol: el catálogo activo del residente trae los granulares art. 125 fr. I.
+   const tipos = (await req('GET', '/bitacora/nota-tipos', R.token)).data;
+diff --git a/backend/src/controllers/bitacora.controller.js b/backend/src/controllers/bitacora.controller.js
+index 90ca263..c773b21 100644
+--- a/backend/src/controllers/bitacora.controller.js
++++ b/backend/src/controllers/bitacora.controller.js
+@@ -440,12 +440,27 @@ async function construirPayloadNotas(apertura, userId) {
+   const aperturaFirmantes = fr.rows;
+   const aperturaCompleta = aperturaFirmantes.length > 0 && aperturaFirmantes.every((x) => x.firmado);
+ 
++  // BUG 2 (causa raíz): "firmada" se computa contra TODAS las firmas requeridas, NO solo por
++  // vencimiento del plazo. Quiénes firman una nota = las PARTES del contrato (mismo roster que
++  // firma la apertura): residente + superintendente + supervisión (si aplica). Fundamento:
++  // art. 123 fr. III RLOPSRM ("plazo máximo para la firma de las notas… las partes… se tendrán
++  // por aceptadas una vez vencido el plazo") y fr. XII ("el residente, el superintendente y, en
++  // su caso, el supervisor deberán resolver y cerrar… todas las notas que les correspondan").
++  // El emisor firma al emitir (n.firmado_en); las contrapartes vía bitacora_nota_firmas. En
++  // cuanto el conjunto de firmantes cubre al roster → 'firmada' (sin esperar al plazo). La
++  // aceptación TÁCITA por vencimiento aplica SOLO si NO se completaron las firmas.
++  // [validar] alternativa: que baste la contraparte directa (no todo el roster).
++  const rosterIds = [apertura.residente_id, apertura.superintendente_id, apertura.supervision_id].filter((x) => x != null);
++
+   const notas = r.rows.map((n) => {
++    const firmantesNota = new Set([n.emisor_id, ...(n.firmas || []).map((f) => f.usuario_id)].filter((x) => x != null));
++    const todasFirmadas = rosterIds.length > 0 && rosterIds.every((id) => firmantesNota.has(id));
+     let aceptacion;
+     if (n.estado === 'anulada') aceptacion = 'anulada';
+-    else if (n.tipo === 'apertura') aceptacion = aperturaCompleta ? 'aceptada_tacita' : 'en_plazo'; // su firma es la conjunta
++    else if (n.tipo === 'apertura') aceptacion = aperturaCompleta ? 'firmada' : 'en_plazo'; // su firma es la conjunta
++    else if (todasFirmadas) aceptacion = 'firmada';            // todas las firmas requeridas (antes del plazo)
+     else if (n.respondida) aceptacion = 'respondida';
+-    else if (n.plazo_vencido) aceptacion = 'aceptada_tacita';
++    else if (n.plazo_vencido) aceptacion = 'aceptada_tacita';  // tácita SOLO si no firmaron a tiempo
+     else aceptacion = 'en_plazo';
+     return { ...n, aceptacion };
+   });
+diff --git a/frontend/e2e/alta-v4-gating.spec.js b/frontend/e2e/alta-v4-gating.spec.js
+index c8a8533..d34c699 100644
+--- a/frontend/e2e/alta-v4-gating.spec.js
++++ b/frontend/e2e/alta-v4-gating.spec.js
+@@ -59,7 +59,9 @@ test.describe('alta-v4 — anticipo obligatorio sobre umbral + gating secuencial
+     await altaAdjuntarPdfFirmado(page);
+     await expect(page.getByTestId('btn-guardar')).toBeEnabled();
+     await page.getByTestId('btn-guardar').click();
+-    await expect(page.getByTestId('btn-ver-registrados')).toBeVisible(); // guardado OK con ambos PDFs
++    // BUG 1: guardado OK con ambos PDFs → redirige a Registrados (ya no hay "Ver registrados →").
++    await expect(page.getByTestId('btn-ver-registrados')).toHaveCount(0);
++    await expect(page.locator('tr', { hasText: folio })).toBeVisible();
+   });
+ 
+   test('(b) no se puede saltar a una pestaña no alcanzada', async ({ page }) => {
+diff --git a/frontend/e2e/bitacora-v2.spec.js b/frontend/e2e/bitacora-v2.spec.js
+index ab2585c..d316d83 100644
+--- a/frontend/e2e/bitacora-v2.spec.js
++++ b/frontend/e2e/bitacora-v2.spec.js
+@@ -154,4 +154,31 @@ test.describe('Bitácora v2 — apertura=nota#1, firma, candado, tipos, datos m
+     await expect(page.getByTestId('contador-resultados')).toHaveText('1');
+     await expect(page.locator('[data-testid^="tag-resultado-"]').first()).toContainText('ESTIM-UI-7');
+   });
++
++  test('(BUG 2+3) nota con TODAS las firmas → "Firmada"; botón de anular dice "Anular" (sin placeholder)', async ({ page, request }) => {
++    const { R, S, V } = await actores(request);
++    const folio = `BITUI-G-${Date.now()}`;
++    const cid = await crearContrato(request, R.token, folio, S.user.id, V.user.id);
++    const apId = await aperturar(request, R.token, cid);
++    await firmarApertura(request, R.token, apId);
++    await firmarApertura(request, S.token, apId);
++    await firmarApertura(request, V.token, apId);
++    // Nota #2 (residente). Las contrapartes (superintendente + supervisión) la firman → todas las firmas.
++    const em2 = await emitir(request, R.token, apId, { tipo: 'res_estimaciones', contenido: 'Autorizo' });
++    const nota2 = (await em2.json()).id;
++    await request.post(`${API}/bitacora/notas/${nota2}/firmar`, { headers: auth(S.token) });
++    await request.post(`${API}/bitacora/notas/${nota2}/firmar`, { headers: auth(V.token) });
++    // Nota #3 (residente, SIN firmar por contrapartes) — para el botón de anular limpio.
++    await emitir(request, R.token, apId, { tipo: 'res_estimaciones', contenido: 'Otra nota' });
++
++    await freshHome(page);
++    await enterAppMode(page, 'residente');
++    await goToViaSidebar(page, '/bitacora/notas');
++    await page.getByTestId('select-contrato').selectOption({ value: String(cid) });
++    await page.getByTestId('btn-ver-bitacora').click();
++    // BUG 2: la nota #2 con todas las firmas requeridas muestra "Firmada" (no "En plazo de firma").
++    await expect(page.getByTestId('aceptacion-2')).toHaveText('Firmada');
++    // BUG 3: el botón de anular dice exactamente "Anular" (sin la anotación "(dice/debe decir)").
++    await expect(page.getByTestId('btn-anular-3')).toHaveText('Anular');
++  });
+ });
+diff --git a/frontend/e2e/hu-01-alta-catalogo.spec.js b/frontend/e2e/hu-01-alta-catalogo.spec.js
+index ff87d3b..345535d 100644
+--- a/frontend/e2e/hu-01-alta-catalogo.spec.js
++++ b/frontend/e2e/hu-01-alta-catalogo.spec.js
+@@ -64,13 +64,10 @@ test.describe('HU-01/alta-v2 — catálogo, alta vacía y Registrados', () => {
+     await altaAdjuntarPdfFirmado(page);
+     await expect(page.getByTestId('btn-guardar')).toBeEnabled();
+     await page.getByTestId('btn-guardar').click();            // guardar
+-    // tras guardar: contrato creado CON su PDF firmado → botón de consulta.
+-    await expect(page.getByTestId('btn-ver-registrados')).toBeVisible();
+-
+-    // Registrados → abrir el detalle del contrato recién creado (el botón post-guardado navega ahí)
+-    await page.getByTestId('btn-ver-registrados').click();
++    // BUG 1: tras guardar, el wizard se limpia y REDIRIGE a "Registrados" (ya no hay "Ver registrados →").
++    await expect(page.getByTestId('btn-ver-registrados')).toHaveCount(0);
+     const fila = page.locator('tr', { hasText: folio });
+-    await expect(fila).toBeVisible();
++    await expect(fila).toBeVisible();                          // ya estamos en Registrados; el contrato aparece
+     await fila.locator('[data-testid^="ver-info-"]').click();
+     const modal = page.getByTestId('modal-detalle');
+     await expect(modal).toBeVisible();
+@@ -80,4 +77,26 @@ test.describe('HU-01/alta-v2 — catálogo, alta vacía y Registrados', () => {
+     await page.getByTestId('modal-detalle-cerrar').click();
+     await expect(modal).toHaveCount(0);
+   });
++
++  test('BUG 1 — guardar: redirige a Registrados, limpia campos y re-bloquea las pestañas', async ({ page }) => {
++    page.on('dialog', (d) => d.accept());
++    const folio = `E2E-RESET-${Date.now()}`;
++    await altaLlenarDatosGenerales(page, { folio });
++    await page.getByTestId('btn-siguiente').click();          // catálogo
++    await altaAgregarConcepto(page, 0, { cantidad: 100, pu: 50 });
++    await page.getByTestId('btn-siguiente').click();          // programa
++    await page.getByTestId('celda-0-1').fill('100');
++    await page.getByTestId('btn-siguiente').click();          // jurídicos
++    await page.getByTestId('btn-siguiente').click();          // garantías
++    await page.getByTestId('btn-siguiente').click();          // PDF firmado
++    await altaAdjuntarPdfFirmado(page);
++    await page.getByTestId('btn-guardar').click();
++    // (1) redirige a Registrados: el contrato aparece en la tabla.
++    await expect(page.locator('tr', { hasText: folio })).toBeVisible();
++    // (2) limpia campos + re-bloquea: al volver a "Datos generales", folio vacío y pestañas re-bloqueadas.
++    await page.getByRole('button', { name: /Datos generales/ }).click();
++    await expect(page.getByTestId('dg-folio')).toHaveValue('');
++    await expect(page.getByRole('button', { name: /Programa de obra/ })).toBeDisabled();
++    await expect(page.getByRole('button', { name: /Catálogo de conceptos/ })).toBeDisabled();
++  });
+ });
+diff --git a/frontend/src/components/notas/BuscadorNotas.jsx b/frontend/src/components/notas/BuscadorNotas.jsx
+index 16c0a7a..ae45aa5 100644
+--- a/frontend/src/components/notas/BuscadorNotas.jsx
++++ b/frontend/src/components/notas/BuscadorNotas.jsx
+@@ -33,6 +33,7 @@ const OPCIONES_VINCULO = ['Todas', 'Vinculadas', 'Sin vínculo'];
+ // Etiquetas legibles del estado de aceptación derivado por el backend.
+ export const ETIQUETA_ACEPTACION = {
+   en_plazo: 'En plazo',
++  firmada: 'Firmada',
+   aceptada_tacita: 'Aceptada (tácita)',
+   respondida: 'Respondida',
+   anulada: 'Anulada'
+@@ -40,6 +41,7 @@ export const ETIQUETA_ACEPTACION = {
+ 
+ const CLASE_ACEPTACION = {
+   en_plazo: 'bg-amber-100 text-amber-800',
++  firmada: 'bg-green-100 text-sigecop-green-validation',
+   aceptada_tacita: 'bg-green-100 text-sigecop-green-validation',
+   respondida: 'bg-sigecop-blue-light text-sigecop-blue',
+   anulada: 'bg-slate-200 text-slate-600'
+diff --git a/frontend/src/pages/AltaContrato.jsx b/frontend/src/pages/AltaContrato.jsx
+index d003111..3be0ad1 100644
+--- a/frontend/src/pages/AltaContrato.jsx
++++ b/frontend/src/pages/AltaContrato.jsx
+@@ -1298,8 +1298,7 @@ export default function AltaContrato() {
+       };
+       const creado = await api.crearContrato(payload);
+       const nuevoId = creado && creado.id ? creado.id : null;
+-      if (nuevoId) setContratoGuardadoId(nuevoId);
+-      setDirty(false); // 4.1: ya guardado, no avisar al salir
++      setDirty(false); // ya guardado, no avisar al salir (los PDFs se suben con nuevoId, abajo)
+       // alta-v2 (1.5/1.6): sube los PDFs que el usuario adjuntó DURANTE la captura. El contrato
+       // ya existe → ahora se ligan (BYTEA + FK). Si alguno falla, el contrato igual quedó guardado.
+       if (nuevoId && pdfFirmadoFile) {
+@@ -1311,8 +1310,12 @@ export default function AltaContrato() {
+         catch (e) { showToast('Contrato guardado, pero la autorización del anticipo no se adjuntó: ' + (e.message || 'error')); }
+       }
+       setErrorWizard(null);
+-      showToast('Contrato guardado: ' + payload.folio);
+-      cargarContratos();
++      // BUG 1: alta exitosa → limpia TODOS los campos (alta nueva vacía + pestañas re-bloqueadas)
++      // y REDIRIGE a "Registrados". Ya no hay estado de éxito con "Ver registrados →".
++      resetFormulario();
++      setTabActivo(6); // pestaña "Registrados"
++      await cargarContratos();
++      showToast('Contrato guardado: ' + payload.folio + '. Disponible en Registrados.');
+     } catch (err) {
+       // alta-v2 (1.3): los errores del guardado también van al banner PERSISTENTE.
+       if (err.status === 409) { setErrores({ ...ERR0, campos: { folio: true } }); setTabActivo(0); setErrorWizard('El folio ya existe; usa uno distinto.'); }
+@@ -1327,9 +1330,10 @@ export default function AltaContrato() {
+     } finally { setGuardando(false); }
+   };
+ 
+-  const handleCancelar = () => {
+-    if (soloLectura) return;
+-    if (!window.confirm('¿Descartar los cambios y reiniciar el formulario?')) return;
++  // BUG 1: deja el wizard como un alta NUEVA — todos los campos vacíos, sin PDFs, errores
++  // limpios y el gating re-bloqueado (pasoMaxAlcanzado=0 → solo el paso 1 accesible). Lo usan
++  // "Cancelar" y el guardado exitoso. NO fija tabActivo (cada caller decide a dónde ir).
++  const resetFormulario = () => {
+     setDatosGenerales({ ...DATOS_INICIALES });
+     setDatosJuridicos({ ...JURIDICOS_INICIALES });
+     setAnticipoPct('');
+@@ -1343,13 +1347,19 @@ export default function AltaContrato() {
+     setErrorWizard(null);
+     setPdfFirmadoFile(null);
+     setPdfAnticipoFile(null);
+-    setTabActivo(0);
+-    setPasoMaxAlcanzado(0); // alta-v4: reinicia el gating secuencial
++    setPasoMaxAlcanzado(0); // re-bloquea: vuelve al paso 1
+     setContratoGuardadoId(null);
+     setDirty(false);
+     montadoRef.current = false; // re-armar el detector de "sucio"
+   };
+ 
++  const handleCancelar = () => {
++    if (soloLectura) return;
++    if (!window.confirm('¿Descartar los cambios y reiniciar el formulario?')) return;
++    resetFormulario();
++    setTabActivo(0);
++  };
++
+   const tabsConError = useMemo(() => {
+     const s = new Set();
+     const c = errores.campos || {};
+@@ -1442,24 +1452,18 @@ export default function AltaContrato() {
+           {tabActivo < ULTIMO_PASO_WIZARD ? (
+             <button type="button" onClick={() => irAPaso(tabActivo + 1)} disabled={soloLectura} className="sg-btn-primary" data-testid="btn-siguiente">Siguiente →</button>
+           ) : tabActivo === ULTIMO_PASO_WIZARD ? (
+-            contratoGuardadoId ? (
+-              // alta-v3: contrato YA guardado con su PDF firmado adjunto → solo consulta.
+-              <button type="button" onClick={() => irAPaso(6)} className="sg-btn-primary" data-testid="btn-ver-registrados">Ver contratos registrados →</button>
+-            ) : (
+-              <>
+-                {/* alta-v3: el PDF firmado es OBLIGATORIO; sin él el botón "Guardar" está bloqueado. */}
+-                {!pdfFirmadoFile && (
+-                  <span className="text-xs text-amber-700" data-testid="guardar-bloqueado-hint">Adjunta el PDF firmado para habilitar el guardado.</span>
+-                )}
+-                {/* alta-v4: el "disabled" refleja la validez GLOBAL (primerPasoInvalido), no solo el
+-                    PDF firmado → el affordance del botón coincide con validar() y con el gating
+-                    secuencial (cierra la asimetría save-vs-advance). En el paso 5 con 0–4 válidos,
+-                    el único pendiente posible es el PDF firmado, así que la pista de abajo aplica. */}
+-                <button type="button" className="sg-btn-primary" disabled={soloLectura || guardando || primerPasoInvalido <= ULTIMO_PASO_WIZARD} onClick={handleGuardar} data-testid="btn-guardar">
+-                  {guardando ? 'Guardando…' : 'Guardar contrato'}
+-                </button>
+-              </>
+-            )
++            <>
++              {/* alta-v3: el PDF firmado es OBLIGATORIO; sin él el botón "Guardar" está bloqueado. */}
++              {!pdfFirmadoFile && (
++                <span className="text-xs text-amber-700" data-testid="guardar-bloqueado-hint">Adjunta el PDF firmado para habilitar el guardado.</span>
++              )}
++              {/* alta-v4: el "disabled" refleja la validez GLOBAL (primerPasoInvalido), no solo el
++                  PDF firmado. BUG 1: al guardar con éxito se limpia TODO y se redirige a
++                  "Registrados" (ya NO hay estado de éxito con "Ver registrados →"). */}
++              <button type="button" className="sg-btn-primary" disabled={soloLectura || guardando || primerPasoInvalido <= ULTIMO_PASO_WIZARD} onClick={handleGuardar} data-testid="btn-guardar">
++                {guardando ? 'Guardando…' : 'Guardar contrato'}
++              </button>
++            </>
+           ) : null}
+         </div>
+       </div>
+diff --git a/frontend/src/pages/EmisionNotas.jsx b/frontend/src/pages/EmisionNotas.jsx
+index 8acd1f3..ac04d5a 100644
+--- a/frontend/src/pages/EmisionNotas.jsx
++++ b/frontend/src/pages/EmisionNotas.jsx
+@@ -18,6 +18,7 @@ const ROL_LABEL = { residente: 'Residente', superintendente: 'Superintendente',
+ 
+ const ACEPTACION = {
+   en_plazo:        { label: 'En plazo de firma',  cls: 'bg-amber-100 text-amber-800' },
++  firmada:         { label: 'Firmada',            cls: 'bg-green-100 text-sigecop-green-validation' },
+   aceptada_tacita: { label: 'Aceptada (tácita)',  cls: 'bg-green-100 text-sigecop-green-validation' },
+   respondida:      { label: 'Respondida',         cls: 'bg-sigecop-blue-light text-sigecop-blue' },
+   anulada:         { label: 'Anulada',            cls: 'bg-slate-200 text-slate-600' }
+@@ -216,7 +217,7 @@ export default function EmisionNotas() {
+               <button type="button" className="text-xs text-sigecop-blue hover:underline" onClick={() => iniciarRespuesta(n.id)} data-testid={`btn-responder-${n.numero}`}>↪ Responder / vincular</button>
+             )}
+             {puedeAnular && (
+-              <button type="button" className="text-xs text-red-600 hover:underline" onClick={() => { setAnulando(n.id); setCorreccion(''); }} data-testid={`btn-anular-${n.numero}`}>Anular (dice/debe decir)</button>
++              <button type="button" className="text-xs text-red-600 hover:underline" onClick={() => { setAnulando(n.id); setCorreccion(''); }} data-testid={`btn-anular-${n.numero}`}>Anular</button>
+             )}
+           </div>
+         )}

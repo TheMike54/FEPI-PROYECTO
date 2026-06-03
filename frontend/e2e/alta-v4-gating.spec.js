@@ -59,7 +59,9 @@ test.describe('alta-v4 — anticipo obligatorio sobre umbral + gating secuencial
     await altaAdjuntarPdfFirmado(page);
     await expect(page.getByTestId('btn-guardar')).toBeEnabled();
     await page.getByTestId('btn-guardar').click();
-    await expect(page.getByTestId('btn-ver-registrados')).toBeVisible(); // guardado OK con ambos PDFs
+    // BUG 1: guardado OK con ambos PDFs → redirige a Registrados (ya no hay "Ver registrados →").
+    await expect(page.getByTestId('btn-ver-registrados')).toHaveCount(0);
+    await expect(page.locator('tr', { hasText: folio })).toBeVisible();
   });
 
   test('(b) no se puede saltar a una pestaña no alcanzada', async ({ page }) => {

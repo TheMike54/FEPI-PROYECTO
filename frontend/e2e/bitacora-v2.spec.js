@@ -154,4 +154,31 @@ test.describe('Bitácora v2 — apertura=nota#1, firma, candado, tipos, datos m�
     await expect(page.getByTestId('contador-resultados')).toHaveText('1');
     await expect(page.locator('[data-testid^="tag-resultado-"]').first()).toContainText('ESTIM-UI-7');
   });
+
+  test('(BUG 2+3) nota con TODAS las firmas → "Firmada"; botón de anular dice "Anular" (sin placeholder)', async ({ page, request }) => {
+    const { R, S, V } = await actores(request);
+    const folio = `BITUI-G-${Date.now()}`;
+    const cid = await crearContrato(request, R.token, folio, S.user.id, V.user.id);
+    const apId = await aperturar(request, R.token, cid);
+    await firmarApertura(request, R.token, apId);
+    await firmarApertura(request, S.token, apId);
+    await firmarApertura(request, V.token, apId);
+    // Nota #2 (residente). Las contrapartes (superintendente + supervisión) la firman → todas las firmas.
+    const em2 = await emitir(request, R.token, apId, { tipo: 'res_estimaciones', contenido: 'Autorizo' });
+    const nota2 = (await em2.json()).id;
+    await request.post(`${API}/bitacora/notas/${nota2}/firmar`, { headers: auth(S.token) });
+    await request.post(`${API}/bitacora/notas/${nota2}/firmar`, { headers: auth(V.token) });
+    // Nota #3 (residente, SIN firmar por contrapartes) — para el botón de anular limpio.
+    await emitir(request, R.token, apId, { tipo: 'res_estimaciones', contenido: 'Otra nota' });
+
+    await freshHome(page);
+    await enterAppMode(page, 'residente');
+    await goToViaSidebar(page, '/bitacora/notas');
+    await page.getByTestId('select-contrato').selectOption({ value: String(cid) });
+    await page.getByTestId('btn-ver-bitacora').click();
+    // BUG 2: la nota #2 con todas las firmas requeridas muestra "Firmada" (no "En plazo de firma").
+    await expect(page.getByTestId('aceptacion-2')).toHaveText('Firmada');
+    // BUG 3: el botón de anular dice exactamente "Anular" (sin la anotación "(dice/debe decir)").
+    await expect(page.getByTestId('btn-anular-3')).toHaveText('Anular');
+  });
 });
