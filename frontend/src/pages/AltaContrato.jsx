@@ -76,7 +76,24 @@ const garantiaVacia = (g) => !(
   String(g.vigencia || '').trim()
 );
 
-const ERR0 = { campos: {}, conceptoIdx: null, programaError: false, garantiaIdx: null, catalogoMonto: false, pdfFirmadoFalta: false, anticipoPdfFalta: false };
+// alta-v5: tipos canónicos de póliza (select). Cumplimiento y Anticipo son las EXIGIBLES por ley
+// (art. 48 fr. II y fr. I LOPSRM); "Vicios ocultos" es POST-recepción (art. 66, no exigible al alta)
+// y "Otra" para pólizas adicionales. El valor se persiste tal cual en contrato_garantias.tipo
+// (VARCHAR(40), con UNIQUE(contrato_id, tipo) → una póliza por tipo). Todas las etiquetas ≤ 40 chars.
+const TIPO_CUMPLIMIENTO = 'Cumplimiento';
+const TIPO_ANTICIPO = 'Anticipo';
+const TIPOS_GARANTIA = [TIPO_CUMPLIMIENTO, TIPO_ANTICIPO, 'Vicios ocultos', 'Otra'];
+
+// alta-v5: campos requeridos por póliza (RLOPSRM art. 98 fr. I: la póliza de fianza debe contener
+// previsiones mínimas —incl. vigencia—; el conjunto identificatorio lo fija el proyecto).
+const polizaCompleta = (g) =>
+  String(g.tipo || '').trim() !== '' &&
+  String(g.afianzadora || '').trim() !== '' &&
+  String(g.poliza || '').trim() !== '' &&
+  Number(g.monto) > 0 &&
+  String(g.vigencia || '').trim() !== '';
+
+const ERR0 = { campos: {}, conceptoIdx: null, programaError: false, garantiaIdx: null, catalogoMonto: false, pdfFirmadoFalta: false, anticipoPdfFalta: false, garantiasFaltan: false };
 
 // alta-v2 (4.2): valores iniciales VACÍOS (también usados por "Cancelar"). El contrato nuevo
 // arranca en blanco; el `tipo` mantiene la primera opción del select (campo obligatorio que
@@ -97,6 +114,24 @@ const JURIDICOS_INICIALES = {
   cedulaProfesional: '',
   poderNotarial: '',
   notaria: ''
+};
+
+// alta-v5: datos jurídicos OBLIGATORIOS (mínimo de formalización). Fundamento por campo:
+//  · firmanteDependencia + cargoFirmante: art. 46 fr. I LOPSRM (dependencia/entidad convocante) +
+//    art. 47/48 LOPSRM (la persona servidora pública facultada para firmar el contrato).
+//  · representanteLegal: art. 46 fr. IV LOPSRM (acreditación de existencia y personalidad del
+//    licitante adjudicado) + RLOPSRM art. 61 fr. VI-b)/VII (facultades del representante para
+//    suscribir el contrato).
+//  · cedulaProfesional: [validar] — LOPSRM/RLOPSRM federal NO la exigen al alta (el responsable/DRO
+//    deriva de reglamentos de construcción locales y de la responsabilidad profesional). Se exige
+//    por decisión de la Fundación; confirmar el fundamento con el profe.
+// poderNotarial/notaria quedan OPCIONALES (una de varias formas de acreditar personalidad) [validar].
+const REQ_JURIDICOS = ['firmanteDependencia', 'cargoFirmante', 'representanteLegal', 'cedulaProfesional'];
+const ETIQUETA_JURIDICO = {
+  firmanteDependencia: 'firmante de la dependencia',
+  cargoFirmante: 'cargo del firmante',
+  representanteLegal: 'representante legal',
+  cedulaProfesional: 'cédula profesional'
 };
 
 const inputCls = (err) => `sg-input${err ? ' border-red-500 ring-1 ring-red-400' : ''}`;
@@ -401,20 +436,20 @@ function TabProgramaMatriz({ conceptos, periodos, ciclo, setCiclo, celdas, setCe
   );
 }
 
-function TabJuridicos({ datos, set }) {
+function TabJuridicos({ datos, set, err = {} }) {
   return (
     <div>
       <h3 className="text-lg font-bold text-sigecop-blue mb-4">Datos jurídicos</h3>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Field label="Firmante autorizado de la dependencia"><input className="sg-input" value={datos.firmanteDependencia} onChange={set('firmanteDependencia')} /></Field>
-        <Field label="Cargo del firmante"><input className="sg-input" value={datos.cargoFirmante} onChange={set('cargoFirmante')} /></Field>
-        <Field label="Representante legal del contratista"><input className="sg-input" value={datos.representanteLegal} onChange={set('representanteLegal')} /></Field>
-        <Field label="Cédula profesional del responsable técnico" hint="Ingresar cédula vigente del DRO"><input className="sg-input" value={datos.cedulaProfesional} onChange={set('cedulaProfesional')} /></Field>
-        <Field label="No. de poder notarial"><input className="sg-input" value={datos.poderNotarial} onChange={set('poderNotarial')} /></Field>
-        <Field label="Notaría"><input className="sg-input" value={datos.notaria} onChange={set('notaria')} /></Field>
+        <Field label="Firmante autorizado de la dependencia" required><input className={inputCls(err.firmanteDependencia)} value={datos.firmanteDependencia} onChange={set('firmanteDependencia')} data-testid="jur-firmante" /></Field>
+        <Field label="Cargo del firmante" required><input className={inputCls(err.cargoFirmante)} value={datos.cargoFirmante} onChange={set('cargoFirmante')} data-testid="jur-cargo" /></Field>
+        <Field label="Representante legal del contratista" required><input className={inputCls(err.representanteLegal)} value={datos.representanteLegal} onChange={set('representanteLegal')} data-testid="jur-representante" /></Field>
+        <Field label="Cédula profesional del responsable técnico" required hint="Cédula vigente del responsable. [validar el fundamento con el profe — no exigida por LOPSRM/RLOPSRM federal al alta]"><input className={inputCls(err.cedulaProfesional)} value={datos.cedulaProfesional} onChange={set('cedulaProfesional')} data-testid="jur-cedula" /></Field>
+        <Field label="No. de poder notarial" hint="Opcional"><input className="sg-input" value={datos.poderNotarial} onChange={set('poderNotarial')} data-testid="jur-poder" /></Field>
+        <Field label="Notaría" hint="Opcional"><input className="sg-input" value={datos.notaria} onChange={set('notaria')} data-testid="jur-notaria" /></Field>
       </div>
       <div className="mt-4 bg-blue-50 border-l-4 border-blue-500 px-4 py-3 text-sm text-blue-900">
-        Bloque opcional. Se guarda junto con el contrato como un solo registro (campo <code>datos_juridicos</code>).
+        <strong>Obligatorio para formalizar.</strong> El firmante de la dependencia y su cargo (art. 46 fr. I LOPSRM) y el representante legal del contratista (art. 46 fr. IV LOPSRM; RLOPSRM art. 61 fr. VI-b/VII) son mínimos de formalización. La cédula profesional se exige por decisión de la Fundación <span className="text-slate-500">[validar con el profe]</span>. Poder notarial y notaría son opcionales. Se guarda como un solo registro (<code>datos_juridicos</code>).
       </div>
     </div>
   );
@@ -506,11 +541,11 @@ function TabGarantias({ rows, onCell, onAdd, onRemove, anticipoPct, setAnticipoP
         <table className="w-full text-sm">
           <thead className="bg-sigecop-blue-light text-sigecop-blue">
             <tr>
-              <th className="text-left px-3 py-2 w-40">Tipo de póliza</th>
-              <th className="text-left px-3 py-2">Afianzadora</th>
-              <th className="text-left px-3 py-2 w-40">No. de póliza</th>
-              <th className="text-right px-3 py-2 w-40">Monto</th>
-              <th className="text-left px-3 py-2 w-48">Vigencia</th>
+              <th className="text-left px-3 py-2 w-44">Tipo de póliza <span className="text-red-400">*</span></th>
+              <th className="text-left px-3 py-2">Afianzadora <span className="text-red-400">*</span></th>
+              <th className="text-left px-3 py-2 w-40">No. de póliza <span className="text-red-400">*</span></th>
+              <th className="text-right px-3 py-2 w-40">Monto <span className="text-red-400">*</span></th>
+              <th className="text-left px-3 py-2 w-48">Vigencia <span className="text-red-400">*</span></th>
               <th className="w-10 px-2 py-2"></th>
             </tr>
           </thead>
@@ -521,15 +556,20 @@ function TabGarantias({ rows, onCell, onAdd, onRemove, anticipoPct, setAnticipoP
               const excede = Number(p.monto) > 0 && montoContrato > 0 && Number(p.monto) > montoContrato;
               return (
                 <tr key={p.rid} className={`border-t border-slate-200 ${(errIdx === i || excede) ? 'bg-red-50' : ''}`}>
-                  <td className="px-2 py-1 align-top"><input className="sg-input" value={p.tipo} onChange={onCell(i, 'tipo')} disabled={soloLectura} /></td>
-                  <td className="px-2 py-1 align-top"><input className="sg-input" value={p.afianzadora} onChange={onCell(i, 'afianzadora')} disabled={soloLectura} /></td>
-                  <td className="px-2 py-1 align-top"><input className="sg-input font-mono text-xs" value={p.poliza} onChange={onCell(i, 'poliza')} disabled={soloLectura} /></td>
+                  <td className="px-2 py-1 align-top">
+                    <select className={inputCls(errIdx === i && !String(p.tipo).trim())} value={p.tipo} onChange={onCell(i, 'tipo')} disabled={soloLectura} data-testid={`garantia-tipo-${i}`}>
+                      <option value="">— Selecciona —</option>
+                      {TIPOS_GARANTIA.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </td>
+                  <td className="px-2 py-1 align-top"><input className="sg-input" value={p.afianzadora} onChange={onCell(i, 'afianzadora')} disabled={soloLectura} data-testid={`garantia-afianzadora-${i}`} /></td>
+                  <td className="px-2 py-1 align-top"><input className="sg-input font-mono text-xs" value={p.poliza} onChange={onCell(i, 'poliza')} disabled={soloLectura} data-testid={`garantia-poliza-${i}`} /></td>
                   <td className="px-2 py-1 align-top">
                     <input type="number" min="0" step="0.01" className={`sg-input text-right${excede ? ' border-red-500 ring-1 ring-red-400' : ''}`} value={p.monto} onChange={onCell(i, 'monto')} disabled={soloLectura} data-testid={`garantia-monto-${i}`} />
                     {excede && <span className="block text-xs text-red-600 mt-1" data-testid={`garantia-excede-${i}`}>⚠ excede el monto del contrato</span>}
                   </td>
                   <td className="px-2 py-1 align-top">
-                    <input type="date" lang="es-MX" className="sg-input" value={p.vigencia} onChange={onCell(i, 'vigencia')} disabled={soloLectura} />
+                    <input type="date" lang="es-MX" className="sg-input" value={p.vigencia} onChange={onCell(i, 'vigencia')} disabled={soloLectura} data-testid={`garantia-vigencia-${i}`} />
                     {vencida && <span className="block text-xs text-amber-600 mt-1">⚠ vigencia vencida</span>}
                   </td>
                   <td className="px-2 py-1 text-center align-top">
@@ -539,14 +579,30 @@ function TabGarantias({ rows, onCell, onAdd, onRemove, anticipoPct, setAnticipoP
               );
             })}
             {rows.length === 0 && (
-              <tr><td colSpan={6} className="px-3 py-4 text-center text-slate-400">Sin pólizas. Agrega una o deja el bloque vacío.</td></tr>
+              <tr><td colSpan={6} className="px-3 py-4 text-center text-slate-400">Sin pólizas. Agrega al menos la fianza de <strong>cumplimiento</strong> (obligatoria).</td></tr>
             )}
           </tbody>
         </table>
       </div>
-      <button type="button" onClick={onAdd} disabled={soloLectura} className="mb-4 text-sm text-sigecop-accent hover:underline disabled:opacity-40">
+      <button type="button" onClick={onAdd} disabled={soloLectura} className="mb-3 text-sm text-sigecop-accent hover:underline disabled:opacity-40">
         + Agregar póliza
       </button>
+
+      {/* alta-v5: estado de las fianzas OBLIGATORIAS por ley. Es indicativo; el gate DURO (bloquea
+          avance/guardado) vive en validarPaso(4). Cumplimiento siempre; anticipo si %anticipo>0. */}
+      <div className="mb-4 text-sm" data-testid="garantias-requeridas">
+        {(() => {
+          const tieneCumpl = rows.some((g) => g.tipo === TIPO_CUMPLIMIENTO && polizaCompleta(g));
+          const requiereAnt = (Number(anticipoPct) || 0) > 0;
+          const tieneAnt = rows.some((g) => g.tipo === TIPO_ANTICIPO && polizaCompleta(g));
+          const faltan = [];
+          if (!tieneCumpl) faltan.push('cumplimiento');
+          if (requiereAnt && !tieneAnt) faltan.push('anticipo');
+          return faltan.length
+            ? <span className="block text-red-700 bg-red-50 border border-red-300 rounded px-3 py-2" data-testid="garantias-faltan">Falta(n) la(s) fianza(s) obligatoria(s): <strong>{faltan.join(' y ')}</strong>. La de cumplimiento es obligatoria siempre (art. 47 + art. 48 fr. II LOPSRM){requiereAnt ? '; la de anticipo, por haber % de anticipo > 0 (art. 48 fr. I)' : ''}.</span>
+            : <span className="block text-green-700 bg-green-50 border border-green-300 rounded px-3 py-2" data-testid="garantias-ok">✓ Fianzas obligatorias capturadas (cumplimiento{requiereAnt ? ' y anticipo' : ''}).</span>;
+        })()}
+      </div>
 
       <div className="bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 text-sm text-slate-800 mb-3">
         <strong>Penalizaciones — Art. 46 Bis LOPSRM:</strong> se aplicarán deductivas por atraso conforme al programa de obra. El 5 al millar (art. 191 LFD) se carga automáticamente sobre cada estimación.
@@ -1191,28 +1247,60 @@ export default function AltaContrato() {
       }
       return { ok: true };
     }
-    if (idx === 3) return { ok: true }; // datos jurídicos: bloque opcional
+    if (idx === 3) {
+      // alta-v5: datos jurídicos OBLIGATORIOS (mínimo de formalización). Antes era opcional
+      // (`{ ok: true }`). Fundamento por campo en REQ_JURIDICOS/ETIQUETA_JURIDICO (arriba):
+      // art. 46 fr. I y IV LOPSRM; RLOPSRM art. 61; cédula profesional [validar].
+      const faltan = REQ_JURIDICOS.filter((k) => String(datosJuridicos[k] ?? '').trim() === '');
+      if (faltan.length) {
+        const campos = {}; faltan.forEach((k) => { campos[k] = true; });
+        return { ok: false, msg: `Datos jurídicos: completa ${faltan.map((k) => ETIQUETA_JURIDICO[k]).join(', ')} (obligatorios para formalizar — art. 46 fr. I y IV LOPSRM).`, errores: { ...ERR0, campos } };
+      }
+      return { ok: true };
+    }
     if (idx === 4) {
+      const a = Number(anticipoPct) || 0; // anticipo vacío = 0 = sin anticipo
       if (anticipoPct !== '' && anticipoPct !== null) {
-        const a = Number(anticipoPct);
         if (!(a >= 0 && a <= 100)) return { ok: false, msg: 'El % de anticipo debe estar entre 0 y 100', errores: { ...ERR0, campos: { anticipoPct: true } } };
         // alta-v4 (BUG REPORTADO / D-5 resuelta): anticipo > umbral ⇒ el PDF de autorización del
-        // anticipo es OBLIGATORIO. Antes solo se PEDÍA (aviso + uploader) pero NO se EXIGÍA → se
-        // podía GUARDAR sin él. Ahora bloquea el AVANCE del paso Y el GUARDADO (mismo candado que
-        // el PDF firmado, vía validar()). pdfAnticipoFile = adjuntado en captura; contratoGuardadoId
-        // = ya-guardado (se subió al guardar). Fundamento del umbral [validar] con el profe.
+        // anticipo es OBLIGATORIO. Bloquea el AVANCE del paso Y el GUARDADO (mismo candado que el
+        // PDF firmado, vía validar()). pdfAnticipoFile = adjuntado en captura; contratoGuardadoId =
+        // ya-guardado (se subió al guardar). Fundamento del umbral [validar] con el profe.
         if (a > ANTICIPO_UMBRAL_PDF && !pdfAnticipoFile && !contratoGuardadoId) {
           return { ok: false, msg: `Anticipo ${a}% supera el ${ANTICIPO_UMBRAL_PDF}%: adjunta el PDF de autorización del anticipo (obligatorio para avanzar y guardar).`, errores: { ...ERR0, anticipoPdfFalta: true } };
         }
       }
+      // alta-v5: validez por póliza capturada (campos requeridos) + sin tipos duplicados (la BD tiene
+      // UNIQUE(contrato_id, tipo)). Una fila TOTALMENTE vacía se ignora aquí; la obligatoriedad de
+      // cumplimiento/anticipo se exige más abajo.
+      const tiposVistos = new Set();
       for (let i = 0; i < garantias.length; i++) {
         const g = garantias[i];
-        if (garantiaVacia(g)) continue; // fila completamente vacía → se ignora
-        if (!String(g.tipo).trim()) return { ok: false, msg: `Garantía #${i + 1}: el tipo es obligatorio`, errores: { ...ERR0, garantiaIdx: i } };
-        if (!(Number(g.monto) > 0)) return { ok: false, msg: `Garantía #${i + 1}: si capturas la póliza, indica un monto mayor a 0`, errores: { ...ERR0, garantiaIdx: i } };
+        if (garantiaVacia(g)) continue;
+        if (!String(g.tipo).trim()) return { ok: false, msg: `Garantía #${i + 1}: selecciona el tipo de póliza.`, errores: { ...ERR0, garantiaIdx: i } };
+        if (tiposVistos.has(g.tipo)) return { ok: false, msg: `Garantía #${i + 1}: ya hay una póliza de tipo "${g.tipo}"; cada tipo se captura una sola vez.`, errores: { ...ERR0, garantiaIdx: i } };
+        tiposVistos.add(g.tipo);
+        if (!String(g.afianzadora).trim()) return { ok: false, msg: `Garantía #${i + 1} (${g.tipo}): la afianzadora es obligatoria.`, errores: { ...ERR0, garantiaIdx: i } };
+        if (!String(g.poliza).trim()) return { ok: false, msg: `Garantía #${i + 1} (${g.tipo}): el número de póliza es obligatorio.`, errores: { ...ERR0, garantiaIdx: i } };
+        if (!(Number(g.monto) > 0)) return { ok: false, msg: `Garantía #${i + 1} (${g.tipo}): indica un monto mayor a 0.`, errores: { ...ERR0, garantiaIdx: i } };
+        if (!String(g.vigencia).trim()) return { ok: false, msg: `Garantía #${i + 1} (${g.tipo}): la vigencia es obligatoria.`, errores: { ...ERR0, garantiaIdx: i } };
         // alta-v2 (1.4): una garantía no puede exceder el monto del contrato (la vista la marca
         // EN VIVO; aquí se bloquea el avance; el backend la revalida).
         if (Number(g.monto) > montoDerivado) return { ok: false, msg: `Garantía #${i + 1}: el monto (${formatoMXN.format(Number(g.monto))}) no puede exceder el monto del contrato (${formatoMXN.format(montoDerivado)}).`, errores: { ...ERR0, garantiaIdx: i } };
+      }
+      // alta-v5: fianzas OBLIGATORIAS por ley. CUMPLIMIENTO siempre (art. 47: "No podrá formalizarse
+      // contrato alguno que no se encuentre garantizado de acuerdo con lo dispuesto en la fracción II
+      // del artículo 48"; art. 48 fr. II). ANTICIPO solo si %anticipo>0 (art. 48 fr. I: garantizar
+      // "los anticipos que reciban... por la totalidad del monto de los anticipos").
+      const tieneCumplimiento = garantias.some((g) => g.tipo === TIPO_CUMPLIMIENTO && polizaCompleta(g) && Number(g.monto) <= montoDerivado);
+      if (!tieneCumplimiento) {
+        return { ok: false, msg: 'Falta la fianza de CUMPLIMIENTO (obligatoria para formalizar — art. 47 + art. 48 fr. II LOPSRM). Agrega la póliza de cumplimiento con todos sus datos.', errores: { ...ERR0, garantiasFaltan: true } };
+      }
+      if (a > 0) {
+        const tieneAnticipo = garantias.some((g) => g.tipo === TIPO_ANTICIPO && polizaCompleta(g) && Number(g.monto) <= montoDerivado);
+        if (!tieneAnticipo) {
+          return { ok: false, msg: `Con anticipo ${a}% (> 0), la fianza de ANTICIPO es obligatoria (art. 48 fr. I LOPSRM). Agrega la póliza de anticipo con todos sus datos.`, errores: { ...ERR0, garantiasFaltan: true } };
+        }
       }
       return { ok: true };
     }
@@ -1250,6 +1338,13 @@ export default function AltaContrato() {
   const irAPaso = (target) => {
     if (target > ULTIMO_PASO_WIZARD) { setTabActivo(target); return; } // auxiliar (Registrados)
     if (target <= tabActivo) { setTabActivo(target); return; }          // atrás libre
+    // DEFENSA EXPLÍCITA (fix de raíz): NUNCA avanzar si el paso ACTUAL no es válido. El loop de
+    // prefijo de abajo ya lo hacía cuando `pasoMaxAlcanzado >= tabActivo`; pero si por algún flujo
+    // queda `tabActivo > pasoMaxAlcanzado` (p.ej. tras guardar, que hace setTabActivo(Registrados)
+    // con pasoMaxAlcanzado=0), `destino` podría ser ≤ tabActivo y dejar el loop VACÍO → avanzaría
+    // sin validar. Validar el paso actual de entrada cierra ese hueco sin importar el estado.
+    const vActual = validarPaso(tabActivo);
+    if (!vActual.ok) { setErrores(vActual.errores); setTabActivo(tabActivo); setErrorWizard(vActual.msg); return; }
     const destino = Math.min(target, pasoMaxAlcanzado + 1);             // solo un paso nuevo
     for (let p = tabActivo; p < destino; p++) {
       const v = validarPaso(p);
@@ -1294,7 +1389,10 @@ export default function AltaContrato() {
             ? { clave: String(c.clave || '').trim(), periodoNumero: p.numero, cantidad: Number(v) }
             : null;
         }).filter(Boolean)),
-        garantias: garantias.filter((g) => !garantiaVacia(g)).map((g) => ({ tipo: g.tipo, afianzadora: g.afianzadora, poliza: g.poliza, monto: g.monto, vigencia: g.vigencia }))
+        // alta-v5: defensa-en-profundidad: solo se persisten pólizas COMPLETAS (polizaCompleta). El
+        // guardado ya pasó por validar() (todos los pasos), que exige cumplimiento/anticipo completos;
+        // este filtro hace explícito en el borde de persistencia que nunca se manda una póliza a medias.
+        garantias: garantias.filter((g) => polizaCompleta(g)).map((g) => ({ tipo: g.tipo, afianzadora: g.afianzadora, poliza: g.poliza, monto: g.monto, vigencia: g.vigencia }))
       };
       const creado = await api.crearContrato(payload);
       const nuevoId = creado && creado.id ? creado.id : null;
@@ -1366,31 +1464,45 @@ export default function AltaContrato() {
     if (REQ_GENERALES.some((k) => c[k]) || c.superintendente) s.add(0);
     if (errores.conceptoIdx != null || errores.catalogoMonto) s.add(1);
     if (errores.programaError) s.add(2);
-    if (c.anticipoPct || errores.garantiaIdx != null || errores.anticipoPdfFalta) s.add(4); // alta-v4: +PDF anticipo
+    if (REQ_JURIDICOS.some((k) => c[k])) s.add(3); // alta-v5: jurídicos obligatorios
+    if (c.anticipoPct || errores.garantiaIdx != null || errores.anticipoPdfFalta || errores.garantiasFaltan) s.add(4); // alta-v4: +PDF anticipo; alta-v5: +fianzas obligatorias
     if (errores.pdfFirmadoFalta) s.add(5); // alta-v3: PDF firmado obligatorio (último paso)
     return s;
   }, [errores]);
 
-  // alta-v4 (gating ESTRICTAMENTE SECUENCIAL — fix de raíz del "se desbloquean todas de golpe"):
-  //  · primerPasoInvalido: primer paso del wizard que NO valida (o ULTIMO+1 si todos validan).
-  //  · fronteraAccesible = min(pasoMaxAlcanzado + 1, primerPasoInvalido):
-  //      - "+1 sobre el máximo alcanzado" ⇒ solo se desbloquea la SIGUIENTE pestaña (aunque las
-  //        opcionales —jurídicos, garantías vacías— sean válidas, NO se abren todas en cascada);
-  //      - "min con primerPasoInvalido" ⇒ se re-bloquean las posteriores si se rompe un paso previo.
-  //  Una pestaña del wizard es accesible sii i <= fronteraAccesible; Registrados (auxiliar) siempre.
-  //  Mismo criterio que aplica irAPaso (destino = min(target, max+1) + validación del prefijo):
-  //  affordance y enforcement comparten la regla → sin asimetrías.
+  // alta-v5 (RAÍZ del nuevo modelo de navegación): se ELIMINA el "desbloqueo progresivo clicable"
+  // (la fuente repetida de fugas de gating). Durante la captura, los NOMBRES de las pestañas NO
+  // navegan: solo se avanza/retrocede con «Siguiente» (que valida el paso actual) y «Atrás». Los
+  // nombres se vuelven clicables SOLO cuando la captura está COMPLETA y válida: todos los pasos
+  // válidos (primerPasoInvalido > ULTIMO) Y el PDF firmado cargado; en ese estado, saltar/revisar
+  // es libre y seguro (no hay nada que gatear). Esto elimina de raíz la clase de bugs de saltar
+  // pestañas. Se CONSERVA irAPaso (Siguiente/Atrás + hardening) y el reset+redirect al guardar.
+  //  · primerPasoInvalido: primer paso del wizard que NO valida (o ULTIMO+1 si todos validan) —
+  //    sigue alimentando el botón Guardar (validez global) y ahora también capturaCompleta.
   const primerPasoInvalido = (() => {
     for (const p of PASOS_WIZARD) { if (!validarPaso(p).ok) return p; }
     return ULTIMO_PASO_WIZARD + 1;
   })();
-  const fronteraAccesible = Math.min(pasoMaxAlcanzado + 1, primerPasoInvalido);
-  const pasoAccesible = (i) => (i > ULTIMO_PASO_WIZARD) ? true : (i <= fronteraAccesible);
+  // Captura completa = TODOS los pasos válidos (incluye jurídicos obligatorios=paso 3, garantías
+  // obligatorias=paso 4 y PDF firmado=paso 5) Y PDF firmado presente (adjuntado o ya-guardado).
+  // (validarPaso(5) ya exige el PDF; el segundo conjunto lo hace EXPLÍCITO e inmune a cambios futuros.)
+  const capturaCompleta = (primerPasoInvalido > ULTIMO_PASO_WIZARD) && (!!pdfFirmadoFile || !!contratoGuardadoId);
+  // tabsBloqueados: durante la captura, TODAS las pestañas salvo la activa quedan deshabilitadas
+  // (los nombres no navegan); con la captura completa, NINGUNA (salto/revisión libre por nombre).
   const tabsBloqueados = (() => {
     const s = new Set();
-    for (let i = 0; i <= ULTIMO_PASO_WIZARD; i++) { if (!pasoAccesible(i)) s.add(i); }
+    if (capturaCompleta) return s;
+    for (let i = 0; i <= ULTIMO_PASO_WIZARD + 1; i++) { if (i !== tabActivo) s.add(i); }
     return s;
   })();
+  // Click en el NOMBRE de una pestaña: NO navega durante la captura (defensa redundante con
+  // tabsBloqueados —que ya deshabilita los botones—); con la captura completa, salto libre.
+  const clicNombrePestaña = (target) => {
+    if (!capturaCompleta) return;
+    setErrores(ERR0);
+    setErrorWizard(null);
+    setTabActivo(target);
+  };
 
   const wrapTab = (node) => (<RegionEditable disabled={soloLectura}>{node}</RegionEditable>);
 
@@ -1410,7 +1522,7 @@ export default function AltaContrato() {
     { label: 'Programa de obra', content: wrapTab(
       <TabProgramaMatriz conceptos={conceptos} periodos={periodos} ciclo={ciclo} setCiclo={setCiclo} celdas={celdas} setCelda={setCelda} soloLectura={soloLectura} />
     ) },
-    { label: 'Datos jurídicos', content: wrapTab(<TabJuridicos datos={datosJuridicos} set={setDatosJur} />) },
+    { label: 'Datos jurídicos', content: wrapTab(<TabJuridicos datos={datosJuridicos} set={setDatosJur} err={errores.campos} />) },
     { label: 'Garantías, penalizaciones y amortización', content: wrapTab(
       <TabGarantias rows={garantias} onCell={mkCell(setGarantias)} onAdd={mkAdd(setGarantias, { tipo: '', afianzadora: '', poliza: '', monto: '', vigencia: '' })} onRemove={mkRemove(setGarantias)} anticipoPct={anticipoPct} setAnticipoPct={setAnticipoPct} soloLectura={soloLectura} errIdx={errores.garantiaIdx} errAnticipo={errores.campos.anticipoPct} contratoId={contratoGuardadoId} montoContrato={montoDerivado} pdfAnticipoFile={pdfAnticipoFile} setPdfAnticipoFile={setPdfAnticipoFile} />
     ) },
@@ -1429,7 +1541,10 @@ export default function AltaContrato() {
         breadcrumb={[{ label: 'Inicio', href: '/' }, { label: 'Contratos' }, { label: 'Alta de contratos' }]}
       />
 
-      <Tabs tabs={tabs} active={tabActivo} onTabChange={irAPaso} tabsConError={tabsConError} tabsBloqueados={tabsBloqueados} />
+      {/* alta-v5: onTabChange = clicNombrePestaña (los nombres solo navegan con la captura completa).
+          «Siguiente»/«Atrás» siguen llamando a irAPaso (validador) directamente, abajo. */}
+      <Tabs tabs={tabs} active={tabActivo} onTabChange={clicNombrePestaña} tabsConError={tabsConError} tabsBloqueados={tabsBloqueados}
+        tituloBloqueado="Durante la captura navega con «Siguiente» y «Atrás»; los nombres se habilitan al completar todo (incluido el PDF firmado)." />
 
       {/* alta-v2 (1.3): banner de error del wizard PERSISTENTE — no se auto-descarta; el usuario
           lo cierra con la ✕. Reemplaza al Toast efímero para los errores de validación/guardado. */}
@@ -1464,7 +1579,11 @@ export default function AltaContrato() {
                 {guardando ? 'Guardando…' : 'Guardar contrato'}
               </button>
             </>
-          ) : null}
+          ) : (
+            // alta-v5: en "Registrados" (post-guardado / consulta) los nombres de pestaña no navegan
+            // durante la captura, así que la vía explícita de regreso al wizard es este botón.
+            <button type="button" className="sg-btn-primary" disabled={soloLectura} onClick={() => { resetFormulario(); setTabActivo(0); }} data-testid="btn-nueva-alta">+ Capturar nuevo contrato</button>
+          )}
         </div>
       </div>
 

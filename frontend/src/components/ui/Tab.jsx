@@ -6,7 +6,10 @@ import { useState } from 'react';
 // alta-v2 (1.2): `tabsBloqueados` (Set de indices, opcional) desactiva pestañas a las que
 // aún no se puede saltar (pasos posteriores a uno inválido). La pestaña ACTIVA nunca se
 // bloquea. Sin el prop, no hay bloqueo (retrocompatible).
-export default function Tabs({ tabs, initial = 0, active: activeProp, onTabChange, tabsConError, tabsBloqueados }) {
+// alta-v5: `tituloBloqueado` (string, opcional) sobreescribe el title/tooltip de las pestañas
+// bloqueadas (p.ej. el alta usa navegación lineal: los nombres no navegan durante la captura).
+// Sin el prop, conserva el texto por defecto (retrocompatible con las demás vistas).
+export default function Tabs({ tabs, initial = 0, active: activeProp, onTabChange, tabsConError, tabsBloqueados, tituloBloqueado }) {
   const [activeInt, setActiveInt] = useState(initial);
   const active = activeProp != null ? activeProp : activeInt;
   const setActive = (i) => {
@@ -28,7 +31,7 @@ export default function Tabs({ tabs, initial = 0, active: activeProp, onTabChang
                 type="button"
                 onClick={() => { if (!bloqueado) setActive(i); }}
                 disabled={bloqueado}
-                title={bloqueado ? 'Completa los pasos anteriores para desbloquear esta pestaña' : undefined}
+                title={bloqueado ? (tituloBloqueado || 'Completa los pasos anteriores para desbloquear esta pestaña') : undefined}
                 data-bloqueado={bloqueado ? 'true' : undefined}
                 className={`px-4 py-3 text-sm whitespace-nowrap border-b-2 transition-colors ${
                   active === i

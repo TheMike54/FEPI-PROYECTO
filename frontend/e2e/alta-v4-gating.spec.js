@@ -6,7 +6,8 @@
 import { test, expect } from '@playwright/test';
 import {
   freshHome, enterAppMode, goToViaSidebar,
-  altaLlenarDatosGenerales, altaAgregarConcepto, altaAdjuntarPdfFirmado, altaAdjuntarPdfAnticipo,
+  altaLlenarDatosGenerales, altaAgregarConcepto, altaLlenarJuridicos, altaLlenarGarantias,
+  altaAdjuntarPdfFirmado, altaAdjuntarPdfAnticipo,
 } from './_helpers.js';
 
 test.skip(!!process.env.CI, 'alta-v4: login real requiere backend+BD; se corre en local');
@@ -15,6 +16,7 @@ test.skip(!!process.env.CI, 'alta-v4: login real requiere backend+BD; se corre e
 const tab = (page, re) => page.getByRole('button', { name: re });
 
 // Lleva el wizard al paso 4 (garantías) con datos válidos; opcionalmente fija el % de anticipo.
+// alta-v5: los jurídicos (paso 3) son obligatorios → se rellenan para poder llegar a garantías.
 async function irAGarantias(page, { anticipo, folio } = {}) {
   await altaLlenarDatosGenerales(page, { folio, plazo: 60, fechaInicio: '2026-06-01' });
   await page.getByTestId('btn-siguiente').click();             // → catálogo (1)
@@ -22,6 +24,7 @@ async function irAGarantias(page, { anticipo, folio } = {}) {
   await page.getByTestId('btn-siguiente').click();             // → programa (2)
   await page.getByTestId('celda-0-1').fill('100');             // cuadra 100%
   await page.getByTestId('btn-siguiente').click();             // → jurídicos (3)
+  await altaLlenarJuridicos(page);                             // alta-v5: obligatorios
   await page.getByTestId('btn-siguiente').click();             // → garantías (4)
   if (anticipo != null) await page.getByTestId('anticipo-input').fill(String(anticipo));
 }
@@ -42,9 +45,10 @@ test.describe('alta-v4 — anticipo obligatorio sobre umbral + gating secuencial
     await expect(page.getByTestId('error-wizard')).toBeVisible();
     await expect(page.getByTestId('error-wizard')).toContainText('autorización del anticipo');
     await expect(page.getByTestId('anticipo-input')).toBeVisible(); // sigue en el paso 4
-    await expect(tab(page, /PDF firmado/)).toBeDisabled();          // paso 5 bloqueado
-    // Adjuntar la autorización habilita el avance al paso final.
+    await expect(tab(page, /PDF firmado/)).toBeDisabled();          // paso 5 bloqueado (captura incompleta)
+    // Adjuntar la autorización + las fianzas obligatorias habilita el avance al paso final.
     await altaAdjuntarPdfAnticipo(page);
+    await altaLlenarGarantias(page, { conAnticipo: true });         // alta-v5: cumplimiento + anticipo
     await page.getByTestId('btn-siguiente').click();
     await expect(page.getByTestId('pdf-firmado-precaptura')).toBeVisible();
   });
@@ -54,6 +58,7 @@ test.describe('alta-v4 — anticipo obligatorio sobre umbral + gating secuencial
     const folio = `E2E-V4-${Date.now()}`;
     await irAGarantias(page, { anticipo: 60, folio });
     await altaAdjuntarPdfAnticipo(page);                       // autorización (obligatoria > umbral)
+    await altaLlenarGarantias(page, { conAnticipo: true });    // alta-v5: cumplimiento + anticipo
     await page.getByTestId('btn-siguiente').click();           // → PDF firmado (5)
     await expect(page.getByTestId('btn-guardar')).toBeDisabled();   // aún falta el firmado
     await altaAdjuntarPdfFirmado(page);
@@ -64,32 +69,34 @@ test.describe('alta-v4 — anticipo obligatorio sobre umbral + gating secuencial
     await expect(page.locator('tr', { hasText: folio })).toBeVisible();
   });
 
-  test('(b) no se puede saltar a una pestaña no alcanzada', async ({ page }) => {
-    // Paso 0 vacío: las pestañas posteriores están BLOQUEADAS (no clicables).
+  test('(b) alta-v5: los nombres NO se habilitan progresivamente durante la captura', async ({ page }) => {
+    // Paso 0 activo: TODOS los demás nombres están deshabilitados (no navegan).
+    await expect(tab(page, /Catálogo de conceptos/)).toBeDisabled();
     await expect(tab(page, /Programa de obra/)).toBeDisabled();
     await expect(tab(page, /Garantías/)).toBeDisabled();
     await expect(tab(page, /PDF firmado/)).toBeDisabled();
-    // Completar SOLO el paso 0 (sin avanzar): se desbloquea la 1 (catálogo) pero NO la 2.
+    // Completar el paso 0 NO habilita el nombre del siguiente (ya NO hay desbloqueo progresivo):
+    // el avance es SOLO con «Siguiente».
     await altaLlenarDatosGenerales(page);
-    await expect(tab(page, /Catálogo de conceptos/)).toBeEnabled();
-    await expect(tab(page, /Programa de obra/)).toBeDisabled();
+    await expect(tab(page, /Catálogo de conceptos/)).toBeDisabled();
+    await page.getByTestId('btn-siguiente').click();           // «Siguiente» sí avanza
+    await expect(page.getByRole('heading', { name: 'Catálogo de conceptos' })).toBeVisible();
+    // Y el nombre del paso anterior tampoco navega (se vuelve con «Atrás»).
+    await expect(tab(page, /Datos generales/)).toBeDisabled();
   });
 
-  test('(c) cada pestaña desbloquea SOLO la siguiente (sin cascada)', async ({ page }) => {
-    await altaLlenarDatosGenerales(page);
-    await page.getByTestId('btn-siguiente').click();           // → catálogo (1)
-    await expect(tab(page, /Programa de obra/)).toBeDisabled(); // catálogo vacío: la 2 sigue bloqueada
-    await altaAgregarConcepto(page, 0, { cantidad: 100, pu: 50 });
-    await page.getByTestId('btn-siguiente').click();           // → programa (2)
-    await page.getByTestId('celda-0-1').fill('100');           // cuadra 100%
-    // CLAVE (anti-cascada): completado el paso 2, SOLO se desbloquea el 3 (jurídicos);
-    // garantías (4) y PDF firmado (5) siguen BLOQUEADOS (antes se abrían los 3 de golpe).
-    await expect(tab(page, /Datos jurídicos/)).toBeEnabled();
-    await expect(tab(page, /Garantías/)).toBeDisabled();
-    await expect(tab(page, /PDF firmado/)).toBeDisabled();
-    // Avanzar uno: ahora se desbloquea el 4, pero el 5 sigue bloqueado.
-    await page.getByTestId('btn-siguiente').click();           // → jurídicos (3)
-    await expect(tab(page, /Garantías/)).toBeEnabled();
-    await expect(tab(page, /PDF firmado/)).toBeDisabled();
+  test('(c) alta-v5: los nombres se habilitan SOLO con la captura completa + PDF firmado', async ({ page }) => {
+    const folio = `E2E-V4C-${Date.now()}`;
+    await irAGarantias(page, { folio });                       // sin anticipo
+    await altaLlenarGarantias(page);                           // fianza de cumplimiento
+    // Aún en captura (falta el PDF firmado): el nombre "Datos generales" NO navega.
+    await expect(tab(page, /Datos generales/)).toBeDisabled();
+    await page.getByTestId('btn-siguiente').click();           // → PDF firmado (5)
+    await expect(tab(page, /Datos generales/)).toBeDisabled(); // sin PDF → sigue incompleta
+    await altaAdjuntarPdfFirmado(page);
+    // Captura COMPLETA (todo válido + PDF): ahora los nombres navegan (revisión/salto libre).
+    await expect(tab(page, /Datos generales/)).toBeEnabled();
+    await tab(page, /Datos generales/).click();
+    await expect(page.getByTestId('dg-folio')).toHaveValue(folio);
   });
 });

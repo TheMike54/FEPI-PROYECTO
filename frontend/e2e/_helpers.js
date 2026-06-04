@@ -168,3 +168,38 @@ export async function altaAdjuntarPdfAnticipo(page, nombre = 'autorizacion-antic
   await page.getByTestId('anticipo-pdf-pendiente-file').waitFor({ state: 'visible' });
 }
 
+/**
+ * alta-v5: rellena los DATOS JURÍDICOS obligatorios (paso 3). Requiere estar en el paso jurídicos.
+ * Campos mínimos: firmante + cargo (art. 46 fr. I LOPSRM), representante legal (art. 46 fr. IV) y
+ * cédula profesional (decisión Fundación, [validar]). Poder/notaría son opcionales (no se llenan).
+ */
+export async function altaLlenarJuridicos(page, d = {}) {
+  await page.getByTestId('jur-firmante').fill(d.firmante || 'Ing. Ana López Reyes');
+  await page.getByTestId('jur-cargo').fill(d.cargo || 'Directora de Obras Públicas');
+  await page.getByTestId('jur-representante').fill(d.representante || 'Lic. Juan Pérez Soto');
+  await page.getByTestId('jur-cedula').fill(d.cedula || '12345678');
+}
+
+/**
+ * alta-v5: rellena las GARANTÍAS obligatorias (paso 4). Requiere estar en el paso garantías.
+ *  - Siempre agrega la fianza de CUMPLIMIENTO (art. 47 + 48 fr. II LOPSRM) en la fila índice 0.
+ *  - Con `conAnticipo:true` agrega además la fianza de ANTICIPO (art. 48 fr. I) en la fila índice 1.
+ * Montos pequeños (≤ monto del contrato de los tests, $5,000). Vigencia futura (no vencida).
+ */
+export async function altaLlenarGarantias(page, { conAnticipo = false } = {}) {
+  await page.getByRole('button', { name: '+ Agregar póliza' }).click();
+  await page.getByTestId('garantia-tipo-0').selectOption('Cumplimiento');
+  await page.getByTestId('garantia-afianzadora-0').fill('Afianzadora E2E, S.A.');
+  await page.getByTestId('garantia-poliza-0').fill('POL-CUMP-001');
+  await page.getByTestId('garantia-monto-0').fill('500');       // 10% de 5,000
+  await page.getByTestId('garantia-vigencia-0').fill('2027-06-01');
+  if (conAnticipo) {
+    await page.getByRole('button', { name: '+ Agregar póliza' }).click();
+    await page.getByTestId('garantia-tipo-1').selectOption('Anticipo');
+    await page.getByTestId('garantia-afianzadora-1').fill('Afianzadora E2E, S.A.');
+    await page.getByTestId('garantia-poliza-1').fill('POL-ANT-001');
+    await page.getByTestId('garantia-monto-1').fill('1000');
+    await page.getByTestId('garantia-vigencia-1').fill('2027-06-01');
+  }
+}
+

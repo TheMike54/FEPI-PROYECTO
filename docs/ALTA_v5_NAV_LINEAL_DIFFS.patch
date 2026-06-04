@@ -1,0 +1,807 @@
+--- a/frontend/src/pages/AltaContrato.jsx
++++ b/frontend/src/pages/AltaContrato.jsx
+@@ -76,7 +76,24 @@
+   String(g.vigencia || '').trim()
+ );
+ 
+-const ERR0 = { campos: {}, conceptoIdx: null, programaError: false, garantiaIdx: null, catalogoMonto: false, pdfFirmadoFalta: false, anticipoPdfFalta: false };
++// alta-v5: tipos canónicos de póliza (select). Cumplimiento y Anticipo son las EXIGIBLES por ley
++// (art. 48 fr. II y fr. I LOPSRM); "Vicios ocultos" es POST-recepción (art. 66, no exigible al alta)
++// y "Otra" para pólizas adicionales. El valor se persiste tal cual en contrato_garantias.tipo
++// (VARCHAR(40), con UNIQUE(contrato_id, tipo) → una póliza por tipo). Todas las etiquetas ≤ 40 chars.
++const TIPO_CUMPLIMIENTO = 'Cumplimiento';
++const TIPO_ANTICIPO = 'Anticipo';
++const TIPOS_GARANTIA = [TIPO_CUMPLIMIENTO, TIPO_ANTICIPO, 'Vicios ocultos', 'Otra'];
++
++// alta-v5: campos requeridos por póliza (RLOPSRM art. 98 fr. I: la póliza de fianza debe contener
++// previsiones mínimas —incl. vigencia—; el conjunto identificatorio lo fija el proyecto).
++const polizaCompleta = (g) =>
++  String(g.tipo || '').trim() !== '' &&
++  String(g.afianzadora || '').trim() !== '' &&
++  String(g.poliza || '').trim() !== '' &&
++  Number(g.monto) > 0 &&
++  String(g.vigencia || '').trim() !== '';
++
++const ERR0 = { campos: {}, conceptoIdx: null, programaError: false, garantiaIdx: null, catalogoMonto: false, pdfFirmadoFalta: false, anticipoPdfFalta: false, garantiasFaltan: false };
+ 
+ // alta-v2 (4.2): valores iniciales VACÍOS (también usados por "Cancelar"). El contrato nuevo
+ // arranca en blanco; el `tipo` mantiene la primera opción del select (campo obligatorio que
+@@ -99,6 +116,24 @@
+   notaria: ''
+ };
+ 
++// alta-v5: datos jurídicos OBLIGATORIOS (mínimo de formalización). Fundamento por campo:
++//  · firmanteDependencia + cargoFirmante: art. 46 fr. I LOPSRM (dependencia/entidad convocante) +
++//    art. 47/48 LOPSRM (la persona servidora pública facultada para firmar el contrato).
++//  · representanteLegal: art. 46 fr. IV LOPSRM (acreditación de existencia y personalidad del
++//    licitante adjudicado) + RLOPSRM art. 61 fr. VI-b)/VII (facultades del representante para
++//    suscribir el contrato).
++//  · cedulaProfesional: [validar] — LOPSRM/RLOPSRM federal NO la exigen al alta (el responsable/DRO
++//    deriva de reglamentos de construcción locales y de la responsabilidad profesional). Se exige
++//    por decisión de la Fundación; confirmar el fundamento con el profe.
++// poderNotarial/notaria quedan OPCIONALES (una de varias formas de acreditar personalidad) [validar].
++const REQ_JURIDICOS = ['firmanteDependencia', 'cargoFirmante', 'representanteLegal', 'cedulaProfesional'];
++const ETIQUETA_JURIDICO = {
++  firmanteDependencia: 'firmante de la dependencia',
++  cargoFirmante: 'cargo del firmante',
++  representanteLegal: 'representante legal',
++  cedulaProfesional: 'cédula profesional'
++};
++
+ const inputCls = (err) => `sg-input${err ? ' border-red-500 ring-1 ring-red-400' : ''}`;
+ 
+ function Field({ label, required, children, hint }) {
+@@ -401,20 +436,20 @@
+   );
+ }
+ 
+-function TabJuridicos({ datos, set }) {
++function TabJuridicos({ datos, set, err = {} }) {
+   return (
+     <div>
+       <h3 className="text-lg font-bold text-sigecop-blue mb-4">Datos jurídicos</h3>
+       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+-        <Field label="Firmante autorizado de la dependencia"><input className="sg-input" value={datos.firmanteDependencia} onChange={set('firmanteDependencia')} /></Field>
+-        <Field label="Cargo del firmante"><input className="sg-input" value={datos.cargoFirmante} onChange={set('cargoFirmante')} /></Field>
+-        <Field label="Representante legal del contratista"><input className="sg-input" value={datos.representanteLegal} onChange={set('representanteLegal')} /></Field>
+-        <Field label="Cédula profesional del responsable técnico" hint="Ingresar cédula vigente del DRO"><input className="sg-input" value={datos.cedulaProfesional} onChange={set('cedulaProfesional')} /></Field>
+-        <Field label="No. de poder notarial"><input className="sg-input" value={datos.poderNotarial} onChange={set('poderNotarial')} /></Field>
+-        <Field label="Notaría"><input className="sg-input" value={datos.notaria} onChange={set('notaria')} /></Field>
++        <Field label="Firmante autorizado de la dependencia" required><input className={inputCls(err.firmanteDependencia)} value={datos.firmanteDependencia} onChange={set('firmanteDependencia')} data-testid="jur-firmante" /></Field>
++        <Field label="Cargo del firmante" required><input className={inputCls(err.cargoFirmante)} value={datos.cargoFirmante} onChange={set('cargoFirmante')} data-testid="jur-cargo" /></Field>
++        <Field label="Representante legal del contratista" required><input className={inputCls(err.representanteLegal)} value={datos.representanteLegal} onChange={set('representanteLegal')} data-testid="jur-representante" /></Field>
++        <Field label="Cédula profesional del responsable técnico" required hint="Cédula vigente del responsable. [validar el fundamento con el profe — no exigida por LOPSRM/RLOPSRM federal al alta]"><input className={inputCls(err.cedulaProfesional)} value={datos.cedulaProfesional} onChange={set('cedulaProfesional')} data-testid="jur-cedula" /></Field>
++        <Field label="No. de poder notarial" hint="Opcional"><input className="sg-input" value={datos.poderNotarial} onChange={set('poderNotarial')} data-testid="jur-poder" /></Field>
++        <Field label="Notaría" hint="Opcional"><input className="sg-input" value={datos.notaria} onChange={set('notaria')} data-testid="jur-notaria" /></Field>
+       </div>
+       <div className="mt-4 bg-blue-50 border-l-4 border-blue-500 px-4 py-3 text-sm text-blue-900">
+-        Bloque opcional. Se guarda junto con el contrato como un solo registro (campo <code>datos_juridicos</code>).
++        <strong>Obligatorio para formalizar.</strong> El firmante de la dependencia y su cargo (art. 46 fr. I LOPSRM) y el representante legal del contratista (art. 46 fr. IV LOPSRM; RLOPSRM art. 61 fr. VI-b/VII) son mínimos de formalización. La cédula profesional se exige por decisión de la Fundación <span className="text-slate-500">[validar con el profe]</span>. Poder notarial y notaría son opcionales. Se guarda como un solo registro (<code>datos_juridicos</code>).
+       </div>
+     </div>
+   );
+@@ -506,11 +541,11 @@
+         <table className="w-full text-sm">
+           <thead className="bg-sigecop-blue-light text-sigecop-blue">
+             <tr>
+-              <th className="text-left px-3 py-2 w-40">Tipo de póliza</th>
+-              <th className="text-left px-3 py-2">Afianzadora</th>
+-              <th className="text-left px-3 py-2 w-40">No. de póliza</th>
+-              <th className="text-right px-3 py-2 w-40">Monto</th>
+-              <th className="text-left px-3 py-2 w-48">Vigencia</th>
++              <th className="text-left px-3 py-2 w-44">Tipo de póliza <span className="text-red-400">*</span></th>
++              <th className="text-left px-3 py-2">Afianzadora <span className="text-red-400">*</span></th>
++              <th className="text-left px-3 py-2 w-40">No. de póliza <span className="text-red-400">*</span></th>
++              <th className="text-right px-3 py-2 w-40">Monto <span className="text-red-400">*</span></th>
++              <th className="text-left px-3 py-2 w-48">Vigencia <span className="text-red-400">*</span></th>
+               <th className="w-10 px-2 py-2"></th>
+             </tr>
+           </thead>
+@@ -521,15 +556,20 @@
+               const excede = Number(p.monto) > 0 && montoContrato > 0 && Number(p.monto) > montoContrato;
+               return (
+                 <tr key={p.rid} className={`border-t border-slate-200 ${(errIdx === i || excede) ? 'bg-red-50' : ''}`}>
+-                  <td className="px-2 py-1 align-top"><input className="sg-input" value={p.tipo} onChange={onCell(i, 'tipo')} disabled={soloLectura} /></td>
+-                  <td className="px-2 py-1 align-top"><input className="sg-input" value={p.afianzadora} onChange={onCell(i, 'afianzadora')} disabled={soloLectura} /></td>
+-                  <td className="px-2 py-1 align-top"><input className="sg-input font-mono text-xs" value={p.poliza} onChange={onCell(i, 'poliza')} disabled={soloLectura} /></td>
++                  <td className="px-2 py-1 align-top">
++                    <select className={inputCls(errIdx === i && !String(p.tipo).trim())} value={p.tipo} onChange={onCell(i, 'tipo')} disabled={soloLectura} data-testid={`garantia-tipo-${i}`}>
++                      <option value="">— Selecciona —</option>
++                      {TIPOS_GARANTIA.map((t) => <option key={t} value={t}>{t}</option>)}
++                    </select>
++                  </td>
++                  <td className="px-2 py-1 align-top"><input className="sg-input" value={p.afianzadora} onChange={onCell(i, 'afianzadora')} disabled={soloLectura} data-testid={`garantia-afianzadora-${i}`} /></td>
++                  <td className="px-2 py-1 align-top"><input className="sg-input font-mono text-xs" value={p.poliza} onChange={onCell(i, 'poliza')} disabled={soloLectura} data-testid={`garantia-poliza-${i}`} /></td>
+                   <td className="px-2 py-1 align-top">
+                     <input type="number" min="0" step="0.01" className={`sg-input text-right${excede ? ' border-red-500 ring-1 ring-red-400' : ''}`} value={p.monto} onChange={onCell(i, 'monto')} disabled={soloLectura} data-testid={`garantia-monto-${i}`} />
+                     {excede && <span className="block text-xs text-red-600 mt-1" data-testid={`garantia-excede-${i}`}>⚠ excede el monto del contrato</span>}
+                   </td>
+                   <td className="px-2 py-1 align-top">
+-                    <input type="date" lang="es-MX" className="sg-input" value={p.vigencia} onChange={onCell(i, 'vigencia')} disabled={soloLectura} />
++                    <input type="date" lang="es-MX" className="sg-input" value={p.vigencia} onChange={onCell(i, 'vigencia')} disabled={soloLectura} data-testid={`garantia-vigencia-${i}`} />
+                     {vencida && <span className="block text-xs text-amber-600 mt-1">⚠ vigencia vencida</span>}
+                   </td>
+                   <td className="px-2 py-1 text-center align-top">
+@@ -539,15 +579,31 @@
+               );
+             })}
+             {rows.length === 0 && (
+-              <tr><td colSpan={6} className="px-3 py-4 text-center text-slate-400">Sin pólizas. Agrega una o deja el bloque vacío.</td></tr>
++              <tr><td colSpan={6} className="px-3 py-4 text-center text-slate-400">Sin pólizas. Agrega al menos la fianza de <strong>cumplimiento</strong> (obligatoria).</td></tr>
+             )}
+           </tbody>
+         </table>
+       </div>
+-      <button type="button" onClick={onAdd} disabled={soloLectura} className="mb-4 text-sm text-sigecop-accent hover:underline disabled:opacity-40">
++      <button type="button" onClick={onAdd} disabled={soloLectura} className="mb-3 text-sm text-sigecop-accent hover:underline disabled:opacity-40">
+         + Agregar póliza
+       </button>
+ 
++      {/* alta-v5: estado de las fianzas OBLIGATORIAS por ley. Es indicativo; el gate DURO (bloquea
++          avance/guardado) vive en validarPaso(4). Cumplimiento siempre; anticipo si %anticipo>0. */}
++      <div className="mb-4 text-sm" data-testid="garantias-requeridas">
++        {(() => {
++          const tieneCumpl = rows.some((g) => g.tipo === TIPO_CUMPLIMIENTO && polizaCompleta(g));
++          const requiereAnt = (Number(anticipoPct) || 0) > 0;
++          const tieneAnt = rows.some((g) => g.tipo === TIPO_ANTICIPO && polizaCompleta(g));
++          const faltan = [];
++          if (!tieneCumpl) faltan.push('cumplimiento');
++          if (requiereAnt && !tieneAnt) faltan.push('anticipo');
++          return faltan.length
++            ? <span className="block text-red-700 bg-red-50 border border-red-300 rounded px-3 py-2" data-testid="garantias-faltan">Falta(n) la(s) fianza(s) obligatoria(s): <strong>{faltan.join(' y ')}</strong>. La de cumplimiento es obligatoria siempre (art. 47 + art. 48 fr. II LOPSRM){requiereAnt ? '; la de anticipo, por haber % de anticipo > 0 (art. 48 fr. I)' : ''}.</span>
++            : <span className="block text-green-700 bg-green-50 border border-green-300 rounded px-3 py-2" data-testid="garantias-ok">✓ Fianzas obligatorias capturadas (cumplimiento{requiereAnt ? ' y anticipo' : ''}).</span>;
++        })()}
++      </div>
++
+       <div className="bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 text-sm text-slate-800 mb-3">
+         <strong>Penalizaciones — Art. 46 Bis LOPSRM:</strong> se aplicarán deductivas por atraso conforme al programa de obra. El 5 al millar (art. 191 LFD) se carga automáticamente sobre cada estimación.
+       </div>
+@@ -1191,29 +1247,61 @@
+       }
+       return { ok: true };
+     }
+-    if (idx === 3) return { ok: true }; // datos jurídicos: bloque opcional
++    if (idx === 3) {
++      // alta-v5: datos jurídicos OBLIGATORIOS (mínimo de formalización). Antes era opcional
++      // (`{ ok: true }`). Fundamento por campo en REQ_JURIDICOS/ETIQUETA_JURIDICO (arriba):
++      // art. 46 fr. I y IV LOPSRM; RLOPSRM art. 61; cédula profesional [validar].
++      const faltan = REQ_JURIDICOS.filter((k) => String(datosJuridicos[k] ?? '').trim() === '');
++      if (faltan.length) {
++        const campos = {}; faltan.forEach((k) => { campos[k] = true; });
++        return { ok: false, msg: `Datos jurídicos: completa ${faltan.map((k) => ETIQUETA_JURIDICO[k]).join(', ')} (obligatorios para formalizar — art. 46 fr. I y IV LOPSRM).`, errores: { ...ERR0, campos } };
++      }
++      return { ok: true };
++    }
+     if (idx === 4) {
++      const a = Number(anticipoPct) || 0; // anticipo vacío = 0 = sin anticipo
+       if (anticipoPct !== '' && anticipoPct !== null) {
+-        const a = Number(anticipoPct);
+         if (!(a >= 0 && a <= 100)) return { ok: false, msg: 'El % de anticipo debe estar entre 0 y 100', errores: { ...ERR0, campos: { anticipoPct: true } } };
+         // alta-v4 (BUG REPORTADO / D-5 resuelta): anticipo > umbral ⇒ el PDF de autorización del
+-        // anticipo es OBLIGATORIO. Antes solo se PEDÍA (aviso + uploader) pero NO se EXIGÍA → se
+-        // podía GUARDAR sin él. Ahora bloquea el AVANCE del paso Y el GUARDADO (mismo candado que
+-        // el PDF firmado, vía validar()). pdfAnticipoFile = adjuntado en captura; contratoGuardadoId
+-        // = ya-guardado (se subió al guardar). Fundamento del umbral [validar] con el profe.
++        // anticipo es OBLIGATORIO. Bloquea el AVANCE del paso Y el GUARDADO (mismo candado que el
++        // PDF firmado, vía validar()). pdfAnticipoFile = adjuntado en captura; contratoGuardadoId =
++        // ya-guardado (se subió al guardar). Fundamento del umbral [validar] con el profe.
+         if (a > ANTICIPO_UMBRAL_PDF && !pdfAnticipoFile && !contratoGuardadoId) {
+           return { ok: false, msg: `Anticipo ${a}% supera el ${ANTICIPO_UMBRAL_PDF}%: adjunta el PDF de autorización del anticipo (obligatorio para avanzar y guardar).`, errores: { ...ERR0, anticipoPdfFalta: true } };
+         }
+       }
++      // alta-v5: validez por póliza capturada (campos requeridos) + sin tipos duplicados (la BD tiene
++      // UNIQUE(contrato_id, tipo)). Una fila TOTALMENTE vacía se ignora aquí; la obligatoriedad de
++      // cumplimiento/anticipo se exige más abajo.
++      const tiposVistos = new Set();
+       for (let i = 0; i < garantias.length; i++) {
+         const g = garantias[i];
+-        if (garantiaVacia(g)) continue; // fila completamente vacía → se ignora
+-        if (!String(g.tipo).trim()) return { ok: false, msg: `Garantía #${i + 1}: el tipo es obligatorio`, errores: { ...ERR0, garantiaIdx: i } };
+-        if (!(Number(g.monto) > 0)) return { ok: false, msg: `Garantía #${i + 1}: si capturas la póliza, indica un monto mayor a 0`, errores: { ...ERR0, garantiaIdx: i } };
++        if (garantiaVacia(g)) continue;
++        if (!String(g.tipo).trim()) return { ok: false, msg: `Garantía #${i + 1}: selecciona el tipo de póliza.`, errores: { ...ERR0, garantiaIdx: i } };
++        if (tiposVistos.has(g.tipo)) return { ok: false, msg: `Garantía #${i + 1}: ya hay una póliza de tipo "${g.tipo}"; cada tipo se captura una sola vez.`, errores: { ...ERR0, garantiaIdx: i } };
++        tiposVistos.add(g.tipo);
++        if (!String(g.afianzadora).trim()) return { ok: false, msg: `Garantía #${i + 1} (${g.tipo}): la afianzadora es obligatoria.`, errores: { ...ERR0, garantiaIdx: i } };
++        if (!String(g.poliza).trim()) return { ok: false, msg: `Garantía #${i + 1} (${g.tipo}): el número de póliza es obligatorio.`, errores: { ...ERR0, garantiaIdx: i } };
++        if (!(Number(g.monto) > 0)) return { ok: false, msg: `Garantía #${i + 1} (${g.tipo}): indica un monto mayor a 0.`, errores: { ...ERR0, garantiaIdx: i } };
++        if (!String(g.vigencia).trim()) return { ok: false, msg: `Garantía #${i + 1} (${g.tipo}): la vigencia es obligatoria.`, errores: { ...ERR0, garantiaIdx: i } };
+         // alta-v2 (1.4): una garantía no puede exceder el monto del contrato (la vista la marca
+         // EN VIVO; aquí se bloquea el avance; el backend la revalida).
+         if (Number(g.monto) > montoDerivado) return { ok: false, msg: `Garantía #${i + 1}: el monto (${formatoMXN.format(Number(g.monto))}) no puede exceder el monto del contrato (${formatoMXN.format(montoDerivado)}).`, errores: { ...ERR0, garantiaIdx: i } };
+       }
++      // alta-v5: fianzas OBLIGATORIAS por ley. CUMPLIMIENTO siempre (art. 47: "No podrá formalizarse
++      // contrato alguno que no se encuentre garantizado de acuerdo con lo dispuesto en la fracción II
++      // del artículo 48"; art. 48 fr. II). ANTICIPO solo si %anticipo>0 (art. 48 fr. I: garantizar
++      // "los anticipos que reciban... por la totalidad del monto de los anticipos").
++      const tieneCumplimiento = garantias.some((g) => g.tipo === TIPO_CUMPLIMIENTO && polizaCompleta(g) && Number(g.monto) <= montoDerivado);
++      if (!tieneCumplimiento) {
++        return { ok: false, msg: 'Falta la fianza de CUMPLIMIENTO (obligatoria para formalizar — art. 47 + art. 48 fr. II LOPSRM). Agrega la póliza de cumplimiento con todos sus datos.', errores: { ...ERR0, garantiasFaltan: true } };
++      }
++      if (a > 0) {
++        const tieneAnticipo = garantias.some((g) => g.tipo === TIPO_ANTICIPO && polizaCompleta(g) && Number(g.monto) <= montoDerivado);
++        if (!tieneAnticipo) {
++          return { ok: false, msg: `Con anticipo ${a}% (> 0), la fianza de ANTICIPO es obligatoria (art. 48 fr. I LOPSRM). Agrega la póliza de anticipo con todos sus datos.`, errores: { ...ERR0, garantiasFaltan: true } };
++        }
++      }
+       return { ok: true };
+     }
+     if (idx === 5) {
+@@ -1301,7 +1389,10 @@
+             ? { clave: String(c.clave || '').trim(), periodoNumero: p.numero, cantidad: Number(v) }
+             : null;
+         }).filter(Boolean)),
+-        garantias: garantias.filter((g) => !garantiaVacia(g)).map((g) => ({ tipo: g.tipo, afianzadora: g.afianzadora, poliza: g.poliza, monto: g.monto, vigencia: g.vigencia }))
++        // alta-v5: defensa-en-profundidad: solo se persisten pólizas COMPLETAS (polizaCompleta). El
++        // guardado ya pasó por validar() (todos los pasos), que exige cumplimiento/anticipo completos;
++        // este filtro hace explícito en el borde de persistencia que nunca se manda una póliza a medias.
++        garantias: garantias.filter((g) => polizaCompleta(g)).map((g) => ({ tipo: g.tipo, afianzadora: g.afianzadora, poliza: g.poliza, monto: g.monto, vigencia: g.vigencia }))
+       };
+       const creado = await api.crearContrato(payload);
+       const nuevoId = creado && creado.id ? creado.id : null;
+@@ -1373,31 +1464,45 @@
+     if (REQ_GENERALES.some((k) => c[k]) || c.superintendente) s.add(0);
+     if (errores.conceptoIdx != null || errores.catalogoMonto) s.add(1);
+     if (errores.programaError) s.add(2);
+-    if (c.anticipoPct || errores.garantiaIdx != null || errores.anticipoPdfFalta) s.add(4); // alta-v4: +PDF anticipo
++    if (REQ_JURIDICOS.some((k) => c[k])) s.add(3); // alta-v5: jurídicos obligatorios
++    if (c.anticipoPct || errores.garantiaIdx != null || errores.anticipoPdfFalta || errores.garantiasFaltan) s.add(4); // alta-v4: +PDF anticipo; alta-v5: +fianzas obligatorias
+     if (errores.pdfFirmadoFalta) s.add(5); // alta-v3: PDF firmado obligatorio (último paso)
+     return s;
+   }, [errores]);
+ 
+-  // alta-v4 (gating ESTRICTAMENTE SECUENCIAL — fix de raíz del "se desbloquean todas de golpe"):
+-  //  · primerPasoInvalido: primer paso del wizard que NO valida (o ULTIMO+1 si todos validan).
+-  //  · fronteraAccesible = min(pasoMaxAlcanzado + 1, primerPasoInvalido):
+-  //      - "+1 sobre el máximo alcanzado" ⇒ solo se desbloquea la SIGUIENTE pestaña (aunque las
+-  //        opcionales —jurídicos, garantías vacías— sean válidas, NO se abren todas en cascada);
+-  //      - "min con primerPasoInvalido" ⇒ se re-bloquean las posteriores si se rompe un paso previo.
+-  //  Una pestaña del wizard es accesible sii i <= fronteraAccesible; Registrados (auxiliar) siempre.
+-  //  Mismo criterio que aplica irAPaso (destino = min(target, max+1) + validación del prefijo):
+-  //  affordance y enforcement comparten la regla → sin asimetrías.
++  // alta-v5 (RAÍZ del nuevo modelo de navegación): se ELIMINA el "desbloqueo progresivo clicable"
++  // (la fuente repetida de fugas de gating). Durante la captura, los NOMBRES de las pestañas NO
++  // navegan: solo se avanza/retrocede con «Siguiente» (que valida el paso actual) y «Atrás». Los
++  // nombres se vuelven clicables SOLO cuando la captura está COMPLETA y válida: todos los pasos
++  // válidos (primerPasoInvalido > ULTIMO) Y el PDF firmado cargado; en ese estado, saltar/revisar
++  // es libre y seguro (no hay nada que gatear). Esto elimina de raíz la clase de bugs de saltar
++  // pestañas. Se CONSERVA irAPaso (Siguiente/Atrás + hardening) y el reset+redirect al guardar.
++  //  · primerPasoInvalido: primer paso del wizard que NO valida (o ULTIMO+1 si todos validan) —
++  //    sigue alimentando el botón Guardar (validez global) y ahora también capturaCompleta.
+   const primerPasoInvalido = (() => {
+     for (const p of PASOS_WIZARD) { if (!validarPaso(p).ok) return p; }
+     return ULTIMO_PASO_WIZARD + 1;
+   })();
+-  const fronteraAccesible = Math.min(pasoMaxAlcanzado + 1, primerPasoInvalido);
+-  const pasoAccesible = (i) => (i > ULTIMO_PASO_WIZARD) ? true : (i <= fronteraAccesible);
++  // Captura completa = TODOS los pasos válidos (incluye jurídicos obligatorios=paso 3, garantías
++  // obligatorias=paso 4 y PDF firmado=paso 5) Y PDF firmado presente (adjuntado o ya-guardado).
++  // (validarPaso(5) ya exige el PDF; el segundo conjunto lo hace EXPLÍCITO e inmune a cambios futuros.)
++  const capturaCompleta = (primerPasoInvalido > ULTIMO_PASO_WIZARD) && (!!pdfFirmadoFile || !!contratoGuardadoId);
++  // tabsBloqueados: durante la captura, TODAS las pestañas salvo la activa quedan deshabilitadas
++  // (los nombres no navegan); con la captura completa, NINGUNA (salto/revisión libre por nombre).
+   const tabsBloqueados = (() => {
+     const s = new Set();
+-    for (let i = 0; i <= ULTIMO_PASO_WIZARD; i++) { if (!pasoAccesible(i)) s.add(i); }
++    if (capturaCompleta) return s;
++    for (let i = 0; i <= ULTIMO_PASO_WIZARD + 1; i++) { if (i !== tabActivo) s.add(i); }
+     return s;
+   })();
++  // Click en el NOMBRE de una pestaña: NO navega durante la captura (defensa redundante con
++  // tabsBloqueados —que ya deshabilita los botones—); con la captura completa, salto libre.
++  const clicNombrePestaña = (target) => {
++    if (!capturaCompleta) return;
++    setErrores(ERR0);
++    setErrorWizard(null);
++    setTabActivo(target);
++  };
+ 
+   const wrapTab = (node) => (<RegionEditable disabled={soloLectura}>{node}</RegionEditable>);
+ 
+@@ -1417,7 +1522,7 @@
+     { label: 'Programa de obra', content: wrapTab(
+       <TabProgramaMatriz conceptos={conceptos} periodos={periodos} ciclo={ciclo} setCiclo={setCiclo} celdas={celdas} setCelda={setCelda} soloLectura={soloLectura} />
+     ) },
+-    { label: 'Datos jurídicos', content: wrapTab(<TabJuridicos datos={datosJuridicos} set={setDatosJur} />) },
++    { label: 'Datos jurídicos', content: wrapTab(<TabJuridicos datos={datosJuridicos} set={setDatosJur} err={errores.campos} />) },
+     { label: 'Garantías, penalizaciones y amortización', content: wrapTab(
+       <TabGarantias rows={garantias} onCell={mkCell(setGarantias)} onAdd={mkAdd(setGarantias, { tipo: '', afianzadora: '', poliza: '', monto: '', vigencia: '' })} onRemove={mkRemove(setGarantias)} anticipoPct={anticipoPct} setAnticipoPct={setAnticipoPct} soloLectura={soloLectura} errIdx={errores.garantiaIdx} errAnticipo={errores.campos.anticipoPct} contratoId={contratoGuardadoId} montoContrato={montoDerivado} pdfAnticipoFile={pdfAnticipoFile} setPdfAnticipoFile={setPdfAnticipoFile} />
+     ) },
+@@ -1436,7 +1541,10 @@
+         breadcrumb={[{ label: 'Inicio', href: '/' }, { label: 'Contratos' }, { label: 'Alta de contratos' }]}
+       />
+ 
+-      <Tabs tabs={tabs} active={tabActivo} onTabChange={irAPaso} tabsConError={tabsConError} tabsBloqueados={tabsBloqueados} />
++      {/* alta-v5: onTabChange = clicNombrePestaña (los nombres solo navegan con la captura completa).
++          «Siguiente»/«Atrás» siguen llamando a irAPaso (validador) directamente, abajo. */}
++      <Tabs tabs={tabs} active={tabActivo} onTabChange={clicNombrePestaña} tabsConError={tabsConError} tabsBloqueados={tabsBloqueados}
++        tituloBloqueado="Durante la captura navega con «Siguiente» y «Atrás»; los nombres se habilitan al completar todo (incluido el PDF firmado)." />
+ 
+       {/* alta-v2 (1.3): banner de error del wizard PERSISTENTE — no se auto-descarta; el usuario
+           lo cierra con la ✕. Reemplaza al Toast efímero para los errores de validación/guardado. */}
+@@ -1471,7 +1579,11 @@
+                 {guardando ? 'Guardando…' : 'Guardar contrato'}
+               </button>
+             </>
+-          ) : null}
++          ) : (
++            // alta-v5: en "Registrados" (post-guardado / consulta) los nombres de pestaña no navegan
++            // durante la captura, así que la vía explícita de regreso al wizard es este botón.
++            <button type="button" className="sg-btn-primary" disabled={soloLectura} onClick={() => { resetFormulario(); setTabActivo(0); }} data-testid="btn-nueva-alta">+ Capturar nuevo contrato</button>
++          )}
+         </div>
+       </div>
+ 
+--- a/frontend/src/components/ui/Tab.jsx
++++ b/frontend/src/components/ui/Tab.jsx
+@@ -6,7 +6,10 @@
+ // alta-v2 (1.2): `tabsBloqueados` (Set de indices, opcional) desactiva pestañas a las que
+ // aún no se puede saltar (pasos posteriores a uno inválido). La pestaña ACTIVA nunca se
+ // bloquea. Sin el prop, no hay bloqueo (retrocompatible).
+-export default function Tabs({ tabs, initial = 0, active: activeProp, onTabChange, tabsConError, tabsBloqueados }) {
++// alta-v5: `tituloBloqueado` (string, opcional) sobreescribe el title/tooltip de las pestañas
++// bloqueadas (p.ej. el alta usa navegación lineal: los nombres no navegan durante la captura).
++// Sin el prop, conserva el texto por defecto (retrocompatible con las demás vistas).
++export default function Tabs({ tabs, initial = 0, active: activeProp, onTabChange, tabsConError, tabsBloqueados, tituloBloqueado }) {
+   const [activeInt, setActiveInt] = useState(initial);
+   const active = activeProp != null ? activeProp : activeInt;
+   const setActive = (i) => {
+@@ -28,7 +31,7 @@
+                 type="button"
+                 onClick={() => { if (!bloqueado) setActive(i); }}
+                 disabled={bloqueado}
+-                title={bloqueado ? 'Completa los pasos anteriores para desbloquear esta pestaña' : undefined}
++                title={bloqueado ? (tituloBloqueado || 'Completa los pasos anteriores para desbloquear esta pestaña') : undefined}
+                 data-bloqueado={bloqueado ? 'true' : undefined}
+                 className={`px-4 py-3 text-sm whitespace-nowrap border-b-2 transition-colors ${
+                   active === i
+--- a/frontend/e2e/_helpers.js
++++ b/frontend/e2e/_helpers.js
+@@ -168,3 +168,38 @@
+   await page.getByTestId('anticipo-pdf-pendiente-file').waitFor({ state: 'visible' });
+ }
+ 
++/**
++ * alta-v5: rellena los DATOS JURÍDICOS obligatorios (paso 3). Requiere estar en el paso jurídicos.
++ * Campos mínimos: firmante + cargo (art. 46 fr. I LOPSRM), representante legal (art. 46 fr. IV) y
++ * cédula profesional (decisión Fundación, [validar]). Poder/notaría son opcionales (no se llenan).
++ */
++export async function altaLlenarJuridicos(page, d = {}) {
++  await page.getByTestId('jur-firmante').fill(d.firmante || 'Ing. Ana López Reyes');
++  await page.getByTestId('jur-cargo').fill(d.cargo || 'Directora de Obras Públicas');
++  await page.getByTestId('jur-representante').fill(d.representante || 'Lic. Juan Pérez Soto');
++  await page.getByTestId('jur-cedula').fill(d.cedula || '12345678');
++}
++
++/**
++ * alta-v5: rellena las GARANTÍAS obligatorias (paso 4). Requiere estar en el paso garantías.
++ *  - Siempre agrega la fianza de CUMPLIMIENTO (art. 47 + 48 fr. II LOPSRM) en la fila índice 0.
++ *  - Con `conAnticipo:true` agrega además la fianza de ANTICIPO (art. 48 fr. I) en la fila índice 1.
++ * Montos pequeños (≤ monto del contrato de los tests, $5,000). Vigencia futura (no vencida).
++ */
++export async function altaLlenarGarantias(page, { conAnticipo = false } = {}) {
++  await page.getByRole('button', { name: '+ Agregar póliza' }).click();
++  await page.getByTestId('garantia-tipo-0').selectOption('Cumplimiento');
++  await page.getByTestId('garantia-afianzadora-0').fill('Afianzadora E2E, S.A.');
++  await page.getByTestId('garantia-poliza-0').fill('POL-CUMP-001');
++  await page.getByTestId('garantia-monto-0').fill('500');       // 10% de 5,000
++  await page.getByTestId('garantia-vigencia-0').fill('2027-06-01');
++  if (conAnticipo) {
++    await page.getByRole('button', { name: '+ Agregar póliza' }).click();
++    await page.getByTestId('garantia-tipo-1').selectOption('Anticipo');
++    await page.getByTestId('garantia-afianzadora-1').fill('Afianzadora E2E, S.A.');
++    await page.getByTestId('garantia-poliza-1').fill('POL-ANT-001');
++    await page.getByTestId('garantia-monto-1').fill('1000');
++    await page.getByTestId('garantia-vigencia-1').fill('2027-06-01');
++  }
++}
++
+--- a/frontend/e2e/4x-alta-correcciones.spec.js
++++ b/frontend/e2e/4x-alta-correcciones.spec.js
+@@ -7,11 +7,12 @@
+ //  · 4.1 "Siguiente" por paso, "Atrás", "Guardar" solo en el último paso.
+ // Requiere backend+BD (login real + cuentas semilla).
+ import { test, expect } from '@playwright/test';
+-import { freshHome, enterAppMode, goToViaSidebar, altaLlenarDatosGenerales, altaAgregarConcepto, altaAdjuntarPdfFirmado } from './_helpers.js';
++import { freshHome, enterAppMode, goToViaSidebar, altaLlenarDatosGenerales, altaAgregarConcepto, altaLlenarJuridicos, altaLlenarGarantias, altaAdjuntarPdfFirmado } from './_helpers.js';
+ 
+ test.skip(!!process.env.CI, 'alta-v2: login real requiere backend+BD; se corre en local');
+ 
+-// Lleva el wizard hasta el paso 4 (garantías) con datos válidos: DG + 1 concepto + programa 100%.
++// Lleva el wizard hasta el paso 4 (garantías) con datos válidos: DG + 1 concepto + programa 100%
++// + jurídicos (alta-v5: obligatorios para poder pasar del paso 3).
+ async function avanzarHastaGarantias(page) {
+   await altaLlenarDatosGenerales(page, { plazo: 60, fechaInicio: '2026-06-01' });
+   await page.getByTestId('btn-siguiente').click();             // catálogo
+@@ -19,7 +20,8 @@
+   await page.getByTestId('btn-siguiente').click();             // programa
+   await page.getByTestId('celda-0-1').fill('100');             // 100% (todo en P1)
+   await page.getByTestId('btn-siguiente').click();             // jurídicos
+-  await page.getByTestId('btn-siguiente').click();             // garantías (último paso)
++  await altaLlenarJuridicos(page);                             // alta-v5: obligatorios
++  await page.getByTestId('btn-siguiente').click();             // garantías
+ }
+ 
+ test.describe('alta-v2 — wizard: gating, banner persistente, anticipo y garantía', () => {
+@@ -58,6 +60,7 @@
+     await avanzarHastaGarantias(page);
+     await expect(page.getByTestId('btn-siguiente')).toBeVisible();
+     await expect(page.getByTestId('btn-guardar')).toHaveCount(0);
++    await altaLlenarGarantias(page);                           // alta-v5: fianza de cumplimiento obligatoria
+     // Último paso = PDF firmado: aparece "Guardar" (DESHABILITADO sin PDF), desaparece "Siguiente".
+     await page.getByTestId('btn-siguiente').click();           // → PDF firmado (último)
+     await expect(page.getByTestId('btn-siguiente')).toHaveCount(0);
+@@ -67,6 +70,7 @@
+ 
+   test('alta-v3 el PDF firmado es OBLIGATORIO para guardar (gate del botón)', async ({ page }) => {
+     await avanzarHastaGarantias(page);
++    await altaLlenarGarantias(page);                           // alta-v5: fianza de cumplimiento obligatoria
+     await page.getByTestId('btn-siguiente').click();           // → PDF firmado (último paso)
+     // Sin PDF: botón bloqueado + pista visible.
+     await expect(page.getByTestId('btn-guardar')).toBeDisabled();
+--- a/frontend/e2e/alta-v4-gating.spec.js
++++ b/frontend/e2e/alta-v4-gating.spec.js
+@@ -6,7 +6,8 @@
+ import { test, expect } from '@playwright/test';
+ import {
+   freshHome, enterAppMode, goToViaSidebar,
+-  altaLlenarDatosGenerales, altaAgregarConcepto, altaAdjuntarPdfFirmado, altaAdjuntarPdfAnticipo,
++  altaLlenarDatosGenerales, altaAgregarConcepto, altaLlenarJuridicos, altaLlenarGarantias,
++  altaAdjuntarPdfFirmado, altaAdjuntarPdfAnticipo,
+ } from './_helpers.js';
+ 
+ test.skip(!!process.env.CI, 'alta-v4: login real requiere backend+BD; se corre en local');
+@@ -15,6 +16,7 @@
+ const tab = (page, re) => page.getByRole('button', { name: re });
+ 
+ // Lleva el wizard al paso 4 (garantías) con datos válidos; opcionalmente fija el % de anticipo.
++// alta-v5: los jurídicos (paso 3) son obligatorios → se rellenan para poder llegar a garantías.
+ async function irAGarantias(page, { anticipo, folio } = {}) {
+   await altaLlenarDatosGenerales(page, { folio, plazo: 60, fechaInicio: '2026-06-01' });
+   await page.getByTestId('btn-siguiente').click();             // → catálogo (1)
+@@ -22,6 +24,7 @@
+   await page.getByTestId('btn-siguiente').click();             // → programa (2)
+   await page.getByTestId('celda-0-1').fill('100');             // cuadra 100%
+   await page.getByTestId('btn-siguiente').click();             // → jurídicos (3)
++  await altaLlenarJuridicos(page);                             // alta-v5: obligatorios
+   await page.getByTestId('btn-siguiente').click();             // → garantías (4)
+   if (anticipo != null) await page.getByTestId('anticipo-input').fill(String(anticipo));
+ }
+@@ -42,9 +45,10 @@
+     await expect(page.getByTestId('error-wizard')).toBeVisible();
+     await expect(page.getByTestId('error-wizard')).toContainText('autorización del anticipo');
+     await expect(page.getByTestId('anticipo-input')).toBeVisible(); // sigue en el paso 4
+-    await expect(tab(page, /PDF firmado/)).toBeDisabled();          // paso 5 bloqueado
+-    // Adjuntar la autorización habilita el avance al paso final.
++    await expect(tab(page, /PDF firmado/)).toBeDisabled();          // paso 5 bloqueado (captura incompleta)
++    // Adjuntar la autorización + las fianzas obligatorias habilita el avance al paso final.
+     await altaAdjuntarPdfAnticipo(page);
++    await altaLlenarGarantias(page, { conAnticipo: true });         // alta-v5: cumplimiento + anticipo
+     await page.getByTestId('btn-siguiente').click();
+     await expect(page.getByTestId('pdf-firmado-precaptura')).toBeVisible();
+   });
+@@ -54,6 +58,7 @@
+     const folio = `E2E-V4-${Date.now()}`;
+     await irAGarantias(page, { anticipo: 60, folio });
+     await altaAdjuntarPdfAnticipo(page);                       // autorización (obligatoria > umbral)
++    await altaLlenarGarantias(page, { conAnticipo: true });    // alta-v5: cumplimiento + anticipo
+     await page.getByTestId('btn-siguiente').click();           // → PDF firmado (5)
+     await expect(page.getByTestId('btn-guardar')).toBeDisabled();   // aún falta el firmado
+     await altaAdjuntarPdfFirmado(page);
+@@ -64,32 +69,34 @@
+     await expect(page.locator('tr', { hasText: folio })).toBeVisible();
+   });
+ 
+-  test('(b) no se puede saltar a una pestaña no alcanzada', async ({ page }) => {
+-    // Paso 0 vacío: las pestañas posteriores están BLOQUEADAS (no clicables).
++  test('(b) alta-v5: los nombres NO se habilitan progresivamente durante la captura', async ({ page }) => {
++    // Paso 0 activo: TODOS los demás nombres están deshabilitados (no navegan).
++    await expect(tab(page, /Catálogo de conceptos/)).toBeDisabled();
+     await expect(tab(page, /Programa de obra/)).toBeDisabled();
+     await expect(tab(page, /Garantías/)).toBeDisabled();
+     await expect(tab(page, /PDF firmado/)).toBeDisabled();
+-    // Completar SOLO el paso 0 (sin avanzar): se desbloquea la 1 (catálogo) pero NO la 2.
++    // Completar el paso 0 NO habilita el nombre del siguiente (ya NO hay desbloqueo progresivo):
++    // el avance es SOLO con «Siguiente».
+     await altaLlenarDatosGenerales(page);
+-    await expect(tab(page, /Catálogo de conceptos/)).toBeEnabled();
+-    await expect(tab(page, /Programa de obra/)).toBeDisabled();
++    await expect(tab(page, /Catálogo de conceptos/)).toBeDisabled();
++    await page.getByTestId('btn-siguiente').click();           // «Siguiente» sí avanza
++    await expect(page.getByRole('heading', { name: 'Catálogo de conceptos' })).toBeVisible();
++    // Y el nombre del paso anterior tampoco navega (se vuelve con «Atrás»).
++    await expect(tab(page, /Datos generales/)).toBeDisabled();
+   });
+ 
+-  test('(c) cada pestaña desbloquea SOLO la siguiente (sin cascada)', async ({ page }) => {
+-    await altaLlenarDatosGenerales(page);
+-    await page.getByTestId('btn-siguiente').click();           // → catálogo (1)
+-    await expect(tab(page, /Programa de obra/)).toBeDisabled(); // catálogo vacío: la 2 sigue bloqueada
+-    await altaAgregarConcepto(page, 0, { cantidad: 100, pu: 50 });
+-    await page.getByTestId('btn-siguiente').click();           // → programa (2)
+-    await page.getByTestId('celda-0-1').fill('100');           // cuadra 100%
+-    // CLAVE (anti-cascada): completado el paso 2, SOLO se desbloquea el 3 (jurídicos);
+-    // garantías (4) y PDF firmado (5) siguen BLOQUEADOS (antes se abrían los 3 de golpe).
+-    await expect(tab(page, /Datos jurídicos/)).toBeEnabled();
+-    await expect(tab(page, /Garantías/)).toBeDisabled();
+-    await expect(tab(page, /PDF firmado/)).toBeDisabled();
+-    // Avanzar uno: ahora se desbloquea el 4, pero el 5 sigue bloqueado.
+-    await page.getByTestId('btn-siguiente').click();           // → jurídicos (3)
+-    await expect(tab(page, /Garantías/)).toBeEnabled();
+-    await expect(tab(page, /PDF firmado/)).toBeDisabled();
++  test('(c) alta-v5: los nombres se habilitan SOLO con la captura completa + PDF firmado', async ({ page }) => {
++    const folio = `E2E-V4C-${Date.now()}`;
++    await irAGarantias(page, { folio });                       // sin anticipo
++    await altaLlenarGarantias(page);                           // fianza de cumplimiento
++    // Aún en captura (falta el PDF firmado): el nombre "Datos generales" NO navega.
++    await expect(tab(page, /Datos generales/)).toBeDisabled();
++    await page.getByTestId('btn-siguiente').click();           // → PDF firmado (5)
++    await expect(tab(page, /Datos generales/)).toBeDisabled(); // sin PDF → sigue incompleta
++    await altaAdjuntarPdfFirmado(page);
++    // Captura COMPLETA (todo válido + PDF): ahora los nombres navegan (revisión/salto libre).
++    await expect(tab(page, /Datos generales/)).toBeEnabled();
++    await tab(page, /Datos generales/).click();
++    await expect(page.getByTestId('dg-folio')).toHaveValue(folio);
+   });
+ });
+--- a/frontend/e2e/alta-gating-regresion.spec.js
++++ b/frontend/e2e/alta-gating-regresion.spec.js
+@@ -3,7 +3,7 @@
+ // y NUNCA debe llegarse a "Guardar" con campos vacíos. Este es el test que faltaba (la suite solo
+ // clicaba "Siguiente" UNA vez en el paso 0, no en bucle ni tras un guardado/reset).
+ import { test, expect } from '@playwright/test';
+-import { freshHome, enterAppMode, goToViaSidebar, altaLlenarDatosGenerales, altaAgregarConcepto, altaAdjuntarPdfFirmado } from './_helpers.js';
++import { freshHome, enterAppMode, goToViaSidebar, altaLlenarDatosGenerales, altaAgregarConcepto, altaLlenarJuridicos, altaLlenarGarantias, altaAdjuntarPdfFirmado } from './_helpers.js';
+ 
+ test.skip(!!process.env.CI, 'alta: login real requiere backend+BD; se corre en local');
+ 
+@@ -39,13 +39,15 @@
+     await page.getByTestId('btn-siguiente').click();                   // programa
+     await page.getByTestId('celda-0-1').fill('100');
+     await page.getByTestId('btn-siguiente').click();                   // jurídicos
++    await altaLlenarJuridicos(page);                                   // alta-v5: obligatorios
+     await page.getByTestId('btn-siguiente').click();                   // garantías
++    await altaLlenarGarantias(page);                                   // alta-v5: fianza de cumplimiento
+     await page.getByTestId('btn-siguiente').click();                   // PDF firmado
+     await altaAdjuntarPdfFirmado(page);
+     await page.getByTestId('btn-guardar').click();
+     await expect(page.locator('tr', { hasText: folio })).toBeVisible(); // en Registrados
+-    // Nuevo alta: volver a Datos generales (vacío) y machacar "Siguiente".
+-    await page.getByRole('button', { name: /Datos generales/ }).click();
++    // Nuevo alta (alta-v5: los nombres no navegan en captura → botón explícito) y machacar "Siguiente".
++    await page.getByTestId('btn-nueva-alta').click();
+     await siguienteNveces(page, 8);
+     await expect(page.getByTestId('dg-folio')).toHaveValue('');         // vacío
+     await expect(page.getByTestId('btn-guardar')).toHaveCount(0);       // NUNCA llegó a Guardar
+--- a/frontend/e2e/hu-01-alta-catalogo.spec.js
++++ b/frontend/e2e/hu-01-alta-catalogo.spec.js
+@@ -6,7 +6,7 @@
+ //  - tras guardar, "Ver info del contrato" abre el detalle de solo lectura.
+ // Requiere backend+BD.
+ import { test, expect } from '@playwright/test';
+-import { freshHome, enterAppMode, goToViaSidebar, altaLlenarDatosGenerales, altaAgregarConcepto, altaAdjuntarPdfFirmado } from './_helpers.js';
++import { freshHome, enterAppMode, goToViaSidebar, altaLlenarDatosGenerales, altaAgregarConcepto, altaLlenarJuridicos, altaLlenarGarantias, altaAdjuntarPdfFirmado } from './_helpers.js';
+ 
+ test.skip(!!process.env.CI, 'alta-v2: login real requiere backend+BD; se corre en local');
+ 
+@@ -41,8 +41,9 @@
+     expect(Number(await imp0.inputValue())).toBeCloseTo(300000, 2);
+     // indicador de cuadre exacto
+     await expect(page.getByTestId('catalogo-indicador')).toContainText('Cuadre exacto');
+-    // monto derivado, read-only, en Datos generales
+-    await page.getByRole('button', { name: 'Datos generales' }).click();
++    // monto derivado, read-only, en Datos generales (alta-v5: durante la captura el nombre de la
++    // pestaña no navega → se regresa con «Atrás»).
++    await page.getByTestId('btn-atras').click();
+     const monto = page.getByTestId('monto-derivado');
+     await expect(monto).toHaveAttribute('readonly', '');
+     expect(await monto.inputValue()).toContain('$');
+@@ -57,7 +58,9 @@
+     await page.getByTestId('btn-siguiente').click();          // programa
+     await page.getByTestId('celda-0-1').fill('100');          // 100% (plazo 60 → 2 periodos; todo en P1)
+     await page.getByTestId('btn-siguiente').click();          // jurídicos
++    await altaLlenarJuridicos(page);                          // alta-v5: obligatorios
+     await page.getByTestId('btn-siguiente').click();          // garantías
++    await altaLlenarGarantias(page);                          // alta-v5: fianza de cumplimiento
+     await page.getByTestId('btn-siguiente').click();          // PDF firmado (último paso)
+     // alta-v3: sin PDF firmado el guardado está BLOQUEADO; adjuntarlo lo habilita.
+     await expect(page.getByTestId('btn-guardar')).toBeDisabled();
+@@ -87,14 +90,17 @@
+     await page.getByTestId('btn-siguiente').click();          // programa
+     await page.getByTestId('celda-0-1').fill('100');
+     await page.getByTestId('btn-siguiente').click();          // jurídicos
++    await altaLlenarJuridicos(page);                          // alta-v5: obligatorios
+     await page.getByTestId('btn-siguiente').click();          // garantías
++    await altaLlenarGarantias(page);                          // alta-v5: fianza de cumplimiento
+     await page.getByTestId('btn-siguiente').click();          // PDF firmado
+     await altaAdjuntarPdfFirmado(page);
+     await page.getByTestId('btn-guardar').click();
+     // (1) redirige a Registrados: el contrato aparece en la tabla.
+     await expect(page.locator('tr', { hasText: folio })).toBeVisible();
+-    // (2) limpia campos + re-bloquea: al volver a "Datos generales", folio vacío y pestañas re-bloqueadas.
+-    await page.getByRole('button', { name: /Datos generales/ }).click();
++    // (2) limpia campos + re-bloquea: alta-v5 → "Capturar nuevo contrato" (los nombres no navegan
++    // en captura). Folio vacío y pestañas re-bloqueadas (navegación lineal).
++    await page.getByTestId('btn-nueva-alta').click();
+     await expect(page.getByTestId('dg-folio')).toHaveValue('');
+     await expect(page.getByRole('button', { name: /Programa de obra/ })).toBeDisabled();
+     await expect(page.getByRole('button', { name: /Catálogo de conceptos/ })).toBeDisabled();
+--- /dev/null
++++ b/frontend/e2e/alta-v5-navegacion-lineal.spec.js
+@@ -0,0 +1,176 @@
++// @ts-check
++// alta-v5 — Navegación LINEAL durante la captura (raíz: se elimina el clic-en-pestaña para gating)
++// + garantías y datos jurídicos OBLIGATORIOS. Escenarios pedidos por Maiki:
++//   (1) durante la captura, clic en un NOMBRE de pestaña NO navega; solo Siguiente/Atrás.
++//   (2) los nombres se vuelven clicables solo con todo válido + PDF firmado cargado.
++//   (3) no se puede avanzar/guardar con garantías vacías ni jurídicos vacíos.
++//   (4) el reset al guardar sigue bien.
++//   (5) "Guardar" nunca aparece con pasos incompletos.
++// Con LOGIN REAL (requiere backend+BD; cuentas semilla).
++import { test, expect } from '@playwright/test';
++import {
++  freshHome, enterAppMode, goToViaSidebar,
++  altaLlenarDatosGenerales, altaAgregarConcepto, altaLlenarJuridicos, altaLlenarGarantias,
++  altaAdjuntarPdfFirmado,
++} from './_helpers.js';
++
++test.skip(!!process.env.CI, 'alta-v5: login real requiere backend+BD; se corre en local');
++
++// Localiza una pestaña del wizard por su etiqueta (regex). El Tab pone disabled={bloqueado}.
++const tab = (page, re) => page.getByRole('button', { name: re });
++
++// Avanza el wizard con datos VÁLIDOS hasta `paso` (0 DG, 1 catálogo, 2 programa, 3 jurídicos,
++// 4 garantías, 5 PDF firmado adjuntado = captura completa). Solo «Siguiente» (nunca clic-en-nombre).
++async function avanzarHasta(page, paso, { folio } = {}) {
++  await altaLlenarDatosGenerales(page, { folio, plazo: 60, fechaInicio: '2026-06-01' });
++  if (paso <= 0) return;
++  await page.getByTestId('btn-siguiente').click();             // catálogo (1)
++  await altaAgregarConcepto(page, 0, { cantidad: 100, pu: 50 }); // monto = 5000
++  if (paso <= 1) return;
++  await page.getByTestId('btn-siguiente').click();             // programa (2)
++  await page.getByTestId('celda-0-1').fill('100');             // cuadra 100%
++  if (paso <= 2) return;
++  await page.getByTestId('btn-siguiente').click();             // jurídicos (3)
++  await altaLlenarJuridicos(page);
++  if (paso <= 3) return;
++  await page.getByTestId('btn-siguiente').click();             // garantías (4)
++  await altaLlenarGarantias(page);
++  if (paso <= 4) return;
++  await page.getByTestId('btn-siguiente').click();             // PDF firmado (5)
++  await altaAdjuntarPdfFirmado(page);
++}
++
++test.describe('alta-v5 — navegación lineal + garantías/jurídicos obligatorios', () => {
++  test.beforeEach(async ({ page }) => {
++    await freshHome(page);
++    await enterAppMode(page, 'residente');
++    await goToViaSidebar(page, '/contratos/alta');
++  });
++
++  test('(1) durante la captura, clic en un NOMBRE de pestaña NO navega (solo Siguiente/Atrás)', async ({ page }) => {
++    await avanzarHasta(page, 2);                                // en "Programa de obra" (0/1 ya visitados)
++    await expect(page.getByRole('heading', { name: 'Programa de obra' })).toBeVisible();
++    // Todos los NOMBRES (incluidos los pasos ya visitados y válidos) están deshabilitados: no navegan.
++    await expect(tab(page, /Datos generales/)).toBeDisabled();
++    await expect(tab(page, /Catálogo de conceptos/)).toBeDisabled();
++    await expect(tab(page, /Datos jurídicos/)).toBeDisabled();
++    await expect(tab(page, /Garantías/)).toBeDisabled();
++    await expect(tab(page, /PDF firmado/)).toBeDisabled();
++    await expect(tab(page, /Registrados/)).toBeDisabled();
++    expect(await page.locator('button[data-bloqueado="true"]').count()).toBeGreaterThan(0);
++    // Prueba de COMPORTAMIENTO (no solo del atributo disabled): aunque se FUERCE el evento click
++    // sobre el NOMBRE de una pestaña, el handler (clicNombrePestaña) NO navega durante la captura.
++    await tab(page, /Catálogo de conceptos/).dispatchEvent('click');
++    await expect(page.getByRole('heading', { name: 'Programa de obra' })).toBeVisible(); // no navegó
++    // «Atrás» SÍ navega (a catálogo); «Siguiente» con datos válidos vuelve a avanzar.
++    await page.getByTestId('btn-atras').click();
++    await expect(page.getByRole('heading', { name: 'Catálogo de conceptos' })).toBeVisible();
++    await page.getByTestId('btn-siguiente').click();
++    await expect(page.getByRole('heading', { name: 'Programa de obra' })).toBeVisible();
++  });
++
++  test('(2) los nombres se habilitan SOLO con todo válido + PDF firmado cargado', async ({ page }) => {
++    await avanzarHasta(page, 4);                                // todo válido salvo el PDF firmado
++    await expect(tab(page, /Datos generales/)).toBeDisabled();  // captura incompleta (falta PDF)
++    await page.getByTestId('btn-siguiente').click();            // → PDF firmado (5)
++    await expect(tab(page, /Datos generales/)).toBeDisabled();  // sin PDF, sigue incompleta
++    await altaAdjuntarPdfFirmado(page);
++    // Captura COMPLETA: ahora los nombres navegan (salto/revisión libre).
++    await expect(tab(page, /Datos generales/)).toBeEnabled();
++    await expect(tab(page, /Garantías/)).toBeEnabled();
++    await tab(page, /Datos generales/).click();
++    await expect(page.getByTestId('dg-folio')).not.toHaveValue('');
++    // Y se puede volver al PDF por nombre para guardar.
++    await tab(page, /PDF firmado/).click();
++    await expect(page.getByTestId('btn-guardar')).toBeEnabled();
++  });
++
++  test('(3a) NO se avanza con datos JURÍDICOS vacíos', async ({ page }) => {
++    await avanzarHasta(page, 2);
++    await page.getByTestId('btn-siguiente').click();            // → jurídicos (3)
++    await expect(page.getByRole('heading', { name: 'Datos jurídicos' })).toBeVisible();
++    await page.getByTestId('btn-siguiente').click();            // intentar avanzar con jurídicos vacíos
++    await expect(page.getByTestId('error-wizard')).toBeVisible();
++    await expect(page.getByTestId('error-wizard')).toContainText('jurídicos');
++    await expect(page.getByRole('heading', { name: 'Datos jurídicos' })).toBeVisible(); // NO avanzó
++    await expect(page.getByTestId('btn-guardar')).toHaveCount(0);
++    // Completar jurídicos habilita el avance a garantías.
++    await altaLlenarJuridicos(page);
++    await page.getByTestId('btn-siguiente').click();
++    await expect(page.getByRole('heading', { name: /Garantías/ })).toBeVisible();
++  });
++
++  test('(3b) NO se avanza con GARANTÍAS vacías (falta fianza de cumplimiento)', async ({ page }) => {
++    await avanzarHasta(page, 3);
++    await page.getByTestId('btn-siguiente').click();            // → garantías (4)
++    await expect(page.getByTestId('garantias-faltan')).toBeVisible();
++    await page.getByTestId('btn-siguiente').click();            // intentar avanzar sin fianzas
++    await expect(page.getByTestId('error-wizard')).toBeVisible();
++    await expect(page.getByTestId('error-wizard')).toContainText('fianza de CUMPLIMIENTO');
++    await expect(page.getByTestId('garantias-requeridas')).toBeVisible(); // sigue en garantías
++    await expect(page.getByTestId('btn-guardar')).toHaveCount(0);
++    // Capturar la fianza de cumplimiento habilita el avance.
++    await altaLlenarGarantias(page);
++    await expect(page.getByTestId('garantias-ok')).toBeVisible();
++    await page.getByTestId('btn-siguiente').click();
++    await expect(page.getByTestId('pdf-firmado-precaptura')).toBeVisible();
++  });
++
++  test('(3c) con anticipo > 0 también se exige la fianza de ANTICIPO', async ({ page }) => {
++    await avanzarHasta(page, 3);
++    await page.getByTestId('btn-siguiente').click();            // → garantías (4)
++    await page.getByTestId('anticipo-input').fill('20');        // > 0 pero ≤ umbral (no exige PDF)
++    await altaLlenarGarantias(page);                            // solo cumplimiento
++    await expect(page.getByTestId('garantias-faltan')).toContainText('anticipo');
++    await page.getByTestId('btn-siguiente').click();
++    await expect(page.getByTestId('error-wizard')).toContainText('ANTICIPO');
++    // Agregar la fianza de anticipo (póliza índice 1) desbloquea.
++    await page.getByRole('button', { name: '+ Agregar póliza' }).click();
++    await page.getByTestId('garantia-tipo-1').selectOption('Anticipo');
++    await page.getByTestId('garantia-afianzadora-1').fill('Afianzadora E2E, S.A.');
++    await page.getByTestId('garantia-poliza-1').fill('POL-ANT-001');
++    await page.getByTestId('garantia-monto-1').fill('1000');
++    await page.getByTestId('garantia-vigencia-1').fill('2027-06-01');
++    await expect(page.getByTestId('garantias-ok')).toBeVisible();
++    await page.getByTestId('btn-siguiente').click();
++    await expect(page.getByTestId('pdf-firmado-precaptura')).toBeVisible();
++  });
++
++  test('(4) el guardado redirige a Registrados, limpia y re-bloquea (navegación lineal)', async ({ page }) => {
++    page.on('dialog', (d) => d.accept());
++    const folio = `E2E-V5-${Date.now()}`;
++    await avanzarHasta(page, 5, { folio });                     // todo + PDF firmado
++    await expect(page.getByTestId('btn-guardar')).toBeEnabled();
++    await page.getByTestId('btn-guardar').click();
++    await expect(page.locator('tr', { hasText: folio })).toBeVisible(); // en Registrados
++    // Iniciar alta nueva (los nombres no navegan en captura): botón explícito.
++    await page.getByTestId('btn-nueva-alta').click();
++    await expect(page.getByTestId('dg-folio')).toHaveValue('');          // limpio
++    await expect(page.getByTestId('btn-siguiente')).toBeVisible();       // de vuelta en captura, paso 0
++    await expect(tab(page, /Catálogo de conceptos/)).toBeDisabled();     // re-bloqueado (lineal)
++    await expect(tab(page, /Garantías/)).toBeDisabled();
++    await expect(page.getByTestId('btn-guardar')).toHaveCount(0);
++  });
++
++  test('(5) "Guardar" NUNCA aparece con pasos incompletos', async ({ page }) => {
++    await expect(page.getByTestId('btn-guardar')).toHaveCount(0);        // 0 · Datos generales
++    await altaLlenarDatosGenerales(page, { plazo: 60, fechaInicio: '2026-06-01' });
++    await page.getByTestId('btn-siguiente').click();                     // 1 · catálogo
++    await expect(page.getByTestId('btn-guardar')).toHaveCount(0);
++    await altaAgregarConcepto(page, 0, { cantidad: 100, pu: 50 });
++    await page.getByTestId('btn-siguiente').click();                     // 2 · programa
++    await page.getByTestId('celda-0-1').fill('100');
++    await expect(page.getByTestId('btn-guardar')).toHaveCount(0);
++    await page.getByTestId('btn-siguiente').click();                     // 3 · jurídicos
++    await altaLlenarJuridicos(page);
++    await expect(page.getByTestId('btn-guardar')).toHaveCount(0);
++    await page.getByTestId('btn-siguiente').click();                     // 4 · garantías
++    await altaLlenarGarantias(page);
++    await expect(page.getByTestId('btn-guardar')).toHaveCount(0);
++    await page.getByTestId('btn-siguiente').click();                     // 5 · PDF firmado
++    // SOLO aquí aparece "Guardar" (y deshabilitado sin el PDF); "Siguiente" desaparece.
++    await expect(page.getByTestId('btn-siguiente')).toHaveCount(0);
++    await expect(page.getByTestId('btn-guardar')).toBeVisible();
++    await expect(page.getByTestId('btn-guardar')).toBeDisabled();
++  });
++});

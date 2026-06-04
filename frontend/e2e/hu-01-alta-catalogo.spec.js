@@ -6,7 +6,7 @@
 //  - tras guardar, "Ver info del contrato" abre el detalle de solo lectura.
 // Requiere backend+BD.
 import { test, expect } from '@playwright/test';
-import { freshHome, enterAppMode, goToViaSidebar, altaLlenarDatosGenerales, altaAgregarConcepto, altaAdjuntarPdfFirmado } from './_helpers.js';
+import { freshHome, enterAppMode, goToViaSidebar, altaLlenarDatosGenerales, altaAgregarConcepto, altaLlenarJuridicos, altaLlenarGarantias, altaAdjuntarPdfFirmado } from './_helpers.js';
 
 test.skip(!!process.env.CI, 'alta-v2: login real requiere backend+BD; se corre en local');
 
@@ -41,8 +41,9 @@ test.describe('HU-01/alta-v2 — catálogo, alta vacía y Registrados', () => {
     expect(Number(await imp0.inputValue())).toBeCloseTo(300000, 2);
     // indicador de cuadre exacto
     await expect(page.getByTestId('catalogo-indicador')).toContainText('Cuadre exacto');
-    // monto derivado, read-only, en Datos generales
-    await page.getByRole('button', { name: 'Datos generales' }).click();
+    // monto derivado, read-only, en Datos generales (alta-v5: durante la captura el nombre de la
+    // pestaña no navega → se regresa con «Atrás»).
+    await page.getByTestId('btn-atras').click();
     const monto = page.getByTestId('monto-derivado');
     await expect(monto).toHaveAttribute('readonly', '');
     expect(await monto.inputValue()).toContain('$');
@@ -57,7 +58,9 @@ test.describe('HU-01/alta-v2 — catálogo, alta vacía y Registrados', () => {
     await page.getByTestId('btn-siguiente').click();          // programa
     await page.getByTestId('celda-0-1').fill('100');          // 100% (plazo 60 → 2 periodos; todo en P1)
     await page.getByTestId('btn-siguiente').click();          // jurídicos
+    await altaLlenarJuridicos(page);                          // alta-v5: obligatorios
     await page.getByTestId('btn-siguiente').click();          // garantías
+    await altaLlenarGarantias(page);                          // alta-v5: fianza de cumplimiento
     await page.getByTestId('btn-siguiente').click();          // PDF firmado (último paso)
     // alta-v3: sin PDF firmado el guardado está BLOQUEADO; adjuntarlo lo habilita.
     await expect(page.getByTestId('btn-guardar')).toBeDisabled();
@@ -87,14 +90,17 @@ test.describe('HU-01/alta-v2 — catálogo, alta vacía y Registrados', () => {
     await page.getByTestId('btn-siguiente').click();          // programa
     await page.getByTestId('celda-0-1').fill('100');
     await page.getByTestId('btn-siguiente').click();          // jurídicos
+    await altaLlenarJuridicos(page);                          // alta-v5: obligatorios
     await page.getByTestId('btn-siguiente').click();          // garantías
+    await altaLlenarGarantias(page);                          // alta-v5: fianza de cumplimiento
     await page.getByTestId('btn-siguiente').click();          // PDF firmado
     await altaAdjuntarPdfFirmado(page);
     await page.getByTestId('btn-guardar').click();
     // (1) redirige a Registrados: el contrato aparece en la tabla.
     await expect(page.locator('tr', { hasText: folio })).toBeVisible();
-    // (2) limpia campos + re-bloquea: al volver a "Datos generales", folio vacío y pestañas re-bloqueadas.
-    await page.getByRole('button', { name: /Datos generales/ }).click();
+    // (2) limpia campos + re-bloquea: alta-v5 → "Capturar nuevo contrato" (los nombres no navegan
+    // en captura). Folio vacío y pestañas re-bloqueadas (navegación lineal).
+    await page.getByTestId('btn-nueva-alta').click();
     await expect(page.getByTestId('dg-folio')).toHaveValue('');
     await expect(page.getByRole('button', { name: /Programa de obra/ })).toBeDisabled();
     await expect(page.getByRole('button', { name: /Catálogo de conceptos/ })).toBeDisabled();

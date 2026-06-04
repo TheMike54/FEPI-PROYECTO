@@ -7,11 +7,12 @@
 //  · 4.1 "Siguiente" por paso, "Atrás", "Guardar" solo en el último paso.
 // Requiere backend+BD (login real + cuentas semilla).
 import { test, expect } from '@playwright/test';
-import { freshHome, enterAppMode, goToViaSidebar, altaLlenarDatosGenerales, altaAgregarConcepto, altaAdjuntarPdfFirmado } from './_helpers.js';
+import { freshHome, enterAppMode, goToViaSidebar, altaLlenarDatosGenerales, altaAgregarConcepto, altaLlenarJuridicos, altaLlenarGarantias, altaAdjuntarPdfFirmado } from './_helpers.js';
 
 test.skip(!!process.env.CI, 'alta-v2: login real requiere backend+BD; se corre en local');
 
-// Lleva el wizard hasta el paso 4 (garantías) con datos válidos: DG + 1 concepto + programa 100%.
+// Lleva el wizard hasta el paso 4 (garantías) con datos válidos: DG + 1 concepto + programa 100%
+// + jurídicos (alta-v5: obligatorios para poder pasar del paso 3).
 async function avanzarHastaGarantias(page) {
   await altaLlenarDatosGenerales(page, { plazo: 60, fechaInicio: '2026-06-01' });
   await page.getByTestId('btn-siguiente').click();             // catálogo
@@ -19,7 +20,8 @@ async function avanzarHastaGarantias(page) {
   await page.getByTestId('btn-siguiente').click();             // programa
   await page.getByTestId('celda-0-1').fill('100');             // 100% (todo en P1)
   await page.getByTestId('btn-siguiente').click();             // jurídicos
-  await page.getByTestId('btn-siguiente').click();             // garantías (último paso)
+  await altaLlenarJuridicos(page);                             // alta-v5: obligatorios
+  await page.getByTestId('btn-siguiente').click();             // garantías
 }
 
 test.describe('alta-v2 — wizard: gating, banner persistente, anticipo y garantía', () => {
@@ -58,6 +60,7 @@ test.describe('alta-v2 — wizard: gating, banner persistente, anticipo y garant
     await avanzarHastaGarantias(page);
     await expect(page.getByTestId('btn-siguiente')).toBeVisible();
     await expect(page.getByTestId('btn-guardar')).toHaveCount(0);
+    await altaLlenarGarantias(page);                           // alta-v5: fianza de cumplimiento obligatoria
     // Último paso = PDF firmado: aparece "Guardar" (DESHABILITADO sin PDF), desaparece "Siguiente".
     await page.getByTestId('btn-siguiente').click();           // → PDF firmado (último)
     await expect(page.getByTestId('btn-siguiente')).toHaveCount(0);
@@ -67,6 +70,7 @@ test.describe('alta-v2 — wizard: gating, banner persistente, anticipo y garant
 
   test('alta-v3 el PDF firmado es OBLIGATORIO para guardar (gate del botón)', async ({ page }) => {
     await avanzarHastaGarantias(page);
+    await altaLlenarGarantias(page);                           // alta-v5: fianza de cumplimiento obligatoria
     await page.getByTestId('btn-siguiente').click();           // → PDF firmado (último paso)
     // Sin PDF: botón bloqueado + pista visible.
     await expect(page.getByTestId('btn-guardar')).toBeDisabled();
