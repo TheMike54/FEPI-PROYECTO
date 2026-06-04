@@ -101,8 +101,11 @@ export const api = {
   estimacionesDeContrato: (contratoId) => request(`/estimaciones/contrato/${contratoId}`),
   detalleEstimacion: (id) => request(`/estimaciones/${id}`),
   integrarEstimacion: (payload) => request('/estimaciones', { method: 'POST', body: JSON.stringify(payload) }),
-  // Pasada F: roster del contrato (sustitución de personas, art. 125 fr. I g RLOPSRM). Lectura por
+// Pasada F: roster del contrato (sustitución de personas, art. 125 fr. I g RLOPSRM). Lectura por
   // participación; sustituir = dependencia o residente asignado (lo valida el backend).
   rosterContrato: (contratoId) => request(`/roster/contrato/${contratoId}`),
-  sustituirPersona: (contratoId, payload) => request(`/roster/contrato/${contratoId}/sustituir`, { method: 'POST', body: JSON.stringify(payload) })
+  sustituirPersona: (contratoId, payload) => request(`/roster/contrato/${contratoId}/sustituir`, { method: 'POST', body: JSON.stringify(payload) }),
+  // HU-14: historial del ciclo de cobro (cada estimación con su estado y transiciones,
+  // orden cronológico). Acotado por participación en el backend.
+  historialEstimaciones: (contratoId) => request(`/estimaciones-ciclo/contrato/${contratoId}/historial`)
 };

@@ -1,24 +1,47 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { descargarExcelHoja } from '../services/excelExport.js';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import BannerContexto from '../components/vista/BannerContexto.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
-import {
-  contratoDummy,
-  historialEstimacionesDummy,
-  periodosHistorialDummy,
-  estadosHistorialDummy
-} from '../data/dummy.js';
+import { useSesion } from '../context/SesionContext.jsx';
+import { useToast } from '../components/ui/Toast.jsx';
+import { api } from '../services/api.js';
+
+// HU-14 (Equipo 3) — cableado al backend real. Historial del ciclo de cobro: todas
+// las estimaciones del contrato (incl. rechazadas) en orden cronológico, con su estado
+// y sus transiciones. La fuente de la verdad es el backend (GET historial); aquí solo
+// se DERIVA el modelo de vista que ya consumía la UI (sin tocar su estructura).
+
+const fmtMXN = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const moneda = (n) => fmtMXN.format(Number(n) || 0);
+// dd/mm/aaaa sin corrimiento de zona (parte de fecha de un ISO/Date). null si no hay.
+const fechaMX = (iso) => {
+  const p = (iso || '').slice(0, 10).split('-');
+  return p.length === 3 && p[0] ? `${p[2]}/${p[1]}/${p[0]}` : null;
+};
+// Etiqueta de periodo "Abr 2026" a partir del inicio (agrupa el filtro por mes).
+const fmtMes = new Intl.DateTimeFormat('es-MX', { month: 'short', year: 'numeric', timeZone: 'UTC' });
+const periodoLabel = (iso) => {
+  const s = (iso || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '—';
+  const txt = fmtMes.format(new Date(s + 'T00:00:00Z')).replace('.', '');
+  return txt.charAt(0).toUpperCase() + txt.slice(1);
+};
+
+// Estados reales del ciclo (schema: integrada→enviada→autorizada→pagada|rechazada).
+const ESTADO_CLASE = {
+  integrada:  'bg-sigecop-blue-light text-sigecop-blue',
+  enviada:    'bg-amber-100 text-sigecop-amber-attention',
+  autorizada: 'bg-green-100 text-sigecop-green-validation',
+  pagada:     'bg-green-100 text-sigecop-green-validation',
+  rechazada:  'bg-red-100 text-red-700'
+};
+const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
 function EstadoBadge({ estado }) {
-  const map = {
-    'Aceptada':   'bg-green-100 text-sigecop-green-validation',
-    'Rechazada':  'bg-red-100 text-red-700',
-    'En proceso': 'bg-amber-100 text-sigecop-amber-attention'
-  };
   return (
-    <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${map[estado] || 'bg-slate-200 text-slate-600'}`}>
-      {estado}
+    <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold capitalize ${ESTADO_CLASE[estado] || 'bg-slate-200 text-slate-600'}`}>
+      {cap(estado)}
     </span>
   );
 }
@@ -112,20 +135,86 @@ function exportarHistorialExcel(filas, folioContrato) {
   descargarExcelHoja(`historial_${folioContrato}.xlsx`, 'Historial', datos);
 }
 
+// Convierte una estimación del backend (carátula + transiciones) al modelo de vista que
+// ya consumían la tabla y el panel. Opción A: el ciclo se modela con COLUMNAS de
+// `estimaciones`. La línea de tiempo se deriva de e.transiciones; hoy solo existe el
+// evento de integración, así que revisión/pago quedan en null hasta que HU-13/15/21
+// añadan sus columnas (el backend ya tiene el punto de extensión marcado).
+function aVistaHistorial(e) {
+  const trans = Array.isArray(e.transiciones) ? e.transiciones : [];
+  const revision = [...trans].reverse().find((t) => t.estado === 'autorizada' || t.estado === 'rechazada');
+  const pago = trans.find((t) => t.estado === 'pagada');
+  return {
+    id: e.id,
+    estimacion: `EST-${String(e.numero).padStart(3, '0')}`,
+    version: '—', // el modelo real no versiona: una corrección es un registro nuevo (futuro)
+    periodo: periodoLabel(e.periodo_inicio),
+    estado: e.estado,
+    importe: moneda(e.neto),
+    fechaPresentacion: fechaMX(e.integrada_en),
+    fechaRevision: revision ? fechaMX(revision.en) : null,
+    fechaPago: pago ? fechaMX(pago.en) : null,
+    observaciones: [] // HU-15: estimacion_observaciones — no se fabrican datos hasta que exista
+  };
+}
+
 export default function HistorialEstimaciones() {
+  const { token } = useSesion();
+  const { showToast } = useToast();
+  const sinSesion = !token;
+
+  const [contratos, setContratos] = useState([]);
+  const [contratoId, setContratoId] = useState('');
+  const [cargando, setCargando] = useState(false);
+  const [historial, setHistorial] = useState([]);
+
   const [periodo, setPeriodo] = useState('Todos');
   const [estado, setEstado] = useState('Todos');
   const [seleccionada, setSeleccionada] = useState(null);
 
+  const selected = useMemo(() => contratos.find((c) => String(c.id) === String(contratoId)) || null, [contratos, contratoId]);
+
+  // Carga inicial: contratos del usuario (acotados por el backend).
+  useEffect(() => {
+    if (sinSesion) return;
+    api.listarContratos().then((l) => setContratos(Array.isArray(l) ? l : [])).catch(() => setContratos([]));
+  }, [sinSesion]);
+
+  const seleccionarContrato = useCallback(async (id) => {
+    setContratoId(id);
+    setHistorial([]); setSeleccionada(null); setPeriodo('Todos'); setEstado('Todos');
+    if (!id) return;
+    setCargando(true);
+    try {
+      const data = await api.historialEstimaciones(id);
+      setHistorial(Array.isArray(data) ? data.map(aVistaHistorial) : []);
+    } catch (e) {
+      showToast(e.status === 403 ? 'No tienes acceso al historial de este contrato' : 'No se pudo cargar el historial de estimaciones');
+      setHistorial([]);
+    } finally {
+      setCargando(false);
+    }
+  }, [showToast]);
+
+  // Opciones de filtro DERIVADAS de los datos (no de un dummy fijo).
+  const periodosOpts = useMemo(
+    () => ['Todos', ...Array.from(new Set(historial.map((h) => h.periodo)))],
+    [historial]
+  );
+  const estadosOpts = useMemo(
+    () => ['Todos', ...Array.from(new Set(historial.map((h) => h.estado)))],
+    [historial]
+  );
+
   const filas = useMemo(() => {
-    return historialEstimacionesDummy.filter((h) => {
+    return historial.filter((h) => {
       if (periodo !== 'Todos' && h.periodo !== periodo) return false;
       if (estado !== 'Todos' && h.estado !== estado) return false;
       return true;
     });
-  }, [periodo, estado]);
+  }, [historial, periodo, estado]);
 
-  const handleExportar = () => exportarHistorialExcel(filas, contratoDummy.folio);
+  const handleExportar = () => exportarHistorialExcel(filas, selected ? selected.folio : 'contrato');
 
   return (
     <div>
@@ -141,100 +230,129 @@ export default function HistorialEstimaciones() {
         ]}
       />
 
-      <BannerContexto
-        variant="slate"
-        titulo="Contrato"
-        folio={contratoDummy.folio}
-        extra={[{ value: contratoDummy.contratista }]}
-      />
-
-      <div className="bg-white border border-slate-200 rounded-md p-5 mb-6">
-        <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">Filtros</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="sg-label">Periodo</label>
-            <select
-              className="sg-input"
-              value={periodo}
-              onChange={(e) => setPeriodo(e.target.value)}
-              data-testid="he-periodo"
-            >
-              {periodosHistorialDummy.map((p) => <option key={p}>{p}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="sg-label">Estado</label>
-            <select
-              className="sg-input"
-              value={estado}
-              onChange={(e) => setEstado(e.target.value)}
-              data-testid="he-estado"
-            >
-              {estadosHistorialDummy.map((s) => <option key={s}>{s}</option>)}
-            </select>
-          </div>
+      {sinSesion && (
+        <div className="bg-slate-50 border border-slate-200 rounded-md px-4 py-3 mb-4 text-sm text-slate-600">
+          Inicia sesión en modo aplicación para consultar el historial de estimaciones.
         </div>
+      )}
+
+      <div className="bg-white border border-slate-200 rounded-md p-4 mb-6 max-w-2xl">
+        <label className="sg-label">Contrato</label>
+        <select
+          className="sg-input"
+          value={contratoId}
+          onChange={(e) => seleccionarContrato(e.target.value)}
+          disabled={sinSesion}
+          data-testid="select-contrato"
+        >
+          <option value="">— Selecciona un contrato —</option>
+          {contratos.map((c) => <option key={c.id} value={c.id}>{c.folio} · {c.objeto}</option>)}
+        </select>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-md overflow-hidden">
-        <div className="px-6 py-3 border-b border-slate-200 flex items-center justify-between">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
-            Resultados ({filas.length})
-          </h2>
-          <button
-            type="button"
-            className="sg-btn-secondary"
-            onClick={handleExportar}
-            data-testid="btn-exportar-historial"
-          >
-            ⬇ Exportar historial
-          </button>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm" data-testid="tabla-historial">
-            <thead className="bg-slate-50 text-slate-700">
-              <tr>
-                <th className="text-left p-3 font-semibold">Estimación</th>
-                <th className="text-left p-3 font-semibold">Periodo</th>
-                <th className="text-center p-3 font-semibold">Versión</th>
-                <th className="text-center p-3 font-semibold">Estado</th>
-                <th className="text-right p-3 font-semibold">Importe</th>
-                <th className="text-left p-3 font-semibold">Fecha de presentación</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filas.length === 0 ? (
-                <tr>
-                  <td colSpan="6" className="p-8 text-center text-slate-400 italic">
-                    Sin estimaciones con los filtros aplicados.
-                  </td>
-                </tr>
-              ) : (
-                filas.map((h) => (
-                  <tr
-                    key={h.id}
-                    className="border-t border-slate-200 hover:bg-sigecop-blue-light cursor-pointer"
-                    data-testid={`fila-historial-${h.id}`}
-                    onClick={() => setSeleccionada(h)}
-                  >
-                    <td className="p-3 font-mono text-xs">{h.estimacion}</td>
-                    <td className="p-3">{h.periodo}</td>
-                    <td className="p-3 text-center font-semibold">{h.version}</td>
-                    <td className="p-3 text-center"><EstadoBadge estado={h.estado} /></td>
-                    <td className="p-3 text-right font-semibold">{h.importe}</td>
-                    <td className="p-3">{h.fechaPresentacion}</td>
+      {!sinSesion && !contratoId && (
+        <p className="text-sm text-slate-500 mb-4">Selecciona un contrato para ver el historial de sus estimaciones.</p>
+      )}
+      {cargando && <p className="text-sm text-slate-500 mb-4">Cargando historial…</p>}
+
+      {selected && (
+        <>
+          <BannerContexto
+            variant="slate"
+            titulo="Contrato"
+            folio={selected.folio}
+            extra={[{ value: selected.contratista || '—' }]}
+          />
+
+          <div className="bg-white border border-slate-200 rounded-md p-5 mb-6">
+            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">Filtros</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="sg-label">Periodo</label>
+                <select
+                  className="sg-input"
+                  value={periodo}
+                  onChange={(e) => setPeriodo(e.target.value)}
+                  data-testid="he-periodo"
+                >
+                  {periodosOpts.map((p) => <option key={p}>{p}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="sg-label">Estado</label>
+                <select
+                  className="sg-input"
+                  value={estado}
+                  onChange={(e) => setEstado(e.target.value)}
+                  data-testid="he-estado"
+                >
+                  {estadosOpts.map((s) => <option key={s} value={s}>{s === 'Todos' ? 'Todos' : cap(s)}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-md overflow-hidden">
+            <div className="px-6 py-3 border-b border-slate-200 flex items-center justify-between">
+              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
+                Resultados ({filas.length})
+              </h2>
+              <button
+                type="button"
+                className="sg-btn-secondary"
+                onClick={handleExportar}
+                data-testid="btn-exportar-historial"
+              >
+                ⬇ Exportar historial
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm" data-testid="tabla-historial">
+                <thead className="bg-slate-50 text-slate-700">
+                  <tr>
+                    <th className="text-left p-3 font-semibold">Estimación</th>
+                    <th className="text-left p-3 font-semibold">Periodo</th>
+                    <th className="text-center p-3 font-semibold">Versión</th>
+                    <th className="text-center p-3 font-semibold">Estado</th>
+                    <th className="text-right p-3 font-semibold">Importe</th>
+                    <th className="text-left p-3 font-semibold">Fecha de presentación</th>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                </thead>
+                <tbody>
+                  {filas.length === 0 ? (
+                    <tr>
+                      <td colSpan="6" className="p-8 text-center text-slate-400 italic">
+                        Sin estimaciones con los filtros aplicados.
+                      </td>
+                    </tr>
+                  ) : (
+                    filas.map((h) => (
+                      <tr
+                        key={h.id}
+                        className="border-t border-slate-200 hover:bg-sigecop-blue-light cursor-pointer"
+                        data-testid={`fila-historial-${h.id}`}
+                        onClick={() => setSeleccionada(h)}
+                      >
+                        <td className="p-3 font-mono text-xs">{h.estimacion}</td>
+                        <td className="p-3">{h.periodo}</td>
+                        <td className="p-3 text-center font-semibold">{h.version}</td>
+                        <td className="p-3 text-center"><EstadoBadge estado={h.estado} /></td>
+                        <td className="p-3 text-right font-semibold">{h.importe}</td>
+                        <td className="p-3">{h.fechaPresentacion ?? '—'}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
 
-      <p className="mt-3 text-xs text-slate-500">
-        Click en una fila para ver el expediente compacto. El historial conserva todas las
-        versiones del ciclo de cobro, incluyendo las rechazadas, para fiscalización y trazabilidad.
-      </p>
+          <p className="mt-3 text-xs text-slate-500">
+            Click en una fila para ver el expediente compacto. El historial conserva todas las
+            estimaciones del ciclo de cobro, incluyendo las rechazadas, para fiscalización y trazabilidad.
+          </p>
+        </>
+      )}
 
       <PanelDetalle estimacion={seleccionada} onCerrar={() => setSeleccionada(null)} />
 

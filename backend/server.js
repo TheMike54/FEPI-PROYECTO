@@ -11,6 +11,7 @@ const pagosRoutes = require('./src/routes/pagos.routes');
 const estimacionesRoutes = require('./src/routes/estimaciones.routes');
 const rosterRoutes = require('./src/routes/roster.routes');  // Pasada F: sustitución de personas (art. 125 fr. I g)
 const conveniosRoutes = require('./src/routes/convenios.routes');  // Pasada HU-03: convenios modificatorios (art. 59 LOPSRM)
+const estimacionesCicloRoutes = require('./src/routes/estimaciones-ciclo.routes');  // ← AÑADIR
 const { initDb } = require('./src/db/init');
 
 const app = express();
@@ -36,6 +37,7 @@ app.use('/api/pagos', pagosRoutes);
 app.use('/api/estimaciones', estimacionesRoutes);
 app.use('/api/roster', rosterRoutes);
 app.use('/api/convenios', conveniosRoutes);
+app.use('/api/estimaciones-ciclo', estimacionesCicloRoutes);  // ← AÑADIR
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Ruta no encontrada' });
