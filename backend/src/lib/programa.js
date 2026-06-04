@@ -84,7 +84,7 @@ function generarPeriodos(fechaInicioISO, plazoDias, ciclo) {
 // --- Errores de dominio del programa (los mapea el controller a HTTP) -------------
 function errProgramaCongelado() {
   return Object.assign(
-    new Error('El programa de obra no puede editarse: el contrato ya tiene estimaciones. Una corrección procede por convenio modificatorio (art. 99 LOPSRM).'),
+    new Error('El programa de obra no puede editarse: el contrato ya tiene estimaciones. Una corrección procede por convenio modificatorio (art. 59 LOPSRM).'),
     { code: 'PROGRAMA_CONGELADO' }
   );
 }
@@ -115,7 +115,7 @@ function errProgramaDescuadre(detalles) {
  * @param client   cliente PG dentro de una transacción (BEGIN ya emitido por el llamador)
  * @param contratoId  id del contrato
  * @param celdas   [{ contrato_concepto_id, contrato_periodo_id, cantidad }]  (se ignora cantidad<=0)
- * @param opts.convenioId  si viene, es ENMIENDA por convenio (art. 99) → exenta del freeze (C1)
+ * @param opts.convenioId  si viene, es ENMIENDA por convenio (art. 59 LOPSRM) → exenta del freeze (C1)
  *
  * Correcciones plegadas:
  *  C2 — toma pg_advisory_xact_lock(2, contratoId) al inicio (mismo lock que la integración
@@ -135,7 +135,7 @@ async function guardarMatriz(client, contratoId, celdas, opts = {}) {
   await client.query('SELECT pg_advisory_xact_lock(2, $1::int)', [cid]);
 
   // C1 + C3: freeze. La edición MANUAL se bloquea si el contrato ya tiene una estimación
-  // NO rechazada (el programa ya rige cobros). La ENMIENDA por convenio (art. 99) está exenta.
+  // NO rechazada (el programa ya rige cobros). La ENMIENDA por convenio (art. 59 LOPSRM) está exenta.
   if (convenioId == null) {
     const fr = await client.query(
       "SELECT EXISTS(SELECT 1 FROM estimaciones WHERE contrato_id = $1 AND estado <> 'rechazada') AS frozen",

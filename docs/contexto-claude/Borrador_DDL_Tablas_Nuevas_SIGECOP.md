@@ -281,7 +281,7 @@ Cada bloque entra como migración **aditiva e idempotente** dentro de `schema.sq
 > `contrato_actividades` (texto libre con %peso), que se **DEPRECA** (no se borra: conserva datos viejos).
 > Fundamento Nivel 1: **art. 45 fr. X** RLOPSRM (programa conforme al catálogo, por periodos),
 > **art. 54** LOPSRM (ciclo 30/15 días), **art. 118** RLOPSRM (no exceder lo contratado),
-> **art. 99** LOPSRM (enmienda del programa por convenio).
+> **art. 59** LOPSRM (enmienda del programa por convenio; art. 99 LOPSRM es ARBITRAJE — corregido en auditoría legal 2026-06-04).
 
 ```sql
 -- (1) Ciclo de estimación del contrato (lo elige el usuario en el alta).
@@ -309,7 +309,7 @@ CREATE TABLE IF NOT EXISTS programa_obra (
 );
 ```
 
-**Diseño (red-team C1–C7, en `lib/programa.js: guardarMatriz`):** edición por **DELETE+INSERT** (la matriz es hoja); **freeze de aplicación** (no trigger) = bloquea edición manual si hay estimación `<> 'rechazada'`, salvo **enmienda por convenio** (`convenioId`, art. 99); **lock** `pg_advisory_xact_lock(2, contrato_id)` (mismo que la integración de estimación → cierra el TOCTOU); invariante **Σ planeado ≤ contratado validado en SQL NUMERIC** (art. 118, sin epsilon).
+**Diseño (red-team C1–C7, en `lib/programa.js: guardarMatriz`):** edición por **DELETE+INSERT** (la matriz es hoja); **freeze de aplicación** (no trigger) = bloquea edición manual si hay estimación `<> 'rechazada'`, salvo **enmienda por convenio** (`convenioId`, art. 59 LOPSRM); **lock** `pg_advisory_xact_lock(2, contrato_id)` (mismo que la integración de estimación → cierra el TOCTOU); invariante **Σ planeado ≤ contratado validado en SQL NUMERIC** (art. 118, sin epsilon).
 
 **Alineación con HU-12 (definición de "periodo"):** cada fila de `contrato_periodos` cumple por construcción `fin ≤ masUnMes(inicio)`, así que **es un periodo válido de estimación** (art. 54); una estimación de HU-12 corresponde a un `contrato_periodos.numero`, y la celda `programa_obra(concepto, periodo)` es la cantidad planeada contra la que se podrá validar el avance estimado (cableado fino de HU-12 contra `programa_obra` = follow-on, fuera de A2).
 

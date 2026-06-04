@@ -52,7 +52,7 @@ async function leerPrograma(req, res) {
 
 // PUT /api/contratos/:id/programa — REEMPLAZA la matriz. Solo el residente asignado.
 // Body: { celdas: [{ clave | contrato_concepto_id, periodoNumero | contrato_periodo_id, cantidad }],
-//         convenioId? }. Con convenioId => enmienda por convenio (art. 99), exenta del freeze.
+//         convenioId? }. Con convenioId => enmienda por convenio (art. 59 LOPSRM), exenta del freeze.
 async function reemplazarPrograma(req, res) {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(404).json({ error: 'Contrato no encontrado' });
@@ -61,7 +61,7 @@ async function reemplazarPrograma(req, res) {
   const celdasRaw = Array.isArray(body.celdas) ? body.celdas : [];
   if (celdasRaw.length > 20000) return res.status(400).json({ error: 'El programa de obra tiene demasiadas celdas' });
   // convenioId: por ahora la HU-03 (convenios) no existe; se acepta el hook pero NO se
-  // confía ciegamente: debe ser un entero positivo para tratarse como enmienda (art. 99).
+  // confía ciegamente: debe ser un entero positivo para tratarse como enmienda (art. 59 LOPSRM).
   const convenioId = Number.isInteger(Number(body.convenioId)) && Number(body.convenioId) > 0 ? Number(body.convenioId) : null;
 
   let client;

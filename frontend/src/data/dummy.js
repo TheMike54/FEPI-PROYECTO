@@ -18,7 +18,7 @@ export const contratoDummy = {
   fechaInicio: '2026-06-01',
   fechaTermino: '2026-11-28',
   // HU-08 — La fecha de entrega del sitio es el evento que dispara la apertura
-  // formal de la bitácora (art. 122 RLOPSRM). Coincide con fechaInicio para el
+  // formal de la bitácora (art. 123 fr. III RLOPSRM). Coincide con fechaInicio para el
   // contrato dummy, pero conceptualmente es un dato distinto.
   fechaEntregaSitio: '2026-06-01'
 };
@@ -110,7 +110,7 @@ export const fianzasListadoDummy = [
   }
 ];
 
-// HU-08 — Tres firmantes autorizados para la apertura formal (art. 122 RLOPSRM):
+// HU-08 — Tres firmantes autorizados para la apertura formal (art. 123 fr. III RLOPSRM):
 // residente de obra, supervisor externo (opcional — puede no existir en el
 // contrato) y superintendente. La parte 2 lleva `opcional: true` para que la
 // vista permita marcarla "no aplica".

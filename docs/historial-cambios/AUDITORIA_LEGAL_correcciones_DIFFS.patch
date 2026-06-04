@@ -1,0 +1,173 @@
+diff --git a/backend/src/controllers/bitacora.controller.js b/backend/src/controllers/bitacora.controller.js
+index c773b21..0f74d1c 100644
+--- a/backend/src/controllers/bitacora.controller.js
++++ b/backend/src/controllers/bitacora.controller.js
+@@ -4,8 +4,8 @@
+ const { pool } = require('../db/pool');
+ const { esParteOSupervision } = require('../lib/acceso');
+ 
+-// Construye el acta (primera nota): snapshot inmutable de los grupos del art. 122
+-// RLOPSRM, tomados del contrato + el roster de firmantes (identidad por cuenta).
++// Construye el acta (primera nota): snapshot inmutable de los datos minimos del art. 123
++// fr. III RLOPSRM, tomados del contrato + el roster de firmantes (identidad por cuenta).
+ function construirActa(contrato, roster, cronograma, datos) {
+   const d = datos || {};
+   return {
+diff --git a/backend/src/controllers/programa.controller.js b/backend/src/controllers/programa.controller.js
+index 80890d8..652f44e 100644
+--- a/backend/src/controllers/programa.controller.js
++++ b/backend/src/controllers/programa.controller.js
+@@ -52,7 +52,7 @@ async function leerPrograma(req, res) {
+ 
+ // PUT /api/contratos/:id/programa — REEMPLAZA la matriz. Solo el residente asignado.
+ // Body: { celdas: [{ clave | contrato_concepto_id, periodoNumero | contrato_periodo_id, cantidad }],
+-//         convenioId? }. Con convenioId => enmienda por convenio (art. 99), exenta del freeze.
++//         convenioId? }. Con convenioId => enmienda por convenio (art. 59 LOPSRM), exenta del freeze.
+ async function reemplazarPrograma(req, res) {
+   const id = Number(req.params.id);
+   if (!Number.isInteger(id) || id <= 0) return res.status(404).json({ error: 'Contrato no encontrado' });
+@@ -61,7 +61,7 @@ async function reemplazarPrograma(req, res) {
+   const celdasRaw = Array.isArray(body.celdas) ? body.celdas : [];
+   if (celdasRaw.length > 20000) return res.status(400).json({ error: 'El programa de obra tiene demasiadas celdas' });
+   // convenioId: por ahora la HU-03 (convenios) no existe; se acepta el hook pero NO se
+-  // confía ciegamente: debe ser un entero positivo para tratarse como enmienda (art. 99).
++  // confía ciegamente: debe ser un entero positivo para tratarse como enmienda (art. 59 LOPSRM).
+   const convenioId = Number.isInteger(Number(body.convenioId)) && Number(body.convenioId) > 0 ? Number(body.convenioId) : null;
+ 
+   let client;
+diff --git a/backend/src/db/schema.sql b/backend/src/db/schema.sql
+index f9a7d6f..fbbbbd4 100644
+--- a/backend/src/db/schema.sql
++++ b/backend/src/db/schema.sql
+@@ -203,7 +203,7 @@ CREATE INDEX IF NOT EXISTS idx_contrato_documentos_contrato ON contrato_document
+ -- =====================================================================
+ 
+ -- (1) Columnas nuevas en bitacora_aperturas: instante formal inmutable (apertura_en),
+---     acta JSONB (la "primera nota" congelada con los 5 grupos del art. 122 RLOPSRM)
++--     acta JSONB (la "primera nota" congelada con los datos minimos del art. 123 fr. III RLOPSRM)
+ --     y quien apertura. fecha_apertura existente se reusa como fecha de entrega del sitio.
+ ALTER TABLE bitacora_aperturas ADD COLUMN IF NOT EXISTS apertura_en TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ ALTER TABLE bitacora_aperturas ADD COLUMN IF NOT EXISTS acta JSONB NOT NULL DEFAULT '{}'::jsonb;
+diff --git a/backend/src/lib/programa.js b/backend/src/lib/programa.js
+index e05e384..074e6f4 100644
+--- a/backend/src/lib/programa.js
++++ b/backend/src/lib/programa.js
+@@ -84,7 +84,7 @@ function generarPeriodos(fechaInicioISO, plazoDias, ciclo) {
+ // --- Errores de dominio del programa (los mapea el controller a HTTP) -------------
+ function errProgramaCongelado() {
+   return Object.assign(
+-    new Error('El programa de obra no puede editarse: el contrato ya tiene estimaciones. Una corrección procede por convenio modificatorio (art. 99 LOPSRM).'),
++    new Error('El programa de obra no puede editarse: el contrato ya tiene estimaciones. Una corrección procede por convenio modificatorio (art. 59 LOPSRM).'),
+     { code: 'PROGRAMA_CONGELADO' }
+   );
+ }
+@@ -115,7 +115,7 @@ function errProgramaDescuadre(detalles) {
+  * @param client   cliente PG dentro de una transacción (BEGIN ya emitido por el llamador)
+  * @param contratoId  id del contrato
+  * @param celdas   [{ contrato_concepto_id, contrato_periodo_id, cantidad }]  (se ignora cantidad<=0)
+- * @param opts.convenioId  si viene, es ENMIENDA por convenio (art. 99) → exenta del freeze (C1)
++ * @param opts.convenioId  si viene, es ENMIENDA por convenio (art. 59 LOPSRM) → exenta del freeze (C1)
+  *
+  * Correcciones plegadas:
+  *  C2 — toma pg_advisory_xact_lock(2, contratoId) al inicio (mismo lock que la integración
+@@ -135,7 +135,7 @@ async function guardarMatriz(client, contratoId, celdas, opts = {}) {
+   await client.query('SELECT pg_advisory_xact_lock(2, $1::int)', [cid]);
+ 
+   // C1 + C3: freeze. La edición MANUAL se bloquea si el contrato ya tiene una estimación
+-  // NO rechazada (el programa ya rige cobros). La ENMIENDA por convenio (art. 99) está exenta.
++  // NO rechazada (el programa ya rige cobros). La ENMIENDA por convenio (art. 59 LOPSRM) está exenta.
+   if (convenioId == null) {
+     const fr = await client.query(
+       "SELECT EXISTS(SELECT 1 FROM estimaciones WHERE contrato_id = $1 AND estado <> 'rechazada') AS frozen",
+diff --git a/docs/contexto-claude/Borrador_DDL_Tablas_Nuevas_SIGECOP.md b/docs/contexto-claude/Borrador_DDL_Tablas_Nuevas_SIGECOP.md
+index f30e9b0..c517fba 100644
+--- a/docs/contexto-claude/Borrador_DDL_Tablas_Nuevas_SIGECOP.md
++++ b/docs/contexto-claude/Borrador_DDL_Tablas_Nuevas_SIGECOP.md
+@@ -281,7 +281,7 @@ Cada bloque entra como migración **aditiva e idempotente** dentro de `schema.sq
+ > `contrato_actividades` (texto libre con %peso), que se **DEPRECA** (no se borra: conserva datos viejos).
+ > Fundamento Nivel 1: **art. 45 fr. X** RLOPSRM (programa conforme al catálogo, por periodos),
+ > **art. 54** LOPSRM (ciclo 30/15 días), **art. 118** RLOPSRM (no exceder lo contratado),
+-> **art. 99** LOPSRM (enmienda del programa por convenio).
++> **art. 59** LOPSRM (enmienda del programa por convenio; art. 99 LOPSRM es ARBITRAJE — corregido en auditoría legal 2026-06-04).
+ 
+ ```sql
+ -- (1) Ciclo de estimación del contrato (lo elige el usuario en el alta).
+@@ -309,7 +309,7 @@ CREATE TABLE IF NOT EXISTS programa_obra (
+ );
+ ```
+ 
+-**Diseño (red-team C1–C7, en `lib/programa.js: guardarMatriz`):** edición por **DELETE+INSERT** (la matriz es hoja); **freeze de aplicación** (no trigger) = bloquea edición manual si hay estimación `<> 'rechazada'`, salvo **enmienda por convenio** (`convenioId`, art. 99); **lock** `pg_advisory_xact_lock(2, contrato_id)` (mismo que la integración de estimación → cierra el TOCTOU); invariante **Σ planeado ≤ contratado validado en SQL NUMERIC** (art. 118, sin epsilon).
++**Diseño (red-team C1–C7, en `lib/programa.js: guardarMatriz`):** edición por **DELETE+INSERT** (la matriz es hoja); **freeze de aplicación** (no trigger) = bloquea edición manual si hay estimación `<> 'rechazada'`, salvo **enmienda por convenio** (`convenioId`, art. 59 LOPSRM); **lock** `pg_advisory_xact_lock(2, contrato_id)` (mismo que la integración de estimación → cierra el TOCTOU); invariante **Σ planeado ≤ contratado validado en SQL NUMERIC** (art. 118, sin epsilon).
+ 
+ **Alineación con HU-12 (definición de "periodo"):** cada fila de `contrato_periodos` cumple por construcción `fin ≤ masUnMes(inicio)`, así que **es un periodo válido de estimación** (art. 54); una estimación de HU-12 corresponde a un `contrato_periodos.numero`, y la celda `programa_obra(concepto, periodo)` es la cantidad planeada contra la que se podrá validar el avance estimado (cableado fino de HU-12 contra `programa_obra` = follow-on, fuera de A2).
+ 
+diff --git a/docs/contexto-claude/SIGECOP_contexto_respaldo.md b/docs/contexto-claude/SIGECOP_contexto_respaldo.md
+index 73dfa69..8dece23 100644
+--- a/docs/contexto-claude/SIGECOP_contexto_respaldo.md
++++ b/docs/contexto-claude/SIGECOP_contexto_respaldo.md
+@@ -88,14 +88,14 @@ libre. Desbloquea HU-05, HU-06 y el versionado de HU-03.
+     ciclos → 0 huecos, 0 solapes, cumple art. 54; feb/bisiesto/cruce de año/último parcial OK).
+   - Escala **NUMERIC(14,3)** = catálogo. Invariante **Σ planeado ≤ contratado (art. 118) validada en
+     SQL** (sin epsilon). Reemplazo DELETE+INSERT (programa_obra es hoja). Freeze post-estimación con
+-    excepción enmienda-por-convenio (art. 99). Lock `pg_advisory_xact_lock(2, contratoId)`.
++    excepción enmienda-por-convenio (art. 59 LOPSRM). Lock `pg_advisory_xact_lock(2, contratoId)`.
+   - **NO está en `schema.sql` ni en el borrador** (la auditoría confirmó que el esquema sigue con
+     `contrato_actividades`). No hay commit de A2.
+ 
+   **7 correcciones (C1–C7) a plegar ANTES de construir:**
+   | # | Corrección |
+   |---|---|
+-  | C1 🔴 | Freeze debe distinguir origen: `edicion_manual` (bloqueada post-estimación) vs `enmienda_convenio` (exenta, art. 99). Diseñar `guardarMatriz(..., convenio_id?)`. |
++  | C1 🔴 | Freeze debe distinguir origen: `edicion_manual` (bloqueada post-estimación) vs `enmienda_convenio` (exenta, art. 59 LOPSRM). Diseñar `guardarMatriz(..., convenio_id?)`. |
+   | C2 🔴 | Tomar `pg_advisory_xact_lock(2, $contratoId)` al inicio del BEGIN del guardado (evita TOCTOU con la integración). |
+   | C3 | Detección de freeze = `EXISTS(... estado <> 'rechazada')`, no `estado='integrada'`. |
+   | C4 | `RETURNING id` → Map(clave→id); rechazar orphans con 400 antes del INSERT. |
+diff --git a/frontend/src/data/dummy.js b/frontend/src/data/dummy.js
+index e61a73b..b4ab243 100644
+--- a/frontend/src/data/dummy.js
++++ b/frontend/src/data/dummy.js
+@@ -18,7 +18,7 @@ export const contratoDummy = {
+   fechaInicio: '2026-06-01',
+   fechaTermino: '2026-11-28',
+   // HU-08 — La fecha de entrega del sitio es el evento que dispara la apertura
+-  // formal de la bitácora (art. 122 RLOPSRM). Coincide con fechaInicio para el
++  // formal de la bitácora (art. 123 fr. III RLOPSRM). Coincide con fechaInicio para el
+   // contrato dummy, pero conceptualmente es un dato distinto.
+   fechaEntregaSitio: '2026-06-01'
+ };
+@@ -110,7 +110,7 @@ export const fianzasListadoDummy = [
+   }
+ ];
+ 
+-// HU-08 — Tres firmantes autorizados para la apertura formal (art. 122 RLOPSRM):
++// HU-08 — Tres firmantes autorizados para la apertura formal (art. 123 fr. III RLOPSRM):
+ // residente de obra, supervisor externo (opcional — puede no existir en el
+ // contrato) y superintendente. La parte 2 lleva `opcional: true` para que la
+ // vista permita marcarla "no aplica".
+diff --git a/frontend/src/pages/AperturaBitacora.jsx b/frontend/src/pages/AperturaBitacora.jsx
+index 7990bbd..31dc0fa 100644
+--- a/frontend/src/pages/AperturaBitacora.jsx
++++ b/frontend/src/pages/AperturaBitacora.jsx
+@@ -285,7 +285,7 @@ export default function AperturaBitacora() {
+               <div className="mt-6 bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 rounded-r-md">
+                 <div className="text-sm font-semibold text-sigecop-amber-attention">⚠️ Evento formal inalterable</div>
+                 <p className="text-sm text-slate-800 mt-1">
+-                  La apertura se registra como evento formal inalterable conforme al art. 46 último párrafo LOPSRM y a los arts. 122-123 RLOPSRM. La fecha y hora quedan registradas y no pueden modificarse.
++                  La apertura se registra como evento formal inalterable conforme al art. 46 LOPSRM (la Bitácora vincula a las partes) y a los arts. 122-123 RLOPSRM (las notas firmadas no se modifican, art. 123 fr. VI). La fecha y hora quedan registradas y no pueden modificarse.
+                 </p>
+               </div>
+ 
+@@ -304,11 +304,11 @@ export default function AperturaBitacora() {
+         criterios={[
+           { numero: 1, texto: 'Existe una bitácora única por contrato con el equipo (residente, superintendente y supervisión si aplica) ligado a sus cuentas de usuario.' },
+           { numero: 2, texto: 'La fecha y hora de apertura queda registrada como evento formal inalterable; cada parte firma desde su propia cuenta (firma conjunta derivada de todas las firmas).' },
+-          { numero: 3, texto: 'La primera nota registra los datos obligatorios: identificación del contrato, objeto, datos financieros, cronograma contractual y registro de firmas (art. 122 RLOPSRM).' }
++          { numero: 3, texto: 'La primera nota registra los datos obligatorios: identificación del contrato, objeto, datos financieros, cronograma contractual y registro de firmas (art. 123 fr. III RLOPSRM).' }
+         ]}
+       />
+ 
+-      <p className="mt-4 text-xs text-slate-500 italic text-center">Fundamento: art. 122 RLOPSRM (Reglamento de la LOPSRM).</p>
++      <p className="mt-4 text-xs text-slate-500 italic text-center">Fundamento: arts. 122 y 123 fr. III RLOPSRM (Reglamento de la LOPSRM).</p>
+     </div>
+   );
+ }

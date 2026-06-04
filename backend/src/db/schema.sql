@@ -203,7 +203,7 @@ CREATE INDEX IF NOT EXISTS idx_contrato_documentos_contrato ON contrato_document
 -- =====================================================================
 
 -- (1) Columnas nuevas en bitacora_aperturas: instante formal inmutable (apertura_en),
---     acta JSONB (la "primera nota" congelada con los 5 grupos del art. 122 RLOPSRM)
+--     acta JSONB (la "primera nota" congelada con los datos minimos del art. 123 fr. III RLOPSRM)
 --     y quien apertura. fecha_apertura existente se reusa como fecha de entrega del sitio.
 ALTER TABLE bitacora_aperturas ADD COLUMN IF NOT EXISTS apertura_en TIMESTAMPTZ NOT NULL DEFAULT NOW();
 ALTER TABLE bitacora_aperturas ADD COLUMN IF NOT EXISTS acta JSONB NOT NULL DEFAULT '{}'::jsonb;

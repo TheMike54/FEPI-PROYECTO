@@ -285,7 +285,7 @@ export default function AperturaBitacora() {
               <div className="mt-6 bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 rounded-r-md">
                 <div className="text-sm font-semibold text-sigecop-amber-attention">⚠️ Evento formal inalterable</div>
                 <p className="text-sm text-slate-800 mt-1">
-                  La apertura se registra como evento formal inalterable conforme al art. 46 último párrafo LOPSRM y a los arts. 122-123 RLOPSRM. La fecha y hora quedan registradas y no pueden modificarse.
+                  La apertura se registra como evento formal inalterable conforme al art. 46 LOPSRM (la Bitácora vincula a las partes) y a los arts. 122-123 RLOPSRM (las notas firmadas no se modifican, art. 123 fr. VI). La fecha y hora quedan registradas y no pueden modificarse.
                 </p>
               </div>
 
@@ -304,11 +304,11 @@ export default function AperturaBitacora() {
         criterios={[
           { numero: 1, texto: 'Existe una bitácora única por contrato con el equipo (residente, superintendente y supervisión si aplica) ligado a sus cuentas de usuario.' },
           { numero: 2, texto: 'La fecha y hora de apertura queda registrada como evento formal inalterable; cada parte firma desde su propia cuenta (firma conjunta derivada de todas las firmas).' },
-          { numero: 3, texto: 'La primera nota registra los datos obligatorios: identificación del contrato, objeto, datos financieros, cronograma contractual y registro de firmas (art. 122 RLOPSRM).' }
+          { numero: 3, texto: 'La primera nota registra los datos obligatorios: identificación del contrato, objeto, datos financieros, cronograma contractual y registro de firmas (art. 123 fr. III RLOPSRM).' }
         ]}
       />
 
-      <p className="mt-4 text-xs text-slate-500 italic text-center">Fundamento: art. 122 RLOPSRM (Reglamento de la LOPSRM).</p>
+      <p className="mt-4 text-xs text-slate-500 italic text-center">Fundamento: arts. 122 y 123 fr. III RLOPSRM (Reglamento de la LOPSRM).</p>
     </div>
   );
 }

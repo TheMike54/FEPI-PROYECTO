@@ -1,0 +1,196 @@
+diff --git a/backend/src/controllers/programa.controller.js b/backend/src/controllers/programa.controller.js
+index 652f44e..b108c77 100644
+--- a/backend/src/controllers/programa.controller.js
++++ b/backend/src/controllers/programa.controller.js
+@@ -107,8 +107,8 @@ async function reemplazarPrograma(req, res) {
+       }
+ 
+       // guardarMatriz: lock (C2), freeze manual/enmienda (C1/C3), DELETE+INSERT (C5),
+-      // regla del 100% en SQL (C7): Σ planeado = contratado por concepto (RLOPSRM 45-A-X +
+-      // LOPSRM 52; exceso art. 118). Reemplazar la matriz también debe cuadrar al 100%.
++      // regla ≤ en SQL (C7): Σ planeado NO excede contratado por concepto (art. 118 RLOPSRM);
++      // el faltante (parcial) se permite. Reemplazar la matriz tampoco puede exceder.
+       const r = await guardarMatriz(client, id, celdas, { convenioId });
+       await client.query('COMMIT');
+       return res.status(200).json({ ok: true, contrato_id: id, ...r });
+diff --git a/backend/src/lib/programa.js b/backend/src/lib/programa.js
+index 074e6f4..ba77aa9 100644
+--- a/backend/src/lib/programa.js
++++ b/backend/src/lib/programa.js
+@@ -91,11 +91,10 @@ function errProgramaCongelado() {
+ function errProgramaAjeno(msg) {
+   return Object.assign(new Error(msg), { code: 'PROGRAMA_AJENO' });
+ }
+-// Regla del 100% (paquete alta-v2): por concepto, Σ planeado DEBE IGUALAR lo contratado
+-// (programa convenido "del total de los conceptos de trabajo" — RLOPSRM art. 45 ap. A
+-// fr. X; el programa es la base para medir el avance — LOPSRM art. 52). Antes solo se
+-// bloqueaba el exceso (art. 118); ahora también el faltante. El descuadre puede ser por
+-// SOBRA (> contratado) o por FALTA (< contratado, incluido el concepto sin ninguna celda).
++// Regla ≤ (auditoría legal 2026-06-04: parcial permitido): por concepto, Σ planeado NO debe
++// EXCEDER lo contratado (art. 118 RLOPSRM). El FALTANTE se PERMITE: la ley (RLOPSRM 45-A-X
++// "del total de los conceptos" + LOPSRM 52 "base del avance") NO exige Σ = contratado exacto;
++// lo único duro es no exceder. Solo bloquea la SOBRA (planeado > contratado).
+ function errProgramaDescuadre(detalles) {
+   const txt = detalles.map((r) => {
+     const dif = Number(r.contratado) - Number(r.planeado);
+@@ -103,7 +102,7 @@ function errProgramaDescuadre(detalles) {
+     return `${r.clave}: planeado ${r.planeado} vs contratado ${r.contratado} (${detalle})`;
+   }).join('; ');
+   return Object.assign(
+-    new Error(`El programa de obra debe distribuir el 100% de cada concepto (Σ planeado = contratado): RLOPSRM art. 45 ap. A fr. X + LOPSRM art. 52. Conceptos sin cuadrar — ${txt}`),
++    new Error(`El programa de obra no debe EXCEDER lo contratado por concepto (art. 118 RLOPSRM). Conceptos en exceso — ${txt}`),
+     { code: 'PROGRAMA_DESCUADRE', detalles }
+   );
+ }
+@@ -123,8 +122,8 @@ function errProgramaDescuadre(detalles) {
+  *  C1 — distingue origen: edicion_manual (sin convenioId) vs enmienda_convenio (con convenioId).
+  *  C3 — freeze = EXISTS(estimaciones con estado <> 'rechazada'), no estado='integrada'.
+  *  C5 — reemplazo por DELETE de TODAS las celdas de los conceptos del contrato (subconsulta).
+- *  C7 — Regla del 100%: Σ planeado = contratado por concepto, VALIDADO EN SQL NUMERIC (3 dec,
+- *       tolerancia 0.0005). Cubre faltante y exceso (RLOPSRM 45-A-X + LOPSRM 52; exceso art. 118).
++ *  C7 — Regla ≤ (parcial permitido): Σ planeado NO excede contratado por concepto, VALIDADO EN
++ *       SQL NUMERIC (3 dec, tol 0.0005). Solo bloquea exceso (art. 118 RLOPSRM); faltante permitido.
+  *  (C4/C6 viven en el llamador: traduce clave→id con RETURNING y rechaza huérfanos antes de llamar.)
+  */
+ async function guardarMatriz(client, contratoId, celdas, opts = {}) {
+@@ -178,12 +177,10 @@ async function guardarMatriz(client, contratoId, celdas, opts = {}) {
+     insertadas += 1;
+   }
+ 
+-  // C7 — Regla del 100% (alta-v2): por concepto, Σ planeado DEBE IGUALAR lo contratado del
+-  // catálogo, con tolerancia de redondeo en la escala NUMERIC(14,3) (|Δ| > 0.0005 ⇒ descuadre).
+-  // La comparación la hace Postgres sobre NUMERIC(14,3) (sin flotantes de JS). Cubre faltante Y
+-  // exceso, e incluye conceptos SIN ninguna celda (LEFT JOIN → planeado 0 → descuadre). El exceso
+-  // sigue cubierto (art. 118 RLOPSRM); el faltante es la regla nueva (RLOPSRM art. 45-A-X + LOPSRM
+-  // art. 52: el programa convenido cubre el total de los conceptos y es la base del avance).
++  // C7 — Regla ≤ (auditoría legal: parcial permitido): por concepto, Σ planeado NO debe EXCEDER
++  // lo contratado (art. 118 RLOPSRM), con tolerancia NUMERIC(14,3) (Δ > 0.0005 ⇒ exceso). La
++  // comparación la hace Postgres sobre NUMERIC(14,3) (sin flotantes de JS). Solo bloquea la SOBRA
++  // (planeado > contratado); el FALTANTE (incl. concepto sin celdas) se PERMITE.
+   const inv = await client.query(
+     `SELECT cc.clave,
+             cc.cantidad                       AS contratado,
+@@ -192,7 +189,7 @@ async function guardarMatriz(client, contratoId, celdas, opts = {}) {
+        LEFT JOIN programa_obra po ON po.contrato_concepto_id = cc.id
+       WHERE cc.contrato_id = $1
+       GROUP BY cc.id, cc.clave, cc.cantidad
+-     HAVING ABS(COALESCE(SUM(po.cantidad), 0) - cc.cantidad) > 0.0005`,
++     HAVING COALESCE(SUM(po.cantidad), 0) - cc.cantidad > 0.0005`,
+     [cid]
+   );
+   if (inv.rowCount > 0) throw errProgramaDescuadre(inv.rows);
+diff --git a/frontend/e2e/a2-programa-obra.spec.js b/frontend/e2e/a2-programa-obra.spec.js
+index 8d6b82a..231760a 100644
+--- a/frontend/e2e/a2-programa-obra.spec.js
++++ b/frontend/e2e/a2-programa-obra.spec.js
+@@ -1,7 +1,7 @@
+ // @ts-check
+-// A2 + alta-v2 (punto 3) — Programa de obra = matriz CONCEPTO × PERIODO con la REGLA DEL 100%.
+-// Σ planeado por concepto debe IGUALAR lo contratado (RLOPSRM art. 45-A-X + LOPSRM art. 52);
+-// el faltante y el exceso bloquean. Flujo con LOGIN REAL: la app arranca vacía, así que se
++// A2 + alta-v2 (punto 3) — Programa de obra = matriz CONCEPTO × PERIODO con la REGLA ≤ (parcial).
++// Σ planeado por concepto NO debe EXCEDER lo contratado (art. 118 RLOPSRM); el faltante se
++// PERMITE, solo el exceso bloquea. Flujo con LOGIN REAL: la app arranca vacía, así que se
+ // capturan datos generales + 1 concepto antes de llegar al programa. Requiere backend+BD.
+ import { test, expect } from '@playwright/test';
+ import { freshHome, enterAppMode, goToViaSidebar, altaLlenarDatosGenerales, altaAgregarConcepto } from './_helpers.js';
+@@ -30,35 +30,36 @@ test.describe('A2/alta-v2 — programa de obra: regla del 100%', () => {
+     await expect(page.getByTestId('celda-0-4')).toBeVisible();
+   });
+ 
+-  test('regla del 100%: faltante bloquea (descuadre), cuadre habilita, exceso bloquea', async ({ page }) => {
++  test('regla ≤ (parcial permitido): faltante NO bloquea, exceso bloquea', async ({ page }) => {
+     const restante = page.getByTestId('restante-0');
+-    // Contratado 100, nada asignado → restante 100 y descuadre.
++    // Contratado 100, nada asignado (planeado 0 ≤ contratado) → no excede → CUADRA.
+     await expect(restante).toHaveText('100');
+-    await expect(page.getByTestId('programa-descuadre')).toBeVisible();
++    await expect(page.getByTestId('programa-cuadra')).toBeVisible();
++    await expect(page.getByTestId('programa-descuadre')).toHaveCount(0);
+ 
+-    // Parcial (60) → restante 40, SIGUE descuadre (la regla nueva NO permite parcial).
++    // Parcial (60) → restante 40, sin exceso → CUADRA (parcial permitido, ≤).
+     await page.getByTestId('celda-0-1').fill('60');
+     await expect(restante).toHaveText('40');
+-    await expect(page.getByTestId('programa-descuadre')).toBeVisible();
+-    await expect(page.getByTestId('programa-cuadra')).toHaveCount(0);
++    await expect(page.getByTestId('programa-cuadra')).toBeVisible();
++    await expect(page.getByTestId('programa-descuadre')).toHaveCount(0);
+ 
+-    // Completar al 100% (60 + 40) → restante 0 y CUADRA.
++    // Completar (60 + 40 = 100) → restante 0, sin exceso → CUADRA.
+     await page.getByTestId('celda-0-2').fill('40');
+     await expect(restante).toHaveText('0');
+     await expect(page.getByTestId('programa-cuadra')).toBeVisible();
+-    await expect(page.getByTestId('programa-descuadre')).toHaveCount(0);
+ 
+-    // Exceso (> contratado) → vuelve a descuadre.
++    // Exceso (> contratado) → DESCUADRE (art. 118).
+     await page.getByTestId('celda-0-2').fill('200');
+     await expect(page.getByTestId('programa-descuadre')).toBeVisible();
++    await expect(page.getByTestId('programa-cuadra')).toHaveCount(0);
+   });
+ 
+-  test('avanzar/guardar bloqueado si el programa no cuadra al 100%', async ({ page }) => {
+-    // Parcial → al pulsar Siguiente NO avanza (sigue en programa) y aparece el banner persistente.
+-    await page.getByTestId('celda-0-1').fill('60');
++  test('avanzar/guardar: el EXCESO bloquea (parcial sí avanza)', async ({ page }) => {
++    // Exceso (200 > contratado 100) → al pulsar Siguiente NO avanza y aparece el banner.
++    await page.getByTestId('celda-0-1').fill('200');
+     await page.getByTestId('btn-siguiente').click();
+     await expect(page.getByTestId('error-wizard')).toBeVisible();
+-    await expect(page.getByTestId('error-wizard')).toContainText('100%');
++    await expect(page.getByTestId('error-wizard')).toContainText('art. 118');
+     // Aún en el paso programa (la matriz sigue visible).
+     await expect(page.getByTestId('select-ciclo')).toBeVisible();
+   });
+diff --git a/frontend/src/pages/AltaContrato.jsx b/frontend/src/pages/AltaContrato.jsx
+index 3687397..0283eeb 100644
+--- a/frontend/src/pages/AltaContrato.jsx
++++ b/frontend/src/pages/AltaContrato.jsx
+@@ -347,14 +347,15 @@ function TabProgramaMatriz({ conceptos, periodos, ciclo, setCiclo, celdas, setCe
+     const restante = round3(contratado - planeado);
+     return { rid: c.rid, contratado, planeado, restante };
+   });
+-  // alta-v2 (punto 3): regla del 100% — cada concepto debe CUADRAR (|restante| <= tolerancia).
+-  const noCuadra = resumen.some((r) => Math.abs(r.restante) > TOL_PROGRAMA);
++  // auditoría legal (≤, parcial permitido): solo se BLOQUEA el EXCESO (planeado > contratado,
++  // art. 118 RLOPSRM); el faltante se PERMITE. `noCuadra` = hay algún concepto en exceso.
++  const noCuadra = resumen.some((r) => r.restante < -TOL_PROGRAMA);
+   const conceptosOk = resumen.length > 0 && periodos.length > 0 && !noCuadra;
+   return (
+     <div>
+       <h3 className="text-lg font-bold text-sigecop-blue mb-1">Programa de obra (catálogo × periodos)</h3>
+       <p className="text-sm text-slate-600 mb-3">
+-        El programa son los <strong>conceptos del catálogo</strong> repartidos en los <strong>periodos del ciclo</strong>. La celda es la <strong>cantidad</strong> que planeas ejecutar de ese concepto en ese periodo. La suma por concepto debe <strong>cuadrar al 100% de lo contratado</strong> (programa convenido del total de los conceptos: RLOPSRM art. 45-A-X + LOPSRM art. 52); el restante se recalcula en vivo y debe quedar en <strong>0</strong>.
++        El programa son los <strong>conceptos del catálogo</strong> repartidos en los <strong>periodos del ciclo</strong>. La celda es la <strong>cantidad</strong> que planeas ejecutar de ese concepto en ese periodo. La suma por concepto <strong>no debe exceder lo contratado</strong> (art. 118 RLOPSRM); el restante se recalcula en vivo y <strong>no puede ser negativo</strong>.
+       </p>
+ 
+       <div className="flex flex-wrap items-center gap-3 mb-4">
+@@ -424,12 +425,12 @@ function TabProgramaMatriz({ conceptos, periodos, ciclo, setCiclo, celdas, setCe
+ 
+       {resumen.length > 0 && periodos.length > 0 && noCuadra && (
+         <div className="mt-3 px-3 py-2 rounded border text-sm font-medium text-red-700 bg-red-50 border-red-300" data-testid="programa-descuadre">
+-          El programa <strong>no cuadra al 100%</strong>: hay conceptos con restante ≠ 0 (faltante o exceso). No se puede guardar/avanzar hasta que cada concepto sume <strong>exactamente lo contratado</strong> (RLOPSRM art. 45-A-X + LOPSRM art. 52).
++          El programa <strong>excede lo contratado</strong>: hay conceptos con restante negativo. No se puede guardar/avanzar mientras un concepto planee <strong>más de lo contratado</strong> (art. 118 RLOPSRM).
+         </div>
+       )}
+       {conceptosOk && (
+         <div className="mt-3 px-3 py-2 rounded border text-sm font-medium text-green-700 bg-green-50 border-green-300" data-testid="programa-cuadra">
+-          ✓ El programa cuadra al 100%: cada concepto suma exactamente lo contratado.
++          ✓ El programa no excede lo contratado (parcial permitido; art. 118 RLOPSRM).
+         </div>
+       )}
+     </div>
+@@ -1240,9 +1241,8 @@ export default function AltaContrato() {
+         const contratado = round3(Number(c.cantidad) || 0);
+         const planeado = round3(periodos.reduce((s, p) => s + (Number(celdas[`${c.rid}:${p.numero}`]) || 0), 0));
+         const restante = round3(contratado - planeado);
+-        if (Math.abs(restante) > TOL_PROGRAMA) {
+-          const detalle = restante > 0 ? `faltan ${restante}` : `sobran ${round3(-restante)}`;
+-          return { ok: false, msg: `Programa: el concepto "${c.clave || c.concepto}" debe sumar el 100% (planeado ${planeado} vs contratado ${contratado}; ${detalle}). RLOPSRM art. 45-A-X + LOPSRM art. 52.`, errores: { ...ERR0, programaError: true } };
++        if (restante < -TOL_PROGRAMA) {
++          return { ok: false, msg: `Programa: el concepto "${c.clave || c.concepto}" EXCEDE lo contratado (planeado ${planeado} vs contratado ${contratado}; sobran ${round3(-restante)}). art. 118 RLOPSRM.`, errores: { ...ERR0, programaError: true } };
+         }
+       }
+       return { ok: true };

@@ -4,8 +4,8 @@
 const { pool } = require('../db/pool');
 const { esParteOSupervision } = require('../lib/acceso');
 
-// Construye el acta (primera nota): snapshot inmutable de los grupos del art. 122
-// RLOPSRM, tomados del contrato + el roster de firmantes (identidad por cuenta).
+// Construye el acta (primera nota): snapshot inmutable de los datos minimos del art. 123
+// fr. III RLOPSRM, tomados del contrato + el roster de firmantes (identidad por cuenta).
 function construirActa(contrato, roster, cronograma, datos) {
   const d = datos || {};
   return {

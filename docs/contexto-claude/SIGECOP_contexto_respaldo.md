@@ -88,14 +88,14 @@ libre. Desbloquea HU-05, HU-06 y el versionado de HU-03.
     ciclos → 0 huecos, 0 solapes, cumple art. 54; feb/bisiesto/cruce de año/último parcial OK).
   - Escala **NUMERIC(14,3)** = catálogo. Invariante **Σ planeado ≤ contratado (art. 118) validada en
     SQL** (sin epsilon). Reemplazo DELETE+INSERT (programa_obra es hoja). Freeze post-estimación con
-    excepción enmienda-por-convenio (art. 99). Lock `pg_advisory_xact_lock(2, contratoId)`.
+    excepción enmienda-por-convenio (art. 59 LOPSRM). Lock `pg_advisory_xact_lock(2, contratoId)`.
   - **NO está en `schema.sql` ni en el borrador** (la auditoría confirmó que el esquema sigue con
     `contrato_actividades`). No hay commit de A2.
 
   **7 correcciones (C1–C7) a plegar ANTES de construir:**
   | # | Corrección |
   |---|---|
-  | C1 🔴 | Freeze debe distinguir origen: `edicion_manual` (bloqueada post-estimación) vs `enmienda_convenio` (exenta, art. 99). Diseñar `guardarMatriz(..., convenio_id?)`. |
+  | C1 🔴 | Freeze debe distinguir origen: `edicion_manual` (bloqueada post-estimación) vs `enmienda_convenio` (exenta, art. 59 LOPSRM). Diseñar `guardarMatriz(..., convenio_id?)`. |
   | C2 🔴 | Tomar `pg_advisory_xact_lock(2, $contratoId)` al inicio del BEGIN del guardado (evita TOCTOU con la integración). |
   | C3 | Detección de freeze = `EXISTS(... estado <> 'rechazada')`, no `estado='integrada'`. |
   | C4 | `RETURNING id` → Map(clave→id); rechazar orphans con 400 antes del INSERT. |
