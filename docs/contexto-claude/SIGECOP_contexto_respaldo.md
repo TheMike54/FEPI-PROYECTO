@@ -111,8 +111,9 @@ libre. Desbloquea HU-05, HU-06 y el versionado de HU-03.
 |---|---|
 | **HECHO** | A1 completo. **A2 construido y probado en local** (Claude Code, 6 capas verdes; SIN commit/push/deploy, `main` intacto en `d840855`): `contrato_periodos` + `programa_obra` + `contratos.ciclo_estimacion` reemplazan a `contrato_actividades`; matriz concepto×periodo, celda=cantidad, Σ≤contratado en SQL (art. 118); C1–C7 plegadas en `lib/programa.js: guardarMatriz`. Periodos anclados a `masUnMes` → cada periodo es válido para estimación (art. 54). El **selector de ciclo mensual/quincenal ya está incluido en A2** (confirmado). Entregable: `docs/A2_ENTREGABLE_Maiki.md` + `docs/A2_DIFFS.patch`. **Además: paquete 4.x del alta construido y probado (sin commit)** — wizard (Siguiente + validación por paso + Guardar solo al final + popup); errores que dicen el campo (+ `contratos.monto` → `NUMERIC(18,2)` para obras muy grandes); anticipo→uploader de PDF (`contrato_documentos.tipo`, UNIQUE por tipo). Entregables `docs/CORRECCION_ALTA_4x_*`. |
 | **PENDIENTE — la "otra mitad" de A2** | (1) ⚠️ **HU-12 NO valida aún** estimado ≤ planeado-del-periodo contra `programa_obra` (hoy solo art. 118 acumulado) — es el punto del profe ("sin esto no validas estimaciones"); toca el core financiero congelado, Code lo dejó **propuesto, no hecho**. (2) **HU-05 (curva)** queda huérfana al deprecar `contrato_actividades` → releer desde `programa_obra`. |
-| **YA INTEGRADO (en `main`, desplegado)** | **`553cda0`**: A2 + 4.x (deploy a Render verificado ✅, tablas + columnas confirmadas). **`c9fba02`**: alta **v2** (gating uniforme 🔒, banner de error que el usuario cierra, garantía bloqueada si excede el contrato, PDFs cargables durante captura, "ver info" solo lectura, **regla del 100%** Σ=contratado ±0.0005, **modo proyecto ELIMINADO**, seed a 6 cuentas, migraciones idempotentes) + **v3** (PDF firmado = paso final **obligatorio** para guardar, gateado en UI). ⚠️ El PDF obligatorio está gateado **solo en UI, no en servidor** (enforcement server-side toca `contratos.controller.js`, congelado → follow-on con HU-12). e2e local: 127 passed / 8 fixme / 0 failed. Render redesplegando desde `c9fba02`. |
-| **SIGUIENTE PASO** | Verificar el deploy de `c9fba02` en Render (logs + login con las 6 cuentas + recorrer alta) → si los 6 usuarios no aparecen en la BD existente, correr el runbook **§D** (reset + reseed de Render; destructivo). Luego, una pasada al core congelado: validación de estimación contra `programa_obra` (HU-12) + **enforcement server-side del PDF firmado** + re-cablear HU-05 + convertir los 8 tests `fixme` a integración. |
+| **YA INTEGRADO (en `main`, desplegado)** | **`553cda0`**: A2 + 4.x. **`c9fba02`**: alta **v2** (gating 🔒, banner de error, garantía bloqueada, PDFs en captura, "ver info", **regla del 100%**, **modo proyecto ELIMINADO**, seed 6 cuentas, migraciones idempotentes) + **v3** (PDF firmado obligatorio). **`7bb1b99`**: alta **v4** (anticipo >30% → PDF obligatorio + 8 fugas de gating cerradas) + **bitácora-v2** (apertura=nota#1, firmas, candado server-side, tipos por rol art. 125, datos mínimos art. 123-III, UI con nota al centro). **`0853e0c`**: bugfix (alta resetea+redirige al guardar; nota "Firmada" con roster; etiqueta "Anular"). **+ alta-v5 INTEGRADA** (navegación SOLO lineal en captura — el fix de raíz del gating; nombres de pestaña no navegan en captura, solo Siguiente/Atrás; **garantías y datos jurídicos OBLIGATORIOS**). Probado en vivo por Maiki, funciona. ⚠️ Los PDFs están gateados **solo en UI** (enforcement server-side = follow-on con HU-12). ⚠️ Citas legales de varias features bajo **auditoría** (ver §Para el profe). |
+| **EN CURSO** | **Desbloquear a los equipos:** A2 está terminado → ya nada está bloqueado por A2. Plan: prompt a Code para (1) ordenar `/docs` en `equipos/`, `contexto-claude/`, `legal/`, `historial-cambios/` + README, y (2) extraer el reparto por equipo del `plan-paralelizacion`. Luego Claude (chat) arma los **prompts por equipo** (merge de la fundación + HUs desbloqueadas + contexto actual para su Claude) + `estado-proyecto.md`. **Reparto (a confirmar contra el plan real):** Equipo 2 (Contrato) = HU-02,03,04,05,07,11; Equipo 3 (Estimación→Pago) = HU-06,13–20. **Limpieza de Render:** borrar SOLO los contratos (`TRUNCATE contratos CASCADE` en transacción; deja usuarios). |
+| **SIGUIENTE PASO** | Auditoría legal de citas (cuando Maiki confirme qué docs hay) + re-examinar 100% (parcial vs total). Luego, pasada al core congelado: validación de estimación vs `programa_obra` (HU-12) + **enforcement server-side de los PDFs** + **sustitución de personas** (art. 125) + re-cablear HU-05 + 8 tests `fixme` a integración. |
 
 > **Confirmado por el profesor (audio 2026-06-01):** el programa de obra son **conceptos** (no
 > "actividades") repartidos en periodos; el ciclo es **mes o quincena** elegido al configurar el
@@ -179,26 +180,33 @@ specs de Paquete 1 (CI verde, precondición), arrancar equipos.
 1. **A2 — falta la otra mitad.** Modelo + captura construidos, probados e **integrados** (553cda0).
    Falta: validación de estimación contra `programa_obra` (HU-12, core financiero congelado) y re-cableo
    de **HU-05** (curva, huérfana). *Fundación.*
-2. **Sustitución de personas (`contrato_roster`, art. 125)** — requisito legal NO cumplido (punteros
-   escalares sin histórico; tabla en borrador). Riesgo en la defensa. *Fundación.*
-3. **CI** — alta v2 limpió ~20 specs viejas + reescribió 3 de alta; quedan **8 tests en `test.fixme`**
+2. **Bitácora — RESUELTA en bitácora-v2 (construida, SIN COMMITEAR)**, con citas literales del Reglamento.
+   (a) apertura = **nota #1** (art. 123 fr. III); (b) **botón de firmar** (apertura la firman todos; demás
+   notas las acepta la contraparte; tácita al vencer plazo); (c) **candado server-side** (409 si apertura
+   no firmada por todos — era el bug); (d) **tipos por rol exactos** art. 125 (residente 13, superintendente
+   7, supervisión 4) + tag de búsqueda; (e) **datos mínimos** art. 123 fr. III (domicilios y teléfonos) +
+   `fecha_apertura`=inicio del contrato; (f) **UI** nota al centro + "Ver bitácora". **Anular: el art. 123
+   fr. VII SÍ lo permite** por el emisor sin borrar (marca anulada + correctiva); fr. VI prohíbe modificar
+   firmadas (corrige la duda previa). 136 e2e verdes. `[validar]`: plazo de firma (default 2), apertura
+   mismo día, anular nota ya aceptada. Backfill de bitácoras viejas = lo resuelve el §D. *Fundación.*
+3. **Sustitución de personas (`contrato_roster`, art. 125)** — requisito legal NO cumplido (punteros
+   escalares sin histórico; tabla en borrador). El profe lo repitió fuerte en el audio (cambio de
+   residente/superintendente sin perder histórico). Riesgo en la defensa. *Fundación.*
+4. **CI** — alta v2 limpió ~20 specs viejas + reescribió 3 de alta; quedan **8 tests en `test.fixme`**
    (HU-08 firmar, HU-12 inputs, HU-21 pago) a convertir en tests de integración (rompieron al quitar el
    modo demo; las pantallas funcionan). Además las 4 specs lentas (~15 min) siguen siendo riesgo de timeout.
-4. **Modo proyecto: ELIMINADO en alta v2** (pendiente de integrar/desplegar). Antes era bloqueo; ya resuelto.
-5. **Branch protection: EXISTE** (regla PR, confirmada en el push del 553cda0). Enforcea para el equipo
-   (no-admins → PR obligatorio); Maiki la **bypassa como owner** (sus pushes saltan PR y el gate de CI).
+5. **Branch protection: EXISTE** (regla PR). Enforcea para el equipo; Maiki la **bypassa como owner**.
 6. **Deadline Render 25 jun** (PostgreSQL gratis expira).
 
-**Para el profe (Nivel 1):**
-- ✅ **Programa al 100% — RESUELTO** (Σ planeado = contratado; construido en alta v2). Soporte literal
-  **firme: RLOPSRM art. 45 A fr. X + LOPSRM art. 52** (certeza alta). ⚠️ **Citas a corregir antes de
-  presentar:** NO usar RLOPSRM art. 59 (es revisión de proposiciones) ni RLOPSRM 64-A-I-a (es licitación);
-  los convenios son **art. 59 LOPSRM** (la ley). Las variaciones de obra se ajustan después por convenio.
-- ⚠️ **Convenio — artículo a verificar:** el código de A2 usa **art. 99 LOPSRM** para la excepción de
-  convenio, pero los convenios modificatorios son **art. 59 LOPSRM**. Confirmar cuál aplica contra el
-  texto literal (los números chocan entre LOPSRM y RLOPSRM).
-- **CMIC / 2 al millar:** base LFD/CMIC (no LOPSRM); tasa y aplicabilidad a confirmar.
-- **Plazo de firma de notas:** nº de días naturales — verificar artículo.
+**Para el profe (Nivel 1) — ESTADO DE CITAS tras auditoría del usuario vs LOPSRM (DOF 14-11-2025):**
+> ⚠️ **Muchas citas previas NO se sostienen contra el texto real.** Causa: mezcla LEY vs REGLAMENTO + la reforma DOF 14-11-2025 renumeró. Pendiente: pasada de auditoría legal estricta (pegar texto literal o marcar `[sin fundamento verificable]`). Confirmar qué docs hay en `docs/` (¿solo la LOPSRM, o también el RLOPSRM / ley estatal?).
+- ✅ **Verificado (literal LOPSRM):** umbral 30% del anticipo = **art. 50 fr. II**; exención de garantía de cumplimiento = **art. 48 último párrafo** (refs. arts. 42 fr. IX/X/XV y 43).
+- ❌ **Mal citado — CORREGIR:** convenio de modificación = **art. 59** (NO art. 99, que es cláusula arbitral). El código de A2 (excepción de enmienda por convenio) cita 99 → cambiar a 59.
+- ⚠️ **Sin fundamento verificable (no está en la ley auditada):**
+  - **Regla del 100%**: "45-A-X" no existe en la ley; art. 52 es inicio/bitácora, no soporta el 100%. Es cita de Reglamento → verificar contra el RLOPSRM. **OJO: justificó pasar el programa de `≤` a `=` — re-verificar si se exige 100% o se permite parcial (posible reversión).**
+  - **Tipos y datos mínimos de nota (122/123/125)**: son del Reglamento → verificar contra el RLOPSRM, no la ley.
+  - **2 al millar / CMIC**: NO está en la LOPSRM (normativa estatal u otra ley).
+- ❓ **Aclaraciones:** la "nota" = nota de bitácora (HU-09); el **anular** hay que re-verificarlo (art. 92 fr. VI/VII es resolución de inconformidad, no aplica). **Plazo de firma:** art. 47 = **15 días** para firmar el CONTRATO (≠ los 2 días que se pusieron para firmar NOTAS — verificar aparte). **Apertura "mismo día"** = de BITÁCORA (**art. 52 Ter**), no de proposiciones (art. 37).
 - **Notificaciones (U3):** alcance Etapa 1 (hoy solo indicadores in-app).
 - **Folio del contrato (C4):** ya es captura UNIQUE — solo confirmar.
 

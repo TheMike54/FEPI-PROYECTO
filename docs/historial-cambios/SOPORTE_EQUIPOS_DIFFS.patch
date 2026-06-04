@@ -1,0 +1,264 @@
+diff --git a/backend/src/db/schema.sql b/backend/src/db/schema.sql
+index 4315084..f9a7d6f 100644
+--- a/backend/src/db/schema.sql
++++ b/backend/src/db/schema.sql
+@@ -920,3 +920,259 @@ DROP TRIGGER IF EXISTS trg_bitacora_nota_firmas_inmutable ON bitacora_nota_firma
+ CREATE TRIGGER trg_bitacora_nota_firmas_inmutable
+   BEFORE UPDATE ON bitacora_nota_firmas
+   FOR EACH ROW EXECUTE FUNCTION sigecop_nota_firma_inmutable();
++
++-- =====================================================================
++-- PASADA SOPORTE EQUIPOS (HU-02/06/07/11/13/15/16/20) — SOLO ESQUEMA.
++-- Tablas y columnas de soporte para DESBLOQUEAR a Equipo 2 y Equipo 3. La LÓGICA
++-- (endpoints, validaciones, máquinas de estado, semáforos) la construye CADA
++-- EQUIPO encima; aquí va SOLO el esquema: tablas, FKs, constraints e índices.
++-- ADITIVO e IDEMPOTENTE: aplica sobre la BD existente (local/Render) sin reescribir
++-- datos (CREATE TABLE IF NOT EXISTS / ADD COLUMN IF NOT EXISTS / guards sobre
++-- pg_constraint). NO toca la lógica del core (alta, A2, estimación, bitácora): en
++-- particular, las 3 columnas nuevas de `estimaciones` quedan FUERA del trigger
++-- sigecop_estimacion_inmutable A PROPÓSITO (ver HU-13/16). Fundamento Nivel 1
++-- verificado contra el TEXTO LITERAL en docs/legal/ (LOPSRM reforma DOF 14-11-2025;
++-- RLOPSRM DOF 24-02-2023). NO incluye HU-03 (convenios) — esa muta el core del
++-- programa y va en su propia pasada.
++-- =====================================================================
++
++-- ---------------------------------------------------------------------
++-- HU-02 (Equipo 2) — garantia_endosos: endosos/ajustes de las fianzas ya
++-- registradas en contrato_garantias (HU-01). Fundamento LITERAL: art. 98 fr. II
++-- RLOPSRM ("En caso de la celebración de convenios para ampliar el monto o el
++-- plazo de ejecución del contrato, se deberá realizar la modificación
++-- correspondiente a la fianza") + art. 98 último párrafo ("Las modificaciones a
++-- las fianzas deberán formalizarse con la participación que corresponda a la
++-- afianzadora") + art. 99 último párrafo RLOPSRM (remite a art. 98 fr. II).
++-- HISTÓRICO APPEND-ONLY: cada endoso es un registro inmutable (trigger BEFORE
++-- UPDATE), como notas/pagos. Las alertas de vigencia 30/15/5 se DERIVAN en lectura
++-- de contrato_garantias.vigencia (sin tabla).
++-- ---------------------------------------------------------------------
++CREATE TABLE IF NOT EXISTS garantia_endosos (
++  id             SERIAL PRIMARY KEY,
++  garantia_id    INTEGER NOT NULL REFERENCES contrato_garantias(id) ON DELETE CASCADE,
++  -- FK a convenios_modificatorios cuando exista (HU-03, otra pasada). Hoy INTEGER
++  -- "suelto", mismo idioma que pagos.estimacion_id antes de HU-12: el endoso por
++  -- convenio (art. 98 fr. II) podrá amarrarse con un ALTER guardado cuando HU-03
++  -- cree la tabla. NO se referencia ahora para no romper la migración (tabla ausente).
++  convenio_id    INTEGER,
++  motivo         VARCHAR(30) NOT NULL DEFAULT 'otro'
++                   CHECK (motivo IN ('ampliacion_monto','prorroga_vigencia','mixto','otro')),
++  nuevo_monto    NUMERIC(14,2) CHECK (nuevo_monto IS NULL OR nuevo_monto >= 0),
++  nueva_vigencia DATE,
++  observaciones  TEXT,
++  registrado_por INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,  -- del JWT
++  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
++);
++CREATE INDEX IF NOT EXISTS idx_garantia_endosos_garantia ON garantia_endosos(garantia_id);
++
++CREATE OR REPLACE FUNCTION sigecop_garantia_endoso_inmutable() RETURNS trigger AS $func$
++BEGIN
++  RAISE EXCEPTION 'Un endoso de garantia es un registro historico inmutable (append-only)';
++END;
++$func$ LANGUAGE plpgsql;
++DROP TRIGGER IF EXISTS trg_garantia_endosos_inmutable ON garantia_endosos;
++CREATE TRIGGER trg_garantia_endosos_inmutable
++  BEFORE UPDATE ON garantia_endosos
++  FOR EACH ROW EXECUTE FUNCTION sigecop_garantia_endoso_inmutable();
++
++-- ---------------------------------------------------------------------
++-- HU-06 (Equipo 2) — concepto_avance: cantidad EJECUTADA por concepto del
++-- catálogo, opcionalmente imputada a un periodo del programa (A2) y respaldada por
++-- una nota de bitácora. Alimenta la curva ejecutada (HU-05). Fundamento LITERAL:
++-- art. 118 RLOPSRM (trabajos por mayor valor del contratado, sin orden escrita, NO
++-- dan derecho a pago) → invariante "Σ cantidad por concepto ≤ cantidad contratada"
++-- (contrato_conceptos.cantidad). Ese tope es CRUCE DE FILAS (no expresable como
++-- CHECK de una fila): lo valida el controller HU-06 (como HU-12 ya valida el
++-- exceso). En el esquema: CHECK cantidad >= 0 (sin negativos) + FKs a la fundación.
++-- NO append-only (la HU-06 define su flujo de captura/corrección; candidato a
++-- trigger append-only en su fase de lógica).
++-- ---------------------------------------------------------------------
++CREATE TABLE IF NOT EXISTS concepto_avance (
++  id                   SERIAL PRIMARY KEY,
++  contrato_concepto_id INTEGER NOT NULL REFERENCES contrato_conceptos(id) ON DELETE CASCADE,  -- FK a FUNDACIÓN (el contrato llega vía el concepto)
++  -- Periodo del programa (A2) al que se imputa el avance, para la curva programado
++  -- (programa_obra) vs ejecutado (HU-05). SET NULL (NO cascade) a propósito: A2 edita
++  -- la matriz por DELETE+INSERT (lib/programa.js: guardarMatriz) y puede regenerar
++  -- contrato_periodos; con SET NULL el avance SOBREVIVE a la regeneración (pierde el
++  -- vínculo, no el dato) y la HU-05/06 re-imputa. Nullable: avance no alineado a un periodo.
++  contrato_periodo_id  INTEGER REFERENCES contrato_periodos(id) ON DELETE SET NULL,
++  -- Nota de bitácora que respalda el avance (art. 125 fr. II "entrega de concepto").
++  -- NO ACTION: la nota es inmutable y solo muere por la cascada del contrato (mismo
++  -- idioma que estimacion_notas.nota_id); evita un UPDATE/SET-NULL sobre el vínculo.
++  nota_id              INTEGER REFERENCES bitacora_notas(id) ON DELETE NO ACTION,
++  cantidad             NUMERIC(14,3) NOT NULL CHECK (cantidad >= 0),  -- misma escala que el catálogo; sin negativos (art. 118 / "menos dos metros no existe")
++  fecha                DATE NOT NULL DEFAULT CURRENT_DATE,
++  observaciones        TEXT,
++  registrado_por       INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,  -- del JWT
++  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
++);
++CREATE INDEX IF NOT EXISTS idx_concepto_avance_concepto ON concepto_avance(contrato_concepto_id);
++CREATE INDEX IF NOT EXISTS idx_concepto_avance_periodo  ON concepto_avance(contrato_periodo_id);
++CREATE INDEX IF NOT EXISTS idx_concepto_avance_nota     ON concepto_avance(nota_id);
++
++-- ---------------------------------------------------------------------
++-- HU-07 (Equipo 2) — alerta_atraso: CONFIGURACIÓN de alertas de atraso por
++-- concepto (umbral). El DISPARO (avance ejecutado < planeado) se DERIVA en lectura
++-- cruzando programa_obra (planeado, A2) vs concepto_avance (ejecutado, HU-06): no se
++-- almacenan instancias de alerta. Fundamento: el programa por periodos es art. 45
++-- apartado A fr. X RLOPSRM (base contra la que se mide el atraso) y la consecuencia
++-- del atraso son las penas convencionales del art. 46 Bis LOPSRM; el mecanismo de
++-- alerta in-app en sí es operativo [sin fundamento legal literal específico]. Canal
++-- 'sistema' (in-app) en Etapa 1; 'correo' depende de D-9 (notificaciones = Etapa 2).
++-- ---------------------------------------------------------------------
++CREATE TABLE IF NOT EXISTS alerta_atraso (
++  id                   SERIAL PRIMARY KEY,
++  contrato_concepto_id INTEGER NOT NULL REFERENCES contrato_conceptos(id) ON DELETE CASCADE,  -- FK a FUNDACIÓN
++  umbral_pct           NUMERIC(5,2) NOT NULL CHECK (umbral_pct >= 0 AND umbral_pct <= 100),
++  canal                VARCHAR(20) NOT NULL DEFAULT 'sistema' CHECK (canal IN ('sistema','correo')),
++  activa               BOOLEAN NOT NULL DEFAULT true,
++  creada_por           INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
++  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
++);
++CREATE INDEX IF NOT EXISTS idx_alerta_atraso_concepto ON alerta_atraso(contrato_concepto_id);
++
++-- ---------------------------------------------------------------------
++-- HU-11 (Equipo 2) — minutas y visitas/inspecciones (FK a la fundación). minutas:
++-- PDF en BYTEA (disco de Render efímero, como contrato_documentos). Fundamento
++-- (minuta = registro de junta de trabajo): art. 125 fr. III inciso d) RLOPSRM
++-- ("acuerdos de juntas de trabajo" que registra la supervisión; ya está en el
++-- catálogo de tipos). La agenda de visitas/inspecciones es operativa [sin
++-- fundamento legal literal específico]. Documental/EDITABLE: SIN trigger de
++-- inmutabilidad (la HU-11 decide si una minuta firmada se congela).
++-- ---------------------------------------------------------------------
++CREATE TABLE IF NOT EXISTS minutas (
++  id            SERIAL PRIMARY KEY,
++  contrato_id   INTEGER NOT NULL REFERENCES contratos(id) ON DELETE CASCADE,  -- FK a FUNDACIÓN
++  titulo        VARCHAR(200) NOT NULL,
++  fecha         DATE NOT NULL DEFAULT CURRENT_DATE,
++  lugar         VARCHAR(200),
++  acuerdos      TEXT,
++  -- Nota de bitácora a la que se adjunta la minuta como referencia (HU-09). NO
++  -- ACTION: la nota es inmutable y solo muere por la cascada del contrato.
++  nota_id       INTEGER REFERENCES bitacora_notas(id) ON DELETE NO ACTION,
++  pdf_nombre    TEXT,
++  pdf_mime      VARCHAR(100),
++  pdf_tamano    INTEGER CHECK (pdf_tamano IS NULL OR pdf_tamano >= 0),
++  pdf_contenido BYTEA,
++  registrada_por INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
++  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
++);
++CREATE INDEX IF NOT EXISTS idx_minutas_contrato ON minutas(contrato_id);
++CREATE INDEX IF NOT EXISTS idx_minutas_nota     ON minutas(nota_id);
++
++CREATE TABLE IF NOT EXISTS visitas (
++  id               SERIAL PRIMARY KEY,
++  contrato_id      INTEGER NOT NULL REFERENCES contratos(id) ON DELETE CASCADE,  -- FK a FUNDACIÓN
++  tipo             VARCHAR(20) NOT NULL DEFAULT 'visita' CHECK (tipo IN ('visita','inspeccion')),
++  fecha_programada DATE NOT NULL,
++  fecha_realizada  DATE,
++  proposito        TEXT,
++  resultado        TEXT,
++  estado           VARCHAR(20) NOT NULL DEFAULT 'agendada' CHECK (estado IN ('agendada','realizada','cancelada')),
++  registrada_por   INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
++  created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
++);
++CREATE INDEX IF NOT EXISTS idx_visitas_contrato ON visitas(contrato_id);
++
++-- ---------------------------------------------------------------------
++-- HU-13 / HU-16 (Equipo 3) — columnas de CICLO en estimaciones:
++--   HU-13 envío: enviada_en / enviada_por = sello que arranca el plazo del art. 54
++--     LOPSRM (el contratista presenta dentro de 6 días naturales de la fecha de
++--     corte; la residencia revisa/autoriza dentro de 15 días naturales siguientes
++--     a la presentación).
++--   HU-16 reingreso: reemplaza_a (self-FK) = la estimación rechazada que esta nueva
++--     versión sustituye (el reingreso NO reinicia el plazo de presentación).
++-- DISCIPLINA (núcleo intacto): estas columnas NO se agregan al trigger
++-- sigecop_estimacion_inmutable. Ese trigger congela la carátula comparando una LISTA
++-- FIJA de columnas y deja libre lo NO listado; al ser columnas nuevas, son mutables
++-- por el controller (UPDATE estado + sellos) SIN tocar la lógica del core. La
++-- inmutabilidad "una sola vez" (NULL→valor) la hace el controller HU-13/16. El
++-- estado 'rechazada' ya existe en chk_estimaciones_estado.
++-- ---------------------------------------------------------------------
++ALTER TABLE estimaciones ADD COLUMN IF NOT EXISTS enviada_en  TIMESTAMPTZ;
++ALTER TABLE estimaciones ADD COLUMN IF NOT EXISTS enviada_por INTEGER REFERENCES usuarios(id) ON DELETE SET NULL;
++-- reemplaza_a SET NULL (no cascade): si la rechazada se borrara (solo por cascada de
++-- contrato), el reingreso sobrevive con el puntero nulo. SET NULL toca SOLO reemplaza_a
++-- (columna NO protegida por el trigger) → el trigger devuelve NEW sin bloquear.
++ALTER TABLE estimaciones ADD COLUMN IF NOT EXISTS reemplaza_a INTEGER REFERENCES estimaciones(id) ON DELETE SET NULL;
++-- Una estimación rechazada se reemplaza por A LO SUMO un reingreso (varios NULL
++-- conviven en un UNIQUE). Guard idempotente sobre pg_constraint.
++DO $$ BEGIN
++  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_estimaciones_reemplaza_a') THEN
++    ALTER TABLE estimaciones ADD CONSTRAINT uq_estimaciones_reemplaza_a UNIQUE (reemplaza_a);
++  END IF;
++END $$;
++CREATE INDEX IF NOT EXISTS idx_estimaciones_reemplaza_a ON estimaciones(reemplaza_a);
++
++-- ---------------------------------------------------------------------
++-- HU-15 (Equipo 3) — estimacion_observaciones: observaciones de la revisión, por
++-- sección, con tipo/severidad y ciclo de vida (abierta→solventada). El turnado
++-- supervisión→residencia y el semáforo de 15 días (art. 54 párr. 1 LOPSRM: la
++-- residencia revisa/autoriza dentro de 15 días naturales) los controla el controller
++-- (rol + máquina de estados + fecha real de recepción). EDITABLE (estado avanza):
++-- SIN trigger de inmutabilidad.
++-- ---------------------------------------------------------------------
++CREATE TABLE IF NOT EXISTS estimacion_observaciones (
++  id            SERIAL PRIMARY KEY,
++  estimacion_id INTEGER NOT NULL REFERENCES estimaciones(id) ON DELETE CASCADE,  -- FK a FUNDACIÓN
++  seccion       VARCHAR(20) NOT NULL CHECK (seccion IN ('caratula','generadores','fotos','soportes','notas')),
++  tipo          VARCHAR(20) NOT NULL CHECK (tipo IN ('aclaracion','correccion','rechazo')),
++  severidad     VARCHAR(10) NOT NULL DEFAULT 'menor' CHECK (severidad IN ('menor','mayor','critica')),
++  descripcion   TEXT NOT NULL,
++  estado        VARCHAR(20) NOT NULL DEFAULT 'abierta' CHECK (estado IN ('abierta','solventada')),
++  turnado_a     VARCHAR(20) CHECK (turnado_a IS NULL OR turnado_a IN ('supervision','residencia','contratista')),
++  autor_id      INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
++  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
++  solventada_en TIMESTAMPTZ
++);
++CREATE INDEX IF NOT EXISTS idx_estimacion_observaciones_est ON estimacion_observaciones(estimacion_id);
++
++-- ---------------------------------------------------------------------
++-- HU-20 (Equipo 3) — tránsito a pago: presupuesto_anual + instruccion_pago.
++-- Fundamento LITERAL:
++--   suficiencia presupuestaria = art. 24 párr. 2 LOPSRM ("podrán convocar, adjudicar
++--   o contratar... siempre y cuando cuenten previamente con la suficiencia
++--   presupuestaria en la partida o partidas específicas").
++--   plazo de pago = art. 54 párr. 2 LOPSRM (pago en plazo no mayor a 20 días naturales
++--   desde que la residencia autoriza y el contratista presenta factura).
++-- presupuesto_anual = techo por (ejercicio, dependencia). El bloqueo presupuestal
++-- (Σ pagado + neto ≤ techo) y el semáforo de 20 días los DERIVA el controller.
++-- EDITABLE (el techo se ajusta): SIN trigger.
++-- ---------------------------------------------------------------------
++CREATE TABLE IF NOT EXISTS presupuesto_anual (
++  id          SERIAL PRIMARY KEY,
++  ejercicio   INTEGER NOT NULL CHECK (ejercicio >= 2000 AND ejercicio <= 2100),  -- año fiscal
++  dependencia VARCHAR(200) NOT NULL,
++  partida     VARCHAR(60),                                  -- clave presupuestal (descriptiva)
++  techo       NUMERIC(18,2) NOT NULL CHECK (techo >= 0),    -- misma escala que contratos.monto
++  descripcion TEXT,
++  creado_por  INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
++  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
++  CONSTRAINT uq_presupuesto_anual UNIQUE (ejercicio, dependencia)
++);
++
++-- instruccion_pago = orden formal de pago al autorizar la estimación; antecede al
++-- pago efectivo (HU-21). UNA por estimación (UNIQUE). monto = snapshot del neto
++-- autorizado. El estado avanza (emitida→notificada→cumplida/cancelada). Reconecta el
++-- ciclo HU-20 → pagos.estimacion_id (HU-21, hoy nullable). EDITABLE en su ciclo: SIN
++-- trigger de inmutabilidad (el congelamiento del contenido financiero lo hará el
++-- controller HU-20; candidato a trigger "congela-contenido-deja-estado" como
++-- sigecop_estimacion_inmutable en su fase de lógica).
++CREATE TABLE IF NOT EXISTS instruccion_pago (
++  id                     SERIAL PRIMARY KEY,
++  estimacion_id          INTEGER NOT NULL REFERENCES estimaciones(id) ON DELETE CASCADE,        -- FK a FUNDACIÓN
++  presupuesto_anual_id   INTEGER REFERENCES presupuesto_anual(id) ON DELETE SET NULL,           -- partida cargada (suficiencia art. 24)
++  monto                  NUMERIC(18,2) CHECK (monto IS NULL OR monto >= 0),                     -- snapshot del neto autorizado
++  factura_cfdi           VARCHAR(60),                                                            -- folio fiscal CFDI (precondición del plazo, art. 54)
++  soportes_ok            BOOLEAN NOT NULL DEFAULT false,                                         -- todos los soportes obligatorios cargados
++  estado                 VARCHAR(20) NOT NULL DEFAULT 'emitida'
++                           CHECK (estado IN ('emitida','notificada','cumplida','cancelada')),
++  fecha_instruccion      DATE NOT NULL DEFAULT CURRENT_DATE,
++  instruida_por          INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,                    -- del JWT
++  notificado_finanzas_en TIMESTAMPTZ,                                                            -- sello de notificación a Finanzas (in-app, Etapa 1)
++  created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
++  CONSTRAINT uq_instruccion_pago_estimacion UNIQUE (estimacion_id)
++);
++CREATE INDEX IF NOT EXISTS idx_instruccion_pago_estimacion  ON instruccion_pago(estimacion_id);
++CREATE INDEX IF NOT EXISTS idx_instruccion_pago_presupuesto ON instruccion_pago(presupuesto_anual_id);
