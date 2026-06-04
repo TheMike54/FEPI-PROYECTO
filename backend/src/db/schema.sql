@@ -1268,3 +1268,141 @@ SELECT c.id, 'supervision', c.supervision_id, COALESCE(c.fecha_inicio, c.created
   FROM contratos c
  WHERE c.supervision_id IS NOT NULL
    AND NOT EXISTS (SELECT 1 FROM contrato_roster r WHERE r.contrato_id = c.id AND r.rol = 'supervision' AND r.vigencia_hasta IS NULL);
+
+-- =====================================================================
+-- PASADA HU-03 (Fundación) — CONVENIOS MODIFICATORIOS + versionado del programa.
+-- Fundamento Nivel 1 (literal, LOPSRM art. 59, reforma DOF 14-11-2025): "Las dependencias y
+-- entidades, podrán, dentro de su presupuesto autorizado, bajo su responsabilidad y por razones
+-- fundadas y explícitas, modificar los contratos sobre la base de precios unitario… mediante
+-- convenios, siempre y cuando no impliquen variaciones sustanciales al objeto del proyecto original."
+-- ⚠️ VERIFICADO: el texto VIGENTE NO impone tope numérico (25%). El 25% vive en RLOPSRM art. 102
+-- (disparador de revisión de indirectos/SFP, NO tope) y el 50% en LOPSRM art. 59 Bis (derecho a
+-- ajuste de costos, NO tope). El límite real = presupuesto autorizado + cualitativo ("variación
+-- sustancial al objeto"). El sistema CLASIFICA esos umbrales y aplica un guardrail PARAMETRIZABLE
+-- (NO un tope legal). RLOPSRM art. 99 (dictamen técnico del residente) y art. 98 fr. II (ajuste de
+-- fianza). ADITIVO e IDEMPOTENTE.
+-- =====================================================================
+
+-- (1) Convenios modificatorios: registro INMUTABLE de la modificación + su fundamento.
+CREATE TABLE IF NOT EXISTS convenios_modificatorios (
+  id                  SERIAL PRIMARY KEY,
+  contrato_id         INTEGER NOT NULL REFERENCES contratos(id) ON DELETE CASCADE,
+  numero              INTEGER NOT NULL,                          -- correlativo por contrato
+  folio               VARCHAR(50),                               -- folio del convenio (capturado/derivado)
+  tipo                VARCHAR(20) NOT NULL CHECK (tipo IN ('monto','plazo','programa','mixto')),
+  fundamento          VARCHAR(20) NOT NULL DEFAULT 'art59' CHECK (fundamento IN ('art59','art59bis')),
+  motivo              TEXT NOT NULL,                             -- razones fundadas y explícitas / dictamen técnico (art. 99 RLOPSRM)
+  fecha               DATE NOT NULL DEFAULT CURRENT_DATE,
+  monto_anterior      NUMERIC(18,2),
+  monto_nuevo         NUMERIC(18,2),
+  plazo_anterior_dias INTEGER,
+  plazo_nuevo_dias    INTEGER,
+  delta_monto_pct     NUMERIC(8,2),                              -- % variación de monto vs original (art. 100 RLOPSRM)
+  delta_plazo_pct     NUMERIC(8,2),                              -- % variación de plazo vs original (independiente del monto)
+  requiere_revision_sfp BOOLEAN NOT NULL DEFAULT false,         -- RLOPSRM art. 102 (>25% en supuestos fr. I-III)
+  requiere_ajuste_costos BOOLEAN NOT NULL DEFAULT false,        -- LOPSRM art. 59 Bis (>50% → ajuste de indirectos/financiamiento)
+  autorizado_por      INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,  -- del JWT
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT uq_convenios_numero UNIQUE (contrato_id, numero),
+  CONSTRAINT chk_convenios_montos CHECK (monto_nuevo IS NULL OR monto_nuevo >= 0),
+  CONSTRAINT chk_convenios_plazo  CHECK (plazo_nuevo_dias IS NULL OR plazo_nuevo_dias > 0)
+);
+CREATE INDEX IF NOT EXISTS idx_convenios_contrato ON convenios_modificatorios(contrato_id);
+
+-- Inmutabilidad: un convenio registrado es un evento formal append-only (como notas/pagos).
+CREATE OR REPLACE FUNCTION sigecop_convenio_inmutable() RETURNS trigger AS $func$
+BEGIN
+  RAISE EXCEPTION 'Un convenio modificatorio registrado es inalterable (art. 59 LOPSRM / art. 99 RLOPSRM)';
+END;
+$func$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS trg_convenio_inmutable ON convenios_modificatorios;
+CREATE TRIGGER trg_convenio_inmutable
+  BEFORE UPDATE ON convenios_modificatorios
+  FOR EACH ROW EXECUTE FUNCTION sigecop_convenio_inmutable();
+
+-- (2) VERSIONADO del programa de obra. El programa VIGENTE vive en programa_obra (A2, sin cambios);
+--     cada versión se SNAPSHOTEA aquí (catálogo + celdas) cuando un convenio lo supersede. v1 = el
+--     programa original (convenio_id NULL), snapshoteado perezosamente en el primer convenio.
+--     NUNCA se sobrescribe ni se borra una versión: las versiones son inmutables (solo `vigente`
+--     transiciona true→false al ser superseded).
+CREATE TABLE IF NOT EXISTS programa_version (
+  id            SERIAL PRIMARY KEY,
+  contrato_id   INTEGER NOT NULL REFERENCES contratos(id) ON DELETE CASCADE,
+  numero        INTEGER NOT NULL,                               -- 1 = original (A2); 2,3… por convenio
+  -- El convenio que CREÓ esta versión; NULL = versión original (v1). NO ACTION (no SET NULL): un
+  -- SET NULL dispararía UPDATE y chocaría con el trigger de inmutabilidad de la versión; en la
+  -- cascada del contrato ambas mueren en el mismo statement (chequeo diferido pasa).
+  convenio_id   INTEGER REFERENCES convenios_modificatorios(id) ON DELETE NO ACTION,
+  monto         NUMERIC(18,2),                                  -- snapshot del monto del contrato en esta versión
+  plazo_dias    INTEGER,                                        -- snapshot del plazo en esta versión
+  vigente       BOOLEAN NOT NULL DEFAULT true,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  supersedido_en TIMESTAMPTZ,
+  CONSTRAINT uq_programa_version_numero UNIQUE (contrato_id, numero)
+);
+-- UNA sola versión vigente por contrato (índice único PARCIAL).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_programa_version_vigente ON programa_version(contrato_id) WHERE vigente;
+CREATE INDEX IF NOT EXISTS idx_programa_version_contrato ON programa_version(contrato_id);
+
+-- Inmutabilidad de la versión: identidad congelada; SOLO se permite cerrarla (vigente true→false).
+CREATE OR REPLACE FUNCTION sigecop_programa_version_transicion() RETURNS trigger AS $func$
+BEGIN
+  IF NEW.contrato_id IS DISTINCT FROM OLD.contrato_id
+     OR NEW.numero    IS DISTINCT FROM OLD.numero
+     OR NEW.convenio_id IS DISTINCT FROM OLD.convenio_id
+     OR NEW.monto     IS DISTINCT FROM OLD.monto
+     OR NEW.plazo_dias IS DISTINCT FROM OLD.plazo_dias
+     OR NEW.created_at IS DISTINCT FROM OLD.created_at THEN
+    RAISE EXCEPTION 'Una versión del programa es inmutable; un convenio crea una versión NUEVA (art. 59 LOPSRM)';
+  END IF;
+  IF OLD.vigente = false THEN
+    RAISE EXCEPTION 'La versión ya fue superseded y es inalterable';
+  END IF;
+  RETURN NEW;  -- permite vigente true→false + supersedido_en
+END;
+$func$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS trg_programa_version_transicion ON programa_version;
+CREATE TRIGGER trg_programa_version_transicion
+  BEFORE UPDATE ON programa_version
+  FOR EACH ROW EXECUTE FUNCTION sigecop_programa_version_transicion();
+
+-- (2a) Snapshot del CATÁLOGO de la versión (filas de la matriz).
+CREATE TABLE IF NOT EXISTS programa_version_concepto (
+  id                  SERIAL PRIMARY KEY,
+  programa_version_id INTEGER NOT NULL REFERENCES programa_version(id) ON DELETE CASCADE,
+  clave               VARCHAR(40),
+  concepto            TEXT,
+  unidad              VARCHAR(20),
+  cantidad            NUMERIC(14,3),
+  pu                  NUMERIC(16,4),
+  orden               INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_programa_version_concepto_ver ON programa_version_concepto(programa_version_id);
+
+-- (2b) Snapshot de las CELDAS de la versión (concepto × periodo). Referencia el concepto por clave
+--      dentro de la versión (self-contained, no FK al catálogo vivo que el convenio puede cambiar).
+CREATE TABLE IF NOT EXISTS programa_version_celda (
+  id                  SERIAL PRIMARY KEY,
+  programa_version_id INTEGER NOT NULL REFERENCES programa_version(id) ON DELETE CASCADE,
+  concepto_clave      VARCHAR(40),
+  periodo_numero      INTEGER,
+  periodo_inicio      DATE,
+  periodo_fin         DATE,
+  cantidad            NUMERIC(14,3)
+);
+CREATE INDEX IF NOT EXISTS idx_programa_version_celda_ver ON programa_version_celda(programa_version_id);
+
+-- (3) Cierra la FK pendiente garantia_endosos.convenio_id → convenios_modificatorios(id). NO ACTION
+--     (NO SET NULL): garantia_endosos es append-only (trigger sigecop_garantia_endoso_inmutable); un
+--     SET NULL dispararía un UPDATE que el trigger bloquearía. En la cascada del contrato, endoso y
+--     convenio mueren juntos (chequeo diferido pasa). SIN saneo de huérfanos: un UPDATE de saneo
+--     dispararía el MISMO trigger append-only y abortaría el deploy si hubiera filas; y no puede haber
+--     huérfanos (convenio_id solo se poblará con un id válido, ahora que esta FK lo enforza). Si por
+--     datos legacy existieran, el ADD CONSTRAINT fallaría de forma honesta (señal, no corrupción).
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_garantia_endosos_convenio') THEN
+    ALTER TABLE garantia_endosos ADD CONSTRAINT fk_garantia_endosos_convenio
+      FOREIGN KEY (convenio_id) REFERENCES convenios_modificatorios(id) ON DELETE NO ACTION;
+  END IF;
+END $$;
+CREATE INDEX IF NOT EXISTS idx_garantia_endosos_convenio ON garantia_endosos(convenio_id);
