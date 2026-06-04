@@ -1,97 +1,135 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import BannerContexto from '../components/vista/BannerContexto.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import RegionEditable from '../components/vista/RegionEditable.jsx';
-import { useVistaHU } from '../context/SesionContext.jsx';
-import {
-  contratoDummy,
-  conceptosAlertaDummy,
-  alertasConfiguradasDummy,
-  avanceConceptoAlertaDummy
-} from '../data/dummy.js';
+import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
+import { api } from '../services/api.js';
 
-function EstadoBadge({ estado }) {
-  const map = {
-    Activa:  'bg-green-100 text-sigecop-green-validation',
-    Pausada: 'bg-slate-200 text-slate-600'
-  };
+// HU-07 cableado al backend (recurso /api/alertas). Una alerta se configura por
+// CONCEPTO del catálogo (contrato_concepto_id) con un umbral_pct y canal 'sistema'.
+// El disparo lo evalúa el backend a partir del avance físico (concepto_avance):
+// una alerta está "disparada" si hay avance registrado Y está activa Y el % < umbral.
+// Sin avance registrado => estado neutro ("sin avance registrado"), nunca 0% disparado.
+
+function EstadoBadge({ activa }) {
   return (
-    <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${map[estado] || 'bg-slate-200 text-slate-600'}`}>
-      {estado}
+    <span
+      className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${
+        activa ? 'bg-green-100 text-sigecop-green-validation' : 'bg-slate-200 text-slate-600'
+      }`}
+    >
+      {activa ? 'Activa' : 'Pausada'}
     </span>
   );
 }
 
-// Próximo folio A-NNN a partir del máximo existente.
-function siguienteFolio(alertas) {
-  let max = 0;
-  for (const a of alertas) {
-    const m = (a.folio || '').match(/A-(\d+)/);
-    if (m) max = Math.max(max, parseInt(m[1], 10));
-  }
-  return `A-${String(max + 1).padStart(3, '0')}`;
-}
-
 export default function AlertasAtraso() {
+  const { token } = useSesion();
   const { soloLectura } = useVistaHU('HU-07');
+  const sinSesion = !token;
 
-  // Estado local que arranca con el dummy y crece con cada "Crear alerta".
-  // Las acciones de Pausar/Reanudar/Eliminar también operan sobre este estado.
-  const [alertas, setAlertas] = useState(alertasConfiguradasDummy);
+  const [contratos, setContratos] = useState([]);
+  const [contratoId, setContratoId] = useState('');
+  const [conceptos, setConceptos] = useState([]);
+  const [alertas, setAlertas] = useState([]);
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState('');
 
-  const [concepto, setConcepto] = useState('');
+  // Formulario de nueva alerta. canal fijo 'sistema' en Etapa 1 (correo no disponible).
+  const [conceptoId, setConceptoId] = useState('');
   const [umbral, setUmbral] = useState('');
-  const [canal, setCanal] = useState('');
 
-  // "Crear alerta" sólo se habilita con concepto + umbral válido (1-100) + canal.
+  // Carga inicial: contratos del usuario (acotados server-side por participación).
+  useEffect(() => {
+    if (sinSesion) return;
+    api.listarContratos()
+      .then((l) => setContratos(Array.isArray(l) ? l : []))
+      .catch(() => setContratos([]));
+  }, [sinSesion]);
+
+  const cargarAlertas = useCallback(async (id) => {
+    if (!id) return;
+    try {
+      const data = await api.alertasDeContrato(id);
+      setAlertas(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setError(e.status === 403 ? 'No tienes acceso a las alertas de este contrato.' : 'No se pudieron cargar las alertas.');
+      setAlertas([]);
+    }
+  }, []);
+
+  const seleccionarContrato = useCallback(async (id) => {
+    setContratoId(id);
+    setConceptos([]);
+    setAlertas([]);
+    setError('');
+    setConceptoId('');
+    setUmbral('');
+    if (!id) return;
+    setCargando(true);
+    try {
+      // Conceptos reales para el selector (value = contrato_concepto_id).
+      const det = await api.detalleContrato(id);
+      setConceptos(Array.isArray(det?.conceptos) ? det.conceptos : []);
+      await cargarAlertas(id);
+    } catch (e) {
+      setError(e.status === 403 ? 'No tienes acceso a este contrato.' : 'No se pudo cargar el contrato.');
+    } finally {
+      setCargando(false);
+    }
+  }, [cargarAlertas]);
+
+  const contratoSel = useMemo(
+    () => contratos.find((c) => String(c.id) === String(contratoId)) || null,
+    [contratos, contratoId]
+  );
+
   const umbralNum = Number(umbral);
   const umbralOk = Number.isFinite(umbralNum) && umbralNum >= 1 && umbralNum <= 100;
-  const formOk = !!concepto && umbralOk && !!canal;
+  const formOk = !!conceptoId && umbralOk;
   const puedeCrear = !soloLectura && formOk;
 
-  const handleCrear = () => {
+  const handleCrear = async () => {
     if (!puedeCrear) return;
-    const folio = siguienteFolio(alertas);
-    const nueva = {
-      folio,
-      concepto,
-      umbral: umbralNum,
-      canal,
-      estado: 'Activa',
-      esNueva: true            // marca para fondo verde y diferenciarla en E2E
-    };
-    setAlertas((prev) => [nueva, ...prev]);
-    // Limpiar el formulario para permitir crear otra.
-    setConcepto('');
-    setUmbral('');
-    setCanal('');
+    setError('');
+    try {
+      await api.crearAlerta({
+        contrato_concepto_id: Number(conceptoId),
+        umbral_pct: umbralNum,
+        canal: 'sistema'
+      });
+      setConceptoId('');
+      setUmbral('');
+      await cargarAlertas(contratoId);
+    } catch (e) {
+      setError(e.message || 'No se pudo crear la alerta.');
+    }
   };
 
-  const cambiarEstado = (folio, nuevo) => {
-    setAlertas((prev) => prev.map((a) => (a.folio === folio ? { ...a, estado: nuevo } : a)));
+  const cambiarEstado = async (id, nuevaActiva) => {
+    setError('');
+    try {
+      await api.toggleAlerta(id, { activa: nuevaActiva });
+      await cargarAlertas(contratoId);
+    } catch (e) {
+      setError(e.message || 'No se pudo actualizar la alerta.');
+    }
   };
 
-  const eliminar = (folio, concepto) => {
-    // Confirm nativo del navegador — placeholder consciente del prototipo, sin
-    // modal custom (en producción iría un diálogo accesible).
+  const eliminar = async (id, label) => {
     // eslint-disable-next-line no-alert
-    if (!window.confirm(`¿Eliminar la alerta de "${concepto}"? Esta acción no se puede deshacer.`)) return;
-    setAlertas((prev) => prev.filter((a) => a.folio !== folio));
+    if (!window.confirm(`¿Eliminar la alerta de "${label}"? Esta acción no se puede deshacer.`)) return;
+    setError('');
+    try {
+      await api.eliminarAlerta(id);
+      await cargarAlertas(contratoId);
+    } catch (e) {
+      setError(e.message || 'No se pudo eliminar la alerta.');
+    }
   };
 
-  // Timeline simulado: para cada alerta Activa, leemos su % de avance del
-  // catálogo (avanceConceptoAlertaDummy) y comparamos contra el umbral.
-  // Si avance < umbral → entra al timeline como "disparada".
-  const disparadas = useMemo(() => {
-    return alertas
-      .filter((a) => a.estado === 'Activa')
-      .map((a) => {
-        const avance = avanceConceptoAlertaDummy[a.concepto] ?? null;
-        return { ...a, avance };
-      })
-      .filter((a) => a.avance !== null && a.avance < a.umbral);
-  }, [alertas]);
+  const disparadas = useMemo(() => alertas.filter((a) => a.disparada), [alertas]);
 
   return (
     <div>
@@ -107,211 +145,257 @@ export default function AlertasAtraso() {
         ]}
       />
 
-      <BannerContexto
-        variant="slate"
-        folio={contratoDummy.folio}
-        folioLabel="Contrato"
-        extra={[{ value: contratoDummy.contratista }]}
-      />
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Formulario de nueva alerta */}
-        <div className="lg:col-span-1 bg-white border border-slate-200 rounded-md p-6">
-          <h2 className="text-lg font-bold text-sigecop-blue mb-4">Nueva alerta</h2>
-
-          <RegionEditable disabled={soloLectura}>
-            <div className="space-y-4">
-              <div>
-                <label className="sg-label">Concepto a vigilar *</label>
-                <select
-                  className="sg-input"
-                  value={concepto}
-                  onChange={(e) => setConcepto(e.target.value)}
-                  data-testid="al-concepto"
-                >
-                  <option value="">— Selecciona concepto —</option>
-                  {conceptosAlertaDummy.map((c) => (
-                    <option key={c} value={c}>{c}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="sg-label">Umbral de atraso (%) *</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="100"
-                  step="1"
-                  className="sg-input"
-                  value={umbral}
-                  onChange={(e) => setUmbral(e.target.value)}
-                  placeholder="1 a 100"
-                  data-testid="al-umbral"
-                />
-                <p className="text-xs text-slate-500 mt-1">
-                  Notificar si el avance real es menor a este porcentaje.
-                </p>
-              </div>
-
-              <div>
-                <span className="sg-label block">Canal de notificación *</span>
-                <div className="mt-1 space-y-1">
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="radio"
-                      name="al-canal"
-                      value="Sistema"
-                      checked={canal === 'Sistema'}
-                      onChange={(e) => setCanal(e.target.value)}
-                      data-testid="al-canal-sistema"
-                    />
-                    Sistema
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="radio"
-                      name="al-canal"
-                      value="Correo"
-                      checked={canal === 'Correo'}
-                      onChange={(e) => setCanal(e.target.value)}
-                      data-testid="al-canal-correo"
-                    />
-                    Correo
-                  </label>
-                </div>
-              </div>
-            </div>
-          </RegionEditable>
-
-          {!soloLectura && (
-            <div className="mt-6">
-              <button
-                type="button"
-                className="sg-btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
-                disabled={!puedeCrear}
-                onClick={handleCrear}
-                data-testid="btn-crear-alerta"
-              >
-                Crear alerta
-              </button>
-            </div>
-          )}
+      {sinSesion && (
+        <div className="bg-slate-50 border border-slate-200 rounded-md px-4 py-3 mb-4 text-sm text-slate-600">
+          Inicia sesión en modo aplicación para cargar tus contratos y configurar sus alertas de atraso.
         </div>
+      )}
 
-        {/* Tabla de alertas configuradas */}
-        <div className="lg:col-span-2 bg-white border border-slate-200 rounded-md overflow-hidden">
-          <div className="px-6 py-3 border-b border-slate-200">
-            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
-              Alertas configuradas ({alertas.length})
-            </h2>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm" data-testid="tabla-alertas">
-              <thead className="bg-slate-50 text-slate-700">
-                <tr>
-                  <th className="text-left p-3 font-semibold w-20">Folio</th>
-                  <th className="text-left p-3 font-semibold">Concepto</th>
-                  <th className="text-center p-3 font-semibold">Umbral</th>
-                  <th className="text-left p-3 font-semibold">Canal</th>
-                  <th className="text-center p-3 font-semibold">Estado</th>
-                  {!soloLectura && (
-                    <th className="text-right p-3 font-semibold">Acciones</th>
-                  )}
-                </tr>
-              </thead>
-              <tbody>
-                {alertas.length === 0 ? (
-                  <tr>
-                    <td colSpan={soloLectura ? 5 : 6} className="p-8 text-center text-slate-400 italic">
-                      Sin alertas configuradas para este contrato.
-                    </td>
-                  </tr>
-                ) : (
-                  alertas.map((a) => (
-                    <tr
-                      key={a.folio}
-                      className={`border-t border-slate-200 ${a.esNueva ? 'bg-green-50' : 'hover:bg-slate-50'}`}
-                      data-testid={`alerta-${a.folio}`}
+      <div className="bg-white border border-slate-200 rounded-md p-4 mb-6 max-w-2xl">
+        <label className="sg-label">Contrato</label>
+        <select
+          className="sg-input"
+          value={contratoId}
+          onChange={(e) => seleccionarContrato(e.target.value)}
+          disabled={sinSesion}
+          data-testid="select-contrato"
+        >
+          <option value="">— Selecciona un contrato —</option>
+          {contratos.map((c) => <option key={c.id} value={c.id}>{c.folio} · {c.objeto}</option>)}
+        </select>
+      </div>
+
+      {!sinSesion && !contratoId && (
+        <p className="text-sm text-slate-500 mb-4">Selecciona un contrato para configurar y consultar sus alertas.</p>
+      )}
+      {cargando && <p className="text-sm text-slate-500 mb-4">Cargando…</p>}
+      {error && (
+        <div className="bg-amber-50 border-l-4 border-amber-400 px-4 py-3 mb-4 text-sm text-amber-800 rounded-r-md" data-testid="aviso-error">
+          {error}
+        </div>
+      )}
+
+      {contratoId && !cargando && (
+        <>
+          {contratoSel && (
+            <BannerContexto
+              variant="slate"
+              folio={contratoSel.folio}
+              folioLabel="Contrato"
+              extra={[{ value: contratoSel.contratista }]}
+            />
+          )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Formulario de nueva alerta */}
+            <div className="lg:col-span-1 bg-white border border-slate-200 rounded-md p-6">
+              <h2 className="text-lg font-bold text-sigecop-blue mb-4">Nueva alerta</h2>
+
+              <RegionEditable disabled={soloLectura}>
+                <div className="space-y-4">
+                  <div>
+                    <label className="sg-label">Concepto a vigilar *</label>
+                    <select
+                      className="sg-input"
+                      value={conceptoId}
+                      onChange={(e) => setConceptoId(e.target.value)}
+                      data-testid="al-concepto"
                     >
-                      <td className="p-3 font-mono text-xs">{a.folio}</td>
-                      <td className="p-3 font-semibold">{a.concepto}</td>
-                      <td className="p-3 text-center font-mono">&lt; {a.umbral}%</td>
-                      <td className="p-3">{a.canal}</td>
-                      <td className="p-3 text-center"><EstadoBadge estado={a.estado} /></td>
+                      <option value="">— Selecciona concepto —</option>
+                      {conceptos.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.clave ? `${c.clave} · ${c.concepto}` : c.concepto}
+                        </option>
+                      ))}
+                    </select>
+                    {conceptos.length === 0 && (
+                      <p className="text-xs text-slate-500 mt-1">
+                        Este contrato no tiene conceptos de catálogo para vigilar.
+                      </p>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="sg-label">Umbral de atraso (%) *</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      step="1"
+                      className="sg-input"
+                      value={umbral}
+                      onChange={(e) => setUmbral(e.target.value)}
+                      placeholder="1 a 100"
+                      data-testid="al-umbral"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">
+                      Notificar si el avance físico real es menor a este porcentaje.
+                    </p>
+                  </div>
+
+                  <div>
+                    <span className="sg-label block">Canal de notificación *</span>
+                    <div className="mt-1 space-y-1">
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="radio"
+                          name="al-canal"
+                          value="sistema"
+                          checked
+                          readOnly
+                          data-testid="al-canal-sistema"
+                        />
+                        Sistema
+                      </label>
+                      <label className="flex items-center gap-2 text-sm text-slate-400">
+                        <input
+                          type="radio"
+                          name="al-canal"
+                          value="correo"
+                          disabled
+                          data-testid="al-canal-correo"
+                        />
+                        Correo <span className="text-xs">(no disponible en Etapa 1)</span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </RegionEditable>
+
+              {!soloLectura && (
+                <div className="mt-6">
+                  <button
+                    type="button"
+                    className="sg-btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={!puedeCrear}
+                    onClick={handleCrear}
+                    data-testid="btn-crear-alerta"
+                  >
+                    Crear alerta
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Tabla de alertas configuradas */}
+            <div className="lg:col-span-2 bg-white border border-slate-200 rounded-md overflow-hidden">
+              <div className="px-6 py-3 border-b border-slate-200">
+                <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
+                  Alertas configuradas ({alertas.length})
+                </h2>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm" data-testid="tabla-alertas">
+                  <thead className="bg-slate-50 text-slate-700">
+                    <tr>
+                      <th className="text-left p-3 font-semibold">Concepto</th>
+                      <th className="text-center p-3 font-semibold">Umbral</th>
+                      <th className="text-center p-3 font-semibold">Avance</th>
+                      <th className="text-left p-3 font-semibold">Canal</th>
+                      <th className="text-center p-3 font-semibold">Estado</th>
                       {!soloLectura && (
-                        <td className="p-3 text-right whitespace-nowrap">
-                          {a.estado === 'Activa' ? (
-                            <button
-                              type="button"
-                              className="text-xs text-sigecop-accent hover:underline mr-3"
-                              onClick={() => cambiarEstado(a.folio, 'Pausada')}
-                              data-testid={`btn-pausar-${a.folio}`}
-                            >
-                              Pausar
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              className="text-xs text-sigecop-accent hover:underline mr-3"
-                              onClick={() => cambiarEstado(a.folio, 'Activa')}
-                              data-testid={`btn-reanudar-${a.folio}`}
-                            >
-                              Reanudar
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            className="text-xs text-red-600 hover:underline"
-                            onClick={() => eliminar(a.folio, a.concepto)}
-                            data-testid={`btn-eliminar-${a.folio}`}
-                          >
-                            Eliminar
-                          </button>
-                        </td>
+                        <th className="text-right p-3 font-semibold">Acciones</th>
                       )}
                     </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+                  </thead>
+                  <tbody>
+                    {alertas.length === 0 ? (
+                      <tr>
+                        <td colSpan={soloLectura ? 5 : 6} className="p-8 text-center text-slate-400 italic">
+                          Sin alertas configuradas para este contrato.
+                        </td>
+                      </tr>
+                    ) : (
+                      alertas.map((a) => (
+                        <tr
+                          key={a.id}
+                          className={`border-t border-slate-200 ${a.disparada ? 'bg-amber-50' : 'hover:bg-slate-50'}`}
+                          data-testid={`alerta-${a.id}`}
+                        >
+                          <td className="p-3 font-semibold">{a.concepto_label}</td>
+                          <td className="p-3 text-center font-mono">&lt; {a.umbral_pct}%</td>
+                          <td className="p-3 text-center font-mono">
+                            {a.avance_registrado
+                              ? `${a.avance_pct}%`
+                              : <span className="text-slate-400 italic text-xs">sin avance registrado</span>}
+                          </td>
+                          <td className="p-3 capitalize">{a.canal}</td>
+                          <td className="p-3 text-center"><EstadoBadge activa={a.activa} /></td>
+                          {!soloLectura && (
+                            <td className="p-3 text-right whitespace-nowrap">
+                              {a.activa ? (
+                                <button
+                                  type="button"
+                                  className="text-xs text-sigecop-accent hover:underline mr-3"
+                                  onClick={() => cambiarEstado(a.id, false)}
+                                  data-testid={`btn-pausar-${a.id}`}
+                                >
+                                  Pausar
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  className="text-xs text-sigecop-accent hover:underline mr-3"
+                                  onClick={() => cambiarEstado(a.id, true)}
+                                  data-testid={`btn-reanudar-${a.id}`}
+                                >
+                                  Reanudar
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                className="text-xs text-red-600 hover:underline"
+                                onClick={() => eliminar(a.id, a.concepto_label)}
+                                data-testid={`btn-eliminar-${a.id}`}
+                              >
+                                Eliminar
+                              </button>
+                            </td>
+                          )}
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
 
-      {/* Alertas disparadas — timeline simulado */}
-      <div className="mt-8 bg-white border border-slate-200 rounded-md overflow-hidden">
-        <div className="px-6 py-3 border-b border-slate-200">
-          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
-            Alertas disparadas ({disparadas.length})
-          </h2>
-        </div>
-        <div className="p-6">
-          {disparadas.length === 0 ? (
-            <p className="text-sm text-slate-400 italic">
-              Sin disparos pendientes. Todas las alertas activas tienen avance al
-              o por encima de su umbral.
-            </p>
-          ) : (
-            <ul className="space-y-3" data-testid="lista-disparadas">
-              {disparadas.map((a) => (
-                <li
-                  key={a.folio}
-                  className="flex items-start gap-3 border-l-4 border-sigecop-amber-attention bg-amber-50 px-4 py-3 rounded-r-md"
-                  data-testid={`disparada-${a.folio}`}
-                >
-                  <span className="text-xl leading-none">⚠</span>
-                  <div className="text-sm text-slate-800">
-                    <strong>{a.concepto}</strong> en <strong>{a.avance}%</strong>
-                    {' '}(umbral {a.umbral}%) — notificación enviada por{' '}
-                    <strong>{a.canal}</strong>.
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      </div>
+          {/* Alertas disparadas — evaluadas por el backend (avance físico). */}
+          <div className="mt-8 bg-white border border-slate-200 rounded-md overflow-hidden">
+            <div className="px-6 py-3 border-b border-slate-200">
+              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
+                Alertas disparadas ({disparadas.length})
+              </h2>
+            </div>
+            <div className="p-6">
+              {disparadas.length === 0 ? (
+                <p className="text-sm text-slate-400 italic">
+                  Sin disparos pendientes. Las alertas activas con avance registrado están al o
+                  por encima de su umbral; las que no tienen avance registrado no disparan.
+                </p>
+              ) : (
+                <ul className="space-y-3" data-testid="lista-disparadas">
+                  {disparadas.map((a) => (
+                    <li
+                      key={a.id}
+                      className="flex items-start gap-3 border-l-4 border-sigecop-amber-attention bg-amber-50 px-4 py-3 rounded-r-md"
+                      data-testid={`disparada-${a.id}`}
+                    >
+                      <span className="text-xl leading-none">⚠</span>
+                      <div className="text-sm text-slate-800">
+                        <strong>{a.concepto_label}</strong> en <strong>{a.avance_pct}%</strong>
+                        {' '}(umbral {a.umbral_pct}%) — notificación por{' '}
+                        <strong>{a.canal}</strong>.
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </div>
+        </>
+      )}
 
       <SeccionCriterios
         huId="HU-07"

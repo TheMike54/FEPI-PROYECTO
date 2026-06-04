@@ -104,5 +104,10 @@ export const api = {
   // Pasada F: roster del contrato (sustitución de personas, art. 125 fr. I g RLOPSRM). Lectura por
   // participación; sustituir = dependencia o residente asignado (lo valida el backend).
   rosterContrato: (contratoId) => request(`/roster/contrato/${contratoId}`),
-  sustituirPersona: (contratoId, payload) => request(`/roster/contrato/${contratoId}/sustituir`, { method: 'POST', body: JSON.stringify(payload) })
+  sustituirPersona: (contratoId, payload) => request(`/roster/contrato/${contratoId}/sustituir`, { method: 'POST', body: JSON.stringify(payload) }),
+  // HU-07: alertas de atraso por concepto del catálogo (config + evaluación de disparo).
+  alertasDeContrato: (contratoId) => request(`/alertas/contrato/${contratoId}`),
+  crearAlerta: (payload) => request('/alertas', { method: 'POST', body: JSON.stringify(payload) }),
+  toggleAlerta: (id, payload) => request(`/alertas/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  eliminarAlerta: (id) => request(`/alertas/${id}`, { method: 'DELETE' })
 };
