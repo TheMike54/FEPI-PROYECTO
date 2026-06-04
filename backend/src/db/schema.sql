@@ -1176,3 +1176,95 @@ CREATE TABLE IF NOT EXISTS instruccion_pago (
 );
 CREATE INDEX IF NOT EXISTS idx_instruccion_pago_estimacion  ON instruccion_pago(estimacion_id);
 CREATE INDEX IF NOT EXISTS idx_instruccion_pago_presupuesto ON instruccion_pago(presupuesto_anual_id);
+
+-- =====================================================================
+-- PASADA F (Fundación) — SUSTITUCIÓN DE PERSONAS DEL ROSTER (art. 125 fr. I g RLOPSRM).
+-- Fundamento Nivel 1 (literal, RLOPSRM art. 125 fr. I inciso g): al residente le
+-- corresponde registrar en la Bitácora "La SUSTITUCIÓN del superintendente, del anterior
+-- residente y de la supervisión". → Se SUSTITUYE, NO se borra: el histórico se conserva.
+-- ADITIVO e IDEMPOTENTE: aplica sobre la BD existente (local/Render) sin reescribir datos.
+--
+-- DISEÑO: `contrato_roster` = histórico/versionado 1:N de (contrato, rol) → persona.
+--   · El roster VIGENTE se DERIVA: la fila con vigencia_hasta IS NULL por (contrato, rol)
+--     (índice único PARCIAL garantiza UNA sola activa).
+--   · Los punteros escalares contratos.{residente_id,superintendente_id,supervision_id}
+--     siguen siendo el CACHÉ que lee lib/acceso.js (congelado); el endpoint de sustitución
+--     los sincroniza en UN SOLO punto, transaccional (cache↔roster nunca deriva).
+--   · NO se borra a nadie: usuario_id es ON DELETE RESTRICT (no se puede eliminar una
+--     persona referenciada en el roster — solo sustituirla).
+--   · INMUTABILIDAD: la identidad de una asignación (contrato/rol/persona/inicio/sustituye_a)
+--     es inalterable por trigger; SOLO se permite CERRARLA una vez (vigencia_hasta NULL→fecha).
+--   · Las FIRMAS de la bitácora se atan a usuario_id (cuenta) con sus propios triggers de
+--     inmutabilidad: este esquema NO toca bitacora_*, así una firma pasada conserva al
+--     firmante ORIGINAL; la sustitución solo afecta firmas FUTURAS.
+-- =====================================================================
+
+CREATE TABLE IF NOT EXISTS contrato_roster (
+  id             SERIAL PRIMARY KEY,
+  contrato_id    INTEGER NOT NULL REFERENCES contratos(id) ON DELETE CASCADE,
+  rol            VARCHAR(20) NOT NULL CHECK (rol IN ('residente','superintendente','supervision')),
+  -- RESTRICT: la persona NO se borra, se sustituye (requisito art. 125 fr. I g).
+  usuario_id     INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE RESTRICT,
+  vigencia_desde DATE NOT NULL DEFAULT CURRENT_DATE,
+  vigencia_hasta DATE,                                            -- NULL = asignación ACTIVA (vigente)
+  motivo         TEXT,                                            -- razón de la sustitución que creó esta fila
+  -- A qué asignación anterior reemplaza (traza la cadena). NO ACTION (no SET NULL): un SET NULL
+  -- dispararía UPDATE y chocaría con el trigger de inmutabilidad; en la cascada del contrato
+  -- ambas filas mueren en el mismo statement, así el chequeo diferido pasa.
+  sustituye_a    INTEGER REFERENCES contrato_roster(id) ON DELETE NO ACTION,
+  -- nota de bitácora (art. 125 fr. I g) que documenta la sustitución, registrada aparte por el
+  -- residente (HU-09). Opcional; NO ACTION porque la nota es inmutable.
+  nota_id        INTEGER REFERENCES bitacora_notas(id) ON DELETE NO ACTION,
+  registrado_por INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,  -- del JWT (quién ejecutó la sustitución)
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT chk_contrato_roster_vigencia CHECK (vigencia_hasta IS NULL OR vigencia_hasta >= vigencia_desde)
+);
+-- UNA sola persona ACTIVA por (contrato, rol): índice único PARCIAL (las cerradas no cuentan).
+CREATE UNIQUE INDEX IF NOT EXISTS uq_contrato_roster_activo ON contrato_roster(contrato_id, rol) WHERE vigencia_hasta IS NULL;
+CREATE INDEX IF NOT EXISTS idx_contrato_roster_contrato ON contrato_roster(contrato_id);
+CREATE INDEX IF NOT EXISTS idx_contrato_roster_usuario ON contrato_roster(usuario_id);
+CREATE INDEX IF NOT EXISTS idx_contrato_roster_sustituye ON contrato_roster(sustituye_a);
+
+-- Inmutabilidad con transición controlada (espejo de sigecop_firma_transicion): la identidad
+-- de una asignación no se reasigna; SOLO se permite cerrarla (NULL→fecha) UNA vez. Bloquea
+-- UPDATE indebido; el DELETE en cascada del contrato sigue permitido (no se intercepta DELETE).
+CREATE OR REPLACE FUNCTION sigecop_roster_transicion() RETURNS trigger AS $func$
+BEGIN
+  IF NEW.contrato_id    IS DISTINCT FROM OLD.contrato_id
+     OR NEW.rol         IS DISTINCT FROM OLD.rol
+     OR NEW.usuario_id  IS DISTINCT FROM OLD.usuario_id
+     OR NEW.vigencia_desde IS DISTINCT FROM OLD.vigencia_desde
+     OR NEW.sustituye_a IS DISTINCT FROM OLD.sustituye_a
+     OR NEW.created_at  IS DISTINCT FROM OLD.created_at THEN
+    RAISE EXCEPTION 'Una asignación del roster es inmutable; la sustitución crea una fila NUEVA, no se reasigna (art. 125 fr. I g RLOPSRM)';
+  END IF;
+  IF OLD.vigencia_hasta IS NOT NULL THEN
+    RAISE EXCEPTION 'La asignación ya fue cerrada y es inalterable';
+  END IF;
+  RETURN NEW;  -- permite cerrar (vigencia_hasta NULL→fecha) y ajustar metadatos (motivo/nota/registrado_por)
+END;
+$func$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_contrato_roster_transicion ON contrato_roster;
+CREATE TRIGGER trg_contrato_roster_transicion
+  BEFORE UPDATE ON contrato_roster
+  FOR EACH ROW EXECUTE FUNCTION sigecop_roster_transicion();
+
+-- SEED del roster desde los punteros escalares EXISTENTES (idempotente, NO destructivo):
+-- una fila ACTIVA por cada puntero presente, si el (contrato, rol) aún no tiene activa. Así la
+-- BD de Render (con sus contratos ya creados) queda con el roster derivable sin perder datos.
+INSERT INTO contrato_roster (contrato_id, rol, usuario_id, vigencia_desde, motivo)
+SELECT c.id, 'residente', c.residente_id, COALESCE(c.fecha_inicio, c.created_at::date, CURRENT_DATE), 'Asignación inicial (alta del contrato)'
+  FROM contratos c
+ WHERE c.residente_id IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM contrato_roster r WHERE r.contrato_id = c.id AND r.rol = 'residente' AND r.vigencia_hasta IS NULL);
+INSERT INTO contrato_roster (contrato_id, rol, usuario_id, vigencia_desde, motivo)
+SELECT c.id, 'superintendente', c.superintendente_id, COALESCE(c.fecha_inicio, c.created_at::date, CURRENT_DATE), 'Asignación inicial (alta del contrato)'
+  FROM contratos c
+ WHERE c.superintendente_id IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM contrato_roster r WHERE r.contrato_id = c.id AND r.rol = 'superintendente' AND r.vigencia_hasta IS NULL);
+INSERT INTO contrato_roster (contrato_id, rol, usuario_id, vigencia_desde, motivo)
+SELECT c.id, 'supervision', c.supervision_id, COALESCE(c.fecha_inicio, c.created_at::date, CURRENT_DATE), 'Asignación inicial (alta del contrato)'
+  FROM contratos c
+ WHERE c.supervision_id IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM contrato_roster r WHERE r.contrato_id = c.id AND r.rol = 'supervision' AND r.vigencia_hasta IS NULL);

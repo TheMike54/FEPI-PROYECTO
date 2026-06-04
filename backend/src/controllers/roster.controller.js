@@ -1,0 +1,185 @@
+// PASADA F (Fundación) — Sustitución de personas del roster del contrato.
+// Fundamento Nivel 1 (literal, RLOPSRM art. 125 fr. I inciso g): al residente le corresponde
+// registrar en la Bitácora "La SUSTITUCIÓN del superintendente, del anterior residente y de la
+// supervisión". Se SUSTITUYE, NO se borra: el histórico se conserva.
+//
+// Dos endpoints (archivo NUEVO; NO toca la zona congelada salvo el montaje en server.js):
+//   GET  /api/roster/contrato/:id            → roster VIGENTE (derivado) + histórico por rol.
+//   POST /api/roster/contrato/:id/sustituir   → cierra la asignación anterior + crea la nueva +
+//                                               sincroniza el caché escalar de contratos, en UNA
+//                                               transacción. PROHIBIDO borrar a nadie.
+//
+// Las FIRMAS de la bitácora se atan a usuario_id (cuenta) con sus triggers de inmutabilidad; este
+// controller NO toca bitacora_* → una firma pasada conserva al firmante ORIGINAL. La sustitución
+// solo cambia quién es la persona ACTIVA del rol (y el caché que lee lib/acceso.js), afectando
+// firmas FUTURAS, nunca las pasadas.
+const { pool } = require('../db/pool');
+const { esParteOSupervision } = require('../lib/acceso');
+
+const ROLES_ROSTER = ['residente', 'superintendente', 'supervision'];
+// rol-de-roster → rol-de-cuenta esperado (convención del alta/HU-12: el superintendente es una
+// cuenta de rol 'contratista'). [validar con el profe la convención de cuentas]
+const ROL_CUENTA = { residente: 'residente', superintendente: 'contratista', supervision: 'supervision' };
+// Caché escalar en `contratos` por rol (lo lee lib/acceso.js). Whitelist fija (no user input).
+const COL_CACHE = { residente: 'residente_id', superintendente: 'superintendente_id', supervision: 'supervision_id' };
+
+// GET /api/roster/contrato/:id — roster vigente (derivado) + histórico. Acotado por participación.
+async function leerRoster(req, res) {
+  try {
+    const contratoId = Number(req.params.id);
+    if (!Number.isInteger(contratoId) || contratoId <= 0) return res.status(400).json({ error: 'contrato inválido' });
+
+    const c = await pool.query(
+      'SELECT id, created_by, residente_id, superintendente_id, supervision_id FROM contratos WHERE id = $1',
+      [contratoId]
+    );
+    if (c.rowCount === 0) return res.status(404).json({ error: 'El contrato indicado no existe' });
+    if (!esParteOSupervision(req.user, c.rows[0])) {
+      return res.status(403).json({ error: 'No tienes acceso al roster de este contrato' });
+    }
+
+    const hist = await pool.query(
+      `SELECT r.id, r.rol, r.usuario_id, u.nombre AS usuario_nombre, u.email AS usuario_email,
+              r.vigencia_desde, r.vigencia_hasta, r.motivo, r.sustituye_a,
+              r.registrado_por, ru.nombre AS registrado_por_nombre, r.nota_id, r.created_at
+         FROM contrato_roster r
+         LEFT JOIN usuarios u  ON u.id  = r.usuario_id
+         LEFT JOIN usuarios ru ON ru.id = r.registrado_por
+        WHERE r.contrato_id = $1
+        ORDER BY r.rol, r.vigencia_desde, r.id`,
+      [contratoId]
+    );
+
+    // Vigente por rol: prefiere la fila ACTIVA del roster; si no está versionado aún (contrato
+    // nuevo), DERIVA del puntero escalar para no mostrar el rol vacío.
+    const ct = c.rows[0];
+    const vigente = {};
+    for (const rol of ROLES_ROSTER) {
+      const activa = hist.rows.find((r) => r.rol === rol && r.vigencia_hasta === null);
+      if (activa) {
+        vigente[rol] = { usuario_id: activa.usuario_id, nombre: activa.usuario_nombre, desde: activa.vigencia_desde, roster_id: activa.id, versionado: true };
+      } else if (ct[COL_CACHE[rol]]) {
+        vigente[rol] = { usuario_id: ct[COL_CACHE[rol]], nombre: null, desde: null, roster_id: null, versionado: false };
+      } else {
+        vigente[rol] = null;
+      }
+    }
+
+    return res.status(200).json({ contrato_id: contratoId, vigente, historial: hist.rows });
+  } catch (err) {
+    console.error('[leerRoster]', err);
+    return res.status(500).json({ error: 'Error interno' });
+  }
+}
+
+// POST /api/roster/contrato/:id/sustituir — body { rol, nuevoUsuarioId, motivo, notaId? }
+async function sustituirPersona(req, res) {
+  const contratoId = Number(req.params.id);
+  if (!Number.isInteger(contratoId) || contratoId <= 0) return res.status(404).json({ error: 'Contrato no encontrado' });
+
+  const body = req.body || {};
+  const rol = String(body.rol || '').trim();
+  const nuevoUsuarioId = Number(body.nuevoUsuarioId);
+  const motivo = (body.motivo != null ? String(body.motivo).trim() : '') || null;
+  const notaId = Number.isInteger(Number(body.notaId)) && Number(body.notaId) > 0 ? Number(body.notaId) : null;
+
+  if (!ROLES_ROSTER.includes(rol)) return res.status(400).json({ error: 'rol inválido (residente | superintendente | supervision)' });
+  if (!Number.isInteger(nuevoUsuarioId) || nuevoUsuarioId <= 0) return res.status(400).json({ error: 'nuevoUsuarioId inválido' });
+  if (!motivo) return res.status(400).json({ error: 'El motivo de la sustitución es obligatorio (art. 125 fr. I g RLOPSRM)' });
+
+  let client;
+  try {
+    client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      // Serializa los cambios de roster de ESTE contrato (classid 3; estimación/programa usan 2).
+      await client.query('SELECT pg_advisory_xact_lock(3, $1::int)', [contratoId]);
+
+      const cres = await client.query(
+        'SELECT id, created_by, residente_id, superintendente_id, supervision_id FROM contratos WHERE id = $1 FOR UPDATE',
+        [contratoId]
+      );
+      if (cres.rowCount === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Contrato no encontrado' }); }
+      const contrato = cres.rows[0];
+
+      // AUTORIDAD [validar con el profe]: la dependencia (autoridad contratante) o el residente
+      // asignado / creador del contrato (quien registra la nota art. 125 fr. I g). El residente
+      // solo sobre SU contrato; la dependencia sobre cualquiera.
+      const puede = req.user.rol === 'dependencia'
+        || contrato.residente_id === req.user.id
+        || contrato.created_by === req.user.id;
+      if (!puede) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'Solo la dependencia o el residente asignado puede sustituir personas del roster' }); }
+
+      // El nuevo debe existir, estar ACTIVO y tener el rol de cuenta esperado para el slot.
+      const ures = await client.query('SELECT id, rol, estado, nombre FROM usuarios WHERE id = $1', [nuevoUsuarioId]);
+      if (ures.rowCount === 0) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'El usuario nuevo no existe' }); }
+      const nuevo = ures.rows[0];
+      if (nuevo.estado !== 'activo') { await client.query('ROLLBACK'); return res.status(400).json({ error: 'El usuario nuevo no está activo' }); }
+      if (nuevo.rol !== ROL_CUENTA[rol]) { await client.query('ROLLBACK'); return res.status(400).json({ error: `Para el rol "${rol}" se requiere una cuenta de tipo "${ROL_CUENTA[rol]}"` }); }
+
+      // Fila ACTIVA actual del rol. Si no existe (contrato nuevo aún sin versionar), se SIEMBRA
+      // desde el puntero escalar (la persona que estaba desde el alta), para no perder el inicio.
+      const act = await client.query(
+        'SELECT id, usuario_id FROM contrato_roster WHERE contrato_id = $1 AND rol = $2 AND vigencia_hasta IS NULL',
+        [contratoId, rol]
+      );
+      let anteriorRosterId = null;
+      let anteriorUsuarioId = null;
+      if (act.rowCount === 0) {
+        const cacheUid = contrato[COL_CACHE[rol]];
+        if (cacheUid) {
+          const seed = await client.query(
+            "INSERT INTO contrato_roster (contrato_id, rol, usuario_id, vigencia_desde, motivo) VALUES ($1,$2,$3,CURRENT_DATE,'Asignación inicial (alta del contrato)') RETURNING id, usuario_id",
+            [contratoId, rol, cacheUid]
+          );
+          anteriorRosterId = seed.rows[0].id;
+          anteriorUsuarioId = seed.rows[0].usuario_id;
+        }
+        // Si el slot estaba vacío (p. ej. supervisión opcional), no hay anterior: es un ALTA del rol.
+      } else {
+        anteriorRosterId = act.rows[0].id;
+        anteriorUsuarioId = act.rows[0].usuario_id;
+      }
+
+      if (anteriorUsuarioId === nuevoUsuarioId) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'La persona indicada ya ocupa ese rol' }); }
+
+      // (1) CERRAR la asignación anterior (si la hay) — NO se borra, queda en histórico.
+      //     Primero cerrar y LUEGO insertar la nueva: el índice único parcial nunca ve 2 activas.
+      if (anteriorRosterId != null) {
+        await client.query('UPDATE contrato_roster SET vigencia_hasta = CURRENT_DATE WHERE id = $1', [anteriorRosterId]);
+      }
+      // (2) CREAR la nueva asignación ACTIVA, ligada a la anterior (sustituye_a) — identidad del JWT.
+      const nueva = await client.query(
+        `INSERT INTO contrato_roster (contrato_id, rol, usuario_id, vigencia_desde, motivo, sustituye_a, nota_id, registrado_por)
+         VALUES ($1, $2, $3, CURRENT_DATE, $4, $5, $6, $7) RETURNING id`,
+        [contratoId, rol, nuevoUsuarioId, motivo, anteriorRosterId, notaId, req.user.id]
+      );
+      // (3) SINCRONIZAR el caché escalar de contratos (lo lee lib/acceso.js) — UN solo punto de
+      //     escritura, transaccional, para que el caché NUNCA derive del roster. (contratos no
+      //     tiene trigger de inmutabilidad; COL_CACHE es whitelist fija, sin inyección.)
+      await client.query(`UPDATE contratos SET ${COL_CACHE[rol]} = $1 WHERE id = $2`, [nuevoUsuarioId, contratoId]);
+
+      await client.query('COMMIT');
+      return res.status(201).json({
+        ok: true,
+        contrato_id: contratoId,
+        rol,
+        anterior_usuario_id: anteriorUsuarioId,
+        nuevo_usuario_id: nuevoUsuarioId,
+        nueva_asignacion_id: nueva.rows[0].id,
+        es_alta: anteriorRosterId == null
+      });
+    } catch (e) {
+      try { await client.query('ROLLBACK'); } catch (_) { /* el client pudo morir */ }
+      throw e;
+    } finally {
+      client.release();
+    }
+  } catch (err) {
+    if (err.code === '23505') return res.status(409).json({ error: 'Conflicto de concurrencia en el roster; reintenta' });
+    console.error('[sustituirPersona]', err);
+    return res.status(500).json({ error: 'Error interno' });
+  }
+}
+
+module.exports = { leerRoster, sustituirPersona };

@@ -100,5 +100,9 @@ export const api = {
   avanceContrato: (contratoId) => request(`/estimaciones/contrato/${contratoId}/avance`),
   estimacionesDeContrato: (contratoId) => request(`/estimaciones/contrato/${contratoId}`),
   detalleEstimacion: (id) => request(`/estimaciones/${id}`),
-  integrarEstimacion: (payload) => request('/estimaciones', { method: 'POST', body: JSON.stringify(payload) })
+  integrarEstimacion: (payload) => request('/estimaciones', { method: 'POST', body: JSON.stringify(payload) }),
+  // Pasada F: roster del contrato (sustitución de personas, art. 125 fr. I g RLOPSRM). Lectura por
+  // participación; sustituir = dependencia o residente asignado (lo valida el backend).
+  rosterContrato: (contratoId) => request(`/roster/contrato/${contratoId}`),
+  sustituirPersona: (contratoId, payload) => request(`/roster/contrato/${contratoId}/sustituir`, { method: 'POST', body: JSON.stringify(payload) })
 };

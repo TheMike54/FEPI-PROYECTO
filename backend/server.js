@@ -9,6 +9,7 @@ const contratosRoutes = require('./src/routes/contratos.routes');
 const bitacoraRoutes = require('./src/routes/bitacora.routes');
 const pagosRoutes = require('./src/routes/pagos.routes');
 const estimacionesRoutes = require('./src/routes/estimaciones.routes');
+const rosterRoutes = require('./src/routes/roster.routes');  // Pasada F: sustitución de personas (art. 125 fr. I g)
 const { initDb } = require('./src/db/init');
 
 const app = express();
@@ -32,6 +33,7 @@ app.use('/api/contratos', contratosRoutes);
 app.use('/api/bitacora', bitacoraRoutes);
 app.use('/api/pagos', pagosRoutes);
 app.use('/api/estimaciones', estimacionesRoutes);
+app.use('/api/roster', rosterRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Ruta no encontrada' });

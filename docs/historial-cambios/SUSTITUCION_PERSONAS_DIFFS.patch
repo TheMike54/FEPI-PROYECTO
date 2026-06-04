@@ -1,0 +1,622 @@
+diff --git a/backend/server.js b/backend/server.js
+index 5fc6863..355e66c 100644
+--- a/backend/server.js
++++ b/backend/server.js
+@@ -9,6 +9,7 @@ const contratosRoutes = require('./src/routes/contratos.routes');
+ const bitacoraRoutes = require('./src/routes/bitacora.routes');
+ const pagosRoutes = require('./src/routes/pagos.routes');
+ const estimacionesRoutes = require('./src/routes/estimaciones.routes');
++const rosterRoutes = require('./src/routes/roster.routes');  // Pasada F: sustitución de personas (art. 125 fr. I g)
+ const { initDb } = require('./src/db/init');
+ 
+ const app = express();
+@@ -32,6 +33,7 @@ app.use('/api/contratos', contratosRoutes);
+ app.use('/api/bitacora', bitacoraRoutes);
+ app.use('/api/pagos', pagosRoutes);
+ app.use('/api/estimaciones', estimacionesRoutes);
++app.use('/api/roster', rosterRoutes);
+ 
+ app.use((req, res) => {
+   res.status(404).json({ error: 'Ruta no encontrada' });
+diff --git a/backend/src/controllers/roster.controller.js b/backend/src/controllers/roster.controller.js
+new file mode 100644
+index 0000000..735b3eb
+--- /dev/null
++++ b/backend/src/controllers/roster.controller.js
+@@ -0,0 +1,185 @@
++// PASADA F (Fundación) — Sustitución de personas del roster del contrato.
++// Fundamento Nivel 1 (literal, RLOPSRM art. 125 fr. I inciso g): al residente le corresponde
++// registrar en la Bitácora "La SUSTITUCIÓN del superintendente, del anterior residente y de la
++// supervisión". Se SUSTITUYE, NO se borra: el histórico se conserva.
++//
++// Dos endpoints (archivo NUEVO; NO toca la zona congelada salvo el montaje en server.js):
++//   GET  /api/roster/contrato/:id            → roster VIGENTE (derivado) + histórico por rol.
++//   POST /api/roster/contrato/:id/sustituir   → cierra la asignación anterior + crea la nueva +
++//                                               sincroniza el caché escalar de contratos, en UNA
++//                                               transacción. PROHIBIDO borrar a nadie.
++//
++// Las FIRMAS de la bitácora se atan a usuario_id (cuenta) con sus triggers de inmutabilidad; este
++// controller NO toca bitacora_* → una firma pasada conserva al firmante ORIGINAL. La sustitución
++// solo cambia quién es la persona ACTIVA del rol (y el caché que lee lib/acceso.js), afectando
++// firmas FUTURAS, nunca las pasadas.
++const { pool } = require('../db/pool');
++const { esParteOSupervision } = require('../lib/acceso');
++
++const ROLES_ROSTER = ['residente', 'superintendente', 'supervision'];
++// rol-de-roster → rol-de-cuenta esperado (convención del alta/HU-12: el superintendente es una
++// cuenta de rol 'contratista'). [validar con el profe la convención de cuentas]
++const ROL_CUENTA = { residente: 'residente', superintendente: 'contratista', supervision: 'supervision' };
++// Caché escalar en `contratos` por rol (lo lee lib/acceso.js). Whitelist fija (no user input).
++const COL_CACHE = { residente: 'residente_id', superintendente: 'superintendente_id', supervision: 'supervision_id' };
++
++// GET /api/roster/contrato/:id — roster vigente (derivado) + histórico. Acotado por participación.
++async function leerRoster(req, res) {
++  try {
++    const contratoId = Number(req.params.id);
++    if (!Number.isInteger(contratoId) || contratoId <= 0) return res.status(400).json({ error: 'contrato inválido' });
++
++    const c = await pool.query(
++      'SELECT id, created_by, residente_id, superintendente_id, supervision_id FROM contratos WHERE id = $1',
++      [contratoId]
++    );
++    if (c.rowCount === 0) return res.status(404).json({ error: 'El contrato indicado no existe' });
++    if (!esParteOSupervision(req.user, c.rows[0])) {
++      return res.status(403).json({ error: 'No tienes acceso al roster de este contrato' });
++    }
++
++    const hist = await pool.query(
++      `SELECT r.id, r.rol, r.usuario_id, u.nombre AS usuario_nombre, u.email AS usuario_email,
++              r.vigencia_desde, r.vigencia_hasta, r.motivo, r.sustituye_a,
++              r.registrado_por, ru.nombre AS registrado_por_nombre, r.nota_id, r.created_at
++         FROM contrato_roster r
++         LEFT JOIN usuarios u  ON u.id  = r.usuario_id
++         LEFT JOIN usuarios ru ON ru.id = r.registrado_por
++        WHERE r.contrato_id = $1
++        ORDER BY r.rol, r.vigencia_desde, r.id`,
++      [contratoId]
++    );
++
++    // Vigente por rol: prefiere la fila ACTIVA del roster; si no está versionado aún (contrato
++    // nuevo), DERIVA del puntero escalar para no mostrar el rol vacío.
++    const ct = c.rows[0];
++    const vigente = {};
++    for (const rol of ROLES_ROSTER) {
++      const activa = hist.rows.find((r) => r.rol === rol && r.vigencia_hasta === null);
++      if (activa) {
++        vigente[rol] = { usuario_id: activa.usuario_id, nombre: activa.usuario_nombre, desde: activa.vigencia_desde, roster_id: activa.id, versionado: true };
++      } else if (ct[COL_CACHE[rol]]) {
++        vigente[rol] = { usuario_id: ct[COL_CACHE[rol]], nombre: null, desde: null, roster_id: null, versionado: false };
++      } else {
++        vigente[rol] = null;
++      }
++    }
++
++    return res.status(200).json({ contrato_id: contratoId, vigente, historial: hist.rows });
++  } catch (err) {
++    console.error('[leerRoster]', err);
++    return res.status(500).json({ error: 'Error interno' });
++  }
++}
++
++// POST /api/roster/contrato/:id/sustituir — body { rol, nuevoUsuarioId, motivo, notaId? }
++async function sustituirPersona(req, res) {
++  const contratoId = Number(req.params.id);
++  if (!Number.isInteger(contratoId) || contratoId <= 0) return res.status(404).json({ error: 'Contrato no encontrado' });
++
++  const body = req.body || {};
++  const rol = String(body.rol || '').trim();
++  const nuevoUsuarioId = Number(body.nuevoUsuarioId);
++  const motivo = (body.motivo != null ? String(body.motivo).trim() : '') || null;
++  const notaId = Number.isInteger(Number(body.notaId)) && Number(body.notaId) > 0 ? Number(body.notaId) : null;
++
++  if (!ROLES_ROSTER.includes(rol)) return res.status(400).json({ error: 'rol inválido (residente | superintendente | supervision)' });
++  if (!Number.isInteger(nuevoUsuarioId) || nuevoUsuarioId <= 0) return res.status(400).json({ error: 'nuevoUsuarioId inválido' });
++  if (!motivo) return res.status(400).json({ error: 'El motivo de la sustitución es obligatorio (art. 125 fr. I g RLOPSRM)' });
++
++  let client;
++  try {
++    client = await pool.connect();
++    try {
++      await client.query('BEGIN');
++      // Serializa los cambios de roster de ESTE contrato (classid 3; estimación/programa usan 2).
++      await client.query('SELECT pg_advisory_xact_lock(3, $1::int)', [contratoId]);
++
++      const cres = await client.query(
++        'SELECT id, created_by, residente_id, superintendente_id, supervision_id FROM contratos WHERE id = $1 FOR UPDATE',
++        [contratoId]
++      );
++      if (cres.rowCount === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Contrato no encontrado' }); }
++      const contrato = cres.rows[0];
++
++      // AUTORIDAD [validar con el profe]: la dependencia (autoridad contratante) o el residente
++      // asignado / creador del contrato (quien registra la nota art. 125 fr. I g). El residente
++      // solo sobre SU contrato; la dependencia sobre cualquiera.
++      const puede = req.user.rol === 'dependencia'
++        || contrato.residente_id === req.user.id
++        || contrato.created_by === req.user.id;
++      if (!puede) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'Solo la dependencia o el residente asignado puede sustituir personas del roster' }); }
++
++      // El nuevo debe existir, estar ACTIVO y tener el rol de cuenta esperado para el slot.
++      const ures = await client.query('SELECT id, rol, estado, nombre FROM usuarios WHERE id = $1', [nuevoUsuarioId]);
++      if (ures.rowCount === 0) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'El usuario nuevo no existe' }); }
++      const nuevo = ures.rows[0];
++      if (nuevo.estado !== 'activo') { await client.query('ROLLBACK'); return res.status(400).json({ error: 'El usuario nuevo no está activo' }); }
++      if (nuevo.rol !== ROL_CUENTA[rol]) { await client.query('ROLLBACK'); return res.status(400).json({ error: `Para el rol "${rol}" se requiere una cuenta de tipo "${ROL_CUENTA[rol]}"` }); }
++
++      // Fila ACTIVA actual del rol. Si no existe (contrato nuevo aún sin versionar), se SIEMBRA
++      // desde el puntero escalar (la persona que estaba desde el alta), para no perder el inicio.
++      const act = await client.query(
++        'SELECT id, usuario_id FROM contrato_roster WHERE contrato_id = $1 AND rol = $2 AND vigencia_hasta IS NULL',
++        [contratoId, rol]
++      );
++      let anteriorRosterId = null;
++      let anteriorUsuarioId = null;
++      if (act.rowCount === 0) {
++        const cacheUid = contrato[COL_CACHE[rol]];
++        if (cacheUid) {
++          const seed = await client.query(
++            "INSERT INTO contrato_roster (contrato_id, rol, usuario_id, vigencia_desde, motivo) VALUES ($1,$2,$3,CURRENT_DATE,'Asignación inicial (alta del contrato)') RETURNING id, usuario_id",
++            [contratoId, rol, cacheUid]
++          );
++          anteriorRosterId = seed.rows[0].id;
++          anteriorUsuarioId = seed.rows[0].usuario_id;
++        }
++        // Si el slot estaba vacío (p. ej. supervisión opcional), no hay anterior: es un ALTA del rol.
++      } else {
++        anteriorRosterId = act.rows[0].id;
++        anteriorUsuarioId = act.rows[0].usuario_id;
++      }
++
++      if (anteriorUsuarioId === nuevoUsuarioId) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'La persona indicada ya ocupa ese rol' }); }
++
++      // (1) CERRAR la asignación anterior (si la hay) — NO se borra, queda en histórico.
++      //     Primero cerrar y LUEGO insertar la nueva: el índice único parcial nunca ve 2 activas.
++      if (anteriorRosterId != null) {
++        await client.query('UPDATE contrato_roster SET vigencia_hasta = CURRENT_DATE WHERE id = $1', [anteriorRosterId]);
++      }
++      // (2) CREAR la nueva asignación ACTIVA, ligada a la anterior (sustituye_a) — identidad del JWT.
++      const nueva = await client.query(
++        `INSERT INTO contrato_roster (contrato_id, rol, usuario_id, vigencia_desde, motivo, sustituye_a, nota_id, registrado_por)
++         VALUES ($1, $2, $3, CURRENT_DATE, $4, $5, $6, $7) RETURNING id`,
++        [contratoId, rol, nuevoUsuarioId, motivo, anteriorRosterId, notaId, req.user.id]
++      );
++      // (3) SINCRONIZAR el caché escalar de contratos (lo lee lib/acceso.js) — UN solo punto de
++      //     escritura, transaccional, para que el caché NUNCA derive del roster. (contratos no
++      //     tiene trigger de inmutabilidad; COL_CACHE es whitelist fija, sin inyección.)
++      await client.query(`UPDATE contratos SET ${COL_CACHE[rol]} = $1 WHERE id = $2`, [nuevoUsuarioId, contratoId]);
++
++      await client.query('COMMIT');
++      return res.status(201).json({
++        ok: true,
++        contrato_id: contratoId,
++        rol,
++        anterior_usuario_id: anteriorUsuarioId,
++        nuevo_usuario_id: nuevoUsuarioId,
++        nueva_asignacion_id: nueva.rows[0].id,
++        es_alta: anteriorRosterId == null
++      });
++    } catch (e) {
++      try { await client.query('ROLLBACK'); } catch (_) { /* el client pudo morir */ }
++      throw e;
++    } finally {
++      client.release();
++    }
++  } catch (err) {
++    if (err.code === '23505') return res.status(409).json({ error: 'Conflicto de concurrencia en el roster; reintenta' });
++    console.error('[sustituirPersona]', err);
++    return res.status(500).json({ error: 'Error interno' });
++  }
++}
++
++module.exports = { leerRoster, sustituirPersona };
+diff --git a/backend/src/db/schema.sql b/backend/src/db/schema.sql
+index fbbbbd4..3ef2d9c 100644
+--- a/backend/src/db/schema.sql
++++ b/backend/src/db/schema.sql
+@@ -1176,3 +1176,95 @@ CREATE TABLE IF NOT EXISTS instruccion_pago (
+ );
+ CREATE INDEX IF NOT EXISTS idx_instruccion_pago_estimacion  ON instruccion_pago(estimacion_id);
+ CREATE INDEX IF NOT EXISTS idx_instruccion_pago_presupuesto ON instruccion_pago(presupuesto_anual_id);
++
++-- =====================================================================
++-- PASADA F (Fundación) — SUSTITUCIÓN DE PERSONAS DEL ROSTER (art. 125 fr. I g RLOPSRM).
++-- Fundamento Nivel 1 (literal, RLOPSRM art. 125 fr. I inciso g): al residente le
++-- corresponde registrar en la Bitácora "La SUSTITUCIÓN del superintendente, del anterior
++-- residente y de la supervisión". → Se SUSTITUYE, NO se borra: el histórico se conserva.
++-- ADITIVO e IDEMPOTENTE: aplica sobre la BD existente (local/Render) sin reescribir datos.
++--
++-- DISEÑO: `contrato_roster` = histórico/versionado 1:N de (contrato, rol) → persona.
++--   · El roster VIGENTE se DERIVA: la fila con vigencia_hasta IS NULL por (contrato, rol)
++--     (índice único PARCIAL garantiza UNA sola activa).
++--   · Los punteros escalares contratos.{residente_id,superintendente_id,supervision_id}
++--     siguen siendo el CACHÉ que lee lib/acceso.js (congelado); el endpoint de sustitución
++--     los sincroniza en UN SOLO punto, transaccional (cache↔roster nunca deriva).
++--   · NO se borra a nadie: usuario_id es ON DELETE RESTRICT (no se puede eliminar una
++--     persona referenciada en el roster — solo sustituirla).
++--   · INMUTABILIDAD: la identidad de una asignación (contrato/rol/persona/inicio/sustituye_a)
++--     es inalterable por trigger; SOLO se permite CERRARLA una vez (vigencia_hasta NULL→fecha).
++--   · Las FIRMAS de la bitácora se atan a usuario_id (cuenta) con sus propios triggers de
++--     inmutabilidad: este esquema NO toca bitacora_*, así una firma pasada conserva al
++--     firmante ORIGINAL; la sustitución solo afecta firmas FUTURAS.
++-- =====================================================================
++
++CREATE TABLE IF NOT EXISTS contrato_roster (
++  id             SERIAL PRIMARY KEY,
++  contrato_id    INTEGER NOT NULL REFERENCES contratos(id) ON DELETE CASCADE,
++  rol            VARCHAR(20) NOT NULL CHECK (rol IN ('residente','superintendente','supervision')),
++  -- RESTRICT: la persona NO se borra, se sustituye (requisito art. 125 fr. I g).
++  usuario_id     INTEGER NOT NULL REFERENCES usuarios(id) ON DELETE RESTRICT,
++  vigencia_desde DATE NOT NULL DEFAULT CURRENT_DATE,
++  vigencia_hasta DATE,                                            -- NULL = asignación ACTIVA (vigente)
++  motivo         TEXT,                                            -- razón de la sustitución que creó esta fila
++  -- A qué asignación anterior reemplaza (traza la cadena). NO ACTION (no SET NULL): un SET NULL
++  -- dispararía UPDATE y chocaría con el trigger de inmutabilidad; en la cascada del contrato
++  -- ambas filas mueren en el mismo statement, así el chequeo diferido pasa.
++  sustituye_a    INTEGER REFERENCES contrato_roster(id) ON DELETE NO ACTION,
++  -- nota de bitácora (art. 125 fr. I g) que documenta la sustitución, registrada aparte por el
++  -- residente (HU-09). Opcional; NO ACTION porque la nota es inmutable.
++  nota_id        INTEGER REFERENCES bitacora_notas(id) ON DELETE NO ACTION,
++  registrado_por INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,  -- del JWT (quién ejecutó la sustitución)
++  created_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
++  CONSTRAINT chk_contrato_roster_vigencia CHECK (vigencia_hasta IS NULL OR vigencia_hasta >= vigencia_desde)
++);
++-- UNA sola persona ACTIVA por (contrato, rol): índice único PARCIAL (las cerradas no cuentan).
++CREATE UNIQUE INDEX IF NOT EXISTS uq_contrato_roster_activo ON contrato_roster(contrato_id, rol) WHERE vigencia_hasta IS NULL;
++CREATE INDEX IF NOT EXISTS idx_contrato_roster_contrato ON contrato_roster(contrato_id);
++CREATE INDEX IF NOT EXISTS idx_contrato_roster_usuario ON contrato_roster(usuario_id);
++CREATE INDEX IF NOT EXISTS idx_contrato_roster_sustituye ON contrato_roster(sustituye_a);
++
++-- Inmutabilidad con transición controlada (espejo de sigecop_firma_transicion): la identidad
++-- de una asignación no se reasigna; SOLO se permite cerrarla (NULL→fecha) UNA vez. Bloquea
++-- UPDATE indebido; el DELETE en cascada del contrato sigue permitido (no se intercepta DELETE).
++CREATE OR REPLACE FUNCTION sigecop_roster_transicion() RETURNS trigger AS $func$
++BEGIN
++  IF NEW.contrato_id    IS DISTINCT FROM OLD.contrato_id
++     OR NEW.rol         IS DISTINCT FROM OLD.rol
++     OR NEW.usuario_id  IS DISTINCT FROM OLD.usuario_id
++     OR NEW.vigencia_desde IS DISTINCT FROM OLD.vigencia_desde
++     OR NEW.sustituye_a IS DISTINCT FROM OLD.sustituye_a
++     OR NEW.created_at  IS DISTINCT FROM OLD.created_at THEN
++    RAISE EXCEPTION 'Una asignación del roster es inmutable; la sustitución crea una fila NUEVA, no se reasigna (art. 125 fr. I g RLOPSRM)';
++  END IF;
++  IF OLD.vigencia_hasta IS NOT NULL THEN
++    RAISE EXCEPTION 'La asignación ya fue cerrada y es inalterable';
++  END IF;
++  RETURN NEW;  -- permite cerrar (vigencia_hasta NULL→fecha) y ajustar metadatos (motivo/nota/registrado_por)
++END;
++$func$ LANGUAGE plpgsql;
++
++DROP TRIGGER IF EXISTS trg_contrato_roster_transicion ON contrato_roster;
++CREATE TRIGGER trg_contrato_roster_transicion
++  BEFORE UPDATE ON contrato_roster
++  FOR EACH ROW EXECUTE FUNCTION sigecop_roster_transicion();
++
++-- SEED del roster desde los punteros escalares EXISTENTES (idempotente, NO destructivo):
++-- una fila ACTIVA por cada puntero presente, si el (contrato, rol) aún no tiene activa. Así la
++-- BD de Render (con sus contratos ya creados) queda con el roster derivable sin perder datos.
++INSERT INTO contrato_roster (contrato_id, rol, usuario_id, vigencia_desde, motivo)
++SELECT c.id, 'residente', c.residente_id, COALESCE(c.fecha_inicio, c.created_at::date, CURRENT_DATE), 'Asignación inicial (alta del contrato)'
++  FROM contratos c
++ WHERE c.residente_id IS NOT NULL
++   AND NOT EXISTS (SELECT 1 FROM contrato_roster r WHERE r.contrato_id = c.id AND r.rol = 'residente' AND r.vigencia_hasta IS NULL);
++INSERT INTO contrato_roster (contrato_id, rol, usuario_id, vigencia_desde, motivo)
++SELECT c.id, 'superintendente', c.superintendente_id, COALESCE(c.fecha_inicio, c.created_at::date, CURRENT_DATE), 'Asignación inicial (alta del contrato)'
++  FROM contratos c
++ WHERE c.superintendente_id IS NOT NULL
++   AND NOT EXISTS (SELECT 1 FROM contrato_roster r WHERE r.contrato_id = c.id AND r.rol = 'superintendente' AND r.vigencia_hasta IS NULL);
++INSERT INTO contrato_roster (contrato_id, rol, usuario_id, vigencia_desde, motivo)
++SELECT c.id, 'supervision', c.supervision_id, COALESCE(c.fecha_inicio, c.created_at::date, CURRENT_DATE), 'Asignación inicial (alta del contrato)'
++  FROM contratos c
++ WHERE c.supervision_id IS NOT NULL
++   AND NOT EXISTS (SELECT 1 FROM contrato_roster r WHERE r.contrato_id = c.id AND r.rol = 'supervision' AND r.vigencia_hasta IS NULL);
+diff --git a/backend/src/routes/roster.routes.js b/backend/src/routes/roster.routes.js
+new file mode 100644
+index 0000000..8d644d8
+--- /dev/null
++++ b/backend/src/routes/roster.routes.js
+@@ -0,0 +1,16 @@
++// PASADA F (Fundación) — rutas del roster del contrato (sustitución de personas, art. 125
++// fr. I g RLOPSRM). Archivo NUEVO. Se monta en server.js como /api/roster.
++const express = require('express');
++const { authMiddleware } = require('../middlewares/auth.middleware');
++const { leerRoster, sustituirPersona } = require('../controllers/roster.controller');
++
++const router = express.Router();
++
++// Toda la sección exige sesión válida. El acotamiento por participación y la autoridad para
++// sustituir se validan en el controller (reusa lib/acceso: esParteOSupervision).
++router.use(authMiddleware);
++
++router.get('/contrato/:id', leerRoster);                 // roster vigente (derivado) + histórico
++router.post('/contrato/:id/sustituir', sustituirPersona); // cierra anterior + crea nueva + sync caché
++
++module.exports = router;
+diff --git a/frontend/src/App.jsx b/frontend/src/App.jsx
+index 517fa1d..ed3fc28 100644
+--- a/frontend/src/App.jsx
++++ b/frontend/src/App.jsx
+@@ -31,6 +31,7 @@ import ReingresoEstimacion from './pages/ReingresoEstimacion.jsx';
+ import TableroEstimaciones from './pages/TableroEstimaciones.jsx';
+ import PortafolioEjecutivo from './pages/PortafolioEjecutivo.jsx';
+ import ExportacionReportes from './pages/ExportacionReportes.jsx';
++import RosterContrato from './pages/RosterContrato.jsx';
+ 
+ // Mapa ruta -> código de HU (excluye HU-00, que es login/dashboard). Permite que la
+ // guarda de ruta sepa qué HU corresponde a cada path para validar el acceso por rol.
+@@ -94,6 +95,9 @@ export default function App() {
+                 POST /auth/register. Reemplaza la antigua ruta envuelta en SoloModoProyecto. */}
+             <Route path="/solicitud-acceso" element={<SolicitudRegistro />} />
+             <Route path="/usuarios/solicitudes" element={<SoloRol roles={['dependencia']}><SolicitudesRegistro /></SoloRol>} />
++            {/* Pasada F (Fundación): sustitución de personas del roster (art. 125 fr. I g). Fuera del
++                catálogo de HU (como por-firmar/solicitudes) para no alterar permisos.js ni el conteo. */}
++            <Route path="/contratos/roster" element={<SoloRol roles={['dependencia', 'residente']}><RosterContrato /></SoloRol>} />
+             <Route path="*" element={<Navigate to="/" replace />} />
+           </Routes>
+         </ErrorBoundary>
+diff --git a/frontend/src/components/layout/Sidebar.jsx b/frontend/src/components/layout/Sidebar.jsx
+index f1cd818..945c378 100644
+--- a/frontend/src/components/layout/Sidebar.jsx
++++ b/frontend/src/components/layout/Sidebar.jsx
+@@ -122,6 +122,33 @@ export default function Sidebar() {
+           </div>
+         )}
+ 
++        {/* Roster del contrato: sustitución de personas (Pasada F, art. 125 fr. I g). La autoridad
++            es la dependencia o el residente asignado. Fuera del catálogo de HU (no altera permisos). */}
++        {['dependencia', 'residente'].includes(rol) && (
++          <div className="mt-6 pt-4 border-t border-slate-200">
++            <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 px-3 mb-2">
++              Roster del contrato
++            </div>
++            <nav className="space-y-1">
++              <NavLink
++                to="/contratos/roster"
++                className={({ isActive }) =>
++                  `flex items-start gap-3 px-3 py-2.5 rounded-md text-sm transition-colors border-l-4 ${
++                    isActive
++                      ? 'bg-sigecop-blue-light/60 text-sigecop-blue border-sigecop-accent font-semibold'
++                      : 'border-transparent text-slate-700 hover:bg-slate-50 hover:text-sigecop-blue'
++                  }`
++                }
++              >
++                <span className="text-lg leading-none flex-shrink-0">👥</span>
++                <div className="flex-1 min-w-0">
++                  <div className="text-sm leading-tight">Sustitución de personas</div>
++                </div>
++              </NavLink>
++            </nav>
++          </div>
++        )}
++
+       </div>
+     </aside>
+   );
+diff --git a/frontend/src/pages/RosterContrato.jsx b/frontend/src/pages/RosterContrato.jsx
+new file mode 100644
+index 0000000..daa99a9
+--- /dev/null
++++ b/frontend/src/pages/RosterContrato.jsx
+@@ -0,0 +1,208 @@
++import { useState, useEffect, useCallback } from 'react';
++import Breadcrumb from '../components/ui/Breadcrumb.jsx';
++import { useToast } from '../components/ui/Toast.jsx';
++import { useSesion } from '../context/SesionContext.jsx';
++import { api } from '../services/api.js';
++
++// Pasada F (Fundación) — Sustitución de personas del roster del contrato.
++// Fundamento Nivel 1 (literal, RLOPSRM art. 125 fr. I inciso g): al residente le corresponde
++// registrar "La SUSTITUCIÓN del superintendente, del anterior residente y de la supervisión".
++// Se SUSTITUYE, NO se borra: aquí se ve el roster vigente, el histórico de quién ocupó cada rol,
++// y se ejecuta la sustitución (el backend cierra la anterior + crea la nueva + sincroniza el caché).
++
++const ROL_LABEL = {
++  residente: 'Residente de obra',
++  superintendente: 'Superintendente (contratista)',
++  supervision: 'Supervisión externa'
++};
++const ROLES = ['residente', 'superintendente', 'supervision'];
++// rol-de-roster → rol-de-cuenta esperado (el backend lo valida).
++const ROL_CUENTA = { residente: 'residente', superintendente: 'contratista', supervision: 'supervision' };
++
++const fmtFecha = (iso) => {
++  if (!iso) return '—';
++  const p = String(iso).slice(0, 10).split('-');
++  return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : iso;
++};
++
++export default function RosterContrato() {
++  const { token } = useSesion();
++  const { showToast } = useToast();
++  const sinToken = !token;
++
++  const [contratos, setContratos] = useState([]);
++  const [contratoId, setContratoId] = useState('');
++  const [data, setData] = useState(null); // { vigente, historial }
++  const [cargando, setCargando] = useState(false);
++  const [error, setError] = useState(null);
++
++  // Formulario de sustitución
++  const [rolSust, setRolSust] = useState('');
++  const [elegibles, setElegibles] = useState([]);
++  const [nuevoId, setNuevoId] = useState('');
++  const [motivo, setMotivo] = useState('');
++  const [enviando, setEnviando] = useState(false);
++
++  useEffect(() => {
++    if (sinToken) return;
++    api.listarContratos().then((l) => setContratos(Array.isArray(l) ? l : [])).catch(() => setContratos([]));
++  }, [sinToken]);
++
++  const cargarRoster = useCallback(async (id) => {
++    if (!id) { setData(null); return; }
++    setCargando(true); setError(null);
++    try { setData(await api.rosterContrato(id)); }
++    catch (e) { setError(e.message || 'No se pudo cargar el roster'); setData(null); }
++    finally { setCargando(false); }
++  }, []);
++
++  useEffect(() => {
++    cargarRoster(contratoId);
++    setRolSust(''); setNuevoId(''); setMotivo(''); setElegibles([]);
++  }, [contratoId, cargarRoster]);
++
++  // Cargar cuentas elegibles para el rol elegido (para superintendente/supervisión usa
++  // /asignables; para residente, la lista de activos filtrada — puede venir vacía si el rol
++  // actual no tiene permiso de listarla, en cuyo caso se captura el ID manualmente).
++  useEffect(() => {
++    if (!rolSust) { setElegibles([]); return; }
++    setNuevoId('');
++    const cuenta = ROL_CUENTA[rolSust];
++    const load = cuenta === 'residente'
++      ? api.listarUsuarios('activo').then((u) => (Array.isArray(u) ? u.filter((x) => x.rol === 'residente') : [])).catch(() => [])
++      : api.listarAsignables(cuenta).catch(() => []);
++    load.then((list) => setElegibles(Array.isArray(list) ? list : []));
++  }, [rolSust]);
++
++  const sustituir = async () => {
++    if (!rolSust || !nuevoId || !motivo.trim()) { showToast('Elige rol, nueva persona y captura el motivo.'); return; }
++    setEnviando(true);
++    try {
++      await api.sustituirPersona(contratoId, { rol: rolSust, nuevoUsuarioId: Number(nuevoId), motivo: motivo.trim() });
++      showToast('Sustitución registrada. La persona anterior queda en el histórico (no se borra).');
++      setRolSust(''); setNuevoId(''); setMotivo('');
++      await cargarRoster(contratoId);
++    } catch (e) { showToast(e.message || 'No se pudo registrar la sustitución'); }
++    finally { setEnviando(false); }
++  };
++
++  const histDeRol = (rol) => (data?.historial || []).filter((h) => h.rol === rol);
++
++  return (
++    <div>
++      <Breadcrumb items={[{ label: 'Inicio', href: '/' }, { label: 'Roster del contrato' }]} />
++
++      <h1 className="text-2xl font-bold text-sigecop-blue mb-2">Sustitución de personas del roster</h1>
++      <p className="text-sm text-slate-600 mb-6 max-w-3xl">
++        Sustituye al residente, superintendente o supervisión <strong>conservando el histórico</strong> de
++        quién ocupó cada rol y desde cuándo. Una persona <strong>nunca se borra: se sustituye</strong>
++        (art. 125 fr. I inciso g RLOPSRM). Las firmas ya registradas conservan a su firmante original.
++      </p>
++
++      {sinToken ? (
++        <div data-testid="roster-sin-sesion" className="rounded-md border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-600">
++          Inicia sesión (no en modo demostración) como Dependencia o Residente para gestionar el roster.
++        </div>
++      ) : (
++        <>
++          <div className="mb-6 max-w-md">
++            <label className="block text-sm font-medium text-slate-700 mb-1">Contrato</label>
++            <select
++              data-testid="roster-contrato"
++              className="sg-input"
++              value={contratoId}
++              onChange={(e) => setContratoId(e.target.value)}
++            >
++              <option value="">— Selecciona un contrato —</option>
++              {contratos.map((c) => (
++                <option key={c.id} value={c.id}>{c.folio} — {c.objeto || c.contratista || `Contrato ${c.id}`}</option>
++              ))}
++            </select>
++          </div>
++
++          {!contratoId ? (
++            <p className="text-sm text-slate-500">Selecciona un contrato para ver y gestionar su roster.</p>
++          ) : cargando ? (
++            <p className="text-sm text-slate-500">Cargando roster…</p>
++          ) : error ? (
++            <div data-testid="roster-error" className="rounded-md border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
++          ) : data ? (
++            <div className="grid gap-6 lg:grid-cols-3">
++              {/* Roster vigente + histórico por rol */}
++              <div className="lg:col-span-2 space-y-4" data-testid="roster-vigente">
++                {ROLES.map((rol) => {
++                  const v = data.vigente?.[rol];
++                  const hist = histDeRol(rol);
++                  return (
++                    <div key={rol} className="bg-white border border-slate-200 rounded-md p-4" data-testid={`roster-rol-${rol}`}>
++                      <div className="flex items-center justify-between flex-wrap gap-2">
++                        <div>
++                          <div className="text-xs uppercase tracking-wider text-slate-500 font-semibold">{ROL_LABEL[rol]}</div>
++                          <div className="text-base font-bold text-sigecop-blue" data-testid={`vigente-${rol}`}>
++                            {v ? (v.nombre || `Usuario #${v.usuario_id}`) : '— sin asignar —'}
++                          </div>
++                          {v && <div className="text-xs text-slate-500">Vigente desde {fmtFecha(v.desde)}{!v.versionado && ' · (sin versionar aún)'}</div>}
++                        </div>
++                      </div>
++                      {hist.length > 0 && (
++                        <table className="w-full text-xs mt-3 border-t border-slate-100">
++                          <thead className="text-slate-500">
++                            <tr><th className="text-left py-1">Persona</th><th className="text-left">Desde</th><th className="text-left">Hasta</th><th className="text-left">Motivo</th></tr>
++                          </thead>
++                          <tbody>
++                            {hist.map((h) => (
++                              <tr key={h.id} className={`border-t border-slate-50 ${h.vigencia_hasta ? 'text-slate-500' : 'text-slate-800 font-medium'}`}>
++                                <td className="py-1">{h.usuario_nombre || `#${h.usuario_id}`}</td>
++                                <td>{fmtFecha(h.vigencia_desde)}</td>
++                                <td>{h.vigencia_hasta ? fmtFecha(h.vigencia_hasta) : <span className="text-green-700 font-semibold">vigente</span>}</td>
++                                <td className="truncate max-w-[12rem]" title={h.motivo || ''}>{h.motivo || '—'}</td>
++                              </tr>
++                            ))}
++                          </tbody>
++                        </table>
++                      )}
++                    </div>
++                  );
++                })}
++              </div>
++
++              {/* Formulario de sustitución */}
++              <div className="bg-white border border-slate-200 rounded-md p-4 h-fit" data-testid="roster-form-sustituir">
++                <h2 className="text-sm font-bold text-sigecop-blue mb-3">Registrar una sustitución</h2>
++                <label className="block text-xs font-medium text-slate-600 mb-1">Rol a sustituir</label>
++                <select data-testid="sust-rol" className="sg-input mb-3" value={rolSust} onChange={(e) => setRolSust(e.target.value)}>
++                  <option value="">— Elige rol —</option>
++                  {ROLES.map((r) => <option key={r} value={r}>{ROL_LABEL[r]}</option>)}
++                </select>
++
++                <label className="block text-xs font-medium text-slate-600 mb-1">Nueva persona</label>
++                {elegibles.length > 0 ? (
++                  <select data-testid="sust-nuevo" className="sg-input mb-3" value={nuevoId} onChange={(e) => setNuevoId(e.target.value)} disabled={!rolSust}>
++                    <option value="">— Elige a la nueva persona —</option>
++                    {elegibles.map((u) => <option key={u.id} value={u.id}>{u.nombre} ({u.email})</option>)}
++                  </select>
++                ) : (
++                  <input data-testid="sust-nuevo-id" type="number" min="1" className="sg-input mb-3" placeholder="ID de la nueva persona" value={nuevoId} onChange={(e) => setNuevoId(e.target.value)} disabled={!rolSust} />
++                )}
++
++                <label className="block text-xs font-medium text-slate-600 mb-1">Motivo (obligatorio)</label>
++                <textarea data-testid="sust-motivo" className="sg-input mb-3" rows={3} placeholder="Renuncia, cese, reasignación…" value={motivo} onChange={(e) => setMotivo(e.target.value)} />
++
++                <button
++                  type="button"
++                  data-testid="btn-sustituir"
++                  onClick={sustituir}
++                  disabled={enviando || !rolSust || !nuevoId || !motivo.trim()}
++                  className="w-full px-3 py-2 rounded-md bg-sigecop-blue text-white text-sm font-semibold hover:bg-sigecop-blue/90 disabled:opacity-50"
++                >
++                  {enviando ? 'Registrando…' : 'Sustituir (conserva el histórico)'}
++                </button>
++                <p className="text-[11px] text-slate-500 mt-2">La persona anterior NO se borra: queda cerrada en el histórico. La sustitución solo afecta firmas futuras.</p>
++              </div>
++            </div>
++          ) : null}
++        </>
++      )}
++    </div>
++  );
++}
+diff --git a/frontend/src/services/api.js b/frontend/src/services/api.js
+index ca1bd0e..dff6c14 100644
+--- a/frontend/src/services/api.js
++++ b/frontend/src/services/api.js
+@@ -100,5 +100,9 @@ export const api = {
+   avanceContrato: (contratoId) => request(`/estimaciones/contrato/${contratoId}/avance`),
+   estimacionesDeContrato: (contratoId) => request(`/estimaciones/contrato/${contratoId}`),
+   detalleEstimacion: (id) => request(`/estimaciones/${id}`),
+-  integrarEstimacion: (payload) => request('/estimaciones', { method: 'POST', body: JSON.stringify(payload) })
++  integrarEstimacion: (payload) => request('/estimaciones', { method: 'POST', body: JSON.stringify(payload) }),
++  // Pasada F: roster del contrato (sustitución de personas, art. 125 fr. I g RLOPSRM). Lectura por
++  // participación; sustituir = dependencia o residente asignado (lo valida el backend).
++  rosterContrato: (contratoId) => request(`/roster/contrato/${contratoId}`),
++  sustituirPersona: (contratoId, payload) => request(`/roster/contrato/${contratoId}/sustituir`, { method: 'POST', body: JSON.stringify(payload) })
+ };

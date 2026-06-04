@@ -31,6 +31,7 @@ import ReingresoEstimacion from './pages/ReingresoEstimacion.jsx';
 import TableroEstimaciones from './pages/TableroEstimaciones.jsx';
 import PortafolioEjecutivo from './pages/PortafolioEjecutivo.jsx';
 import ExportacionReportes from './pages/ExportacionReportes.jsx';
+import RosterContrato from './pages/RosterContrato.jsx';
 
 // Mapa ruta -> código de HU (excluye HU-00, que es login/dashboard). Permite que la
 // guarda de ruta sepa qué HU corresponde a cada path para validar el acceso por rol.
@@ -94,6 +95,9 @@ export default function App() {
                 POST /auth/register. Reemplaza la antigua ruta envuelta en SoloModoProyecto. */}
             <Route path="/solicitud-acceso" element={<SolicitudRegistro />} />
             <Route path="/usuarios/solicitudes" element={<SoloRol roles={['dependencia']}><SolicitudesRegistro /></SoloRol>} />
+            {/* Pasada F (Fundación): sustitución de personas del roster (art. 125 fr. I g). Fuera del
+                catálogo de HU (como por-firmar/solicitudes) para no alterar permisos.js ni el conteo. */}
+            <Route path="/contratos/roster" element={<SoloRol roles={['dependencia', 'residente']}><RosterContrato /></SoloRol>} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </ErrorBoundary>

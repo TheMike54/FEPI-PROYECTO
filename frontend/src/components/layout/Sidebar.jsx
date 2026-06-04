@@ -122,6 +122,33 @@ export default function Sidebar() {
           </div>
         )}
 
+        {/* Roster del contrato: sustitución de personas (Pasada F, art. 125 fr. I g). La autoridad
+            es la dependencia o el residente asignado. Fuera del catálogo de HU (no altera permisos). */}
+        {['dependencia', 'residente'].includes(rol) && (
+          <div className="mt-6 pt-4 border-t border-slate-200">
+            <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 px-3 mb-2">
+              Roster del contrato
+            </div>
+            <nav className="space-y-1">
+              <NavLink
+                to="/contratos/roster"
+                className={({ isActive }) =>
+                  `flex items-start gap-3 px-3 py-2.5 rounded-md text-sm transition-colors border-l-4 ${
+                    isActive
+                      ? 'bg-sigecop-blue-light/60 text-sigecop-blue border-sigecop-accent font-semibold'
+                      : 'border-transparent text-slate-700 hover:bg-slate-50 hover:text-sigecop-blue'
+                  }`
+                }
+              >
+                <span className="text-lg leading-none flex-shrink-0">👥</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm leading-tight">Sustitución de personas</div>
+                </div>
+              </NavLink>
+            </nav>
+          </div>
+        )}
+
       </div>
     </aside>
   );
