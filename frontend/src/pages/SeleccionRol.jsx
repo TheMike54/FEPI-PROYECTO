@@ -95,6 +95,10 @@ function FormLogin({ onIrRegistro, mensaje, setMensaje }) {
   );
 }
 
+// Corrección profe (04-jun): el nombre completo (nombre + apellido[s]) aparece en la bitácora
+// (art. 123 RLOPSRM); se exige ≥2 palabras. Espejo de la validación del backend (auth.controller).
+const esNombreCompleto = (n) => (String(n || '').trim().match(/\p{L}{2,}/gu) || []).length >= 2;
+
 function FormRegistro({ onIrLogin, setMensaje }) {
   const [nombre, setNombre] = useState('');
   const [email, setEmail] = useState('');
@@ -111,6 +115,10 @@ function FormRegistro({ onIrLogin, setMensaje }) {
 
     if (!nombre.trim() || !email.trim() || !password) {
       setErrorLocal('Completa todos los campos.');
+      return;
+    }
+    if (!esNombreCompleto(nombre)) {
+      setErrorLocal('Captura tu nombre y apellido(s): el nombre completo aparece en la bitácora.');
       return;
     }
     if (password.length < 8) {

@@ -8,6 +8,10 @@ import { api } from '../services/api.js';
 // crea la cuenta en estado 'pendiente' hasta que la dependencia la aprueba. Antes era una
 // maqueta "Propuesta · a validar" del modo proyecto (showToast, sin backend, con contratoDummy);
 // se eliminó ese andamiaje. Es autosuficiente (no usa Layout): trae su propia cabecera.
+// Corrección profe (04-jun): el nombre completo (nombre + apellido[s]) aparece en la bitácora
+// (art. 123 RLOPSRM); se exige ≥2 palabras. Espejo de la validación del backend (auth.controller).
+const esNombreCompleto = (n) => (String(n || '').trim().match(/\p{L}{2,}/gu) || []).length >= 2;
+
 export default function SolicitudRegistro() {
   const [nombre, setNombre] = useState('');
   const [email, setEmail] = useState('');
@@ -25,6 +29,10 @@ export default function SolicitudRegistro() {
 
     if (!nombre.trim() || !email.trim() || !password) {
       setError('Completa nombre, correo y contraseña.');
+      return;
+    }
+    if (!esNombreCompleto(nombre)) {
+      setError('Captura tu nombre y apellido(s): el nombre completo aparece en la bitácora.');
       return;
     }
     if (password.length < 8) {

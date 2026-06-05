@@ -20,12 +20,16 @@ async function login(ctx, email) {
 const auth = (token) => ({ Authorization: `Bearer ${token}` });
 
 async function crearContrato(ctx, token, folio, superId, supId) {
+  // Corrección profe (04-jun): el alta exige dependenciaId (cuenta rol dependencia). Lo resolvemos
+  // aquí (login de la cuenta semilla dependencia) para no tocar los call sites. Los textos
+  // contratista/dependencia ya no se envían: el backend los deriva del nombre de la cuenta.
+  const D = await login(ctx, 'dependencia@sigecop.test');
   const r = await ctx.post(`${API}/contratos`, {
     headers: auth(token),
     data: {
       folio, tipo: 'Obra pública sobre la base de precios unitarios', objeto: 'Obra e2e bitácora',
-      contratista: 'Constructora E2E', dependencia: 'Dependencia E2E', plazoDias: 60, fechaInicio: '2026-06-01',
-      superintendenteId: superId, supervisionId: supId, anticipoPct: null, juridicos: {},
+      plazoDias: 60, fechaInicio: '2026-06-01',
+      superintendenteId: superId, supervisionId: supId, dependenciaId: D.user.id, anticipoPct: null, juridicos: {},
       conceptos: [{ clave: 'A1', concepto: 'Concepto e2e', unidad: 'm³', cantidad: 100, pu: 50 }],
       ciclo: 'mensual', programa: [{ clave: 'A1', periodoNumero: 1, cantidad: 100 }], garantias: []
     }

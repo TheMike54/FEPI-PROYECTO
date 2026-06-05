@@ -30,14 +30,16 @@ async function listarUsuarios(req, res) {
   }
 }
 
-// GET /api/usuarios/asignables?rol=contratista|supervision — cuentas aprobadas de
-// ese rol, para que el residente arme el equipo del contrato. Solo datos públicos.
-const ROLES_ASIGNABLES = ['contratista', 'supervision'];
+// GET /api/usuarios/asignables?rol=contratista|supervision|dependencia — cuentas aprobadas de
+// ese rol, para que el residente arme el contrato. Solo datos públicos.
+// Corrección profe (04-jun): se añade 'dependencia' para que en el alta la dependencia se
+// SELECCIONE de una cuenta registrada (antes era texto libre). Misma query (filtra por rol+estado).
+const ROLES_ASIGNABLES = ['contratista', 'supervision', 'dependencia'];
 async function listarAsignables(req, res) {
   try {
     const { rol } = req.query;
     if (!ROLES_ASIGNABLES.includes(rol)) {
-      return res.status(400).json({ error: 'rol debe ser contratista o supervision' });
+      return res.status(400).json({ error: 'rol debe ser contratista, supervision o dependencia' });
     }
     const result = await query(
       `SELECT id, nombre, email, rol

@@ -37,7 +37,9 @@ async function loginReal(page, email, password) {
 
 test('HU-Registro — auto-registro, rechazo por pendiente, aprobación y acceso', async ({ page }) => {
   const email = `nuevo.e2e.${Date.now()}@sigecop.test`;
-  const nombre = `Usuario E2E ${Date.now()}`;
+  // Corrección profe (04-jun): el registro exige nombre + apellido(s) (≥2 palabras); "Usuario Prueba"
+  // las cumple. El sufijo numérico (Date.now) solo hace único el valor mostrado en el header.
+  const nombre = `Usuario Prueba ${Date.now()}`;
 
   await freshHome(page);
 
@@ -94,4 +96,24 @@ test('HU-Registro — auto-registro, rechazo por pendiente, aprobación y acceso
   // Entró al sistema: login fuera y el header muestra su nombre.
   await expect(page.locator('#login-usuario')).toHaveCount(0);
   await expect(page.getByText(nombre)).toBeVisible();
+});
+
+// Corrección profe (04-jun): el nombre completo (nombre + apellidos) aparece en la bitácora; no se
+// admite registrarse con un solo nombre. Validación de cliente (espejo del candado del backend).
+test('HU-Registro — el nombre debe incluir apellido(s): rechaza un solo nombre', async ({ page }) => {
+  await freshHome(page);
+  await page.getByTestId('link-registro').click();
+  await expect(page.getByTestId('form-registro')).toBeVisible();
+
+  await page.getByTestId('reg-nombre').fill('Iván');                 // un solo token → inválido
+  await page.getByTestId('reg-email').fill(`solo.nombre.${Date.now()}@sigecop.test`);
+  await page.getByTestId('reg-rol').selectOption('residente');
+  await page.getByTestId('reg-password').fill(PWD_NUEVO);
+  await page.getByTestId('reg-password2').fill(PWD_NUEVO);
+  await page.getByTestId('reg-submit').click();
+
+  // No envía: muestra error y sigue en el formulario de registro.
+  await expect(page.getByTestId('registro-error')).toBeVisible();
+  await expect(page.getByTestId('registro-error')).toContainText('apellido');
+  await expect(page.getByTestId('form-registro')).toBeVisible();
 });

@@ -275,6 +275,13 @@ CREATE INDEX IF NOT EXISTS idx_contratos_residente ON contratos(residente_id);
 CREATE INDEX IF NOT EXISTS idx_contratos_superintendente ON contratos(superintendente_id);
 CREATE INDEX IF NOT EXISTS idx_contratos_supervision ON contratos(supervision_id);
 
+-- Corrección profe (04-jun): la DEPENDENCIA del contrato pasa de texto libre a CUENTA registrada
+-- (rol 'dependencia'). Puntero escalar de la parte contratante. NO firma la bitácora (art. 123
+-- RLOPSRM: el residente la representa) → NO entra al contrato_roster. El texto `dependencia` se
+-- conserva (lo deriva el controller del nombre de la cuenta) para la lista/detalle. Aditivo, SET NULL.
+ALTER TABLE contratos ADD COLUMN IF NOT EXISTS dependencia_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_contratos_dependencia_id ON contratos(dependencia_id);
+
 -- (2) Firmantes de la apertura, ligados a CUENTA (cada quien firma desde la
 --     suya). usuario_id + rol_en_firma reemplazan la captura de texto libre
 --     (firmante/cargo/correo quedan en desuso). UNIQUE por (apertura, cuenta).
@@ -663,14 +670,26 @@ END $$;
 -- contraseña Sigecop2026! → reusa el hash del residente). Estas 5 cuentas existen en
 -- AMBAS bases (local y Render). La cuenta de finanzas (Isha) es SOLO LOCAL y se crea con
 -- scripts/crear-usuario.js (NO se versiona su contraseña). Ver docs/Cuentas_Prueba_SIGECOP.md.
+-- Corrección profe (04-jun): los nombres demo se capturan COMPLETOS (nombre + apellidos), porque
+-- el nombre aparece en la bitácora (art. 123 RLOPSRM). Son nombres de FIXTURE (no personas reales).
+-- La cuenta del contratista ahora es una PERSONA (el superintendente que firma), no una razón social.
 INSERT INTO usuarios (nombre, email, password_hash, rol) VALUES
-  ('Ing. Residente Demo', 'residente@sigecop.test', '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'residente'),
-  ('Contratista Demo S.A.', 'contratista@sigecop.test', '$2a$10$h7eLpWBwF5O3smp/egT3wupSylCFRXlwQQIeHbnvCdJOmM5xAhdgK', 'contratista'),
-  ('Supervisión Externa Demo', 'supervision@sigecop.test', '$2a$10$zpUoEVcL3IZhAtpS4kexoemneAaX93X7.A3kbLPYOBwgw51eZC33e', 'supervision'),
-  ('Dependencia Demo', 'dependencia@sigecop.test', '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'dependencia'),
+  ('Ing. Iván Residente Demo', 'residente@sigecop.test', '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'residente'),
+  ('Arq. Carlos Contratista Demo', 'contratista@sigecop.test', '$2a$10$h7eLpWBwF5O3smp/egT3wupSylCFRXlwQQIeHbnvCdJOmM5xAhdgK', 'contratista'),
+  ('Ing. Sofía Supervisión Demo', 'supervision@sigecop.test', '$2a$10$zpUoEVcL3IZhAtpS4kexoemneAaX93X7.A3kbLPYOBwgw51eZC33e', 'supervision'),
+  ('Lic. Diana Dependencia Demo', 'dependencia@sigecop.test', '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'dependencia'),
   ('Profesor (Sistemas)', 'csilvasa@ipn.mx', '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'residente'),
-  ('Finanzas Demo', 'finanzas@sigecop.test', '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'finanzas')
+  ('C.P. Fernando Finanzas Demo', 'finanzas@sigecop.test', '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'finanzas')
 ON CONFLICT (email) DO NOTHING;
+
+-- Backfill idempotente para BASES YA SEMBRADAS con los nombres incompletos viejos (el INSERT de
+-- arriba no las toca por ON CONFLICT). Solo actualiza si el nombre sigue siendo el demo viejo
+-- (no pisa cambios manuales). Re-ejecutar no hace nada una vez completados.
+UPDATE usuarios SET nombre = 'Ing. Iván Residente Demo'     WHERE email = 'residente@sigecop.test'   AND nombre = 'Ing. Residente Demo';
+UPDATE usuarios SET nombre = 'Arq. Carlos Contratista Demo' WHERE email = 'contratista@sigecop.test' AND nombre = 'Contratista Demo S.A.';
+UPDATE usuarios SET nombre = 'Ing. Sofía Supervisión Demo'  WHERE email = 'supervision@sigecop.test' AND nombre = 'Supervisión Externa Demo';
+UPDATE usuarios SET nombre = 'Lic. Diana Dependencia Demo'  WHERE email = 'dependencia@sigecop.test' AND nombre = 'Dependencia Demo';
+UPDATE usuarios SET nombre = 'C.P. Fernando Finanzas Demo'  WHERE email = 'finanzas@sigecop.test'    AND nombre = 'Finanzas Demo';
 
 INSERT INTO contratos (folio, tipo, objeto, contratista, dependencia, monto, plazo_dias, fecha_inicio, fecha_termino, created_by)
 SELECT

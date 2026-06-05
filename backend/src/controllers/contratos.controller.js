@@ -10,9 +10,11 @@ const { generarPeriodos, guardarMatriz } = require('../lib/programa');
 // 'monto' NO se captura: se DERIVA del catálogo (Σ ROUND(cantidad×pu,2), art. 45 fr. IX
 // RLOPSRM: el catálogo con sus importes ES el presupuesto). Sin catálogo (precio alzado)
 // se captura aparte; ver crearContrato.
+// Corrección profe (04-jun): 'contratista' y 'dependencia' SALEN de los requeridos de texto:
+// ahora son CUENTAS seleccionadas (contratista = superintendenteId; dependencia = dependenciaId)
+// y el texto de esas columnas se DERIVA del nombre de la cuenta (no se captura a mano).
 const REQUIRED_FIELDS = [
-  'folio', 'tipo', 'objeto', 'contratista', 'dependencia',
-  'plazoDias', 'fechaInicio'
+  'folio', 'tipo', 'objeto', 'plazoDias', 'fechaInicio'
 ];
 
 // --- Reglas de dominio HU-01 ---
@@ -63,8 +65,10 @@ async function crearContrato(req, res) {
   // Regla 3: la fecha de término se DERIVA del inicio + plazo (no se confía en el cliente).
   const fechaTerminoDerivada = derivarTermino(body.fechaInicio, plazoDias);
 
-  // T3: longitud de los campos de texto (evita 22001 desde la BD).
-  const LIMITES_TEXTO = { folio: 50, tipo: 80, contratista: 200, dependencia: 200 };
+  // T3: longitud de los campos de texto (evita 22001 desde la BD). Corrección profe (04-jun):
+  // contratista/dependencia SALEN de aquí — ya no llegan del body, se DERIVAN del nombre de la cuenta
+  // seleccionada (≤150 por VARCHAR(150) de usuarios.nombre, holgado contra el VARCHAR(200) de contratos).
+  const LIMITES_TEXTO = { folio: 50, tipo: 80 };
   for (const [campo, max] of Object.entries(LIMITES_TEXTO)) {
     if (body[campo] != null && String(body[campo]).length > max) {
       return res.status(400).json({ error: `El campo "${campo}" excede el máximo de ${max} caracteres` });
@@ -205,20 +209,35 @@ async function crearContrato(req, res) {
     catch (e) { return res.status(400).json({ error: 'No se pudieron generar los periodos del ciclo: ' + e.message }); }
   }
 
-  // Equipo del contrato: residente = usuario del token; superintendente (cuenta
-  // 'contratista' aprobada) OBLIGATORIO; supervisión (cuenta 'supervision' aprobada)
-  // OPCIONAL. Se validan rol y estado contra la BD (no se confía en el cliente).
+  // Personas del contrato, ligadas a CUENTAS (corrección profe 04-jun: nada de texto libre):
+  //   · residente   = usuario del token (firma la bitácora).
+  //   · contratista = superintendenteId (cuenta rol 'contratista' APROBADA), OBLIGATORIO; es el
+  //     superintendente de obra que firma la bitácora. El texto `contratista` se deriva de su nombre.
+  //   · supervisión = supervisionId (cuenta rol 'supervision' aprobada), OPCIONAL (firma si existe).
+  //   · dependencia = dependenciaId (cuenta rol 'dependencia' aprobada), OBLIGATORIO; parte
+  //     contratante. El texto `dependencia` se deriva de su nombre. (No firma la bitácora diaria:
+  //     art. 123 RLOPSRM; el residente la representa, por eso NO entra al roster.)
+  // Rol y estado se validan contra la BD (no se confía en el cliente).
   const superintendenteId = numOrNull(body.superintendenteId);
   const supervisionId = numOrNull(body.supervisionId);
+  const dependenciaId = numOrNull(body.dependenciaId);
   if (superintendenteId === null) {
-    return res.status(400).json({ error: 'Debes asignar un superintendente (cuenta de contratista aprobada)' });
+    return res.status(400).json({ error: 'Debes asignar un contratista/superintendente (cuenta de contratista aprobada)' });
   }
-  const equipoIds = supervisionId === null ? [superintendenteId] : [superintendenteId, supervisionId];
-  const equipo = await pool.query('SELECT id, rol, estado FROM usuarios WHERE id = ANY($1)', [equipoIds]);
+  if (dependenciaId === null) {
+    return res.status(400).json({ error: 'Debes seleccionar la dependencia (cuenta de dependencia aprobada)' });
+  }
+  const equipoIds = [superintendenteId, dependenciaId];
+  if (supervisionId !== null) equipoIds.push(supervisionId);
+  const equipo = await pool.query('SELECT id, nombre, rol, estado FROM usuarios WHERE id = ANY($1)', [equipoIds]);
   const equipoById = new Map(equipo.rows.map((u) => [u.id, u]));
   const sup = equipoById.get(superintendenteId);
   if (!sup || sup.rol !== 'contratista' || sup.estado !== 'activo') {
-    return res.status(400).json({ error: 'El superintendente debe ser una cuenta aprobada con rol contratista' });
+    return res.status(400).json({ error: 'El contratista/superintendente debe ser una cuenta aprobada con rol contratista' });
+  }
+  const dep = equipoById.get(dependenciaId);
+  if (!dep || dep.rol !== 'dependencia' || dep.estado !== 'activo') {
+    return res.status(400).json({ error: 'La dependencia debe ser una cuenta aprobada con rol dependencia' });
   }
   if (supervisionId !== null) {
     const sv = equipoById.get(supervisionId);
@@ -227,7 +246,11 @@ async function crearContrato(req, res) {
     }
   }
 
-  const { folio, tipo, objeto, contratista, dependencia, fechaInicio } = body;
+  // El texto de las columnas `contratista`/`dependencia` se DERIVA del nombre de la cuenta (fuente
+  // única; lo leen la lista de Registrados y el detalle). Ya no llega del body.
+  const { folio, tipo, objeto, fechaInicio } = body;
+  const contratista = sup.nombre;
+  const dependencia = dep.nombre;
 
   // --- 2) Transaccion: cabecera + bloques = una sola entidad (todo o nada) ----
   let client;
@@ -240,18 +263,35 @@ async function crearContrato(req, res) {
         `INSERT INTO contratos
            (folio, tipo, objeto, contratista, dependencia, monto, plazo_dias,
             fecha_inicio, fecha_termino, created_by, datos_juridicos, anticipo_pct,
-            residente_id, superintendente_id, supervision_id, ciclo_estimacion)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+            residente_id, superintendente_id, supervision_id, ciclo_estimacion, dependencia_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
          RETURNING id`,
         [
           folio, tipo, objeto, contratista, dependencia, monto, plazoDias,
           fechaInicio, fechaTerminoDerivada, req.user.id,
           juridicos ? JSON.stringify(juridicos) : null,
           anticipoPct,
-          req.user.id, superintendenteId, supervisionId, ciclo
+          req.user.id, superintendenteId, supervisionId, ciclo, dependenciaId
         ]
       );
       const contratoId = cab.rows[0].id;
+
+      // Corrección profe (04-jun): ASOCIAR las personas seleccionadas al contrato_roster (pasada 2,
+      // art. 125 fr. I g RLOPSRM) DESDE EL ALTA. Antes el roster solo se sembraba post-deploy desde
+      // los punteros escalares; ahora queda registrado al guardar. Una fila ACTIVA por rol; el cache
+      // escalar de `contratos` (que leen lib/acceso y la firma de bitácora) ya se escribió arriba —
+      // el roster es el registro histórico que habilita la sustitución (sustituir-no-borrar). La
+      // dependencia NO entra al roster (no firma la bitácora; art. 123 RLOPSRM). vigencia_desde =
+      // inicio del contrato (igual que el seed idempotente del schema, que no duplica por NOT EXISTS).
+      const rosterIniciales = [['residente', req.user.id], ['superintendente', superintendenteId]];
+      if (supervisionId !== null) rosterIniciales.push(['supervision', supervisionId]);
+      for (const [rolRoster, usuarioId] of rosterIniciales) {
+        await client.query(
+          `INSERT INTO contrato_roster (contrato_id, rol, usuario_id, vigencia_desde, motivo, registrado_por)
+           VALUES ($1, $2, $3, $4, 'Asignación inicial (alta del contrato)', $5)`,
+          [contratoId, rolRoster, usuarioId, fechaInicio, req.user.id]
+        );
+      }
 
       // clave→id de cada concepto: lo usa A2 para traducir las celdas del programa (C4/C6).
       const claveToConceptoId = new Map();

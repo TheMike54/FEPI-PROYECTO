@@ -98,12 +98,12 @@ const ERR0 = { campos: {}, conceptoIdx: null, programaError: false, garantiaIdx:
 // alta-v2 (4.2): valores iniciales VACÍOS (también usados por "Cancelar"). El contrato nuevo
 // arranca en blanco; el `tipo` mantiene la primera opción del select (campo obligatorio que
 // siempre tiene un valor válido).
+// Corrección profe (04-jun): contratista/dependencia YA NO son texto libre (pasan a CUENTAS
+// seleccionadas: contratista = superintendente; dependencia = dependenciaId). Por eso salen de aquí.
 const DATOS_INICIALES = {
   folio: '',
   tipo: 'Obra pública sobre la base de precios unitarios',
   objeto: '',
-  contratista: '',
-  dependencia: '',
   plazoDias: '',
   fechaInicio: ''
 };
@@ -172,11 +172,17 @@ function TabDatosGenerales({ datos, set, err, equipo, montoDerivado }) {
             <input className={inputCls(e.objeto)} value={datos.objeto} onChange={set('objeto')} data-testid="dg-objeto" />
           </Field>
         </div>
-        <Field label="Contratista" required>
-          <input className={inputCls(e.contratista)} maxLength={200} value={datos.contratista} onChange={set('contratista')} data-testid="dg-contratista" />
-        </Field>
-        <Field label="Dependencia" required>
-          <input className={inputCls(e.dependencia)} maxLength={200} value={datos.dependencia} onChange={set('dependencia')} data-testid="dg-dependencia" />
+        {/* Corrección profe (04-jun): la dependencia (parte contratante) se SELECCIONA de una cuenta
+            registrada rol 'dependencia' (antes texto libre). El contratista NO va aquí: es la cuenta
+            del superintendente (Equipo del contrato), quien firma la bitácora. */}
+        <Field label="Dependencia (cuenta contratante)" required hint="Cuenta registrada con rol dependencia.">
+          <select className={inputCls(eq.errDependencia)} value={eq.dependenciaId || ''} onChange={(ev) => eq.setDependenciaId(ev.target.value)} data-testid="dg-dependencia">
+            <option value="">— Selecciona —</option>
+            {(eq.asignablesDependencia || []).map((u) => <option key={u.id} value={u.id}>{u.nombre} · {u.email}</option>)}
+          </select>
+          {(eq.asignablesDependencia || []).length === 0 && (
+            <p className="text-xs text-amber-700 mt-1" data-testid="sin-dependencias">No hay cuentas de dependencia aprobadas; debe registrarse y aprobarse al menos una cuenta con rol dependencia.</p>
+          )}
         </Field>
         <Field label="Monto del contrato (derivado del catálogo)" hint="Σ de los importes del catálogo (sin IVA). No se captura; se deriva al centavo.">
           <input className="sg-input bg-slate-100 text-slate-700" value={montoNum ? formatoMXN.format(montoNum) : '—'} readOnly data-testid="monto-derivado" />
@@ -211,7 +217,9 @@ function TabDatosGenerales({ datos, set, err, equipo, montoDerivado }) {
           <Field label="Residente (tú)">
             <input className="sg-input bg-slate-100 text-slate-700" value={eq.usuarioNombre || '—'} readOnly data-testid="equipo-residente" />
           </Field>
-          <Field label="Superintendente" required hint="Cuenta de contratista aprobada.">
+          {/* Corrección profe (04-jun): esta cuenta ES el contratista (su superintendente de obra),
+              seleccionado de cuentas registradas. Firma la bitácora y queda en el contrato_roster. */}
+          <Field label="Contratista · superintendente de obra" required hint="Cuenta de contratista aprobada; firma la bitácora.">
             <select className={inputCls(eq.errSuperintendente)} value={eq.superintendenteId || ''} onChange={(ev) => eq.setSuperintendenteId(ev.target.value)} data-testid="select-superintendente">
               <option value="">— Selecciona —</option>
               {(eq.asignablesContratista || []).map((u) => <option key={u.id} value={u.id}>{u.nombre} · {u.email}</option>)}
@@ -1051,7 +1059,9 @@ function TabRegistrados({ contratos, loading, errorMsg, sinSesion, onRecargar, s
   );
 }
 
-const REQ_GENERALES = ['folio', 'tipo', 'objeto', 'contratista', 'dependencia', 'plazoDias', 'fechaInicio'];
+// Corrección profe (04-jun): contratista/dependencia ya no se validan como texto aquí (son cuentas:
+// superintendenteId y dependenciaId, validados aparte en validarPaso(0)).
+const REQ_GENERALES = ['folio', 'tipo', 'objeto', 'plazoDias', 'fechaInicio'];
 // 4.1 + alta-v3 (PDF firmado OBLIGATORIO): pasos del WIZARD de creación (captura). El PDF
 // firmado (5) es ahora el ÚLTIMO paso del wizard: el botón "Guardar contrato" vive ahí y queda
 // GATEADO (deshabilitado hasta adjuntar el PDF firmado; validarPaso(5)). Solo "Registrados" (6)
@@ -1092,10 +1102,13 @@ export default function AltaContrato() {
   );
 
   // Equipo del contrato (ligado a cuentas). El residente es el usuario actual.
+  // Corrección profe (04-jun): la dependencia también es una CUENTA seleccionada (parte contratante).
   const [superintendenteId, setSuperintendenteId] = useState('');
   const [supervisionId, setSupervisionId] = useState('');
+  const [dependenciaId, setDependenciaId] = useState('');
   const [asignablesContratista, setAsignablesContratista] = useState([]);
   const [asignablesSupervision, setAsignablesSupervision] = useState([]);
+  const [asignablesDependencia, setAsignablesDependencia] = useState([]);
 
   const [errores, setErrores] = useState(ERR0);
   const [tabActivo, setTabActivo] = useState(0);
@@ -1148,7 +1161,7 @@ export default function AltaContrato() {
   }));
   const montoDerivado = round2(conceptos.reduce((s, c) => s + (Number(importeDe(c.cantidad, c.pu)) || 0), 0));
 
-  useEffect(() => { setErrores(ERR0); }, [datosGenerales, datosJuridicos, anticipoPct, conceptos, celdas, ciclo, garantias, superintendenteId, supervisionId]);
+  useEffect(() => { setErrores(ERR0); }, [datosGenerales, datosJuridicos, anticipoPct, conceptos, celdas, ciclo, garantias, superintendenteId, supervisionId, dependenciaId]);
 
   // Cuentas asignables al equipo (solo el residente puede consultarlas; si el rol
   // no es residente la API responde 403 y dejamos las listas vacías).
@@ -1156,6 +1169,7 @@ export default function AltaContrato() {
     if (sinSesion) return;
     api.listarAsignables('contratista').then((l) => setAsignablesContratista(Array.isArray(l) ? l : [])).catch(() => setAsignablesContratista([]));
     api.listarAsignables('supervision').then((l) => setAsignablesSupervision(Array.isArray(l) ? l : [])).catch(() => setAsignablesSupervision([]));
+    api.listarAsignables('dependencia').then((l) => setAsignablesDependencia(Array.isArray(l) ? l : [])).catch(() => setAsignablesDependencia([]));
   }, [sinSesion]);
 
   const [contratos, setContratos] = useState([]);
@@ -1183,7 +1197,7 @@ export default function AltaContrato() {
   useEffect(() => {
     if (!montadoRef.current) { montadoRef.current = true; return; }
     setDirty(true);
-  }, [datosGenerales, datosJuridicos, anticipoPct, conceptos, celdas, ciclo, garantias, superintendenteId, supervisionId]);
+  }, [datosGenerales, datosJuridicos, anticipoPct, conceptos, celdas, ciclo, garantias, superintendenteId, supervisionId, dependenciaId]);
 
   // 4.1: aviso del navegador "¿seguro de salir?" ante recarga/cierre con cambios sin guardar.
   // (Persistencia del borrador ante recarga = NO implementada — opcional; ver doc.)
@@ -1205,7 +1219,9 @@ export default function AltaContrato() {
         return { ok: false, msg: `Faltan campos: ${faltan.join(', ')}`, errores: { ...ERR0, campos } };
       }
       if (!(Number.isInteger(Number(datosGenerales.plazoDias)) && Number(datosGenerales.plazoDias) > 0)) return { ok: false, msg: 'El plazo debe ser un entero mayor a 0', errores: { ...ERR0, campos: { plazoDias: true } } };
-      if (!superintendenteId) return { ok: false, msg: 'Asigna un superintendente al equipo del contrato', errores: { ...ERR0, campos: { superintendente: true } } };
+      if (!superintendenteId) return { ok: false, msg: 'Asigna el contratista (superintendente de obra) del contrato', errores: { ...ERR0, campos: { superintendente: true } } };
+      // Corrección profe (04-jun): la dependencia es una cuenta seleccionada (parte contratante).
+      if (!dependenciaId) return { ok: false, msg: 'Selecciona la dependencia (cuenta contratante registrada)', errores: { ...ERR0, campos: { dependencia: true } } };
       return { ok: true };
     }
     if (idx === 1) {
@@ -1381,12 +1397,13 @@ export default function AltaContrato() {
         folio: datosGenerales.folio,
         tipo: datosGenerales.tipo,
         objeto: datosGenerales.objeto,
-        contratista: datosGenerales.contratista,
-        dependencia: datosGenerales.dependencia,
+        // Corrección profe (04-jun): contratista/dependencia ya no van como texto; el backend deriva
+        // el texto del nombre de la cuenta (contratista = superintendente; dependencia = dependenciaId).
         plazoDias: Number(datosGenerales.plazoDias),
         fechaInicio: datosGenerales.fechaInicio,
         superintendenteId: Number(superintendenteId),
         supervisionId: supervisionId ? Number(supervisionId) : null,
+        dependenciaId: dependenciaId ? Number(dependenciaId) : null,
         anticipoPct: anticipoPct === '' || anticipoPct === null ? null : Number(anticipoPct),
         juridicos: datosJuridicos,
         // monto NO se envía: el backend lo deriva = Σ ROUND(cantidad×pu,2). clave por concepto.
@@ -1448,6 +1465,7 @@ export default function AltaContrato() {
     setAnticipoPct('');
     setSuperintendenteId('');
     setSupervisionId('');
+    setDependenciaId('');
     setConceptos(conceptosIniciales());
     setCiclo('mensual');
     setCeldas({});
@@ -1473,7 +1491,7 @@ export default function AltaContrato() {
   const tabsConError = useMemo(() => {
     const s = new Set();
     const c = errores.campos || {};
-    if (REQ_GENERALES.some((k) => c[k]) || c.superintendente) s.add(0);
+    if (REQ_GENERALES.some((k) => c[k]) || c.superintendente || c.dependencia) s.add(0);
     if (errores.conceptoIdx != null || errores.catalogoMonto) s.add(1);
     if (errores.programaError) s.add(2);
     if (REQ_JURIDICOS.some((k) => c[k])) s.add(3); // alta-v5: jurídicos obligatorios
@@ -1535,9 +1553,11 @@ export default function AltaContrato() {
   const tabs = [
     { label: 'Datos generales', content: wrapTab(<TabDatosGenerales datos={datosGenerales} set={setDatosGen} err={errores.campos} montoDerivado={montoDerivado} equipo={{
       usuarioNombre: usuario?.nombre,
-      asignablesContratista, asignablesSupervision,
+      asignablesContratista, asignablesSupervision, asignablesDependencia,
       superintendenteId, setSuperintendenteId, supervisionId, setSupervisionId,
-      errSuperintendente: errores.campos?.superintendente
+      dependenciaId, setDependenciaId,
+      errSuperintendente: errores.campos?.superintendente,
+      errDependencia: errores.campos?.dependencia
     }} />) },
     { label: 'Catálogo de conceptos', content: wrapTab(
       <TabCatalogo rows={conceptos} onCell={mkCell(setConceptos)} onPatch={mkPatch(setConceptos)}

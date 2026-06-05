@@ -22,15 +22,16 @@ const login = async (email) => (await req('POST', '/auth/login', null, { email, 
   const R = await login('residente@sigecop.test');
   const S = await login('contratista@sigecop.test');
   const V = await login('supervision@sigecop.test');
-  ok(R?.token && S?.token && V?.token, 'login residente + superintendente + supervisión');
-  const idS = S.user.id, idV = V.user.id;
+  const D = await login('dependencia@sigecop.test'); // corrección profe (04-jun): dependencia = cuenta
+  ok(R?.token && S?.token && V?.token && D?.token, 'login residente + superintendente + supervisión + dependencia');
+  const idS = S.user.id, idV = V.user.id, idD = D.user.id;
 
   // 1) Crear contrato (residente) con equipo completo + programa 100%.
   const folio = 'BIT-SMOKE-' + Date.now();
   const cr = await req('POST', '/contratos', R.token, {
     folio, tipo: 'Obra pública sobre la base de precios unitarios', objeto: 'Obra smoke bitácora',
-    contratista: 'Constructora Smoke', dependencia: 'Dependencia Smoke', plazoDias: 60, fechaInicio: '2026-06-01',
-    superintendenteId: idS, supervisionId: idV, anticipoPct: null, juridicos: {},
+    plazoDias: 60, fechaInicio: '2026-06-01',
+    superintendenteId: idS, supervisionId: idV, dependenciaId: idD, anticipoPct: null, juridicos: {},
     conceptos: [{ clave: 'A1', concepto: 'Concepto smoke', unidad: 'm³', cantidad: 100, pu: 50 }],
     ciclo: 'mensual', programa: [{ clave: 'A1', periodoNumero: 1, cantidad: 100 }], garantias: []
   });

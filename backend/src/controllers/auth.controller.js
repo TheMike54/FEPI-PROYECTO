@@ -4,6 +4,17 @@ const { query } = require('../db/pool');
 
 const ROLES_VALIDOS = ['residente', 'contratista', 'supervision', 'dependencia', 'finanzas'];
 
+// Corrección del profe (revisión 04-jun): el nombre que aparece en la bitácora debe ser COMPLETO
+// (nombre + apellido[s]); hoy se podía registrar con un solo token ("Iván"). Regla operativa para
+// que la bitácora identifique sin ambigüedad a quienes intervienen (art. 123 RLOPSRM exige asentar
+// a las personas que participan). NO es un requisito con artículo propio; el umbral exacto (≥2
+// palabras) lo fija la Fundación [validar redacción con el profe]. El frontend valida lo mismo
+// (espejo en SeleccionRol.jsx / SolicitudRegistro.jsx); este es el candado del servidor.
+// /\p{L}{2,}/gu cuenta solo palabras de ≥2 letras seguidas: una INICIAL ('J.') no cuenta, así que
+// "Iván"→1 (rechaza), "José García"→2 (acepta). Es deliberado (nombre y apellido visibles, no
+// iniciales). Soporta acentos/ñ/guion (todas son letras Unicode \p{L}).
+const esNombreCompleto = (n) => (String(n || '').trim().match(/\p{L}{2,}/gu) || []).length >= 2;
+
 const MSG_PENDIENTE = 'Tu cuenta está pendiente de aprobación por la dependencia';
 const MSG_RECHAZADA = 'Tu solicitud de acceso fue rechazada. Contacta a la dependencia';
 
@@ -58,6 +69,11 @@ async function register(req, res) {
 
     if (!nombre || !email || !password) {
       return res.status(400).json({ error: 'nombre, email y password son requeridos' });
+    }
+    // Corrección profe (04-jun): exigir nombre + apellido(s) (≥2 palabras). El nombre completo
+    // aparece en la bitácora (art. 123 RLOPSRM); no se admite un solo nombre.
+    if (!esNombreCompleto(nombre)) {
+      return res.status(400).json({ error: 'Captura tu nombre y apellido(s): el nombre completo aparece en la bitácora (art. 123 RLOPSRM).' });
     }
     if (String(password).length < 8) {
       return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });

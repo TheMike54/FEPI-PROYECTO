@@ -120,13 +120,15 @@ export async function altaLlenarDatosGenerales(page, { folio, plazo = 60, fechaI
   const f = folio || `E2E-${Date.now()}`;
   await page.getByTestId('dg-folio').fill(f);
   await page.getByTestId('dg-objeto').fill('Obra de prueba e2e');
-  await page.getByTestId('dg-contratista').fill('Constructora E2E S.A. de C.V.');
-  await page.getByTestId('dg-dependencia').fill('Dependencia E2E');
   await page.getByTestId('dg-plazo').fill(String(plazo));
   await page.getByTestId('dg-fecha').fill(fechaInicio);
+  // Corrección profe (04-jun): contratista y dependencia son CUENTAS seleccionadas (no texto libre).
+  //   · contratista = superintendente (1ª cuenta rol contratista aprobada; índice 0 = "— Selecciona —").
+  //   · dependencia = 1ª cuenta rol dependencia aprobada (dg-dependencia ahora es <select>).
   const sup = page.getByTestId('select-superintendente');
-  const nopts = await sup.locator('option').count();
-  if (nopts > 1) await sup.selectOption({ index: 1 }); // 1ª cuenta contratista (índice 0 = "— Selecciona —")
+  if (await sup.locator('option').count() > 1) await sup.selectOption({ index: 1 });
+  const dep = page.getByTestId('dg-dependencia');
+  if (await dep.locator('option').count() > 1) await dep.selectOption({ index: 1 });
   return f;
 }
 
