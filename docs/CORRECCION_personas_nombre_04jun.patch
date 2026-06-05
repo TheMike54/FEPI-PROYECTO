@@ -1,0 +1,690 @@
+diff --git a/backend/scripts/smoke-bitacora-v2.mjs b/backend/scripts/smoke-bitacora-v2.mjs
+index 735137e..e9ff274 100644
+--- a/backend/scripts/smoke-bitacora-v2.mjs
++++ b/backend/scripts/smoke-bitacora-v2.mjs
+@@ -22,15 +22,16 @@ const login = async (email) => (await req('POST', '/auth/login', null, { email,
+   const R = await login('residente@sigecop.test');
+   const S = await login('contratista@sigecop.test');
+   const V = await login('supervision@sigecop.test');
+-  ok(R?.token && S?.token && V?.token, 'login residente + superintendente + supervisión');
+-  const idS = S.user.id, idV = V.user.id;
++  const D = await login('dependencia@sigecop.test'); // corrección profe (04-jun): dependencia = cuenta
++  ok(R?.token && S?.token && V?.token && D?.token, 'login residente + superintendente + supervisión + dependencia');
++  const idS = S.user.id, idV = V.user.id, idD = D.user.id;
+ 
+   // 1) Crear contrato (residente) con equipo completo + programa 100%.
+   const folio = 'BIT-SMOKE-' + Date.now();
+   const cr = await req('POST', '/contratos', R.token, {
+     folio, tipo: 'Obra pública sobre la base de precios unitarios', objeto: 'Obra smoke bitácora',
+-    contratista: 'Constructora Smoke', dependencia: 'Dependencia Smoke', plazoDias: 60, fechaInicio: '2026-06-01',
+-    superintendenteId: idS, supervisionId: idV, anticipoPct: null, juridicos: {},
++    plazoDias: 60, fechaInicio: '2026-06-01',
++    superintendenteId: idS, supervisionId: idV, dependenciaId: idD, anticipoPct: null, juridicos: {},
+     conceptos: [{ clave: 'A1', concepto: 'Concepto smoke', unidad: 'm³', cantidad: 100, pu: 50 }],
+     ciclo: 'mensual', programa: [{ clave: 'A1', periodoNumero: 1, cantidad: 100 }], garantias: []
+   });
+diff --git a/backend/src/controllers/auth.controller.js b/backend/src/controllers/auth.controller.js
+index 6b0f8cc..e196b81 100644
+--- a/backend/src/controllers/auth.controller.js
++++ b/backend/src/controllers/auth.controller.js
+@@ -4,6 +4,17 @@ const { query } = require('../db/pool');
+ 
+ const ROLES_VALIDOS = ['residente', 'contratista', 'supervision', 'dependencia', 'finanzas'];
+ 
++// Corrección del profe (revisión 04-jun): el nombre que aparece en la bitácora debe ser COMPLETO
++// (nombre + apellido[s]); hoy se podía registrar con un solo token ("Iván"). Regla operativa para
++// que la bitácora identifique sin ambigüedad a quienes intervienen (art. 123 RLOPSRM exige asentar
++// a las personas que participan). NO es un requisito con artículo propio; el umbral exacto (≥2
++// palabras) lo fija la Fundación [validar redacción con el profe]. El frontend valida lo mismo
++// (espejo en SeleccionRol.jsx / SolicitudRegistro.jsx); este es el candado del servidor.
++// /\p{L}{2,}/gu cuenta solo palabras de ≥2 letras seguidas: una INICIAL ('J.') no cuenta, así que
++// "Iván"→1 (rechaza), "José García"→2 (acepta). Es deliberado (nombre y apellido visibles, no
++// iniciales). Soporta acentos/ñ/guion (todas son letras Unicode \p{L}).
++const esNombreCompleto = (n) => (String(n || '').trim().match(/\p{L}{2,}/gu) || []).length >= 2;
++
+ const MSG_PENDIENTE = 'Tu cuenta está pendiente de aprobación por la dependencia';
+ const MSG_RECHAZADA = 'Tu solicitud de acceso fue rechazada. Contacta a la dependencia';
+ 
+@@ -59,6 +70,11 @@ async function register(req, res) {
+     if (!nombre || !email || !password) {
+       return res.status(400).json({ error: 'nombre, email y password son requeridos' });
+     }
++    // Corrección profe (04-jun): exigir nombre + apellido(s) (≥2 palabras). El nombre completo
++    // aparece en la bitácora (art. 123 RLOPSRM); no se admite un solo nombre.
++    if (!esNombreCompleto(nombre)) {
++      return res.status(400).json({ error: 'Captura tu nombre y apellido(s): el nombre completo aparece en la bitácora (art. 123 RLOPSRM).' });
++    }
+     if (String(password).length < 8) {
+       return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
+     }
+diff --git a/backend/src/controllers/contratos.controller.js b/backend/src/controllers/contratos.controller.js
+index b576ad1..b15f393 100644
+--- a/backend/src/controllers/contratos.controller.js
++++ b/backend/src/controllers/contratos.controller.js
+@@ -10,9 +10,11 @@ const { generarPeriodos, guardarMatriz } = require('../lib/programa');
+ // 'monto' NO se captura: se DERIVA del catálogo (Σ ROUND(cantidad×pu,2), art. 45 fr. IX
+ // RLOPSRM: el catálogo con sus importes ES el presupuesto). Sin catálogo (precio alzado)
+ // se captura aparte; ver crearContrato.
++// Corrección profe (04-jun): 'contratista' y 'dependencia' SALEN de los requeridos de texto:
++// ahora son CUENTAS seleccionadas (contratista = superintendenteId; dependencia = dependenciaId)
++// y el texto de esas columnas se DERIVA del nombre de la cuenta (no se captura a mano).
+ const REQUIRED_FIELDS = [
+-  'folio', 'tipo', 'objeto', 'contratista', 'dependencia',
+-  'plazoDias', 'fechaInicio'
++  'folio', 'tipo', 'objeto', 'plazoDias', 'fechaInicio'
+ ];
+ 
+ // --- Reglas de dominio HU-01 ---
+@@ -63,8 +65,10 @@ async function crearContrato(req, res) {
+   // Regla 3: la fecha de término se DERIVA del inicio + plazo (no se confía en el cliente).
+   const fechaTerminoDerivada = derivarTermino(body.fechaInicio, plazoDias);
+ 
+-  // T3: longitud de los campos de texto (evita 22001 desde la BD).
+-  const LIMITES_TEXTO = { folio: 50, tipo: 80, contratista: 200, dependencia: 200 };
++  // T3: longitud de los campos de texto (evita 22001 desde la BD). Corrección profe (04-jun):
++  // contratista/dependencia SALEN de aquí — ya no llegan del body, se DERIVAN del nombre de la cuenta
++  // seleccionada (≤150 por VARCHAR(150) de usuarios.nombre, holgado contra el VARCHAR(200) de contratos).
++  const LIMITES_TEXTO = { folio: 50, tipo: 80 };
+   for (const [campo, max] of Object.entries(LIMITES_TEXTO)) {
+     if (body[campo] != null && String(body[campo]).length > max) {
+       return res.status(400).json({ error: `El campo "${campo}" excede el máximo de ${max} caracteres` });
+@@ -205,20 +209,35 @@ async function crearContrato(req, res) {
+     catch (e) { return res.status(400).json({ error: 'No se pudieron generar los periodos del ciclo: ' + e.message }); }
+   }
+ 
+-  // Equipo del contrato: residente = usuario del token; superintendente (cuenta
+-  // 'contratista' aprobada) OBLIGATORIO; supervisión (cuenta 'supervision' aprobada)
+-  // OPCIONAL. Se validan rol y estado contra la BD (no se confía en el cliente).
++  // Personas del contrato, ligadas a CUENTAS (corrección profe 04-jun: nada de texto libre):
++  //   · residente   = usuario del token (firma la bitácora).
++  //   · contratista = superintendenteId (cuenta rol 'contratista' APROBADA), OBLIGATORIO; es el
++  //     superintendente de obra que firma la bitácora. El texto `contratista` se deriva de su nombre.
++  //   · supervisión = supervisionId (cuenta rol 'supervision' aprobada), OPCIONAL (firma si existe).
++  //   · dependencia = dependenciaId (cuenta rol 'dependencia' aprobada), OBLIGATORIO; parte
++  //     contratante. El texto `dependencia` se deriva de su nombre. (No firma la bitácora diaria:
++  //     art. 123 RLOPSRM; el residente la representa, por eso NO entra al roster.)
++  // Rol y estado se validan contra la BD (no se confía en el cliente).
+   const superintendenteId = numOrNull(body.superintendenteId);
+   const supervisionId = numOrNull(body.supervisionId);
++  const dependenciaId = numOrNull(body.dependenciaId);
+   if (superintendenteId === null) {
+-    return res.status(400).json({ error: 'Debes asignar un superintendente (cuenta de contratista aprobada)' });
++    return res.status(400).json({ error: 'Debes asignar un contratista/superintendente (cuenta de contratista aprobada)' });
+   }
+-  const equipoIds = supervisionId === null ? [superintendenteId] : [superintendenteId, supervisionId];
+-  const equipo = await pool.query('SELECT id, rol, estado FROM usuarios WHERE id = ANY($1)', [equipoIds]);
++  if (dependenciaId === null) {
++    return res.status(400).json({ error: 'Debes seleccionar la dependencia (cuenta de dependencia aprobada)' });
++  }
++  const equipoIds = [superintendenteId, dependenciaId];
++  if (supervisionId !== null) equipoIds.push(supervisionId);
++  const equipo = await pool.query('SELECT id, nombre, rol, estado FROM usuarios WHERE id = ANY($1)', [equipoIds]);
+   const equipoById = new Map(equipo.rows.map((u) => [u.id, u]));
+   const sup = equipoById.get(superintendenteId);
+   if (!sup || sup.rol !== 'contratista' || sup.estado !== 'activo') {
+-    return res.status(400).json({ error: 'El superintendente debe ser una cuenta aprobada con rol contratista' });
++    return res.status(400).json({ error: 'El contratista/superintendente debe ser una cuenta aprobada con rol contratista' });
++  }
++  const dep = equipoById.get(dependenciaId);
++  if (!dep || dep.rol !== 'dependencia' || dep.estado !== 'activo') {
++    return res.status(400).json({ error: 'La dependencia debe ser una cuenta aprobada con rol dependencia' });
+   }
+   if (supervisionId !== null) {
+     const sv = equipoById.get(supervisionId);
+@@ -227,7 +246,11 @@ async function crearContrato(req, res) {
+     }
+   }
+ 
+-  const { folio, tipo, objeto, contratista, dependencia, fechaInicio } = body;
++  // El texto de las columnas `contratista`/`dependencia` se DERIVA del nombre de la cuenta (fuente
++  // única; lo leen la lista de Registrados y el detalle). Ya no llega del body.
++  const { folio, tipo, objeto, fechaInicio } = body;
++  const contratista = sup.nombre;
++  const dependencia = dep.nombre;
+ 
+   // --- 2) Transaccion: cabecera + bloques = una sola entidad (todo o nada) ----
+   let client;
+@@ -240,19 +263,36 @@ async function crearContrato(req, res) {
+         `INSERT INTO contratos
+            (folio, tipo, objeto, contratista, dependencia, monto, plazo_dias,
+             fecha_inicio, fecha_termino, created_by, datos_juridicos, anticipo_pct,
+-            residente_id, superintendente_id, supervision_id, ciclo_estimacion)
+-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
++            residente_id, superintendente_id, supervision_id, ciclo_estimacion, dependencia_id)
++         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+          RETURNING id`,
+         [
+           folio, tipo, objeto, contratista, dependencia, monto, plazoDias,
+           fechaInicio, fechaTerminoDerivada, req.user.id,
+           juridicos ? JSON.stringify(juridicos) : null,
+           anticipoPct,
+-          req.user.id, superintendenteId, supervisionId, ciclo
++          req.user.id, superintendenteId, supervisionId, ciclo, dependenciaId
+         ]
+       );
+       const contratoId = cab.rows[0].id;
+ 
++      // Corrección profe (04-jun): ASOCIAR las personas seleccionadas al contrato_roster (pasada 2,
++      // art. 125 fr. I g RLOPSRM) DESDE EL ALTA. Antes el roster solo se sembraba post-deploy desde
++      // los punteros escalares; ahora queda registrado al guardar. Una fila ACTIVA por rol; el cache
++      // escalar de `contratos` (que leen lib/acceso y la firma de bitácora) ya se escribió arriba —
++      // el roster es el registro histórico que habilita la sustitución (sustituir-no-borrar). La
++      // dependencia NO entra al roster (no firma la bitácora; art. 123 RLOPSRM). vigencia_desde =
++      // inicio del contrato (igual que el seed idempotente del schema, que no duplica por NOT EXISTS).
++      const rosterIniciales = [['residente', req.user.id], ['superintendente', superintendenteId]];
++      if (supervisionId !== null) rosterIniciales.push(['supervision', supervisionId]);
++      for (const [rolRoster, usuarioId] of rosterIniciales) {
++        await client.query(
++          `INSERT INTO contrato_roster (contrato_id, rol, usuario_id, vigencia_desde, motivo, registrado_por)
++           VALUES ($1, $2, $3, $4, 'Asignación inicial (alta del contrato)', $5)`,
++          [contratoId, rolRoster, usuarioId, fechaInicio, req.user.id]
++        );
++      }
++
+       // clave→id de cada concepto: lo usa A2 para traducir las celdas del programa (C4/C6).
+       const claveToConceptoId = new Map();
+       for (const [i, c] of conceptos.entries()) {
+diff --git a/backend/src/controllers/usuarios.controller.js b/backend/src/controllers/usuarios.controller.js
+index e8a6ce0..73c91de 100644
+--- a/backend/src/controllers/usuarios.controller.js
++++ b/backend/src/controllers/usuarios.controller.js
+@@ -30,14 +30,16 @@ async function listarUsuarios(req, res) {
+   }
+ }
+ 
+-// GET /api/usuarios/asignables?rol=contratista|supervision — cuentas aprobadas de
+-// ese rol, para que el residente arme el equipo del contrato. Solo datos públicos.
+-const ROLES_ASIGNABLES = ['contratista', 'supervision'];
++// GET /api/usuarios/asignables?rol=contratista|supervision|dependencia — cuentas aprobadas de
++// ese rol, para que el residente arme el contrato. Solo datos públicos.
++// Corrección profe (04-jun): se añade 'dependencia' para que en el alta la dependencia se
++// SELECCIONE de una cuenta registrada (antes era texto libre). Misma query (filtra por rol+estado).
++const ROLES_ASIGNABLES = ['contratista', 'supervision', 'dependencia'];
+ async function listarAsignables(req, res) {
+   try {
+     const { rol } = req.query;
+     if (!ROLES_ASIGNABLES.includes(rol)) {
+-      return res.status(400).json({ error: 'rol debe ser contratista o supervision' });
++      return res.status(400).json({ error: 'rol debe ser contratista, supervision o dependencia' });
+     }
+     const result = await query(
+       `SELECT id, nombre, email, rol
+diff --git a/backend/src/db/schema.sql b/backend/src/db/schema.sql
+index 5f92961..9306308 100644
+--- a/backend/src/db/schema.sql
++++ b/backend/src/db/schema.sql
+@@ -275,6 +275,13 @@ CREATE INDEX IF NOT EXISTS idx_contratos_residente ON contratos(residente_id);
+ CREATE INDEX IF NOT EXISTS idx_contratos_superintendente ON contratos(superintendente_id);
+ CREATE INDEX IF NOT EXISTS idx_contratos_supervision ON contratos(supervision_id);
+ 
++-- Corrección profe (04-jun): la DEPENDENCIA del contrato pasa de texto libre a CUENTA registrada
++-- (rol 'dependencia'). Puntero escalar de la parte contratante. NO firma la bitácora (art. 123
++-- RLOPSRM: el residente la representa) → NO entra al contrato_roster. El texto `dependencia` se
++-- conserva (lo deriva el controller del nombre de la cuenta) para la lista/detalle. Aditivo, SET NULL.
++ALTER TABLE contratos ADD COLUMN IF NOT EXISTS dependencia_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL;
++CREATE INDEX IF NOT EXISTS idx_contratos_dependencia_id ON contratos(dependencia_id);
++
+ -- (2) Firmantes de la apertura, ligados a CUENTA (cada quien firma desde la
+ --     suya). usuario_id + rol_en_firma reemplazan la captura de texto libre
+ --     (firmante/cargo/correo quedan en desuso). UNIQUE por (apertura, cuenta).
+@@ -663,15 +670,27 @@ END $$;
+ -- contraseña Sigecop2026! → reusa el hash del residente). Estas 5 cuentas existen en
+ -- AMBAS bases (local y Render). La cuenta de finanzas (Isha) es SOLO LOCAL y se crea con
+ -- scripts/crear-usuario.js (NO se versiona su contraseña). Ver docs/Cuentas_Prueba_SIGECOP.md.
++-- Corrección profe (04-jun): los nombres demo se capturan COMPLETOS (nombre + apellidos), porque
++-- el nombre aparece en la bitácora (art. 123 RLOPSRM). Son nombres de FIXTURE (no personas reales).
++-- La cuenta del contratista ahora es una PERSONA (el superintendente que firma), no una razón social.
+ INSERT INTO usuarios (nombre, email, password_hash, rol) VALUES
+-  ('Ing. Residente Demo', 'residente@sigecop.test', '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'residente'),
+-  ('Contratista Demo S.A.', 'contratista@sigecop.test', '$2a$10$h7eLpWBwF5O3smp/egT3wupSylCFRXlwQQIeHbnvCdJOmM5xAhdgK', 'contratista'),
+-  ('Supervisión Externa Demo', 'supervision@sigecop.test', '$2a$10$zpUoEVcL3IZhAtpS4kexoemneAaX93X7.A3kbLPYOBwgw51eZC33e', 'supervision'),
+-  ('Dependencia Demo', 'dependencia@sigecop.test', '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'dependencia'),
++  ('Ing. Iván Residente Demo', 'residente@sigecop.test', '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'residente'),
++  ('Arq. Carlos Contratista Demo', 'contratista@sigecop.test', '$2a$10$h7eLpWBwF5O3smp/egT3wupSylCFRXlwQQIeHbnvCdJOmM5xAhdgK', 'contratista'),
++  ('Ing. Sofía Supervisión Demo', 'supervision@sigecop.test', '$2a$10$zpUoEVcL3IZhAtpS4kexoemneAaX93X7.A3kbLPYOBwgw51eZC33e', 'supervision'),
++  ('Lic. Diana Dependencia Demo', 'dependencia@sigecop.test', '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'dependencia'),
+   ('Profesor (Sistemas)', 'csilvasa@ipn.mx', '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'residente'),
+-  ('Finanzas Demo', 'finanzas@sigecop.test', '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'finanzas')
++  ('C.P. Fernando Finanzas Demo', 'finanzas@sigecop.test', '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'finanzas')
+ ON CONFLICT (email) DO NOTHING;
+ 
++-- Backfill idempotente para BASES YA SEMBRADAS con los nombres incompletos viejos (el INSERT de
++-- arriba no las toca por ON CONFLICT). Solo actualiza si el nombre sigue siendo el demo viejo
++-- (no pisa cambios manuales). Re-ejecutar no hace nada una vez completados.
++UPDATE usuarios SET nombre = 'Ing. Iván Residente Demo'     WHERE email = 'residente@sigecop.test'   AND nombre = 'Ing. Residente Demo';
++UPDATE usuarios SET nombre = 'Arq. Carlos Contratista Demo' WHERE email = 'contratista@sigecop.test' AND nombre = 'Contratista Demo S.A.';
++UPDATE usuarios SET nombre = 'Ing. Sofía Supervisión Demo'  WHERE email = 'supervision@sigecop.test' AND nombre = 'Supervisión Externa Demo';
++UPDATE usuarios SET nombre = 'Lic. Diana Dependencia Demo'  WHERE email = 'dependencia@sigecop.test' AND nombre = 'Dependencia Demo';
++UPDATE usuarios SET nombre = 'C.P. Fernando Finanzas Demo'  WHERE email = 'finanzas@sigecop.test'    AND nombre = 'Finanzas Demo';
++
+ INSERT INTO contratos (folio, tipo, objeto, contratista, dependencia, monto, plazo_dias, fecha_inicio, fecha_termino, created_by)
+ SELECT
+   'OP-2026-DEMO-001',
+diff --git a/frontend/e2e/_helpers.js b/frontend/e2e/_helpers.js
+index 55f7092..647f7ab 100644
+--- a/frontend/e2e/_helpers.js
++++ b/frontend/e2e/_helpers.js
+@@ -120,13 +120,15 @@ export async function altaLlenarDatosGenerales(page, { folio, plazo = 60, fechaI
+   const f = folio || `E2E-${Date.now()}`;
+   await page.getByTestId('dg-folio').fill(f);
+   await page.getByTestId('dg-objeto').fill('Obra de prueba e2e');
+-  await page.getByTestId('dg-contratista').fill('Constructora E2E S.A. de C.V.');
+-  await page.getByTestId('dg-dependencia').fill('Dependencia E2E');
+   await page.getByTestId('dg-plazo').fill(String(plazo));
+   await page.getByTestId('dg-fecha').fill(fechaInicio);
++  // Corrección profe (04-jun): contratista y dependencia son CUENTAS seleccionadas (no texto libre).
++  //   · contratista = superintendente (1ª cuenta rol contratista aprobada; índice 0 = "— Selecciona —").
++  //   · dependencia = 1ª cuenta rol dependencia aprobada (dg-dependencia ahora es <select>).
+   const sup = page.getByTestId('select-superintendente');
+-  const nopts = await sup.locator('option').count();
+-  if (nopts > 1) await sup.selectOption({ index: 1 }); // 1ª cuenta contratista (índice 0 = "— Selecciona —")
++  if (await sup.locator('option').count() > 1) await sup.selectOption({ index: 1 });
++  const dep = page.getByTestId('dg-dependencia');
++  if (await dep.locator('option').count() > 1) await dep.selectOption({ index: 1 });
+   return f;
+ }
+ 
+diff --git a/frontend/e2e/alta-personas-roster.spec.js b/frontend/e2e/alta-personas-roster.spec.js
+new file mode 100644
+index 0000000..51fcd3a
+--- /dev/null
++++ b/frontend/e2e/alta-personas-roster.spec.js
+@@ -0,0 +1,122 @@
++// @ts-check
++// Corrección profe (04-jun) — ALTA: contratista/supervisión/dependencia se SELECCIONAN de cuentas
++// REGISTRADAS (no texto libre) y, al guardar, las personas quedan asociadas al contrato_roster
++// (pasada 2, art. 125 fr. I g RLOPSRM) como exactamente quienes firman la bitácora.
++//   (1) la dependencia es un <select> de cuentas; el contratista es la cuenta del superintendente;
++//       ya no existe el texto libre de contratista.
++//   (2) no se puede avanzar sin elegir la dependencia (cuenta).
++//   (3) al guardar, residente + contratista(superintendente) quedan en el roster del contrato.
++// Con LOGIN REAL (requiere backend+BD; cuentas semilla). No corre en CI.
++import { test, expect } from '@playwright/test';
++import {
++  freshHome, enterAppMode, goToViaSidebar,
++  altaLlenarDatosGenerales, altaAgregarConcepto, altaLlenarJuridicos, altaLlenarGarantias,
++  altaAdjuntarPdfFirmado,
++} from './_helpers.js';
++
++test.skip(!!process.env.CI, 'corrección personas→roster: login real requiere backend+BD; se corre en local');
++
++async function altaCompletaYGuardar(page, folio) {
++  await altaLlenarDatosGenerales(page, { folio, plazo: 60, fechaInicio: '2026-06-01' });
++  await page.getByTestId('btn-siguiente').click();
++  await altaAgregarConcepto(page, 0, { cantidad: 100, pu: 50 });
++  await page.getByTestId('btn-siguiente').click();
++  await page.getByTestId('celda-0-1').fill('100');
++  await page.getByTestId('btn-siguiente').click();
++  await altaLlenarJuridicos(page);
++  await page.getByTestId('btn-siguiente').click();
++  await altaLlenarGarantias(page);
++  await page.getByTestId('btn-siguiente').click();
++  await altaAdjuntarPdfFirmado(page);
++  await page.getByTestId('btn-guardar').click();
++}
++
++test.describe('alta — personas como cuentas + asociación al roster (corrección profe)', () => {
++  test.beforeEach(async ({ page }) => {
++    await freshHome(page);
++    await enterAppMode(page, 'residente');
++    await goToViaSidebar(page, '/contratos/alta');
++  });
++
++  test('(1) contratista y dependencia se ELIGEN de cuentas (no hay texto libre de personas)', async ({ page }) => {
++    // La dependencia es un <select> (no <input> de texto), con cuentas como opciones.
++    const dep = page.getByTestId('dg-dependencia');
++    await expect(dep).toBeVisible();
++    expect(await dep.evaluate((el) => el.tagName.toLowerCase())).toBe('select');
++    expect(await dep.locator('option').count()).toBeGreaterThan(1); // placeholder + ≥1 cuenta dependencia
++    // El contratista es la cuenta del superintendente (select), no un texto libre.
++    await expect(page.getByTestId('select-superintendente')).toBeVisible();
++    expect(await page.getByTestId('select-superintendente').locator('option').count()).toBeGreaterThan(1);
++    // Ya NO existe el input de texto libre de contratista.
++    await expect(page.getByTestId('dg-contratista')).toHaveCount(0);
++  });
++
++  test('(2) no se puede avanzar sin elegir la dependencia (cuenta)', async ({ page }) => {
++    await page.getByTestId('dg-folio').fill(`E2E-DEP-${Date.now()}`);
++    await page.getByTestId('dg-objeto').fill('Obra sin dependencia');
++    await page.getByTestId('dg-plazo').fill('60');
++    await page.getByTestId('dg-fecha').fill('2026-06-01');
++    await page.getByTestId('select-superintendente').selectOption({ index: 1 }); // contratista sí
++    // …pero sin dependencia: «Siguiente» NO avanza y avisa.
++    await page.getByTestId('btn-siguiente').click();
++    await expect(page.getByTestId('error-wizard')).toBeVisible();
++    await expect(page.getByTestId('error-wizard')).toContainText('dependencia');
++    await expect(page.getByRole('heading', { name: 'Datos generales del contrato' })).toBeVisible();
++    await expect(page.getByTestId('btn-guardar')).toHaveCount(0);
++  });
++
++  test('(3) al guardar, las personas seleccionadas quedan en el contrato_roster (firmantes)', async ({ page }) => {
++    page.on('dialog', (d) => d.accept());
++    const folio = `E2E-ROSTER-${Date.now()}`;
++    await altaCompletaYGuardar(page, folio);
++    await expect(page.locator('tr', { hasText: folio })).toBeVisible(); // guardado → en Registrados
++
++    // El roster del contrato refleja a las personas elegidas en el alta.
++    await goToViaSidebar(page, '/contratos/roster');
++    const sel = page.getByTestId('roster-contrato');
++    const val = await sel.locator('option', { hasText: folio }).first().getAttribute('value');
++    await sel.selectOption(val);
++    // Residente (creador) y contratista (superintendente) quedaron ASIGNADOS en el roster vigente.
++    await expect(page.getByTestId('vigente-residente')).toContainText('Residente');        // 'Ing. Iván Residente Demo'
++    await expect(page.getByTestId('vigente-residente')).not.toContainText('sin asignar');
++    await expect(page.getByTestId('vigente-superintendente')).toContainText('Contratista'); // 'Arq. Carlos Contratista Demo'
++    await expect(page.getByTestId('vigente-superintendente')).not.toContainText('sin asignar');
++  });
++});
++
++// Candado del SERVIDOR (no se confía en el cliente): la dependencia debe ser una cuenta del rol
++// correcto. Estos tests pegan directo a la API (sin UI).
++const API = 'http://localhost:4000/api';
++const loginApi = async (request, email) =>
++  (await request.post(`${API}/auth/login`, { data: { email, password: 'Sigecop2026!' } })).json();
++const contratoBase = (folio, extra) => ({
++  folio, tipo: 'Obra pública sobre la base de precios unitarios', objeto: 'Obra API e2e',
++  plazoDias: 60, fechaInicio: '2026-06-01', supervisionId: null,
++  conceptos: [{ clave: 'A1', concepto: 'c', unidad: 'm³', cantidad: 100, pu: 50 }],
++  ciclo: 'mensual', programa: [{ clave: 'A1', periodoNumero: 1, cantidad: 100 }], garantias: [], ...extra,
++});
++
++test.describe('alta API — el servidor valida la dependencia (corrección profe)', () => {
++  test('POST /contratos SIN dependenciaId → 400', async ({ request }) => {
++    const R = await loginApi(request, 'residente@sigecop.test');
++    const S = await loginApi(request, 'contratista@sigecop.test');
++    const r = await request.post(`${API}/contratos`, {
++      headers: { Authorization: `Bearer ${R.token}` },
++      data: contratoBase(`API-NODEP-${Date.now()}`, { superintendenteId: S.user.id }), // sin dependenciaId
++    });
++    expect(r.status()).toBe(400);
++    expect((await r.json()).error).toContain('dependencia');
++  });
++
++  test('POST /contratos con dependenciaId de ROL equivocado (supervisión) → 400', async ({ request }) => {
++    const R = await loginApi(request, 'residente@sigecop.test');
++    const S = await loginApi(request, 'contratista@sigecop.test');
++    const V = await loginApi(request, 'supervision@sigecop.test'); // rol supervision, NO dependencia
++    const r = await request.post(`${API}/contratos`, {
++      headers: { Authorization: `Bearer ${R.token}` },
++      data: contratoBase(`API-BADDEP-${Date.now()}`, { superintendenteId: S.user.id, dependenciaId: V.user.id }),
++    });
++    expect(r.status()).toBe(400);
++    expect((await r.json()).error).toContain('dependencia');
++  });
++});
+diff --git a/frontend/e2e/bitacora-v2.spec.js b/frontend/e2e/bitacora-v2.spec.js
+index d316d83..e37042b 100644
+--- a/frontend/e2e/bitacora-v2.spec.js
++++ b/frontend/e2e/bitacora-v2.spec.js
+@@ -20,12 +20,16 @@ async function login(ctx, email) {
+ const auth = (token) => ({ Authorization: `Bearer ${token}` });
+ 
+ async function crearContrato(ctx, token, folio, superId, supId) {
++  // Corrección profe (04-jun): el alta exige dependenciaId (cuenta rol dependencia). Lo resolvemos
++  // aquí (login de la cuenta semilla dependencia) para no tocar los call sites. Los textos
++  // contratista/dependencia ya no se envían: el backend los deriva del nombre de la cuenta.
++  const D = await login(ctx, 'dependencia@sigecop.test');
+   const r = await ctx.post(`${API}/contratos`, {
+     headers: auth(token),
+     data: {
+       folio, tipo: 'Obra pública sobre la base de precios unitarios', objeto: 'Obra e2e bitácora',
+-      contratista: 'Constructora E2E', dependencia: 'Dependencia E2E', plazoDias: 60, fechaInicio: '2026-06-01',
+-      superintendenteId: superId, supervisionId: supId, anticipoPct: null, juridicos: {},
++      plazoDias: 60, fechaInicio: '2026-06-01',
++      superintendenteId: superId, supervisionId: supId, dependenciaId: D.user.id, anticipoPct: null, juridicos: {},
+       conceptos: [{ clave: 'A1', concepto: 'Concepto e2e', unidad: 'm³', cantidad: 100, pu: 50 }],
+       ciclo: 'mensual', programa: [{ clave: 'A1', periodoNumero: 1, cantidad: 100 }], garantias: []
+     }
+diff --git a/frontend/e2e/hu-registro.spec.js b/frontend/e2e/hu-registro.spec.js
+index 25c4723..c2fee11 100644
+--- a/frontend/e2e/hu-registro.spec.js
++++ b/frontend/e2e/hu-registro.spec.js
+@@ -37,7 +37,9 @@ async function loginReal(page, email, password) {
+ 
+ test('HU-Registro — auto-registro, rechazo por pendiente, aprobación y acceso', async ({ page }) => {
+   const email = `nuevo.e2e.${Date.now()}@sigecop.test`;
+-  const nombre = `Usuario E2E ${Date.now()}`;
++  // Corrección profe (04-jun): el registro exige nombre + apellido(s) (≥2 palabras); "Usuario Prueba"
++  // las cumple. El sufijo numérico (Date.now) solo hace único el valor mostrado en el header.
++  const nombre = `Usuario Prueba ${Date.now()}`;
+ 
+   await freshHome(page);
+ 
+@@ -95,3 +97,23 @@ test('HU-Registro — auto-registro, rechazo por pendiente, aprobación y acceso
+   await expect(page.locator('#login-usuario')).toHaveCount(0);
+   await expect(page.getByText(nombre)).toBeVisible();
+ });
++
++// Corrección profe (04-jun): el nombre completo (nombre + apellidos) aparece en la bitácora; no se
++// admite registrarse con un solo nombre. Validación de cliente (espejo del candado del backend).
++test('HU-Registro — el nombre debe incluir apellido(s): rechaza un solo nombre', async ({ page }) => {
++  await freshHome(page);
++  await page.getByTestId('link-registro').click();
++  await expect(page.getByTestId('form-registro')).toBeVisible();
++
++  await page.getByTestId('reg-nombre').fill('Iván');                 // un solo token → inválido
++  await page.getByTestId('reg-email').fill(`solo.nombre.${Date.now()}@sigecop.test`);
++  await page.getByTestId('reg-rol').selectOption('residente');
++  await page.getByTestId('reg-password').fill(PWD_NUEVO);
++  await page.getByTestId('reg-password2').fill(PWD_NUEVO);
++  await page.getByTestId('reg-submit').click();
++
++  // No envía: muestra error y sigue en el formulario de registro.
++  await expect(page.getByTestId('registro-error')).toBeVisible();
++  await expect(page.getByTestId('registro-error')).toContainText('apellido');
++  await expect(page.getByTestId('form-registro')).toBeVisible();
++});
+diff --git a/frontend/src/pages/AltaContrato.jsx b/frontend/src/pages/AltaContrato.jsx
+index c24fddd..5d1fefd 100644
+--- a/frontend/src/pages/AltaContrato.jsx
++++ b/frontend/src/pages/AltaContrato.jsx
+@@ -98,12 +98,12 @@ const ERR0 = { campos: {}, conceptoIdx: null, programaError: false, garantiaIdx:
+ // alta-v2 (4.2): valores iniciales VACÍOS (también usados por "Cancelar"). El contrato nuevo
+ // arranca en blanco; el `tipo` mantiene la primera opción del select (campo obligatorio que
+ // siempre tiene un valor válido).
++// Corrección profe (04-jun): contratista/dependencia YA NO son texto libre (pasan a CUENTAS
++// seleccionadas: contratista = superintendente; dependencia = dependenciaId). Por eso salen de aquí.
+ const DATOS_INICIALES = {
+   folio: '',
+   tipo: 'Obra pública sobre la base de precios unitarios',
+   objeto: '',
+-  contratista: '',
+-  dependencia: '',
+   plazoDias: '',
+   fechaInicio: ''
+ };
+@@ -172,11 +172,17 @@ function TabDatosGenerales({ datos, set, err, equipo, montoDerivado }) {
+             <input className={inputCls(e.objeto)} value={datos.objeto} onChange={set('objeto')} data-testid="dg-objeto" />
+           </Field>
+         </div>
+-        <Field label="Contratista" required>
+-          <input className={inputCls(e.contratista)} maxLength={200} value={datos.contratista} onChange={set('contratista')} data-testid="dg-contratista" />
+-        </Field>
+-        <Field label="Dependencia" required>
+-          <input className={inputCls(e.dependencia)} maxLength={200} value={datos.dependencia} onChange={set('dependencia')} data-testid="dg-dependencia" />
++        {/* Corrección profe (04-jun): la dependencia (parte contratante) se SELECCIONA de una cuenta
++            registrada rol 'dependencia' (antes texto libre). El contratista NO va aquí: es la cuenta
++            del superintendente (Equipo del contrato), quien firma la bitácora. */}
++        <Field label="Dependencia (cuenta contratante)" required hint="Cuenta registrada con rol dependencia.">
++          <select className={inputCls(eq.errDependencia)} value={eq.dependenciaId || ''} onChange={(ev) => eq.setDependenciaId(ev.target.value)} data-testid="dg-dependencia">
++            <option value="">— Selecciona —</option>
++            {(eq.asignablesDependencia || []).map((u) => <option key={u.id} value={u.id}>{u.nombre} · {u.email}</option>)}
++          </select>
++          {(eq.asignablesDependencia || []).length === 0 && (
++            <p className="text-xs text-amber-700 mt-1" data-testid="sin-dependencias">No hay cuentas de dependencia aprobadas; debe registrarse y aprobarse al menos una cuenta con rol dependencia.</p>
++          )}
+         </Field>
+         <Field label="Monto del contrato (derivado del catálogo)" hint="Σ de los importes del catálogo (sin IVA). No se captura; se deriva al centavo.">
+           <input className="sg-input bg-slate-100 text-slate-700" value={montoNum ? formatoMXN.format(montoNum) : '—'} readOnly data-testid="monto-derivado" />
+@@ -211,7 +217,9 @@ function TabDatosGenerales({ datos, set, err, equipo, montoDerivado }) {
+           <Field label="Residente (tú)">
+             <input className="sg-input bg-slate-100 text-slate-700" value={eq.usuarioNombre || '—'} readOnly data-testid="equipo-residente" />
+           </Field>
+-          <Field label="Superintendente" required hint="Cuenta de contratista aprobada.">
++          {/* Corrección profe (04-jun): esta cuenta ES el contratista (su superintendente de obra),
++              seleccionado de cuentas registradas. Firma la bitácora y queda en el contrato_roster. */}
++          <Field label="Contratista · superintendente de obra" required hint="Cuenta de contratista aprobada; firma la bitácora.">
+             <select className={inputCls(eq.errSuperintendente)} value={eq.superintendenteId || ''} onChange={(ev) => eq.setSuperintendenteId(ev.target.value)} data-testid="select-superintendente">
+               <option value="">— Selecciona —</option>
+               {(eq.asignablesContratista || []).map((u) => <option key={u.id} value={u.id}>{u.nombre} · {u.email}</option>)}
+@@ -1051,7 +1059,9 @@ function TabRegistrados({ contratos, loading, errorMsg, sinSesion, onRecargar, s
+   );
+ }
+ 
+-const REQ_GENERALES = ['folio', 'tipo', 'objeto', 'contratista', 'dependencia', 'plazoDias', 'fechaInicio'];
++// Corrección profe (04-jun): contratista/dependencia ya no se validan como texto aquí (son cuentas:
++// superintendenteId y dependenciaId, validados aparte en validarPaso(0)).
++const REQ_GENERALES = ['folio', 'tipo', 'objeto', 'plazoDias', 'fechaInicio'];
+ // 4.1 + alta-v3 (PDF firmado OBLIGATORIO): pasos del WIZARD de creación (captura). El PDF
+ // firmado (5) es ahora el ÚLTIMO paso del wizard: el botón "Guardar contrato" vive ahí y queda
+ // GATEADO (deshabilitado hasta adjuntar el PDF firmado; validarPaso(5)). Solo "Registrados" (6)
+@@ -1092,10 +1102,13 @@ export default function AltaContrato() {
+   );
+ 
+   // Equipo del contrato (ligado a cuentas). El residente es el usuario actual.
++  // Corrección profe (04-jun): la dependencia también es una CUENTA seleccionada (parte contratante).
+   const [superintendenteId, setSuperintendenteId] = useState('');
+   const [supervisionId, setSupervisionId] = useState('');
++  const [dependenciaId, setDependenciaId] = useState('');
+   const [asignablesContratista, setAsignablesContratista] = useState([]);
+   const [asignablesSupervision, setAsignablesSupervision] = useState([]);
++  const [asignablesDependencia, setAsignablesDependencia] = useState([]);
+ 
+   const [errores, setErrores] = useState(ERR0);
+   const [tabActivo, setTabActivo] = useState(0);
+@@ -1148,7 +1161,7 @@ export default function AltaContrato() {
+   }));
+   const montoDerivado = round2(conceptos.reduce((s, c) => s + (Number(importeDe(c.cantidad, c.pu)) || 0), 0));
+ 
+-  useEffect(() => { setErrores(ERR0); }, [datosGenerales, datosJuridicos, anticipoPct, conceptos, celdas, ciclo, garantias, superintendenteId, supervisionId]);
++  useEffect(() => { setErrores(ERR0); }, [datosGenerales, datosJuridicos, anticipoPct, conceptos, celdas, ciclo, garantias, superintendenteId, supervisionId, dependenciaId]);
+ 
+   // Cuentas asignables al equipo (solo el residente puede consultarlas; si el rol
+   // no es residente la API responde 403 y dejamos las listas vacías).
+@@ -1156,6 +1169,7 @@ export default function AltaContrato() {
+     if (sinSesion) return;
+     api.listarAsignables('contratista').then((l) => setAsignablesContratista(Array.isArray(l) ? l : [])).catch(() => setAsignablesContratista([]));
+     api.listarAsignables('supervision').then((l) => setAsignablesSupervision(Array.isArray(l) ? l : [])).catch(() => setAsignablesSupervision([]));
++    api.listarAsignables('dependencia').then((l) => setAsignablesDependencia(Array.isArray(l) ? l : [])).catch(() => setAsignablesDependencia([]));
+   }, [sinSesion]);
+ 
+   const [contratos, setContratos] = useState([]);
+@@ -1183,7 +1197,7 @@ export default function AltaContrato() {
+   useEffect(() => {
+     if (!montadoRef.current) { montadoRef.current = true; return; }
+     setDirty(true);
+-  }, [datosGenerales, datosJuridicos, anticipoPct, conceptos, celdas, ciclo, garantias, superintendenteId, supervisionId]);
++  }, [datosGenerales, datosJuridicos, anticipoPct, conceptos, celdas, ciclo, garantias, superintendenteId, supervisionId, dependenciaId]);
+ 
+   // 4.1: aviso del navegador "¿seguro de salir?" ante recarga/cierre con cambios sin guardar.
+   // (Persistencia del borrador ante recarga = NO implementada — opcional; ver doc.)
+@@ -1205,7 +1219,9 @@ export default function AltaContrato() {
+         return { ok: false, msg: `Faltan campos: ${faltan.join(', ')}`, errores: { ...ERR0, campos } };
+       }
+       if (!(Number.isInteger(Number(datosGenerales.plazoDias)) && Number(datosGenerales.plazoDias) > 0)) return { ok: false, msg: 'El plazo debe ser un entero mayor a 0', errores: { ...ERR0, campos: { plazoDias: true } } };
+-      if (!superintendenteId) return { ok: false, msg: 'Asigna un superintendente al equipo del contrato', errores: { ...ERR0, campos: { superintendente: true } } };
++      if (!superintendenteId) return { ok: false, msg: 'Asigna el contratista (superintendente de obra) del contrato', errores: { ...ERR0, campos: { superintendente: true } } };
++      // Corrección profe (04-jun): la dependencia es una cuenta seleccionada (parte contratante).
++      if (!dependenciaId) return { ok: false, msg: 'Selecciona la dependencia (cuenta contratante registrada)', errores: { ...ERR0, campos: { dependencia: true } } };
+       return { ok: true };
+     }
+     if (idx === 1) {
+@@ -1381,12 +1397,13 @@ export default function AltaContrato() {
+         folio: datosGenerales.folio,
+         tipo: datosGenerales.tipo,
+         objeto: datosGenerales.objeto,
+-        contratista: datosGenerales.contratista,
+-        dependencia: datosGenerales.dependencia,
++        // Corrección profe (04-jun): contratista/dependencia ya no van como texto; el backend deriva
++        // el texto del nombre de la cuenta (contratista = superintendente; dependencia = dependenciaId).
+         plazoDias: Number(datosGenerales.plazoDias),
+         fechaInicio: datosGenerales.fechaInicio,
+         superintendenteId: Number(superintendenteId),
+         supervisionId: supervisionId ? Number(supervisionId) : null,
++        dependenciaId: dependenciaId ? Number(dependenciaId) : null,
+         anticipoPct: anticipoPct === '' || anticipoPct === null ? null : Number(anticipoPct),
+         juridicos: datosJuridicos,
+         // monto NO se envía: el backend lo deriva = Σ ROUND(cantidad×pu,2). clave por concepto.
+@@ -1448,6 +1465,7 @@ export default function AltaContrato() {
+     setAnticipoPct('');
+     setSuperintendenteId('');
+     setSupervisionId('');
++    setDependenciaId('');
+     setConceptos(conceptosIniciales());
+     setCiclo('mensual');
+     setCeldas({});
+@@ -1473,7 +1491,7 @@ export default function AltaContrato() {
+   const tabsConError = useMemo(() => {
+     const s = new Set();
+     const c = errores.campos || {};
+-    if (REQ_GENERALES.some((k) => c[k]) || c.superintendente) s.add(0);
++    if (REQ_GENERALES.some((k) => c[k]) || c.superintendente || c.dependencia) s.add(0);
+     if (errores.conceptoIdx != null || errores.catalogoMonto) s.add(1);
+     if (errores.programaError) s.add(2);
+     if (REQ_JURIDICOS.some((k) => c[k])) s.add(3); // alta-v5: jurídicos obligatorios
+@@ -1535,9 +1553,11 @@ export default function AltaContrato() {
+   const tabs = [
+     { label: 'Datos generales', content: wrapTab(<TabDatosGenerales datos={datosGenerales} set={setDatosGen} err={errores.campos} montoDerivado={montoDerivado} equipo={{
+       usuarioNombre: usuario?.nombre,
+-      asignablesContratista, asignablesSupervision,
++      asignablesContratista, asignablesSupervision, asignablesDependencia,
+       superintendenteId, setSuperintendenteId, supervisionId, setSupervisionId,
+-      errSuperintendente: errores.campos?.superintendente
++      dependenciaId, setDependenciaId,
++      errSuperintendente: errores.campos?.superintendente,
++      errDependencia: errores.campos?.dependencia
+     }} />) },
+     { label: 'Catálogo de conceptos', content: wrapTab(
+       <TabCatalogo rows={conceptos} onCell={mkCell(setConceptos)} onPatch={mkPatch(setConceptos)}
+diff --git a/frontend/src/pages/SeleccionRol.jsx b/frontend/src/pages/SeleccionRol.jsx
+index 7d01541..a844ecd 100644
+--- a/frontend/src/pages/SeleccionRol.jsx
++++ b/frontend/src/pages/SeleccionRol.jsx
+@@ -95,6 +95,10 @@ function FormLogin({ onIrRegistro, mensaje, setMensaje }) {
+   );
+ }
+ 
++// Corrección profe (04-jun): el nombre completo (nombre + apellido[s]) aparece en la bitácora
++// (art. 123 RLOPSRM); se exige ≥2 palabras. Espejo de la validación del backend (auth.controller).
++const esNombreCompleto = (n) => (String(n || '').trim().match(/\p{L}{2,}/gu) || []).length >= 2;
++
+ function FormRegistro({ onIrLogin, setMensaje }) {
+   const [nombre, setNombre] = useState('');
+   const [email, setEmail] = useState('');
+@@ -113,6 +117,10 @@ function FormRegistro({ onIrLogin, setMensaje }) {
+       setErrorLocal('Completa todos los campos.');
+       return;
+     }
++    if (!esNombreCompleto(nombre)) {
++      setErrorLocal('Captura tu nombre y apellido(s): el nombre completo aparece en la bitácora.');
++      return;
++    }
+     if (password.length < 8) {
+       setErrorLocal('La contraseña debe tener al menos 8 caracteres.');
+       return;
+diff --git a/frontend/src/pages/SolicitudRegistro.jsx b/frontend/src/pages/SolicitudRegistro.jsx
+index 0ea6a01..bedde6d 100644
+--- a/frontend/src/pages/SolicitudRegistro.jsx
++++ b/frontend/src/pages/SolicitudRegistro.jsx
+@@ -8,6 +8,10 @@ import { api } from '../services/api.js';
+ // crea la cuenta en estado 'pendiente' hasta que la dependencia la aprueba. Antes era una
+ // maqueta "Propuesta · a validar" del modo proyecto (showToast, sin backend, con contratoDummy);
+ // se eliminó ese andamiaje. Es autosuficiente (no usa Layout): trae su propia cabecera.
++// Corrección profe (04-jun): el nombre completo (nombre + apellido[s]) aparece en la bitácora
++// (art. 123 RLOPSRM); se exige ≥2 palabras. Espejo de la validación del backend (auth.controller).
++const esNombreCompleto = (n) => (String(n || '').trim().match(/\p{L}{2,}/gu) || []).length >= 2;
++
+ export default function SolicitudRegistro() {
+   const [nombre, setNombre] = useState('');
+   const [email, setEmail] = useState('');
+@@ -27,6 +31,10 @@ export default function SolicitudRegistro() {
+       setError('Completa nombre, correo y contraseña.');
+       return;
+     }
++    if (!esNombreCompleto(nombre)) {
++      setError('Captura tu nombre y apellido(s): el nombre completo aparece en la bitácora.');
++      return;
++    }
+     if (password.length < 8) {
+       setError('La contraseña debe tener al menos 8 caracteres.');
+       return;

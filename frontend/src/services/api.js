@@ -99,6 +99,9 @@ export const api = {
   // HU-12: estimaciones (integración + consulta + avance para el preview).
   avanceContrato: (contratoId) => request(`/estimaciones/contrato/${contratoId}/avance`),
   estimacionesDeContrato: (contratoId) => request(`/estimaciones/contrato/${contratoId}`),
+  // Etapa A (solo lectura): datos derivados para la pantalla única (semáforo de plan, saldos, barras).
+  // periodoFin opcional: si se pasa, el planeado se acota a ese periodo (mismo corte que valida el server).
+  preparacionEstimacion: (contratoId, periodoFin) => request(`/estimacion-prep/contrato/${contratoId}${periodoFin ? `?periodo_fin=${encodeURIComponent(periodoFin)}` : ''}`),
   detalleEstimacion: (id) => request(`/estimaciones/${id}`),
   integrarEstimacion: (payload) => request('/estimaciones', { method: 'POST', body: JSON.stringify(payload) }),
   // Pasada F: roster del contrato (sustitución de personas, art. 125 fr. I g RLOPSRM). Lectura por
