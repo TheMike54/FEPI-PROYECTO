@@ -34,6 +34,45 @@ const VIEW_PATH = '/contratos/expediente';
 const TITULO = 'Consulta integrada del expediente contractual';
 const SPRINT = 'Sprint 4';
 
+// HU-04 quedó CABLEADA a datos reales (GET /contratos/:id): para consultar un expediente hay que
+// SELECCIONAR un contrato (ya no hay datos dummy ni botones de descarga placeholder). Para que los
+// tests sean deterministas creamos un contrato por API (residente) con el equipo COMPLETO, de modo
+// que lo vea cualquier rol con acceso: contratista (= superintendente_id), supervisión
+// (= supervision_id) y dependencia (rol que "ve todo", lib/acceso ROLES_VEN_TODO). Solo se tocan .spec.
+const API = 'http://localhost:4000/api';
+const PASS = 'Sigecop2026!';
+async function loginApi(request, email) {
+  return (await request.post(`${API}/auth/login`, { data: { email, password: PASS } })).json();
+}
+async function crearContratoConsultable(request) {
+  const [R, S, V, D] = await Promise.all([
+    loginApi(request, 'residente@sigecop.test'),
+    loginApi(request, 'contratista@sigecop.test'),
+    loginApi(request, 'supervision@sigecop.test'),
+    loginApi(request, 'dependencia@sigecop.test')
+  ]);
+  const folio = `E2E-HU04-${Date.now()}`;
+  const r = await request.post(`${API}/contratos`, {
+    headers: { Authorization: `Bearer ${R.token}` },
+    data: {
+      folio, tipo: 'Obra pública sobre la base de precios unitarios', objeto: 'Expediente e2e',
+      plazoDias: 60, fechaInicio: '2026-06-01',
+      superintendenteId: S.user.id, supervisionId: V.user.id, dependenciaId: D.user.id,
+      anticipoPct: null, juridicos: {},
+      conceptos: [{ clave: 'A1', concepto: 'Concepto e2e', unidad: 'm³', cantidad: 100, pu: 50 }],
+      ciclo: 'mensual', programa: [{ clave: 'A1', periodoNumero: 1, cantidad: 100 }], garantias: []
+    }
+  });
+  expect(r.status(), 'crear contrato consultable').toBe(201);
+  return folio;
+}
+async function seleccionarContratoPorFolio(page, folio) {
+  const sel = page.getByTestId('select-contrato');
+  await expect(sel).toBeVisible();
+  const val = await sel.locator('option', { hasText: folio }).first().getAttribute('value');
+  await sel.selectOption(val);
+}
+
 // ---------------------------------------------------------------------------
 // MODO APLICACION — Residente ejecuta
 // ---------------------------------------------------------------------------
@@ -71,14 +110,18 @@ for (const rol of [
       await enterAppMode(page, rol.id);
     });
 
-    test('aviso de solo consulta visible; los botones de descarga siguen presentes', async ({ page }) => {
+    test('aviso de solo consulta visible; consulta el expediente real tras elegir contrato', async ({ page, request }) => {
+      const folio = await crearContratoConsultable(request);
       await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
       await goToViaSidebar(page, VIEW_PATH);
 
+      // El aviso de solo lectura (HeaderVista) sigue visible para los roles de consulta.
       await expectAvisoSoloConsulta(page);
-      // La consulta del expediente y sus descargas son una operación de lectura
-      // — siguen disponibles para todos los roles con acceso.
-      await expect(page.getByTestId('btn-descargar-configuracion-0')).toBeVisible();
+      // Datos reales: se SELECCIONA un contrato y se ve su expediente (buscador + bloques). La
+      // consulta es de lectura, disponible para todos los roles con acceso.
+      await seleccionarContratoPorFolio(page, folio);
+      await expect(page.getByTestId('input-busqueda')).toBeVisible(); // el expediente cargó
+      await expect(page.getByTestId('aviso-error')).toHaveCount(0);   // sin 403/404
     });
   });
 }

@@ -34,6 +34,43 @@ const VIEW_PATH = '/seguimiento/alertas';
 const TITULO = 'Configuración de alertas de atraso';
 const SPRINT = 'Sprint 6';
 
+// HU-07 quedó CABLEADA a datos reales: el formulario (al-concepto/al-umbral/btn-crear-alerta) solo
+// aparece tras SELECCIONAR un contrato. Creamos uno por API (residente) con el equipo COMPLETO para
+// que lo vean tanto el residente (creador) como la supervisión (supervision_id). Solo se tocan .spec.
+const API = 'http://localhost:4000/api';
+const PASS = 'Sigecop2026!';
+async function loginApi(request, email) {
+  return (await request.post(`${API}/auth/login`, { data: { email, password: PASS } })).json();
+}
+async function crearContratoConConceptos(request) {
+  const [R, S, V, D] = await Promise.all([
+    loginApi(request, 'residente@sigecop.test'),
+    loginApi(request, 'contratista@sigecop.test'),
+    loginApi(request, 'supervision@sigecop.test'),
+    loginApi(request, 'dependencia@sigecop.test')
+  ]);
+  const folio = `E2E-HU07-${Date.now()}`;
+  const r = await request.post(`${API}/contratos`, {
+    headers: { Authorization: `Bearer ${R.token}` },
+    data: {
+      folio, tipo: 'Obra pública sobre la base de precios unitarios', objeto: 'Alertas e2e',
+      plazoDias: 60, fechaInicio: '2026-06-01',
+      superintendenteId: S.user.id, supervisionId: V.user.id, dependenciaId: D.user.id,
+      anticipoPct: null, juridicos: {},
+      conceptos: [{ clave: 'A1', concepto: 'Concepto e2e', unidad: 'm³', cantidad: 100, pu: 50 }],
+      ciclo: 'mensual', programa: [{ clave: 'A1', periodoNumero: 1, cantidad: 100 }], garantias: []
+    }
+  });
+  expect(r.status(), 'crear contrato con conceptos').toBe(201);
+  return folio;
+}
+async function seleccionarContratoPorFolio(page, folio) {
+  const sel = page.getByTestId('select-contrato');
+  await expect(sel).toBeVisible();
+  const val = await sel.locator('option', { hasText: folio }).first().getAttribute('value');
+  await sel.selectOption(val);
+}
+
 // ---------------------------------------------------------------------------
 // MODO APLICACION — Residente ejecuta
 // ---------------------------------------------------------------------------
@@ -55,11 +92,15 @@ test.describe('HU-07 — modo aplicacion (Residente: ejecuta)', () => {
     });
   });
 
-  test('formulario editable; sin aviso de solo consulta', async ({ page }) => {
+  test('formulario editable tras elegir contrato; sin aviso de solo consulta', async ({ page, request }) => {
+    const folio = await crearContratoConConceptos(request); // residente = creador → lo ve
     await goToViaSidebar(page, VIEW_PATH);
-    await expect(page.getByTestId('al-concepto')).toBeEnabled();
-    await expect(page.getByTestId('btn-crear-alerta')).toBeVisible();
     await expectSinAvisoSoloConsulta(page);
+    // Datos reales: el formulario aparece tras SELECCIONAR un contrato.
+    await seleccionarContratoPorFolio(page, folio);
+    await expect(page.getByTestId('al-concepto')).toBeEnabled();
+    await expect(page.getByTestId('al-umbral')).toBeEnabled();
+    await expect(page.getByTestId('btn-crear-alerta')).toBeVisible();
   });
 });
 
@@ -73,11 +114,14 @@ test.describe('HU-07 — modo aplicacion (Supervisión: consulta)', () => {
     await enterAppMode(page, 'supervision');
   });
 
-  test('aviso de solo consulta visible; formulario deshabilitado', async ({ page }) => {
+  test('aviso de solo consulta visible; formulario deshabilitado tras elegir contrato', async ({ page, request }) => {
+    const folio = await crearContratoConConceptos(request); // supervision_id = supervisión → lo ve
     await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
     await goToViaSidebar(page, VIEW_PATH);
 
     await expectAvisoSoloConsulta(page);
+    // Datos reales: el formulario aparece tras SELECCIONAR un contrato, pero deshabilitado (lectura).
+    await seleccionarContratoPorFolio(page, folio);
     await expect(page.getByTestId('al-concepto')).toBeDisabled();
     await expect(page.getByTestId('al-umbral')).toBeDisabled();
     // El botón de crear no se renderiza en lectura.
