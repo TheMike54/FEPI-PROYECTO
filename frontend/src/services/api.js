@@ -115,5 +115,12 @@ export const api = {
   eliminarAlerta: (id) => request(`/alertas/${id}`, { method: 'DELETE' }),
   // HU-14 (Equipo 3): historial del ciclo de cobro (cada estimación con su estado y transiciones,
   // orden cronológico). Acotado por participación en el backend.
-  historialEstimaciones: (contratoId) => request(`/estimaciones-ciclo/contrato/${contratoId}/historial`)
+  historialEstimaciones: (contratoId) => request(`/estimaciones-ciclo/contrato/${contratoId}/historial`),
+  // HU-06: trabajos terminados (avance ejecutado por concepto). Lectura por participación;
+  // escritura solo contratista (lo valida el backend). art. 118 bloquea (409); la nota tipo
+  // `avance` es requerida si cantidad > 0; el periodo se deriva de la fecha.
+  trabajosDeContrato: (contratoId) => request(`/trabajos/contrato/${contratoId}`),
+  registrarAvance: (payload) => request('/trabajos', { method: 'POST', body: JSON.stringify(payload) }),
+  actualizarAvance: (id, payload) => request(`/trabajos/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+  eliminarAvance: (id) => request(`/trabajos/${id}`, { method: 'DELETE' })
 };
