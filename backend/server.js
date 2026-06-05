@@ -13,6 +13,7 @@ const rosterRoutes = require('./src/routes/roster.routes');  // Pasada F: sustit
 const conveniosRoutes = require('./src/routes/convenios.routes');  // Pasada HU-03: convenios modificatorios (art. 59 LOPSRM)
 const alertasRoutes = require('./src/routes/alertas.routes');
 const estimacionPrepRoutes = require('./src/routes/estimacion-prep.routes');  // Etapa A: solo-lectura para la pantalla única de estimación
+const estimacionesCicloRoutes = require('./src/routes/estimaciones-ciclo.routes');  // HU-14 (Equipo 3): historial del ciclo de cobro
 const { initDb } = require('./src/db/init');
 
 const app = express();
@@ -40,6 +41,7 @@ app.use('/api/roster', rosterRoutes);
 app.use('/api/convenios', conveniosRoutes);
 app.use('/api/alertas', alertasRoutes);
 app.use('/api/estimacion-prep', estimacionPrepRoutes);
+app.use('/api/estimaciones-ciclo', estimacionesCicloRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Ruta no encontrada' });

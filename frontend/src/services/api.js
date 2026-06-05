@@ -112,5 +112,8 @@ export const api = {
   alertasDeContrato: (contratoId) => request(`/alertas/contrato/${contratoId}`),
   crearAlerta: (payload) => request('/alertas', { method: 'POST', body: JSON.stringify(payload) }),
   toggleAlerta: (id, payload) => request(`/alertas/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
-  eliminarAlerta: (id) => request(`/alertas/${id}`, { method: 'DELETE' })
+  eliminarAlerta: (id) => request(`/alertas/${id}`, { method: 'DELETE' }),
+  // HU-14 (Equipo 3): historial del ciclo de cobro (cada estimación con su estado y transiciones,
+  // orden cronológico). Acotado por participación en el backend.
+  historialEstimaciones: (contratoId) => request(`/estimaciones-ciclo/contrato/${contratoId}/historial`)
 };
