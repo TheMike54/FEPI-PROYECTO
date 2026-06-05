@@ -1,9 +1,13 @@
 -- =====================================================================
 -- SEED LOCAL para smoke de HU-14 (Equipo 3) — NO es parte de schema.sql.
 -- Script aparte, idempotente y re-ejecutable. Crea lo MÍNIMO para ver el
--- historial: 1 contrato con equipo (incl. superintendente) + 1 estimación
--- en estado 'integrada' (con integrada_en/por), más 1 concepto y su generador
--- para que la estimación sea coherente.
+-- historial: 1 contrato con equipo (incl. superintendente) + 2 estimaciones,
+-- cada una con su generador, para que el historial sea coherente:
+--   · EST-001 (numero 1): periodo Ene 2026, estado 'integrada', neto 34750.00
+--   · EST-002 (numero 2): periodo Feb 2026, estado 'rechazada', neto 13900.00
+-- La 2ª estimación da periodos/estados DISTINTOS: el filtro de la vista deriva
+-- sus opciones de los datos, así el smoke de HU-14 puede ejercer la lógica Y
+-- (un combo periodo+estado que matchea deja 1 fila; uno cruzado deja 0).
 --
 -- Reusa cuentas DEMO existentes (no crea credenciales):
 --   · created_by / residente_id   = 1  (Ing. Residente Demo)
@@ -27,9 +31,10 @@ DECLARE
   v_resid   INTEGER := 1;
   v_super   INTEGER := 2;
   v_superv  INTEGER := 3;
-  v_contrato_id   INTEGER;
-  v_concepto_id   INTEGER;
-  v_estimacion_id INTEGER;
+  v_contrato_id    INTEGER;
+  v_concepto_id    INTEGER;
+  v_estimacion_id  INTEGER;
+  v_estimacion2_id INTEGER;
 BEGIN
   -- (1) Contrato (idempotente por folio). Si ya existe, asegura equipo y anticipo.
   SELECT id INTO v_contrato_id FROM contratos WHERE folio = 'SMOKE-HU14-001';
@@ -75,8 +80,27 @@ BEGIN
     VALUES (v_estimacion_id, v_concepto_id, 50.0000, 0.0000, 1000.00);
   END IF;
 
-  RAISE NOTICE 'SEED HU-14 listo: contrato_id=%, concepto_id=%, estimacion_id=%',
-    v_contrato_id, v_concepto_id, v_estimacion_id;
+  -- (5) Segunda estimación, RECHAZADA y en OTRO periodo (idempotente por contrato_id + numero).
+  --     Da al historial periodos/estados distintos para ejercer el filtro de lógica Y.
+  --     Carátula coherente: subtotal = ROUND(20×1000,2)=20000; amort=ROUND(20000×30/100,2)=6000;
+  --     retención=ROUND(20000×0.005,2)=100; neto = 20000−6000−100−0 = 13900.
+  SELECT id INTO v_estimacion2_id FROM estimaciones
+   WHERE contrato_id = v_contrato_id AND numero = 2;
+  IF v_estimacion2_id IS NULL THEN
+    INSERT INTO estimaciones (contrato_id, numero, periodo_inicio, periodo_fin, estado,
+                              anticipo_pct_snapshot, subtotal, amortizacion, retencion,
+                              deductivas, neto, integrada_por, integrada_en)
+    VALUES (v_contrato_id, 2, DATE '2026-02-01', DATE '2026-02-28', 'rechazada',
+            30.00, 20000.00, 6000.00, 100.00, 0.00, 13900.00, v_super, NOW())
+    RETURNING id INTO v_estimacion2_id;
+
+    INSERT INTO estimacion_generadores (estimacion_id, contrato_concepto_id,
+                                        cantidad_periodo, cantidad_anterior_acum, pu_snapshot)
+    VALUES (v_estimacion2_id, v_concepto_id, 20.0000, 50.0000, 1000.00);
+  END IF;
+
+  RAISE NOTICE 'SEED HU-14 listo: contrato_id=%, concepto_id=%, estimacion_id=%, estimacion2_id=%',
+    v_contrato_id, v_concepto_id, v_estimacion_id, v_estimacion2_id;
 END $$;
 
 -- Verificación rápida de lo sembrado.
