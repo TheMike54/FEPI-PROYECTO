@@ -1,16 +1,16 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import jsPDF from 'jspdf';
 import { descargarExcelHoja } from '../services/excelExport.js';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import BannerContexto from '../components/vista/BannerContexto.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
-import {
-  contratoDummy,
-  conceptosDummy,
-  programaObraDummy,
-  fianzasListadoDummy,
-  bloquesExpedienteDummy
-} from '../data/dummy.js';
+import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
+import { api } from '../services/api.js';
+
+// HU-04 cableado al backend. El expediente sale de GET /api/contratos/:id, que
+// devuelve la cabecera + los bloques hijos (conceptos, actividades, garantias) +
+// datos_juridicos. El acotamiento por participación es server-side; el front solo
+// manda el token (igual que HU-10) y muestra lo que el endpoint autorice.
 
 const CAMPOS_BUSQUEDA = [
   { id: 'folio',       label: 'Folio' },
@@ -20,8 +20,12 @@ const CAMPOS_BUSQUEDA = [
   { id: 'documento',   label: 'Tipo de documento' }
 ];
 
-const moneda = (n) =>
-  `$ ${(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+// pg devuelve NUMERIC y DATE como strings; coercemos al mostrar/calcular.
+const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
+const soloFecha = (f) => (f || '').slice(0, 10);
+
+const moneda = (v) =>
+  `$ ${num(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 // Genera un PDF placeholder de 1 página con jsPDF y dispara la descarga.
 function descargarPDFPlaceholder(documento, folio) {
@@ -50,66 +54,6 @@ function descargarExcel(filas, nombreHoja, nombreArchivo) {
   // un download del navegador y los errores se muestran en consola.
   descargarExcelHoja(nombreArchivo, nombreHoja, filas);
 }
-
-// Cada bloque expone qué campos hace match con el buscador.
-const BLOQUES = [
-  {
-    id: 'configuracion',
-    titulo: 'Configuración del contrato',
-    icono: '⚙️',
-    haceMatch: (q, campo) => {
-      const blob = `${contratoDummy.folio} ${contratoDummy.contratista} ${contratoDummy.objeto} ${contratoDummy.dependencia} ${contratoDummy.tipo}`.toLowerCase();
-      if (campo === 'folio')       return contratoDummy.folio.toLowerCase().includes(q);
-      if (campo === 'contratista') return contratoDummy.contratista.toLowerCase().includes(q);
-      if (campo === 'objeto')      return contratoDummy.objeto.toLowerCase().includes(q);
-      if (campo === 'documento')   return 'configuración contrato'.includes(q);
-      return blob.includes(q);
-    }
-  },
-  {
-    id: 'catalogo',
-    titulo: 'Catálogo de conceptos',
-    icono: '📐',
-    haceMatch: (q, campo) => {
-      if (campo === 'documento') return 'catálogo conceptos'.includes(q);
-      const blob = conceptosDummy.map((c) => c.concepto).join(' ').toLowerCase();
-      return blob.includes(q);
-    }
-  },
-  {
-    id: 'programa',
-    titulo: 'Programa de obra',
-    icono: '📅',
-    haceMatch: (q, campo) => {
-      if (campo === 'periodo') {
-        return programaObraDummy.some((p) => `${p.inicio} ${p.termino}`.toLowerCase().includes(q));
-      }
-      if (campo === 'documento') return 'programa obra'.includes(q);
-      const blob = programaObraDummy.map((p) => `${p.actividad} ${p.inicio} ${p.termino}`).join(' ').toLowerCase();
-      return blob.includes(q);
-    }
-  },
-  {
-    id: 'fianzas',
-    titulo: 'Fianzas y garantías',
-    icono: '🛡️',
-    haceMatch: (q, campo) => {
-      if (campo === 'documento') return 'fianzas garantías pólizas'.includes(q);
-      const blob = fianzasListadoDummy.map((f) => `${f.tipo} ${f.afianzadora} ${f.folio}`).join(' ').toLowerCase();
-      return blob.includes(q);
-    }
-  },
-  {
-    id: 'juridicos',
-    titulo: 'Documentos jurídicos',
-    icono: '⚖️',
-    haceMatch: (q, campo) => {
-      if (campo === 'documento') return 'jurídicos cláusulas representación'.includes(q);
-      const blob = 'lic maría pérez garcía juan ramírez soto escritura 12345 notaría 47 acapulco cláusula penal vigencia obligaciones'.toLowerCase();
-      return blob.includes(q);
-    }
-  }
-];
 
 const JURIDICOS_DOCS = [
   { id: 'representacion', label: 'Escritura de representación legal' },
@@ -151,21 +95,31 @@ function BloqueExpediente({ bloque, children, abiertoDefault = true }) {
   );
 }
 
-function BloqueConfiguracion() {
+function BloqueConfiguracion({ contrato }) {
+  const contenido = [
+    { label: 'Folio',        valor: contrato.folio },
+    { label: 'Objeto',       valor: contrato.objeto },
+    { label: 'Contratista',  valor: contrato.contratista },
+    { label: 'Dependencia',  valor: contrato.dependencia },
+    { label: 'Monto',        valor: `${moneda(contrato.monto)} MXN` },
+    { label: 'Plazo',        valor: `${num(contrato.plazo_dias)} días naturales` },
+    { label: 'Modalidad',    valor: contrato.tipo },
+    { label: 'Vigencia',     valor: `${soloFecha(contrato.fecha_inicio)} — ${soloFecha(contrato.fecha_termino)}` }
+  ];
   return (
     <div>
       <dl className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {bloquesExpedienteDummy[0].contenido.map((c) => (
+        {contenido.map((c) => (
           <div key={c.label}>
             <dt className="text-xs uppercase font-semibold text-slate-500">{c.label}</dt>
-            <dd className="text-sm text-slate-800 mt-0.5">{c.valor}</dd>
+            <dd className="text-sm text-slate-800 mt-0.5">{c.valor || '—'}</dd>
           </div>
         ))}
       </dl>
       <div className="mt-4 flex justify-end gap-2">
         <BtnDescargar
           etiqueta="Contrato firmado (PDF)"
-          onClick={() => descargarPDFPlaceholder('Contrato firmado', contratoDummy.folio)}
+          onClick={() => descargarPDFPlaceholder('Contrato firmado', contrato.folio)}
           testid="btn-descargar-configuracion-0"
         />
       </div>
@@ -173,17 +127,21 @@ function BloqueConfiguracion() {
   );
 }
 
-function BloqueCatalogo() {
+function BloqueCatalogo({ conceptos, folio }) {
   const handleExcel = () => {
-    const filas = conceptosDummy.map((c) => ({
+    const filas = conceptos.map((c) => ({
+      Clave: c.clave || '',
       Concepto: c.concepto,
       Unidad: c.unidad,
-      Cantidad: c.cantidad,
-      'Precio unitario': c.pu,
-      Importe: c.cantidad * c.pu
+      Cantidad: num(c.cantidad),
+      'Precio unitario': num(c.pu),
+      Importe: Math.round(num(c.cantidad) * num(c.pu) * 100) / 100
     }));
-    descargarExcel(filas, 'Catálogo', `catalogo_${contratoDummy.folio}.xlsx`);
+    descargarExcel(filas, 'Catálogo', `catalogo_${folio}.xlsx`);
   };
+  if (conceptos.length === 0) {
+    return <p className="text-sm text-slate-400 italic">Este contrato no tiene catálogo de conceptos (precio alzado).</p>;
+  }
   return (
     <div>
       <div className="overflow-x-auto border border-slate-200 rounded-md">
@@ -198,14 +156,14 @@ function BloqueCatalogo() {
             </tr>
           </thead>
           <tbody>
-            {conceptosDummy.map((c, i) => (
-              <tr key={i} className="border-t border-slate-200 hover:bg-slate-50">
+            {conceptos.map((c, i) => (
+              <tr key={c.id ?? i} className="border-t border-slate-200 hover:bg-slate-50">
                 <td className="px-3 py-2">{c.concepto}</td>
                 <td className="px-3 py-2 text-slate-600">{c.unidad}</td>
-                <td className="px-3 py-2 text-right">{c.cantidad.toLocaleString()}</td>
-                <td className="px-3 py-2 text-right">${c.pu.toFixed(2)}</td>
+                <td className="px-3 py-2 text-right">{num(c.cantidad).toLocaleString()}</td>
+                <td className="px-3 py-2 text-right">${num(c.pu).toFixed(2)}</td>
                 <td className="px-3 py-2 text-right font-semibold">
-                  ${(c.cantidad * c.pu).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                  ${(Math.round(num(c.cantidad) * num(c.pu) * 100) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
                 </td>
               </tr>
             ))}
@@ -223,16 +181,19 @@ function BloqueCatalogo() {
   );
 }
 
-function BloquePrograma() {
+function BloquePrograma({ actividades, folio }) {
   const handleExcel = () => {
-    const filas = programaObraDummy.map((p) => ({
+    const filas = actividades.map((p) => ({
       Actividad: p.actividad,
-      Inicio: p.inicio,
-      Término: p.termino,
-      '% peso': p.peso
+      Inicio: soloFecha(p.inicio),
+      Término: soloFecha(p.termino),
+      '% peso': num(p.peso)
     }));
-    descargarExcel(filas, 'Programa', `programa_${contratoDummy.folio}.xlsx`);
+    descargarExcel(filas, 'Programa', `programa_${folio}.xlsx`);
   };
+  if (actividades.length === 0) {
+    return <p className="text-sm text-slate-400 italic">Este contrato no tiene programa de obra registrado.</p>;
+  }
   return (
     <div>
       <div className="overflow-x-auto border border-slate-200 rounded-md">
@@ -246,12 +207,12 @@ function BloquePrograma() {
             </tr>
           </thead>
           <tbody>
-            {programaObraDummy.map((p, i) => (
-              <tr key={i} className="border-t border-slate-200 hover:bg-slate-50">
+            {actividades.map((p, i) => (
+              <tr key={p.id ?? i} className="border-t border-slate-200 hover:bg-slate-50">
                 <td className="px-3 py-2">{p.actividad}</td>
-                <td className="px-3 py-2">{p.inicio}</td>
-                <td className="px-3 py-2">{p.termino}</td>
-                <td className="px-3 py-2 text-right font-semibold">{p.peso}%</td>
+                <td className="px-3 py-2">{soloFecha(p.inicio)}</td>
+                <td className="px-3 py-2">{soloFecha(p.termino)}</td>
+                <td className="px-3 py-2 text-right font-semibold">{num(p.peso)}%</td>
               </tr>
             ))}
           </tbody>
@@ -268,7 +229,10 @@ function BloquePrograma() {
   );
 }
 
-function BloqueFianzas() {
+function BloqueFianzas({ garantias, folio }) {
+  if (garantias.length === 0) {
+    return <p className="text-sm text-slate-400 italic">Este contrato no tiene garantías capturadas.</p>;
+  }
   return (
     <div className="overflow-x-auto border border-slate-200 rounded-md">
       <table className="w-full text-sm">
@@ -276,23 +240,23 @@ function BloqueFianzas() {
           <tr>
             <th className="text-left px-3 py-2">Tipo</th>
             <th className="text-left px-3 py-2">Afianzadora</th>
-            <th className="text-left px-3 py-2 w-36">Folio</th>
+            <th className="text-left px-3 py-2 w-36">Póliza</th>
             <th className="text-right px-3 py-2 w-36">Monto</th>
             <th className="text-center px-3 py-2 w-44">Descargar</th>
           </tr>
         </thead>
         <tbody>
-          {fianzasListadoDummy.map((f, i) => (
-            <tr key={f.folio} className="border-t border-slate-200 hover:bg-slate-50">
+          {garantias.map((f, i) => (
+            <tr key={f.id ?? i} className="border-t border-slate-200 hover:bg-slate-50">
               <td className="px-3 py-2 font-medium">{f.tipo}</td>
-              <td className="px-3 py-2">{f.afianzadora}</td>
-              <td className="px-3 py-2 font-mono text-xs">{f.folio}</td>
+              <td className="px-3 py-2">{f.afianzadora || '—'}</td>
+              <td className="px-3 py-2 font-mono text-xs">{f.poliza || '—'}</td>
               <td className="px-3 py-2 text-right font-mono text-xs">{moneda(f.monto)}</td>
               <td className="px-3 py-2 text-center">
                 <BtnDescargar
                   etiqueta="PDF"
                   onClick={() =>
-                    descargarPDFPlaceholder(`Póliza ${f.tipo} ${f.folio}`, contratoDummy.folio)
+                    descargarPDFPlaceholder(`Póliza ${f.tipo} ${f.poliza || ''}`.trim(), folio)
                   }
                   testid={`btn-descargar-fianzas-${i}`}
                 />
@@ -305,29 +269,39 @@ function BloqueFianzas() {
   );
 }
 
-function BloqueJuridicos() {
+function BloqueJuridicos({ juridicos, equipo, folio }) {
+  const j = juridicos || {};
   return (
     <div className="space-y-4 text-sm text-slate-800">
       <div>
         <div className="text-xs uppercase font-semibold text-slate-500 mb-1">
           Firmante autorizado (dependencia)
         </div>
-        <div>Lic. María Pérez García — Directora de Obras</div>
+        <div>
+          {j.firmanteDependencia || '—'}
+          {j.cargoFirmante ? ` — ${j.cargoFirmante}` : ''}
+        </div>
       </div>
       <div>
         <div className="text-xs uppercase font-semibold text-slate-500 mb-1">
           Representante legal (contratista)
         </div>
-        <div>Lic. Juan Ramírez Soto — Escritura Núm. 12,345, Notaría Pública Núm. 47, Acapulco, Gro.</div>
+        <div>
+          {j.representanteLegal || '—'}
+          {j.cedulaProfesional ? ` — Cédula ${j.cedulaProfesional}` : ''}
+        </div>
+        {(j.poderNotarial || j.notaria) && (
+          <div className="text-slate-600 mt-0.5">
+            {[j.poderNotarial, j.notaria].filter(Boolean).join(' · ')}
+          </div>
+        )}
       </div>
       <div>
-        <div className="text-xs uppercase font-semibold text-slate-500 mb-1">Cláusulas vigentes</div>
+        <div className="text-xs uppercase font-semibold text-slate-500 mb-1">Equipo del contrato</div>
         <ul className="list-disc list-inside text-slate-700 space-y-0.5">
-          <li>Cláusula primera — Objeto del contrato</li>
-          <li>Cláusula tercera — Monto y forma de pago</li>
-          <li>Cláusula sexta — Plazo de ejecución</li>
-          <li>Cláusula décima — Penas convencionales (art. 46 Bis LOPSRM)</li>
-          <li>Cláusula décima cuarta — Convenios modificatorios</li>
+          <li>Residente: {equipo.residente || '—'}</li>
+          <li>Superintendente (contratista): {equipo.superintendente || '—'}</li>
+          <li>Supervisión: {equipo.supervision || '— (no aplica)'}</li>
         </ul>
       </div>
       <div className="border-t border-slate-200 pt-3">
@@ -339,7 +313,7 @@ function BloqueJuridicos() {
             <BtnDescargar
               key={d.id}
               etiqueta={`${d.label} (PDF)`}
-              onClick={() => descargarPDFPlaceholder(d.label, contratoDummy.folio)}
+              onClick={() => descargarPDFPlaceholder(d.label, folio)}
               testid={`btn-descargar-juridicos-${i}`}
             />
           ))}
@@ -349,23 +323,137 @@ function BloqueJuridicos() {
   );
 }
 
-const BLOQUE_BODY = {
-  configuracion: <BloqueConfiguracion />,
-  catalogo:      <BloqueCatalogo />,
-  programa:      <BloquePrograma />,
-  fianzas:       <BloqueFianzas />,
-  juridicos:     <BloqueJuridicos />
-};
-
 export default function ConsultaExpediente() {
+  // soloLectura no bloquea la consulta (todos los roles con acceso consultan); el
+  // hook se mantiene por la metadata académica y el aviso del HeaderVista.
+  const { token } = useSesion();
+  useVistaHU('HU-04');
+  const sinSesion = !token;
+
+  const [contratos, setContratos] = useState([]);
+  const [contratoId, setContratoId] = useState('');
+  const [expediente, setExpediente] = useState(null);
+  const [cargando, setCargando] = useState(false);
+  const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [campo, setCampo] = useState('folio');
 
+  // Carga inicial: contratos del usuario (acotados server-side por participación).
+  useEffect(() => {
+    if (sinSesion) return;
+    api.listarContratos()
+      .then((l) => setContratos(Array.isArray(l) ? l : []))
+      .catch(() => setContratos([]));
+  }, [sinSesion]);
+
+  const seleccionarContrato = useCallback(async (id) => {
+    setContratoId(id);
+    setExpediente(null);
+    setError('');
+    setQuery('');
+    if (!id) return;
+    setCargando(true);
+    try {
+      const data = await api.detalleContrato(id);
+      setExpediente(data);
+    } catch (e) {
+      // El acotamiento es server-side: 403 = sin acceso a este contrato.
+      setError(
+        e.status === 403 ? 'No tienes acceso a este contrato.'
+          : e.status === 404 ? 'Contrato no encontrado.'
+            : 'No se pudo cargar el expediente.'
+      );
+    } finally {
+      setCargando(false);
+    }
+  }, []);
+
+  // Los 5 bloques del expediente, derivados del contrato real. Cada bloque expone
+  // qué campos hace match con el buscador (mismos campos que filtraba el dummy).
+  const bloques = useMemo(() => {
+    if (!expediente) return [];
+    const c = expediente;
+    const conceptos = Array.isArray(c.conceptos) ? c.conceptos : [];
+    const actividades = Array.isArray(c.actividades) ? c.actividades : [];
+    const garantias = Array.isArray(c.garantias) ? c.garantias : [];
+    const jur = c.datos_juridicos || null;
+    const equipo = {
+      residente: c.residente_nombre,
+      superintendente: c.superintendente_nombre,
+      supervision: c.supervision_nombre
+    };
+    return [
+      {
+        id: 'configuracion',
+        titulo: 'Configuración del contrato',
+        icono: '⚙️',
+        haceMatch: (q, campo) => {
+          const blob = `${c.folio} ${c.contratista} ${c.objeto} ${c.dependencia} ${c.tipo}`.toLowerCase();
+          if (campo === 'folio')       return (c.folio || '').toLowerCase().includes(q);
+          if (campo === 'contratista') return (c.contratista || '').toLowerCase().includes(q);
+          if (campo === 'objeto')      return (c.objeto || '').toLowerCase().includes(q);
+          if (campo === 'documento')   return 'configuración contrato'.includes(q);
+          return blob.includes(q);
+        },
+        body: <BloqueConfiguracion contrato={c} />
+      },
+      {
+        id: 'catalogo',
+        titulo: 'Catálogo de conceptos',
+        icono: '📐',
+        haceMatch: (q, campo) => {
+          if (campo === 'documento') return 'catálogo conceptos'.includes(q);
+          const blob = conceptos.map((x) => x.concepto).join(' ').toLowerCase();
+          return blob.includes(q);
+        },
+        body: <BloqueCatalogo conceptos={conceptos} folio={c.folio} />
+      },
+      {
+        id: 'programa',
+        titulo: 'Programa de obra',
+        icono: '📅',
+        haceMatch: (q, campo) => {
+          if (campo === 'periodo') {
+            return actividades.some((p) => `${soloFecha(p.inicio)} ${soloFecha(p.termino)}`.toLowerCase().includes(q));
+          }
+          if (campo === 'documento') return 'programa obra'.includes(q);
+          const blob = actividades.map((p) => `${p.actividad} ${soloFecha(p.inicio)} ${soloFecha(p.termino)}`).join(' ').toLowerCase();
+          return blob.includes(q);
+        },
+        body: <BloquePrograma actividades={actividades} folio={c.folio} />
+      },
+      {
+        id: 'fianzas',
+        titulo: 'Fianzas y garantías',
+        icono: '🛡️',
+        haceMatch: (q, campo) => {
+          if (campo === 'documento') return 'fianzas garantías pólizas'.includes(q);
+          const blob = garantias.map((f) => `${f.tipo} ${f.afianzadora || ''} ${f.poliza || ''}`).join(' ').toLowerCase();
+          return blob.includes(q);
+        },
+        body: <BloqueFianzas garantias={garantias} folio={c.folio} />
+      },
+      {
+        id: 'juridicos',
+        titulo: 'Documentos jurídicos',
+        icono: '⚖️',
+        haceMatch: (q, campo) => {
+          if (campo === 'documento') return 'jurídicos cláusulas representación firmante'.includes(q);
+          const blob = `${jur ? `${jur.firmanteDependencia || ''} ${jur.cargoFirmante || ''} ${jur.representanteLegal || ''} ${jur.cedulaProfesional || ''} ${jur.poderNotarial || ''} ${jur.notaria || ''}` : ''} ${equipo.residente || ''} ${equipo.superintendente || ''} ${equipo.supervision || ''}`.toLowerCase();
+          return blob.includes(q);
+        },
+        body: <BloqueJuridicos juridicos={jur} equipo={equipo} folio={c.folio} />
+      }
+    ];
+  }, [expediente]);
+
+  // Buscador con semántica AND: un bloque coincide si TODOS los términos de la
+  // búsqueda hacen match sobre el campo seleccionado (criterio 2, art. lógica Y).
   const bloquesFiltrados = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return BLOQUES;
-    return BLOQUES.filter((b) => b.haceMatch(q, campo));
-  }, [query, campo]);
+    const terminos = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (terminos.length === 0) return bloques;
+    return bloques.filter((b) => terminos.every((t) => b.haceMatch(t, campo)));
+  }, [bloques, query, campo]);
 
   return (
     <div>
@@ -381,66 +469,101 @@ export default function ConsultaExpediente() {
         ]}
       />
 
-      <BannerContexto
-        variant="slate"
-        titulo="Contrato"
-        folio={contratoDummy.folio}
-        extra={[{ value: contratoDummy.contratista }]}
-      />
-
-      <div className="bg-white border border-slate-200 rounded-md p-4 mb-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <div className="md:col-span-2">
-            <label className="sg-label">Buscar en el expediente</label>
-            <input
-              className="sg-input"
-              placeholder="Folio, palabra del objeto, contratista, fecha..."
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </div>
-          <div>
-            <label className="sg-label">Buscar por</label>
-            <select className="sg-input" value={campo} onChange={(e) => setCampo(e.target.value)}>
-              {CAMPOS_BUSQUEDA.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-            </select>
-          </div>
+      {sinSesion && (
+        <div className="bg-slate-50 border border-slate-200 rounded-md px-4 py-3 mb-4 text-sm text-slate-600">
+          Inicia sesión en modo aplicación para cargar tus contratos y consultar su expediente.
         </div>
-        {query && (
-          <p className="text-xs text-slate-500 mt-2">
-            Mostrando {bloquesFiltrados.length} de {BLOQUES.length} bloques que coinciden con "{query}".
-            {' '}
-            <button type="button" className="text-sigecop-accent hover:underline" onClick={() => setQuery('')}>
-              Limpiar
-            </button>
-          </p>
-        )}
-      </div>
+      )}
 
-      <div className="space-y-4">
-        {bloquesFiltrados.length === 0 ? (
-          <div className="bg-white border border-slate-200 rounded-md p-8 text-center text-slate-400 italic">
-            Ningún bloque del expediente coincide con la búsqueda.
-          </div>
-        ) : (
-          bloquesFiltrados.map((b) => (
-            <BloqueExpediente key={b.id} bloque={b}>
-              {BLOQUE_BODY[b.id]}
-            </BloqueExpediente>
-          ))
-        )}
-      </div>
-
-      <div className="mt-6 flex justify-end">
-        <button
-          type="button"
-          className="sg-btn-secondary disabled:opacity-60 disabled:cursor-not-allowed"
-          disabled
-          title="Disponible en SRV-06-03"
+      <div className="bg-white border border-slate-200 rounded-md p-4 mb-6 max-w-2xl">
+        <label className="sg-label">Contrato</label>
+        <select
+          className="sg-input"
+          value={contratoId}
+          onChange={(e) => seleccionarContrato(e.target.value)}
+          disabled={sinSesion}
+          data-testid="select-contrato"
         >
-          ⬇ Exportar expediente
-        </button>
+          <option value="">— Selecciona un contrato —</option>
+          {contratos.map((c) => <option key={c.id} value={c.id}>{c.folio} · {c.objeto}</option>)}
+        </select>
       </div>
+
+      {!sinSesion && !contratoId && (
+        <p className="text-sm text-slate-500 mb-4">Selecciona un contrato para ver su expediente integrado.</p>
+      )}
+      {cargando && <p className="text-sm text-slate-500 mb-4">Cargando expediente…</p>}
+      {error && (
+        <div className="bg-amber-50 border-l-4 border-amber-400 px-4 py-3 mb-4 text-sm text-amber-800 rounded-r-md" data-testid="aviso-error">
+          {error}
+        </div>
+      )}
+
+      {expediente && (
+        <>
+          <BannerContexto
+            variant="slate"
+            titulo="Contrato"
+            folio={expediente.folio}
+            extra={[{ value: expediente.contratista }]}
+          />
+
+          <div className="bg-white border border-slate-200 rounded-md p-4 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="md:col-span-2">
+                <label className="sg-label">Buscar en el expediente</label>
+                <input
+                  className="sg-input"
+                  placeholder="Folio, palabra del objeto, contratista, fecha..."
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  data-testid="input-busqueda"
+                />
+              </div>
+              <div>
+                <label className="sg-label">Buscar por</label>
+                <select className="sg-input" value={campo} onChange={(e) => setCampo(e.target.value)}>
+                  {CAMPOS_BUSQUEDA.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+                </select>
+              </div>
+            </div>
+            {query && (
+              <p className="text-xs text-slate-500 mt-2">
+                Mostrando {bloquesFiltrados.length} de {bloques.length} bloques que coinciden con "{query}".
+                {' '}
+                <button type="button" className="text-sigecop-accent hover:underline" onClick={() => setQuery('')}>
+                  Limpiar
+                </button>
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-4">
+            {bloquesFiltrados.length === 0 ? (
+              <div className="bg-white border border-slate-200 rounded-md p-8 text-center text-slate-400 italic">
+                Ningún bloque del expediente coincide con la búsqueda.
+              </div>
+            ) : (
+              bloquesFiltrados.map((b) => (
+                <BloqueExpediente key={b.id} bloque={b}>
+                  {b.body}
+                </BloqueExpediente>
+              ))
+            )}
+          </div>
+
+          <div className="mt-6 flex justify-end">
+            <button
+              type="button"
+              className="sg-btn-secondary disabled:opacity-60 disabled:cursor-not-allowed"
+              disabled
+              title="Disponible en SRV-06-03"
+            >
+              ⬇ Exportar expediente
+            </button>
+          </div>
+        </>
+      )}
 
       <SeccionCriterios
         huId="HU-04"
