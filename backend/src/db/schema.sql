@@ -1406,3 +1406,12 @@ DO $$ BEGIN
   END IF;
 END $$;
 CREATE INDEX IF NOT EXISTS idx_garantia_endosos_convenio ON garantia_endosos(convenio_id);
+
+-- =====================================================================
+-- PASADA HU-12/HU-21 (Fundación) — ENDURECIMIENTO del ciclo estimación→pago.
+-- No-doble-pago: UN pago por estimación. UNIQUE PARCIAL (los pagos legacy con
+-- estimacion_id NULL conviven; los nuevos amarran a una estimación real). ADITIVO/
+-- IDEMPOTENTE. El amarre pago↔estimación, el importe=neto y el avance de estado a
+-- 'pagada' los enforza el controller (pagos.controller.js).
+-- =====================================================================
+CREATE UNIQUE INDEX IF NOT EXISTS uq_pagos_estimacion ON pagos(estimacion_id) WHERE estimacion_id IS NOT NULL;

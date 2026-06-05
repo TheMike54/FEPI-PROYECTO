@@ -6,16 +6,16 @@ import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
 
-// HU-21 conectado al backend (variante mínima). Registra el pago efectuado; el
-// actor (registrado_por) sale del JWT (CA-2). El cierre de la estimación / avance
-// financiero (CA-1b) queda diferido a HU-12 — por eso el banner es HONESTO.
+// HU-21 ENDURECIDO: el pago se AMARRA a una estimación REAL del contrato (estimacion_id); el
+// importe = NETO de esa estimación (read-only, derivado del servidor, no se teclea); no se paga
+// dos veces; al registrar, la estimación pasa a 'pagada' (CA-1). El actor sale del JWT (CA-2).
 
-const importeNum = (s) => { const n = parseFloat(String(s || '').replace(/[$,\s]/g, '')); return Number.isFinite(n) ? n : 0; };
 const mxn = (n) => `$ ${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmtFecha = (s) => { if (!s) return '—'; const [y, m, d] = String(s).slice(0, 10).split('-'); return (y && m && d) ? `${d}/${m}/${y}` : '—'; };
+const PAGABLES = new Set(['integrada', 'autorizada']);
 
 export default function RegistroPago() {
-  const { token, usuario } = useSesion();
+  const { token } = useSesion();
   const { soloLectura } = useVistaHU('HU-21');
   const { showToast } = useToast();
   const sinSesion = !token;
@@ -23,20 +23,23 @@ export default function RegistroPago() {
 
   const [contratos, setContratos] = useState([]);
   const [contratoId, setContratoId] = useState('');
+  const [estimaciones, setEstimaciones] = useState([]); // estimaciones PAGABLES del contrato
   const [pagos, setPagos] = useState([]);
   const [cargando, setCargando] = useState(false);
   const [registrando, setRegistrando] = useState(false);
-  const [ultimo, setUltimo] = useState(null); // banner honesto del último pago
+  const [ultimo, setUltimo] = useState(null);
 
   // Formulario
-  const [estimacionRef, setEstimacionRef] = useState('');
+  const [estimacionId, setEstimacionId] = useState('');
   const [fechaPago, setFechaPago] = useState(hoy);
-  const [importe, setImporte] = useState('');
   const [referencia, setReferencia] = useState('');
   const [facturaCfdi, setFacturaCfdi] = useState('');
   const [fechaFactura, setFechaFactura] = useState('');
   const [fechaAutorizacion, setFechaAutorizacion] = useState('');
   const [observaciones, setObservaciones] = useState('');
+
+  const estSel = estimaciones.find((e) => String(e.id) === String(estimacionId)) || null;
+  const importeNeto = estSel ? estSel.neto : null; // el importe lo DERIVA el servidor del neto
 
   useEffect(() => {
     if (sinSesion) return;
@@ -50,29 +53,37 @@ export default function RegistroPago() {
     finally { setCargando(false); }
   }, [showToast]);
 
-  const seleccionar = useCallback(async (id) => {
-    setContratoId(id); setPagos([]); setUltimo(null);
-    if (!id) return;
-    await cargarPagos(id);
-  }, [cargarPagos]);
+  const cargarEstimaciones = useCallback(async (cid) => {
+    try {
+      const list = await api.estimacionesDeContrato(cid);
+      setEstimaciones((Array.isArray(list) ? list : []).filter((e) => PAGABLES.has(e.estado)));
+    } catch (e) { setEstimaciones([]); }
+  }, []);
 
-  const requeridosOk = estimacionRef.trim() && fechaPago && importeNum(importe) > 0 && referencia.trim() && facturaCfdi.trim() && fechaFactura;
+  const seleccionar = useCallback(async (id) => {
+    setContratoId(id); setPagos([]); setEstimaciones([]); setEstimacionId(''); setUltimo(null);
+    if (!id) return;
+    await Promise.all([cargarPagos(id), cargarEstimaciones(id)]);
+  }, [cargarPagos, cargarEstimaciones]);
+
+  const requeridosOk = estimacionId && fechaPago && referencia.trim() && facturaCfdi.trim() && fechaFactura;
   const puedeRegistrar = !soloLectura && !!contratoId && requeridosOk && !registrando;
 
   const limpiar = () => {
-    setEstimacionRef(''); setImporte(''); setReferencia(''); setFacturaCfdi('');
+    setEstimacionId(''); setReferencia(''); setFacturaCfdi('');
     setFechaFactura(''); setFechaAutorizacion(''); setObservaciones(''); setFechaPago(hoy);
   };
 
   const registrar = async () => {
     if (!contratoId) { showToast('Selecciona un contrato'); return; }
+    if (!estimacionId) { showToast('Selecciona la estimación a pagar'); return; }
     setRegistrando(true);
     try {
+      // El importe NO se envía: el servidor lo deriva del neto de la estimación (no arbitrario).
       const payload = {
         contrato_id: Number(contratoId),
-        estimacion_ref: estimacionRef.trim(),
+        estimacion_id: Number(estimacionId),
         fecha_pago: fechaPago,
-        importe: importeNum(importe),
         referencia: referencia.trim(),
         factura_cfdi: facturaCfdi.trim(),
         fecha_factura: fechaFactura,
@@ -80,12 +91,11 @@ export default function RegistroPago() {
         observaciones: observaciones.trim() || undefined
       };
       const creado = await api.registrarPago(payload);
-      setUltimo({ ref: creado.estimacion_ref, fecha: fmtFecha(creado.fecha_pago) });
-      showToast('Pago registrado');
+      setUltimo({ ref: creado.estimacion_ref, fecha: fmtFecha(creado.fecha_pago), importe: creado.importe });
+      showToast('Pago registrado · la estimación quedó marcada como pagada');
       limpiar();
-      await cargarPagos(contratoId);
+      await Promise.all([cargarPagos(contratoId), cargarEstimaciones(contratoId)]);
     } catch (e) {
-      // El backend manda: se muestra tal cual el error localizado (400/403/404).
       showToast(e.message || 'No se pudo registrar el pago');
     } finally { setRegistrando(false); }
   };
@@ -97,7 +107,7 @@ export default function RegistroPago() {
         titulo="Registro del pago efectuado"
         sprint="Sprint 2"
         rolAcademico="Finanzas"
-        descripcion="Registra el pago ya realizado de una estimación. Quien registra se toma de tu sesión (art. 54 LOPSRM: medios electrónicos)."
+        descripcion="Registra el pago de una ESTIMACIÓN del contrato. El importe = neto de la estimación (no se teclea). Quien registra se toma de tu sesión (art. 54 LOPSRM)."
         breadcrumb={[{ label: 'Inicio', href: '/' }, { label: 'Pagos' }, { label: 'Registro de pago' }]}
       />
 
@@ -121,32 +131,35 @@ export default function RegistroPago() {
             <div className="bg-sigecop-green-bg border-l-4 border-sigecop-green-validation px-4 py-3 mb-6 rounded-r-md" data-testid="aviso-pago-registrado">
               <div className="text-sm font-semibold text-sigecop-green-validation">✓ Pago registrado</div>
               <p className="text-sm text-slate-800 mt-1">
-                Estimación <strong>{ultimo.ref}</strong> · {ultimo.fecha}. El cierre de la estimación (marcarla pagada) y el avance financiero llegan con <strong>HU-12</strong> (CA-1b, diferido).
+                <strong>{ultimo.ref}</strong> · {ultimo.fecha} · {mxn(ultimo.importe)}. La estimación quedó marcada como <strong>pagada</strong>.
               </p>
             </div>
           )}
 
-          {/* Formulario — solo si la página es editable para el rol (finanzas = ejecuta) */}
           {contratoId && !soloLectura && (
             <div className="bg-white border border-slate-200 rounded-md p-6 mb-6">
               <h2 className="text-lg font-bold text-sigecop-blue mb-4">Datos del pago</h2>
               <RegionEditable disabled={soloLectura}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="md:col-span-2">
-                    <label className="sg-label">Referencia de la estimación (folio/periodo) *</label>
-                    <input className="sg-input" placeholder="p.ej. EST-2026-003 — Mayo 2026" value={estimacionRef} onChange={(e) => setEstimacionRef(e.target.value)} data-testid="pago-estimacion-ref" />
+                    <label className="sg-label">Estimación a pagar * <span className="text-[11px] font-normal text-slate-500">(integrada/autorizada, no pagada)</span></label>
+                    <select className="sg-input" value={estimacionId} onChange={(e) => setEstimacionId(e.target.value)} data-testid="pago-estimacion">
+                      <option value="">— Selecciona la estimación —</option>
+                      {estimaciones.map((e) => (
+                        <option key={e.id} value={e.id}>Estimación #{e.numero} · {fmtFecha(e.periodo_inicio)}–{fmtFecha(e.periodo_fin)} · neto {mxn(e.neto)}</option>
+                      ))}
+                    </select>
+                    {estimaciones.length === 0 && <p className="text-[11px] text-amber-700 mt-1">Este contrato no tiene estimaciones pagables (integradas o autorizadas, no pagadas).</p>}
                   </div>
 
                   <div>
-                    <label className="sg-label">Fecha de pago *</label>
-                    <input type="date" className="sg-input" value={fechaPago} onChange={(e) => setFechaPago(e.target.value)} data-testid="pago-fecha" />
+                    <label className="sg-label">Importe a pagar (neto de la estimación)</label>
+                    <div className="sg-input bg-slate-50 font-semibold" data-testid="pago-importe-neto">{importeNeto != null ? mxn(importeNeto) : '—'}</div>
+                    <p className="text-[11px] text-slate-500 mt-1">Derivado del servidor (neto de la estimación). No editable (art. 118 / cuadre).</p>
                   </div>
                   <div>
-                    <label className="sg-label">Importe pagado (MXN) *</label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">$</span>
-                      <input className="sg-input pl-7" placeholder="0.00" value={importe} onChange={(e) => setImporte(e.target.value)} data-testid="pago-importe" />
-                    </div>
+                    <label className="sg-label">Fecha de pago *</label>
+                    <input type="date" className="sg-input" value={fechaPago} onChange={(e) => setFechaPago(e.target.value)} data-testid="pago-fecha" />
                   </div>
 
                   <div>
@@ -184,7 +197,6 @@ export default function RegistroPago() {
             </div>
           )}
 
-          {/* Lista de pagos del contrato (del backend) */}
           {contratoId && (
             <div className="bg-white border border-slate-200 rounded-md overflow-hidden">
               <div className="px-6 py-3 border-b border-slate-200">
@@ -218,15 +230,10 @@ export default function RegistroPago() {
                           <td className="p-3 font-mono text-xs">{p.factura_cfdi}</td>
                           <td className="p-3">{p.registrado_por_nombre || '—'}</td>
                           <td className="p-3">
-                            <span
-                              className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold ${p.plazo_cumplido ? 'bg-green-100 text-sigecop-green-validation' : 'bg-amber-100 text-amber-800'}`}
-                              data-testid={`plazo-${p.id}`}
-                            >
+                            <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold ${p.plazo_cumplido ? 'bg-green-100 text-sigecop-green-validation' : 'bg-amber-100 text-amber-800'}`} data-testid={`plazo-${p.id}`}>
                               {p.plazo_cumplido ? `✓ dentro del plazo de 20 días (${p.dias_transcurridos} d)` : `⚠ excedió 20 días (${p.dias_transcurridos} d)`}
                             </span>
-                            {p.base_provisional && (
-                              <div className="text-[10px] text-slate-500 mt-1">provisional — falta la fecha de autorización (HU-20)</div>
-                            )}
+                            {p.base_provisional && <div className="text-[10px] text-slate-500 mt-1">provisional — falta la fecha de autorización (HU-20)</div>}
                           </td>
                         </tr>
                       ))
@@ -242,12 +249,12 @@ export default function RegistroPago() {
       <SeccionCriterios
         huId="HU-21"
         criterios={[
-          { numero: 1, texto: 'El registro del pago marca la estimación como pagada y actualiza el avance financiero del contrato.' },
-          { numero: 2, texto: 'se encuentran todos o se encuentran los siguientes datos: fecha, importe, referencia bancaria y usuario que realizó el registro.' }
+          { numero: 1, texto: 'El registro del pago marca la estimación como pagada (estado → pagada) y la liga a un pago real (no doble pago).' },
+          { numero: 2, texto: 'se registran: estimación, fecha, importe (= neto), referencia bancaria, CFDI y usuario que realizó el registro.' }
         ]}
       />
       <p className="mt-4 text-xs text-slate-500 italic text-center">
-        Variante mínima: se asienta el pago efectuado (CA-2). El cierre de la estimación / avance financiero (CA-1) llega con HU-12. Fundamento: arts. 54-55 LOPSRM · 127-128 RLOPSRM · 191 LFD.
+        El pago se amarra a una estimación real; el importe = neto (server-side); no se paga dos veces. Fundamento: arts. 54-55 LOPSRM · 127-128 RLOPSRM · 191 LFD.
       </p>
     </div>
   );

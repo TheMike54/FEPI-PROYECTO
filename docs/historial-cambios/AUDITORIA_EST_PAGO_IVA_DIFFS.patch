@@ -1,0 +1,32 @@
+diff --git a/backend/src/controllers/estimaciones.controller.js b/backend/src/controllers/estimaciones.controller.js
+index d7b2442..095f2c9 100644
+--- a/backend/src/controllers/estimaciones.controller.js
++++ b/backend/src/controllers/estimaciones.controller.js
+@@ -457,9 +457,26 @@ async function detalleEstimacion(req, res) {
+       }
+     };
+ 
++    // [CONDICIONAL — IVA, NO aplicar sin confirmar con el profe] El IVA (16%) NO está en
++    // LOPSRM/RLOPSRM/LFD: lo rige la Ley del IVA y el CFDI del SAT. La carátula de PROGRESO es SIN
++    // IVA (art. 2 fr. XIX RLOPSRM); este bloque DERIVA el NETO A PAGAR con IVA (formato real
++    // GACM/NAICM) sin mutar lo persistido. Tasa parametrizable; el desglose exacto queda [validar].
++    const IVA_TASA = Number(process.env.IVA_TASA ?? 16);
++    const ivaEstimacion = Number((N(row.subtotal) * IVA_TASA / 100).toFixed(2));
++    const ivaAmortizacion = Number((N(row.amortizacion) * IVA_TASA / 100).toFixed(2));
++    const neto_a_pagar = {
++      iva_tasa_pct: IVA_TASA,
++      importe_estimacion: row.subtotal, iva_estimacion: ivaEstimacion.toFixed(2),
++      total_con_iva: (N(row.subtotal) + ivaEstimacion).toFixed(2),
++      amortizacion: row.amortizacion, iva_amortizacion: ivaAmortizacion.toFixed(2),
++      retencion_5_al_millar: row.retencion, deductivas: row.deductivas,
++      total_neto_a_pagar: (N(row.subtotal) + ivaEstimacion - N(row.amortizacion) - ivaAmortizacion - N(row.retencion) - N(row.deductivas)).toFixed(2),
++      nota: 'IVA parametrizable (Ley del IVA / CFDI SAT, NO LOPSRM/RLOPSRM/LFD); a confirmar con el profe. La carátula de progreso es SIN IVA (art. 2 fr. XIX RLOPSRM).'
++    };
++
+     // No exponer el equipo del contrato en el detalle (solo se usó para el acceso).
+     const { created_by, residente_id, superintendente_id, supervision_id, ...caratula } = row;
+-    return res.status(200).json({ ...caratula, acumulados, generadores: g.rows, notas: n.rows });
++    return res.status(200).json({ ...caratula, acumulados, neto_a_pagar, generadores: g.rows, notas: n.rows });
+   } catch (err) {
+     console.error('[detalleEstimacion]', err);
+     return res.status(500).json({ error: 'Error interno' });

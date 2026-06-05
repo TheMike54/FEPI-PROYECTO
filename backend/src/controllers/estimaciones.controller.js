@@ -127,6 +127,19 @@ async function integrarEstimacion(req, res) {
       // Sin % de anticipo definido => 0 (no hay amortización que aplicar).
       const anticipoPct = contrato.anticipo_pct == null ? 0 : Number(contrato.anticipo_pct);
 
+      // (1b) GATING SERVER-SIDE del PDF firmado del contrato (antes solo era de UI, salteable por
+      //      API directo). No se integra una estimación (carátula financiera append-only) sobre un
+      //      contrato sin su PDF firmado ligado (formalización, HU-01). Si el anticipo supera el
+      //      umbral, además debe existir la autorización del titular (art. 50 fr. IV LOPSRM). Umbral
+      //      parametrizable (no se duplica el 30 hardcodeado de la UI). [validar art. 50 fr. IV con el profe].
+      const pdfC = await client.query("SELECT 1 FROM contrato_documentos WHERE contrato_id=$1 AND tipo='contrato' LIMIT 1", [contratoId]);
+      if (pdfC.rowCount === 0) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'El contrato no tiene su PDF firmado ligado; no se pueden integrar estimaciones (formalización pendiente, HU-01)' }); }
+      const ANTICIPO_UMBRAL_PDF = Number(process.env.ANTICIPO_UMBRAL_PDF ?? 30);
+      if (anticipoPct > ANTICIPO_UMBRAL_PDF) {
+        const pdfA = await client.query("SELECT 1 FROM contrato_documentos WHERE contrato_id=$1 AND tipo='anticipo_autorizacion' LIMIT 1", [contratoId]);
+        if (pdfA.rowCount === 0) { await client.query('ROLLBACK'); return res.status(409).json({ error: `Anticipo ${anticipoPct}% supera el ${ANTICIPO_UMBRAL_PDF}%: falta la autorización del titular ligada (art. 50 fr. IV LOPSRM)` }); }
+      }
+
       // (2) Serializa numeración, acumulación y no-solape por contrato (MAX+1 y SUM con
       //     el UNIQUE(contrato_id,numero) de respaldo). El lock se mantiene hasta el
       //     COMMIT, así que todo lo que leemos abajo ya incluye estimaciones previas
@@ -212,6 +225,34 @@ async function integrarEstimacion(req, res) {
         return res.status(409).json({
           error: `Excede lo contratado (art. 118 RLOPSRM) en: ${excedidos.join('; ')}`
         });
+      }
+
+      // (6c) ENDURECIMIENTO A2 (la otra mitad del art. 118): el acumulado por concepto no debe
+      //      exceder lo PLANEADO en el programa de obra HASTA el periodo de la estimación (curva S).
+      //      Solo aplica si el contrato tiene programa A2 (programa_obra); los contratos sin programa
+      //      (legacy/precio alzado) se rigen solo por el art. 118 total de arriba. Fundamento: art. 45
+      //      ap. A fr. X RLOPSRM (programa por periodos) + art. 52 LOPSRM (base del avance) + art. 118.
+      //      [validar con el profe: bloqueo duro vs alerta].
+      const tieneProg = await client.query('SELECT 1 FROM programa_obra po JOIN contrato_conceptos cc ON cc.id=po.contrato_concepto_id WHERE cc.contrato_id=$1 LIMIT 1', [contratoId]);
+      if (tieneProg.rowCount > 0) {
+        const plan = await client.query(
+          `SELECT po.contrato_concepto_id AS cid, COALESCE(SUM(po.cantidad),0) AS planeado
+             FROM programa_obra po JOIN contrato_periodos cp ON cp.id = po.contrato_periodo_id
+            WHERE po.contrato_concepto_id = ANY($1::int[]) AND cp.fin <= $2::date
+            GROUP BY po.contrato_concepto_id`,
+          [conceptoIds, periodoFin]
+        );
+        const planMap = new Map(plan.rows.map((r) => [r.cid, Number(r.planeado)]));
+        const sobrePlan = [];
+        for (const g of generadores) {
+          const anterior = acumMap.get(g.contrato_concepto_id) || 0;
+          const planeado = planMap.get(g.contrato_concepto_id) || 0;
+          if (anterior + g.cantidad_periodo > planeado + EPS_CANT) sobrePlan.push(ccMap.get(g.contrato_concepto_id).concepto);
+        }
+        if (sobrePlan.length) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({ error: `Excede lo PLANEADO en el programa hasta este periodo (art. 45 ap. A fr. X RLOPSRM + art. 52 LOPSRM): ${sobrePlan.join('; ')}` });
+        }
       }
 
       // (6b) Carátula con UN SOLO motor de redondeo (Postgres NUMERIC) y la MISMA fórmula
@@ -383,9 +424,42 @@ async function detalleEstimacion(req, res) {
       [id]
     );
 
+    // ACUMULADOS/SALDOS de la carátula (formato real GACM/NAICM): derivados de las estimaciones
+    // PREVIAS no rechazadas + monto/anticipo del contrato. SIN IVA (art. 2 fr. XIX RLOPSRM); el IVA
+    // del pago se trata aparte [decisión, ver doc]. Read-side: no muta la estimación inmutable.
+    const cm = await pool.query(
+      `SELECT c.monto,
+              COALESCE(ROUND(c.monto * COALESCE(c.anticipo_pct,0)/100, 2),0)::numeric(18,2) AS importe_anticipo,
+              COALESCE((SELECT SUM(subtotal)     FROM estimaciones e2 WHERE e2.contrato_id=$1 AND e2.estado<>'rechazada' AND e2.numero < $2),0)::numeric(18,2) AS est_acum_ant,
+              COALESCE((SELECT SUM(amortizacion) FROM estimaciones e2 WHERE e2.contrato_id=$1 AND e2.estado<>'rechazada' AND e2.numero < $2),0)::numeric(18,2) AS amort_acum_ant
+         FROM contratos c WHERE c.id=$1`,
+      [row.contrato_id, row.numero]
+    );
+    const cmr = cm.rows[0];
+    const N = (x) => Number(x);
+    const estAcumAct = N(cmr.est_acum_ant) + N(row.subtotal);
+    const amortAcumAct = N(cmr.amort_acum_ant) + N(row.amortizacion);
+    const pct = (a, b) => (N(b) > 0 ? Number((N(a) / N(b) * 100).toFixed(2)) : null);
+    const acumulados = {
+      sin_iva: {
+        importe_contrato: cmr.monto,
+        estimado_acumulado_anterior: cmr.est_acum_ant, estimado_acumulado_anterior_pct: pct(cmr.est_acum_ant, cmr.monto),
+        estimacion_actual: row.subtotal, estimacion_actual_pct: pct(row.subtotal, cmr.monto),
+        estimado_acumulado_actual: estAcumAct.toFixed(2), estimado_acumulado_actual_pct: pct(estAcumAct, cmr.monto),
+        saldo_por_estimar: (N(cmr.monto) - estAcumAct).toFixed(2), saldo_por_estimar_pct: pct(N(cmr.monto) - estAcumAct, cmr.monto)
+      },
+      anticipo: {
+        importe_anticipo: cmr.importe_anticipo,
+        amortizado_acumulado_anterior: cmr.amort_acum_ant, amortizado_acumulado_anterior_pct: pct(cmr.amort_acum_ant, cmr.importe_anticipo),
+        amortizacion_actual: row.amortizacion, amortizacion_actual_pct: pct(row.amortizacion, cmr.importe_anticipo),
+        amortizado_acumulado_actual: amortAcumAct.toFixed(2), amortizado_acumulado_actual_pct: pct(amortAcumAct, cmr.importe_anticipo),
+        saldo_por_amortizar: (N(cmr.importe_anticipo) - amortAcumAct).toFixed(2), saldo_por_amortizar_pct: pct(N(cmr.importe_anticipo) - amortAcumAct, cmr.importe_anticipo)
+      }
+    };
+
     // No exponer el equipo del contrato en el detalle (solo se usó para el acceso).
     const { created_by, residente_id, superintendente_id, supervision_id, ...caratula } = row;
-    return res.status(200).json({ ...caratula, generadores: g.rows, notas: n.rows });
+    return res.status(200).json({ ...caratula, acumulados, generadores: g.rows, notas: n.rows });
   } catch (err) {
     console.error('[detalleEstimacion]', err);
     return res.status(500).json({ error: 'Error interno' });

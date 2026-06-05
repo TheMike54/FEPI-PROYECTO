@@ -16,12 +16,15 @@ function limpiar(v) { return typeof v === 'string' ? v.trim() : ''; }
 function aImporte(v) { return Number(String(v).replace(/[$,\s]/g, '')); }
 
 // POST /api/pagos — SOLO finanzas (gate en la ruta). registrado_por = req.user.id (JWT).
+// ENDURECIDO (HU-21): el pago se AMARRA a una estimación REAL del contrato (estimacion_id), el
+// importe = NETO de esa estimación (no arbitrario), no se paga dos veces (UNIQUE parcial +
+// FOR UPDATE), solo estimaciones integradas/autorizadas (no rechazadas/pagadas), y al pagar la
+// estimación avanza a 'pagada' (cierra CA-1: marcar pagada + avance financiero), en UNA transacción.
 async function registrarPago(req, res) {
   const body = req.body || {};
   const contratoId = Number(body.contrato_id);
-  const estimacionRef = limpiar(body.estimacion_ref);
+  const estimacionId = Number(body.estimacion_id);
   const fechaPago = body.fecha_pago;
-  const importe = aImporte(body.importe);
   const referencia = limpiar(body.referencia);
   const facturaCfdi = limpiar(body.factura_cfdi);
   const fechaFactura = body.fecha_factura;
@@ -29,12 +32,10 @@ async function registrarPago(req, res) {
   const observaciones = (typeof body.observaciones === 'string' && body.observaciones.trim())
     ? body.observaciones.trim() : null;
 
-  // Validaciones con errores localizados (400).
+  // Validaciones de forma (400). El importe YA NO se teclea: se deriva del neto de la estimación.
   if (!Number.isInteger(contratoId) || contratoId <= 0) return res.status(400).json({ error: 'El contrato (contrato_id) es requerido' });
-  if (!estimacionRef) return res.status(400).json({ error: 'La referencia de la estimación (estimacion_ref) es requerida' });
-  if (estimacionRef.length > 60) return res.status(400).json({ error: 'La referencia de la estimación no puede exceder 60 caracteres' });
+  if (!Number.isInteger(estimacionId) || estimacionId <= 0) return res.status(400).json({ error: 'La estimación (estimacion_id) es requerida; selecciona una estimación del contrato' });
   if (!fechaValida(fechaPago)) return res.status(400).json({ error: 'La fecha de pago es requerida y debe tener formato AAAA-MM-DD válido' });
-  if (!Number.isFinite(importe) || importe <= 0) return res.status(400).json({ error: 'El importe es requerido y debe ser mayor a 0' });
   if (!referencia) return res.status(400).json({ error: 'La referencia bancaria (SPEI) es requerida' });
   if (referencia.length > 100) return res.status(400).json({ error: 'La referencia bancaria no puede exceder 100 caracteres' });
   if (!facturaCfdi) return res.status(400).json({ error: 'El folio fiscal (factura_cfdi) es requerido' });
@@ -47,22 +48,49 @@ async function registrarPago(req, res) {
   }
   if (observaciones && observaciones.length > 2000) return res.status(400).json({ error: 'Las observaciones no pueden exceder 2000 caracteres' });
 
+  let client;
   try {
-    // El contrato debe existir → 404 localizado.
-    const c = await pool.query('SELECT id FROM contratos WHERE id = $1', [contratoId]);
-    if (c.rowCount === 0) return res.status(404).json({ error: 'El contrato indicado no existe' });
+    client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const c = await client.query('SELECT id FROM contratos WHERE id = $1', [contratoId]);
+      if (c.rowCount === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'El contrato indicado no existe' }); }
 
-    const ins = await pool.query(
-      `INSERT INTO pagos
-         (contrato_id, estimacion_ref, fecha_pago, importe, referencia, factura_cfdi, fecha_factura, fecha_autorizacion, observaciones, registrado_por)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-       RETURNING id, contrato_id, estimacion_id, estimacion_ref, fecha_pago, importe, referencia,
-                 factura_cfdi, fecha_factura, fecha_autorizacion, observaciones, registrado_por, created_at`,
-      [contratoId, estimacionRef, fechaPago, importe, referencia, facturaCfdi, fechaFactura, fechaAutorizacion, observaciones, req.user.id]
-    );
-    return res.status(201).json(ins.rows[0]);
+      // Estimación REAL: existe, del contrato, estado pagable, no pagada. FOR UPDATE serializa el
+      // no-doble-pago contra otra transacción concurrente.
+      const e = await client.query('SELECT id, contrato_id, numero, estado, neto FROM estimaciones WHERE id = $1 FOR UPDATE', [estimacionId]);
+      if (e.rowCount === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'La estimación indicada no existe' }); }
+      const est = e.rows[0];
+      if (est.contrato_id !== contratoId) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'La estimación no pertenece al contrato indicado' }); }
+      if (est.estado === 'pagada') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'Esta estimación ya está pagada' }); }
+      if (est.estado === 'rechazada') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'No se puede pagar una estimación rechazada' }); }
+      // [validar con el profe] estado que habilita el pago: hoy integrada/autorizada (el flujo de
+      // autorización HU-15 aún no existe; cuando exista podría exigirse solo 'autorizada').
+      if (!['integrada', 'autorizada'].includes(est.estado)) { await client.query('ROLLBACK'); return res.status(409).json({ error: `Solo puede pagarse una estimación integrada o autorizada (estado actual: ${est.estado})` }); }
+      const dup = await client.query('SELECT 1 FROM pagos WHERE estimacion_id = $1 LIMIT 1', [estimacionId]);
+      if (dup.rowCount > 0) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'Esta estimación ya tiene un pago registrado' }); }
+
+      // El importe = NETO de la estimación (server-side, no arbitrario). [validar: parcial vs exacto].
+      const importe = est.neto;
+      const estimacionRef = `Estimación #${est.numero}`;
+      const ins = await client.query(
+        `INSERT INTO pagos
+           (contrato_id, estimacion_id, estimacion_ref, fecha_pago, importe, referencia, factura_cfdi, fecha_factura, fecha_autorizacion, observaciones, registrado_por)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+         RETURNING id, contrato_id, estimacion_id, estimacion_ref, fecha_pago, importe, referencia,
+                   factura_cfdi, fecha_factura, fecha_autorizacion, observaciones, registrado_por, created_at`,
+        [contratoId, estimacionId, estimacionRef, fechaPago, importe, referencia, facturaCfdi, fechaFactura, fechaAutorizacion, observaciones, req.user.id]
+      );
+      // Avanza la estimación a 'pagada' (CA-1). El trigger sigecop_estimacion_inmutable deja libre 'estado'.
+      await client.query("UPDATE estimaciones SET estado = 'pagada' WHERE id = $1", [estimacionId]);
+      await client.query('COMMIT');
+      return res.status(201).json(ins.rows[0]);
+    } catch (e) {
+      try { await client.query('ROLLBACK'); } catch (_) { /* el client pudo morir */ }
+      if (e && e.code === '23505') return res.status(409).json({ error: 'Esta estimación ya tiene un pago registrado' });
+      throw e;
+    } finally { client.release(); }
   } catch (err) {
-    if (err.code === '23503') return res.status(404).json({ error: 'El contrato indicado no existe' }); // FK violada
     console.error('[registrarPago]', err);
     return res.status(500).json({ error: 'Error interno' });
   }
