@@ -8,6 +8,7 @@ import BuscadorNotas, { useFiltrosNotas } from '../components/notas/BuscadorNota
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
+import MatrizProgramaLectura, { periodoQueContiene } from '../components/programa/MatrizProgramaLectura.jsx';
 
 // HU-12 Fase 3 — cableado al backend real. El superintendente del contrato integra
 // la estimación del periodo como expediente (art. 132 RLOPSRM). Toda la verdad del
@@ -482,6 +483,7 @@ export default function IntegracionEstimacion() {
   const [avance, setAvance] = useState([]);
   // Etapa A: datos derivados (solo lectura) para el semáforo de plan + saldos + barras de avance.
   const [prep, setPrep] = useState(null);
+  const [programa, setPrograma] = useState(null); // Pase 1: matriz A2 para el panel "Ver programa de obra"
   const [historial, setHistorial] = useState([]);
   const [notasContrato, setNotasContrato] = useState([]);
   const [cargando, setCargando] = useState(false);
@@ -526,13 +528,15 @@ export default function IntegracionEstimacion() {
 
   const seleccionarContrato = useCallback(async (id) => {
     setContratoId(id);
-    setAvance([]); setPrep(null); setHistorial([]); setNotasContrato([]);
+    setAvance([]); setPrep(null); setPrograma(null); setHistorial([]); setNotasContrato([]);
     setCantidades({}); setDeductivas('0'); setPeriodoInicio(''); setPeriodoFin('');
     setNotasVinculadas([]); setResultado(null); setErrorIntegrar(null);
     if (!id) return;
     setCargando(true);
     try {
       await Promise.all([recargarAvance(id), recargarHistorial(id), recargarPrep(id, '')]);
+      // Pase 1: matriz del programa de obra para el panel plegable (404/sin programa → null).
+      try { setPrograma(await api.leerProgramaObra(id)); } catch (_) { setPrograma(null); }
       // Notas del contrato para el modal (404 = sin bitácora → simplemente no hay notas).
       try {
         const n = await api.notasDeContrato(id);
@@ -562,6 +566,17 @@ export default function IntegracionEstimacion() {
     return m;
   }, [prep]);
   const tienePlan = !!(prep && prep.tiene_programa);
+  // Pase 1: periodo a resaltar en el panel del programa = el periodo cuya fecha-fin coincide con el
+  // periodo-fin capturado; si no, el que contiene esa fecha (o la de hoy como referencia).
+  const periodoResaltadoEstim = useMemo(() => {
+    const ps = Array.isArray(programa?.periodos) ? programa.periodos : [];
+    if (ps.length === 0) return null;
+    if (periodoFin) {
+      const exacto = ps.find((p) => String(p.fin).slice(0, 10) === periodoFin);
+      if (exacto) return exacto.numero;
+    }
+    return periodoQueContiene(ps, periodoFin || periodoInicio || new Date().toISOString().slice(0, 10));
+  }, [programa, periodoFin, periodoInicio]);
 
   const filas = useMemo(() => avance.map((a) => {
     const valor = cantidades[a.contrato_concepto_id] ?? '';
@@ -786,6 +801,19 @@ export default function IntegracionEstimacion() {
                   Sin IVA (art. 2 fr. XIX RLOPSRM). Físico = obra ejecutada/estimada en valor; financiero = lo efectivamente pagado (HU-21). Al integrar se guarda el snapshot de ambos avances en la estimación. <span className="text-slate-400">[validar definición físico/financiero]</span>
                 </p>
               </div>
+            )}
+
+            {/* Pase 1 (Plan 2): panel plegable con el programa de obra MES POR MES (matriz concepto ×
+                periodo), con el periodo capturado resaltado. Solo lectura; no afecta el cálculo. */}
+            {programa && Array.isArray(programa.periodos) && programa.periodos.length > 0 && (
+              <details className="bg-white border border-slate-200 rounded-md" data-testid="panel-programa-obra">
+                <summary className="cursor-pointer select-none px-4 py-3 text-sm font-bold uppercase tracking-wider text-slate-700">
+                  Ver programa de obra (mes por mes)
+                </summary>
+                <div className="px-4 pb-4">
+                  <MatrizProgramaLectura programa={programa} periodoResaltadoNumero={periodoResaltadoEstim} />
+                </div>
+              </details>
             )}
 
             {wrapTab(<TabCaratula caratula={caratula} anticipoPct={anticipoPct} deductivas={deductivas} onDeductivas={setDeductivas} acumulados={acumulados} />)}

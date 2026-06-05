@@ -1,0 +1,363 @@
+diff --git a/backend/src/controllers/contratos.controller.js b/backend/src/controllers/contratos.controller.js
+index b15f393..2e9f076 100644
+--- a/backend/src/controllers/contratos.controller.js
++++ b/backend/src/controllers/contratos.controller.js
+@@ -79,6 +79,13 @@ async function crearContrato(req, res) {
+   if (anticipoPct !== null && (anticipoPct < 0 || anticipoPct > 100)) {
+     return res.status(400).json({ error: 'anticipoPct debe estar entre 0 y 100' });
+   }
++  // Etapa C: % de pena por atraso (penas convencionales, art. 138/139 RLOPSRM), OPCIONAL: fracción 0–1
++  // (ej. 0.05 = 5%). Vacío/ausente → NULL (sin pena pactada → retención por atraso $0). No afecta el
++  // gating del alta ni la regla del 100% (es un dato más de la cabecera). [validar tasa con el profe].
++  const penaConvencionalPct = numOrNull(body.penaConvencionalPct);
++  if (penaConvencionalPct !== null && (penaConvencionalPct < 0 || penaConvencionalPct > 1)) {
++    return res.status(400).json({ error: 'penaConvencionalPct, si se envía, debe estar entre 0 y 1 (ej. 0.05 = 5%)' });
++  }
+ 
+   // Sub-bloques opcionales (no bloquean el guardado si vienen vacios).
+   const conceptos = Array.isArray(body.conceptos) ? body.conceptos : [];
+@@ -263,15 +270,17 @@ async function crearContrato(req, res) {
+         `INSERT INTO contratos
+            (folio, tipo, objeto, contratista, dependencia, monto, plazo_dias,
+             fecha_inicio, fecha_termino, created_by, datos_juridicos, anticipo_pct,
+-            residente_id, superintendente_id, supervision_id, ciclo_estimacion, dependencia_id)
+-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
++            residente_id, superintendente_id, supervision_id, ciclo_estimacion, dependencia_id,
++            pena_convencional_pct)
++         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+          RETURNING id`,
+         [
+           folio, tipo, objeto, contratista, dependencia, monto, plazoDias,
+           fechaInicio, fechaTerminoDerivada, req.user.id,
+           juridicos ? JSON.stringify(juridicos) : null,
+           anticipoPct,
+-          req.user.id, superintendenteId, supervisionId, ciclo, dependenciaId
++          req.user.id, superintendenteId, supervisionId, ciclo, dependenciaId,
++          penaConvencionalPct
+         ]
+       );
+       const contratoId = cab.rows[0].id;
+diff --git a/backend/src/controllers/estimacion-prep.controller.js b/backend/src/controllers/estimacion-prep.controller.js
+index feada58..d32e4ed 100644
+--- a/backend/src/controllers/estimacion-prep.controller.js
++++ b/backend/src/controllers/estimacion-prep.controller.js
+@@ -21,7 +21,7 @@ async function preparacionEstimacion(req, res) {
+       ? req.query.periodo_fin : null;
+ 
+     const c = await pool.query(
+-      `SELECT id, monto, anticipo_pct, created_by, residente_id, superintendente_id, supervision_id
++      `SELECT id, monto, anticipo_pct, pena_convencional_pct, created_by, residente_id, superintendente_id, supervision_id
+          FROM contratos WHERE id = $1`,
+       [contratoId]
+     );
+@@ -33,6 +33,12 @@ async function preparacionEstimacion(req, res) {
+     const montoContrato = Number(contrato.monto) || 0;
+     const anticipoPct = contrato.anticipo_pct == null ? 0 : Number(contrato.anticipo_pct);
+     const importeAnticipo = Math.round((montoContrato * anticipoPct / 100 + Number.EPSILON) * 100) / 100;
++    // Etapa C: % de pena por atraso pactado (NULL = sin pena → retención $0) + pagado acumulado (HU-21)
++    // para el avance financiero. La carátula viva calcula la retención por atraso con estos datos.
++    const penaPct = contrato.pena_convencional_pct == null ? null : Number(contrato.pena_convencional_pct);
++    const pgq = await pool.query('SELECT COALESCE(SUM(importe),0) AS pagado FROM pagos WHERE contrato_id = $1', [contratoId]);
++    const pagadoAcum = Number(pgq.rows[0].pagado);
++    const financieroPct = montoContrato > 0 ? Number(((pagadoAcum / montoContrato) * 100).toFixed(2)) : null;
+ 
+     // Conceptos del catálogo + PU + contratado (clave puede no existir en contratos legacy).
+     const cc = await pool.query(
+@@ -45,9 +51,10 @@ async function preparacionEstimacion(req, res) {
+     );
+     if (cc.rowCount === 0) {
+       return res.status(200).json({
+-        contrato: { monto: contrato.monto, anticipo_pct: anticipoPct, importe_anticipo: importeAnticipo.toFixed(2) },
++        contrato: { monto: contrato.monto, anticipo_pct: anticipoPct, importe_anticipo: importeAnticipo.toFixed(2), pena_convencional_pct: penaPct },
+         tiene_programa: false, periodo_fin: periodoFin, conceptos: [],
+-        avance: { fisico_ejecutado: '0.00', fisico_pct: null, planeado_valor: '0.00', planeado_pct: null }
++        avance: { fisico_ejecutado: '0.00', fisico_pct: null, planeado_valor: '0.00', planeado_pct: null,
++                  pagado_acumulado: pagadoAcum.toFixed(2), financiero_pct: financieroPct, atraso_previo: false }
+       });
+     }
+     const ids = cc.rows.map((r) => r.contrato_concepto_id);
+@@ -118,17 +125,22 @@ async function preparacionEstimacion(req, res) {
+ 
+     const pct = (a, b) => (b > 0 ? Number(((a / b) * 100).toFixed(2)) : null);
+     return res.status(200).json({
+-      contrato: { monto: contrato.monto, anticipo_pct: anticipoPct, importe_anticipo: importeAnticipo.toFixed(2) },
++      contrato: { monto: contrato.monto, anticipo_pct: anticipoPct, importe_anticipo: importeAnticipo.toFixed(2), pena_convencional_pct: penaPct },
+       tiene_programa: tienePrograma,
+       periodo_fin: periodoFin,
+       conceptos,
+-      // Barras: avance físico (lo ejecutado/estimado, en valor) vs programado (curva S del programa).
+-      // [validar la definición exacta físico/financiero con el profe].
++      // Barras + retención por atraso (Etapa C): físico (ejecutado en valor) vs programado (curva S) vs
++      // financiero (pagado/monto). atraso_previo = ya atrasado SIN la estimación actual; la carátula viva
++      // recalcula el atraso REAL sumando el bruto del periodo (fisico_ejecutado + bruto < planeado_valor).
++      // [validar la definición físico/financiero y la regla de disparo con el profe].
+       avance: {
+         fisico_ejecutado: fisicoValor.toFixed(2),
+         fisico_pct: pct(fisicoValor, montoContrato),
+         planeado_valor: planeadoValor.toFixed(2),
+-        planeado_pct: tienePrograma ? pct(planeadoValor, montoContrato) : null
++        planeado_pct: tienePrograma ? pct(planeadoValor, montoContrato) : null,
++        pagado_acumulado: pagadoAcum.toFixed(2),
++        financiero_pct: financieroPct,
++        atraso_previo: tienePrograma && planeadoValor > 0 && fisicoValor < planeadoValor - 1e-6
+       }
+     });
+   } catch (err) {
+diff --git a/backend/src/controllers/estimaciones.controller.js b/backend/src/controllers/estimaciones.controller.js
+index d7b2442..54373b4 100644
+--- a/backend/src/controllers/estimaciones.controller.js
++++ b/backend/src/controllers/estimaciones.controller.js
+@@ -114,7 +114,7 @@ async function integrarEstimacion(req, res) {
+ 
+       // (1) Contrato + auth localizada. 404 antes que 403 (espejo de la bitácora).
+       const cres = await client.query(
+-        `SELECT id, anticipo_pct, created_by, residente_id, superintendente_id, supervision_id
++        `SELECT id, monto, anticipo_pct, pena_convencional_pct, created_by, residente_id, superintendente_id, supervision_id
+            FROM contratos WHERE id = $1`,
+         [contratoId]
+       );
+@@ -126,6 +126,10 @@ async function integrarEstimacion(req, res) {
+       }
+       // Sin % de anticipo definido => 0 (no hay amortización que aplicar).
+       const anticipoPct = contrato.anticipo_pct == null ? 0 : Number(contrato.anticipo_pct);
++      // Etapa C: % de pena por atraso pactado en el contrato (art. 138/139 RLOPSRM). NULL = sin pena
++      // → retención por atraso = 0. monto del contrato para el avance físico/financiero (snapshot).
++      const penaPct = contrato.pena_convencional_pct == null ? null : Number(contrato.pena_convencional_pct);
++      const montoContrato = Number(contrato.monto) || 0;
+ 
+       // (1b) GATING SERVER-SIDE del PDF firmado del contrato (antes solo era de UI, salteable por
+       //      API directo). No se integra una estimación (carátula financiera append-only) sobre un
+@@ -255,6 +259,31 @@ async function integrarEstimacion(req, res) {
+         }
+       }
+ 
++      // (6d) ETAPA C — ATRASO GLOBAL (en valor) + pagado acumulado, para la retención por atraso y el
++      //      avance financiero. El contrato va ATRASADO si su EJECUTADO acumulado en valor
++      //      (Σ ya_estimado×pu de toda la obra + esta estimación) es MENOR al PROGRAMADO acumulado al
++      //      periodo (Σ planeado_hasta_periodo×pu). Global, sobre TODO el catálogo. Sin programa →
++      //      programado=0 → no medible → no atraso. [validar regla de disparo (global/concepto, bruto/neto)].
++      const gv = await client.query(
++        `SELECT
++           COALESCE(SUM(prev.ejec * cc.pu), 0)::numeric(18,4)     AS ejec_prev_valor,
++           COALESCE(SUM(plan.planeado * cc.pu), 0)::numeric(18,4) AS programado_valor
++         FROM contrato_conceptos cc
++         LEFT JOIN (SELECT eg.contrato_concepto_id cid, SUM(eg.cantidad_periodo) ejec
++                      FROM estimacion_generadores eg JOIN estimaciones e ON e.id = eg.estimacion_id
++                     WHERE e.contrato_id = $1 AND e.estado <> 'rechazada' GROUP BY 1) prev ON prev.cid = cc.id
++         LEFT JOIN (SELECT po.contrato_concepto_id cid, SUM(po.cantidad) planeado
++                      FROM programa_obra po JOIN contrato_periodos cp ON cp.id = po.contrato_periodo_id
++                     WHERE cp.fin <= $2::date GROUP BY 1) plan ON plan.cid = cc.id
++         WHERE cc.contrato_id = $1`,
++        [contratoId, periodoFin]
++      );
++      const ejecPrevValor = Number(gv.rows[0].ejec_prev_valor);
++      const programadoValor = Number(gv.rows[0].programado_valor);
++      // Pagado acumulado (HU-21) para el avance financiero (esta estimación aún no está pagada).
++      const pg = await client.query("SELECT COALESCE(SUM(importe), 0)::numeric(18,2) AS pagado FROM pagos WHERE contrato_id = $1", [contratoId]);
++      const pagadoAcum = Number(pg.rows[0].pagado);
++
+       // (6b) Carátula con UN SOLO motor de redondeo (Postgres NUMERIC) y la MISMA fórmula
+       //      Σ ROUND(cantidad×pu, 2) que el catálogo (contratos.controller) y que el detalle
+       //      reproducido (detalleEstimacion): subtotal === Σ importes del detalle, al centavo.
+@@ -273,6 +302,13 @@ async function integrarEstimacion(req, res) {
+       const prm = lineas.flatMap((l, i) => [i, l.cantidad_periodo, l.pu_snapshot]);
+       const pA = prm.push(anticipoPct); // índice 1-based de anticipoPct
+       const pD = prm.push(deductivas);  // índice 1-based de deductivas
++      const pPena = prm.push(penaPct);            // % pena por atraso (NULL si no pactada)
++      const pEjec = prm.push(ejecPrevValor);      // ejecutado prev en valor (sin esta estimación)
++      const pProg = prm.push(programadoValor);    // programado acumulado en valor al periodo
++      // Etapa C: EXTIENDE el neto con la retención por ATRASO (art. 138/139 RLOPSRM). Solo aplica si hay
++      // pena pactada (pena_pct != NULL), hay programa (programado>0) y el contrato va atrasado
++      // (ejecutado = ejec_prev + ESTA estimación < programado). retencion_atraso = ROUND(pena × bruto, 2).
++      // El 5 al millar y la amortización NO cambian (G1-G8 intactos): solo se RESTA un renglón más.
+       const cal = await client.query(
+         `WITH gen(idx, cant, pu) AS (VALUES ${vals}),
+               lin AS (SELECT idx, ROUND(cant * pu, 2)::numeric(14,2) AS importe FROM gen),
+@@ -280,20 +316,31 @@ async function integrarEstimacion(req, res) {
+          SELECT s.subtotal,
+                 ROUND(s.subtotal * $${pA}::numeric / 100, 2)::numeric(14,2) AS amortizacion,
+                 ROUND(s.subtotal * 0.005, 2)::numeric(14,2)                 AS retencion,
++                CASE WHEN $${pPena}::numeric IS NOT NULL AND $${pProg}::numeric > 0
++                       AND ($${pEjec}::numeric + s.subtotal) < $${pProg}::numeric - 0.000001
++                     THEN ROUND(s.subtotal * $${pPena}::numeric, 2) ELSE 0 END::numeric(14,2) AS retencion_atraso,
+                 (s.subtotal
+                    - ROUND(s.subtotal * $${pA}::numeric / 100, 2)
+                    - ROUND(s.subtotal * 0.005, 2)
+-                   - $${pD}::numeric(14,2))::numeric(14,2)                  AS neto,
++                   - $${pD}::numeric(14,2)
++                   - CASE WHEN $${pPena}::numeric IS NOT NULL AND $${pProg}::numeric > 0
++                            AND ($${pEjec}::numeric + s.subtotal) < $${pProg}::numeric - 0.000001
++                          THEN ROUND(s.subtotal * $${pPena}::numeric, 2) ELSE 0 END)::numeric(14,2) AS neto,
+                 (SELECT json_agg(importe::text ORDER BY idx) FROM lin)      AS importes
+            FROM sub s`,
+         prm
+       );
+-      const { subtotal, amortizacion, retencion, neto, importes } = cal.rows[0];
++      const { subtotal, amortizacion, retencion, retencion_atraso, neto, importes } = cal.rows[0];
+       lineas.forEach((l, i) => { l.importe = importes[i]; }); // importe SQL-exacto para la respuesta
+-      // Las deductivas (manuales) no pueden dejar el neto en negativo.
++      // Avance físico (ejecutado en valor / monto) y financiero (pagado / monto), en %, snapshot al integrar.
++      const r4 = (n) => Math.round((Number(n) + Number.EPSILON) * 1e4) / 1e4;
++      const ejecValor = ejecPrevValor + Number(subtotal);
++      const avanceFisicoPct = montoContrato > 0 ? r4(ejecValor / montoContrato * 100) : null;
++      const avanceFinancieroPct = montoContrato > 0 ? r4(pagadoAcum / montoContrato * 100) : null;
++      // Las deducciones (deductivas + retención por atraso) no pueden dejar el neto en negativo.
+       if (Number(neto) < 0) {
+         await client.query('ROLLBACK');
+-        return res.status(400).json({ error: 'Las deductivas no pueden dejar el neto en negativo' });
++        return res.status(400).json({ error: 'Las deducciones (deductivas / retención por atraso) no pueden dejar el neto en negativo' });
+       }
+ 
+       // (7) Numeración correlativa atómica y carátula.
+@@ -306,11 +353,14 @@ async function integrarEstimacion(req, res) {
+       const ins = await client.query(
+         `INSERT INTO estimaciones
+            (contrato_id, numero, periodo_inicio, periodo_fin, estado, anticipo_pct_snapshot,
+-            subtotal, amortizacion, retencion, deductivas, neto, integrada_por)
+-         VALUES ($1, $2, $3, $4, 'integrada', $5, $6, $7, $8, $9, $10, $11)
++            subtotal, amortizacion, retencion, deductivas, neto, integrada_por,
++            retencion_atraso, avance_fisico_pct, avance_financiero_pct)
++         VALUES ($1, $2, $3, $4, 'integrada', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+          RETURNING id, contrato_id, numero, periodo_inicio, periodo_fin, estado, anticipo_pct_snapshot,
+-                   subtotal, amortizacion, retencion, deductivas, neto, integrada_por, integrada_en`,
+-        [contratoId, numero, periodoInicio, periodoFin, anticipoPct, subtotal, amortizacion, retencion, deductivas, neto, req.user.id]
++                   subtotal, amortizacion, retencion, deductivas, neto, integrada_por, integrada_en,
++                   retencion_atraso, avance_fisico_pct, avance_financiero_pct`,
++        [contratoId, numero, periodoInicio, periodoFin, anticipoPct, subtotal, amortizacion, retencion, deductivas, neto, req.user.id,
++         retencion_atraso, avanceFisicoPct, avanceFinancieroPct]
+       );
+       const estimacion = ins.rows[0];
+ 
+diff --git a/backend/src/db/schema.sql b/backend/src/db/schema.sql
+index 9306308..2187eed 100644
+--- a/backend/src/db/schema.sql
++++ b/backend/src/db/schema.sql
+@@ -1124,6 +1124,31 @@ DO $$ BEGIN
+ END $$;
+ CREATE INDEX IF NOT EXISTS idx_estimaciones_reemplaza_a ON estimaciones(reemplaza_a);
+ 
++-- ---------------------------------------------------------------------
++-- ETAPA C (Fundación) — Retención por ATRASO (penas convencionales, art. 138/139 RLOPSRM) +
++-- avance físico/financiero snapshot en la estimación. Migración ADITIVA e idempotente.
++--   · contratos.pena_convencional_pct: % de pena por atraso pactado POR CONTRATO (fracción 0–1,
++--     ej. 0.05 = 5%). NULLABLE: NULL = sin pena pactada → retención por atraso = $0.
++--     [validar tasa/regla de disparo (global vs por concepto; sobre bruto vs neto) con el profe].
++--   · estimaciones.retencion_atraso: monto retenido por atraso en ESTA estimación (snapshot inmutable).
++--   · estimaciones.avance_fisico_pct / avance_financiero_pct: % de avance al integrar (snapshot).
++-- ---------------------------------------------------------------------
++ALTER TABLE contratos ADD COLUMN IF NOT EXISTS pena_convencional_pct NUMERIC(5,4);
++DO $$ BEGIN
++  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_contratos_pena_pct') THEN
++    ALTER TABLE contratos ADD CONSTRAINT chk_contratos_pena_pct
++      CHECK (pena_convencional_pct IS NULL OR (pena_convencional_pct >= 0 AND pena_convencional_pct <= 1));
++  END IF;
++END $$;
++ALTER TABLE estimaciones ADD COLUMN IF NOT EXISTS retencion_atraso      NUMERIC(14,2) NOT NULL DEFAULT 0;
++ALTER TABLE estimaciones ADD COLUMN IF NOT EXISTS avance_fisico_pct     NUMERIC(7,4);
++ALTER TABLE estimaciones ADD COLUMN IF NOT EXISTS avance_financiero_pct NUMERIC(7,4);
++DO $$ BEGIN
++  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_estimaciones_retencion_atraso') THEN
++    ALTER TABLE estimaciones ADD CONSTRAINT chk_estimaciones_retencion_atraso CHECK (retencion_atraso >= 0);
++  END IF;
++END $$;
++
+ -- ---------------------------------------------------------------------
+ -- HU-15 (Equipo 3) — estimacion_observaciones: observaciones de la revisión, por
+ -- sección, con tipo/severidad y ciclo de vida (abierta→solventada). El turnado
+diff --git a/frontend/src/pages/AltaContrato.jsx b/frontend/src/pages/AltaContrato.jsx
+index 5d1fefd..09332d9 100644
+--- a/frontend/src/pages/AltaContrato.jsx
++++ b/frontend/src/pages/AltaContrato.jsx
+@@ -105,7 +105,8 @@ const DATOS_INICIALES = {
+   tipo: 'Obra pública sobre la base de precios unitarios',
+   objeto: '',
+   plazoDias: '',
+-  fechaInicio: ''
++  fechaInicio: '',
++  penaConvencionalPct: '' // Etapa C: % de pena por atraso (opcional, fracción 0–1)
+ };
+ const JURIDICOS_INICIALES = {
+   firmanteDependencia: '',
+@@ -196,6 +197,10 @@ function TabDatosGenerales({ datos, set, err, equipo, montoDerivado }) {
+         <Field label="Fecha de término (calculada)" hint="Se deriva del inicio + plazo (LOPSRM 31-V). No editable.">
+           <input className="sg-input bg-slate-100 text-slate-700" value={terminoDerivado ? fmtFechaES(terminoDerivado) : '—'} readOnly data-testid="termino-derivado" />
+         </Field>
++        {/* Etapa C: % de pena por atraso (penas convencionales, art. 138/139 RLOPSRM). OPCIONAL. */}
++        <Field label="% de pena por atraso (opcional)" hint="Penas convencionales por atraso (art. 138/139 RLOPSRM). Fracción 0–1 (ej. 0.05 = 5%). Vacío = sin pena.">
++          <input type="number" min="0" max="1" step="0.0001" className={inputCls(e.penaConvencionalPct)} value={datos.penaConvencionalPct} onChange={set('penaConvencionalPct')} data-testid="dg-pena" placeholder="0.05" />
++        </Field>
+       </div>
+ 
+       <div className="mt-4 bg-blue-50 border-l-4 border-blue-500 px-4 py-3 text-sm text-blue-900 grid grid-cols-1 md:grid-cols-3 gap-2">
+@@ -1401,6 +1406,9 @@ export default function AltaContrato() {
+         // el texto del nombre de la cuenta (contratista = superintendente; dependencia = dependenciaId).
+         plazoDias: Number(datosGenerales.plazoDias),
+         fechaInicio: datosGenerales.fechaInicio,
++        // Etapa C: % de pena por atraso (opcional, fracción 0–1). Vacío → null (sin pena).
++        penaConvencionalPct: datosGenerales.penaConvencionalPct === '' || datosGenerales.penaConvencionalPct == null
++          ? null : Number(datosGenerales.penaConvencionalPct),
+         superintendenteId: Number(superintendenteId),
+         supervisionId: supervisionId ? Number(supervisionId) : null,
+         dependenciaId: dependenciaId ? Number(dependenciaId) : null,
+diff --git a/frontend/src/pages/IntegracionEstimacion.jsx b/frontend/src/pages/IntegracionEstimacion.jsx
+index 506f53b..838f5b8 100644
+--- a/frontend/src/pages/IntegracionEstimacion.jsx
++++ b/frontend/src/pages/IntegracionEstimacion.jsx
+@@ -359,9 +359,9 @@ function TabCaratula({ caratula, anticipoPct, deductivas, onDeductivas, acumulad
+               </td>
+             </tr>
+             {/* Etapa C (falta el % del profe, art. 138/139 RLOPSRM [validar]): renglón PREVISTO en $0. */}
+-            <tr className="border-t border-slate-200 text-slate-400" title="Se calculará en una etapa posterior, cuando el profe confirme el % y la regla de disparo (art. 138/139 RLOPSRM).">
+-              <td className="px-4 py-3">(−) Retención por atraso <span className="text-[10px] uppercase tracking-wide bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 ml-1">próxima etapa</span></td>
+-              <td className="px-4 py-3 text-right font-mono" data-testid="caratula-retencion-atraso">{moneda(0)}</td>
++            <tr className={`border-t border-slate-200 ${caratula.retencionAtraso > 0 ? 'text-red-700' : 'text-slate-400'}`} title="Penas convencionales por atraso (art. 138/139 RLOPSRM). Aplica si hay % de pena pactado en el contrato y la obra va atrasada vs su programa al periodo.">
++              <td className="px-4 py-3">(−) Retención por atraso {caratula.atraso && <span className="text-[10px] uppercase tracking-wide bg-red-100 text-red-700 border border-red-200 rounded px-1.5 py-0.5 ml-1" data-testid="badge-atraso">atraso</span>}</td>
++              <td className="px-4 py-3 text-right font-mono" data-testid="caratula-retencion-atraso">{moneda(caratula.retencionAtraso)}</td>
+             </tr>
+             <tr className={`border-t border-slate-200 font-bold ${caratula.neto < 0 ? 'bg-red-50' : 'bg-sigecop-blue-light'}`}>
+               <td className={`px-4 py-3 ${caratula.neto < 0 ? 'text-red-700' : 'text-sigecop-blue'}`}>(=) Neto a pagar (preview)</td>
+@@ -587,15 +587,26 @@ export default function IntegracionEstimacion() {
+ 
+   // Carátula VIVA con el MISMO redondeo del backend (r2). Renglón "retención por atraso" PREVISTO
+   // pero en $0 (Etapa C: falta el % del profe — art. 138/139 RLOPSRM [validar]); no se calcula aquí.
++  // Etapa C: datos para la retención por atraso (del prep, solo lectura): % de pena pactado y los
++  // valores para medir el atraso GLOBAL (ejecutado vs programado al periodo).
++  const penaPct = prep?.contrato?.pena_convencional_pct != null ? Number(prep.contrato.pena_convencional_pct) : null;
++  const planeadoValor = prep?.avance?.planeado_valor != null ? Number(prep.avance.planeado_valor) : 0;
++  const fisicoPrev = prep?.avance?.fisico_ejecutado != null ? Number(prep.avance.fisico_ejecutado) : 0;
++  const tieneProgValor = !!(prep?.tiene_programa) && planeadoValor > 0;
++
+   const caratula = useMemo(() => {
+     const subtotal = round2(filas.reduce((s, f) => s + (f.periodo > 0 ? f.importe : 0), 0));
+     const amortizacion = round2(subtotal * anticipoPct / 100);
+     const retencion = round2(subtotal * 0.005);
+     const deduc = round2(Number(deductivas) || 0);
+-    const retencionAtraso = 0; // Etapa C
+-    return { subtotal, amortizacion, retencion, deduc, retencionAtraso,
++    // Etapa C: retención por atraso = pena × bruto SI hay pena pactada Y el contrato va atrasado
++    // (ejecutado = ya_estimado + ESTA estimación < programado al periodo). Espejo del cálculo del server.
++    const ejecutadoLive = fisicoPrev + subtotal;
++    const atraso = penaPct != null && tieneProgValor && ejecutadoLive < planeadoValor - 1e-6;
++    const retencionAtraso = atraso ? round2(penaPct * subtotal) : 0;
++    return { subtotal, amortizacion, retencion, deduc, retencionAtraso, atraso,
+       neto: round2(subtotal - amortizacion - retencion - deduc - retencionAtraso) };
+-  }, [filas, anticipoPct, deductivas]);
++  }, [filas, anticipoPct, deductivas, penaPct, planeadoValor, fisicoPrev, tieneProgValor]);
+ 
+   // Acumulados/saldos (estilo carátula real, sin IVA): estimado acumulado anterior (del prep:
+   // Σ ya_estimado×PU) + esta estimación (subtotal vivo) = acumulado; saldo = monto − acumulado.
+@@ -767,11 +778,12 @@ export default function IntegracionEstimacion() {
+               <div className="bg-white border border-slate-200 rounded-md p-4" data-testid="barras-avance">
+                 <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">Avance del contrato</h3>
+                 <div className="space-y-3 max-w-2xl">
+-                  <BarraAvance label="Avance físico-financiero (ejecutado/estimado acumulado)" pct={avanceFisicoPct} color="bg-sigecop-accent" testid="barra-fisico" />
++                  <BarraAvance label="Avance físico (ejecutado/estimado acumulado, en valor)" pct={avanceFisicoPct} color="bg-sigecop-accent" testid="barra-fisico" />
+                   {tienePlan && <BarraAvance label="Avance programado (curva S del programa hasta el periodo)" pct={prep.avance?.planeado_pct} color="bg-blue-400" testid="barra-programado" />}
++                  <BarraAvance label="Avance financiero (pagado acumulado / monto)" pct={prep.avance?.financiero_pct} color="bg-emerald-400" testid="barra-financiero" />
+                 </div>
+                 <p className="text-xs text-slate-500 mt-2">
+-                  Sin IVA (art. 2 fr. XIX RLOPSRM). En esta etapa el avance estimado ≈ ejecutado (la estimación formaliza lo ejecutado); la separación fina físico vs financiero (obra ejecutada aún no estimada/pagada) se afina después. <span className="text-slate-400">[validar]</span>
++                  Sin IVA (art. 2 fr. XIX RLOPSRM). Físico = obra ejecutada/estimada en valor; financiero = lo efectivamente pagado (HU-21). Al integrar se guarda el snapshot de ambos avances en la estimación. <span className="text-slate-400">[validar definición físico/financiero]</span>
+                 </p>
+               </div>
+             )}

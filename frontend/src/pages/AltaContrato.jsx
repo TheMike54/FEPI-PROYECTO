@@ -6,6 +6,7 @@ import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import RegionEditable from '../components/vista/RegionEditable.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { api } from '../services/api.js';
+import MatrizProgramaLectura, { periodoQueContiene } from '../components/programa/MatrizProgramaLectura.jsx';
 // alta-v2 (4.2): el alta arranca VACÍA (sin datos dummy). Ya no se importa conceptosDummy
 // ni polizasGarantiaDummy.
 
@@ -880,29 +881,15 @@ function ModalDetalleContrato({ contratoId, onClose }) {
                 </section>
               )}
 
-              {programa && Array.isArray(programa.reconciliacion) && programa.reconciliacion.length > 0 && (
+              {/* Pase 1 (Plan 2): programa de obra MES POR MES (matriz concepto × periodo) en vez del
+                  resumen por concepto. Resalta el periodo que contiene la fecha de hoy, si aplica. */}
+              {programa && Array.isArray(programa.periodos) && programa.periodos.length > 0 && (
                 <section>
-                  <h4 className="font-bold text-sigecop-blue mb-3">Programa de obra (resumen por concepto)</h4>
-                  <div className="overflow-x-auto border border-slate-200 rounded">
-                    <table className="w-full text-sm">
-                      <thead className="bg-sigecop-blue-light text-sigecop-blue"><tr>
-                        <th className="text-left px-3 py-2">Clave</th><th className="text-left px-3 py-2">Concepto</th>
-                        <th className="text-right px-3 py-2">Contratado</th><th className="text-right px-3 py-2">Planeado</th><th className="text-right px-3 py-2">Restante</th>
-                      </tr></thead>
-                      <tbody>
-                        {programa.reconciliacion.map((r) => (
-                          <tr key={r.contrato_concepto_id} className="border-t border-slate-200">
-                            <td className="px-3 py-1 font-mono text-xs">{r.clave || '—'}</td>
-                            <td className="px-3 py-1">{r.concepto}</td>
-                            <td className="px-3 py-1 text-right">{r.contratado}</td>
-                            <td className="px-3 py-1 text-right">{r.planeado}</td>
-                            <td className="px-3 py-1 text-right">{r.restante}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <p className="text-xs text-slate-500 mt-1">Ciclo: {programa.ciclo || '—'} · {Array.isArray(programa.periodos) ? programa.periodos.length : 0} periodo(s).</p>
+                  <h4 className="font-bold text-sigecop-blue mb-3">Programa de obra (mes por mes)</h4>
+                  <MatrizProgramaLectura
+                    programa={programa}
+                    periodoResaltadoNumero={periodoQueContiene(programa.periodos, new Date().toISOString().slice(0, 10))}
+                  />
                 </section>
               )}
 

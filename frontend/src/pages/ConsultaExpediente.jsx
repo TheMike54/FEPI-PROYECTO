@@ -6,6 +6,7 @@ import BannerContexto from '../components/vista/BannerContexto.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { api } from '../services/api.js';
+import MatrizProgramaLectura, { periodoQueContiene } from '../components/programa/MatrizProgramaLectura.jsx';
 
 // HU-04 cableado al backend. El expediente sale de GET /api/contratos/:id, que
 // devuelve la cabecera + los bloques hijos (conceptos, actividades, garantias) +
@@ -181,8 +182,27 @@ function BloqueCatalogo({ conceptos, folio }) {
   );
 }
 
-function BloquePrograma({ actividades, folio }) {
-  const handleExcel = () => {
+// Pase 1 (Plan 2): el expediente mostraba "no registrado" porque solo leía contrato_actividades
+// (A1, deprecated) y nunca la matriz A2 (programa_obra + contrato_periodos). Ahora, si el contrato
+// tiene la matriz, se pinta MES POR MES (vía leerProgramaObra); si solo tiene actividades viejas,
+// se muestra la tabla A1; si no tiene ninguna, "no registrado".
+function BloquePrograma({ programa, actividades, folio }) {
+  const periodos = Array.isArray(programa?.periodos) ? programa.periodos : [];
+  const tieneMatriz = periodos.length > 0 && Array.isArray(programa?.conceptos) && programa.conceptos.length > 0;
+
+  // Excel de la matriz: una fila por concepto, una columna por periodo.
+  const handleExcelMatriz = () => {
+    const celdaMap = new Map();
+    (programa.celdas || []).forEach((c) => celdaMap.set(`${c.contrato_concepto_id}:${c.contrato_periodo_id}`, c.cantidad));
+    const filas = programa.conceptos.map((c) => {
+      const fila = { Clave: c.clave || '', Concepto: c.concepto };
+      periodos.forEach((p) => { fila[`P${p.numero}`] = num(celdaMap.get(`${c.id}:${p.id}`)); });
+      return fila;
+    });
+    descargarExcel(filas, 'Programa', `programa_${folio}.xlsx`);
+  };
+  // Excel de las actividades viejas (A1).
+  const handleExcelActividades = () => {
     const filas = actividades.map((p) => ({
       Actividad: p.actividad,
       Inicio: soloFecha(p.inicio),
@@ -191,6 +211,20 @@ function BloquePrograma({ actividades, folio }) {
     }));
     descargarExcel(filas, 'Programa', `programa_${folio}.xlsx`);
   };
+
+  if (tieneMatriz) {
+    return (
+      <div>
+        <MatrizProgramaLectura
+          programa={programa}
+          periodoResaltadoNumero={periodoQueContiene(periodos, new Date().toISOString().slice(0, 10))}
+        />
+        <div className="mt-4 flex justify-end gap-2">
+          <BtnDescargar etiqueta="Programa (Excel)" onClick={handleExcelMatriz} testid="btn-descargar-programa-0" />
+        </div>
+      </div>
+    );
+  }
   if (actividades.length === 0) {
     return <p className="text-sm text-slate-400 italic">Este contrato no tiene programa de obra registrado.</p>;
   }
@@ -221,7 +255,7 @@ function BloquePrograma({ actividades, folio }) {
       <div className="mt-4 flex justify-end gap-2">
         <BtnDescargar
           etiqueta="Programa (Excel)"
-          onClick={handleExcel}
+          onClick={handleExcelActividades}
           testid="btn-descargar-programa-0"
         />
       </div>
@@ -333,6 +367,7 @@ export default function ConsultaExpediente() {
   const [contratos, setContratos] = useState([]);
   const [contratoId, setContratoId] = useState('');
   const [expediente, setExpediente] = useState(null);
+  const [programa, setPrograma] = useState(null); // Pase 1: matriz A2 (leerProgramaObra)
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
@@ -349,6 +384,7 @@ export default function ConsultaExpediente() {
   const seleccionarContrato = useCallback(async (id) => {
     setContratoId(id);
     setExpediente(null);
+    setPrograma(null);
     setError('');
     setQuery('');
     if (!id) return;
@@ -356,6 +392,9 @@ export default function ConsultaExpediente() {
     try {
       const data = await api.detalleContrato(id);
       setExpediente(data);
+      // Pase 1: la matriz A2 vive en otro endpoint (programa_obra + contrato_periodos). 404/sin
+      // programa → null y el bloque cae al fallback (actividades viejas o "no registrado").
+      try { setPrograma(await api.leerProgramaObra(id)); } catch (_) { setPrograma(null); }
     } catch (e) {
       // El acotamiento es server-side: 403 = sin acceso a este contrato.
       setError(
@@ -375,6 +414,7 @@ export default function ConsultaExpediente() {
     const c = expediente;
     const conceptos = Array.isArray(c.conceptos) ? c.conceptos : [];
     const actividades = Array.isArray(c.actividades) ? c.actividades : [];
+    const periodosProg = Array.isArray(programa?.periodos) ? programa.periodos : [];
     const garantias = Array.isArray(c.garantias) ? c.garantias : [];
     const jur = c.datos_juridicos || null;
     const equipo = {
@@ -413,14 +453,18 @@ export default function ConsultaExpediente() {
         titulo: 'Programa de obra',
         icono: '📅',
         haceMatch: (q, campo) => {
+          // El periodo puede venir de la matriz A2 (periodos del ciclo) o de las actividades A1.
           if (campo === 'periodo') {
-            return actividades.some((p) => `${soloFecha(p.inicio)} ${soloFecha(p.termino)}`.toLowerCase().includes(q));
+            return periodosProg.some((p) => `${soloFecha(p.inicio)} ${soloFecha(p.fin)}`.toLowerCase().includes(q))
+              || actividades.some((p) => `${soloFecha(p.inicio)} ${soloFecha(p.termino)}`.toLowerCase().includes(q));
           }
           if (campo === 'documento') return 'programa obra'.includes(q);
-          const blob = actividades.map((p) => `${p.actividad} ${soloFecha(p.inicio)} ${soloFecha(p.termino)}`).join(' ').toLowerCase();
+          const blob = (`${programa?.ciclo || ''} `
+            + periodosProg.map((p) => `${soloFecha(p.inicio)} ${soloFecha(p.fin)}`).join(' ') + ' '
+            + actividades.map((p) => `${p.actividad} ${soloFecha(p.inicio)} ${soloFecha(p.termino)}`).join(' ')).toLowerCase();
           return blob.includes(q);
         },
-        body: <BloquePrograma actividades={actividades} folio={c.folio} />
+        body: <BloquePrograma programa={programa} actividades={actividades} folio={c.folio} />
       },
       {
         id: 'fianzas',
@@ -445,7 +489,7 @@ export default function ConsultaExpediente() {
         body: <BloqueJuridicos juridicos={jur} equipo={equipo} folio={c.folio} />
       }
     ];
-  }, [expediente]);
+  }, [expediente, programa]);
 
   // Buscador con semántica AND: un bloque coincide si TODOS los términos de la
   // búsqueda hacen match sobre el campo seleccionado (criterio 2, art. lógica Y).
