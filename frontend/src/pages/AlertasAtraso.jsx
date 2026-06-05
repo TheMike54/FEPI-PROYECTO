@@ -3,6 +3,7 @@ import HeaderVista from '../components/vista/HeaderVista.jsx';
 import BannerContexto from '../components/vista/BannerContexto.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import RegionEditable from '../components/vista/RegionEditable.jsx';
+import { useSearchParams } from 'react-router-dom';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { api } from '../services/api.js';
 
@@ -79,6 +80,17 @@ export default function AlertasAtraso() {
       setCargando(false);
     }
   }, [cargarAlertas]);
+
+  // Pase 4: si llegamos con ?contrato=ID (acceso directo desde el detalle del contrato), preselecciona
+  // ese contrato en cuanto la lista esté cargada y mientras el usuario no haya elegido otro a mano.
+  const [searchParams] = useSearchParams();
+  const contratoQuery = searchParams.get('contrato');
+  useEffect(() => {
+    if (sinSesion || !contratoQuery || contratoId) return;
+    if (contratos.some((c) => String(c.id) === String(contratoQuery))) {
+      seleccionarContrato(String(contratoQuery));
+    }
+  }, [sinSesion, contratoQuery, contratoId, contratos, seleccionarContrato]);
 
   const contratoSel = useMemo(
     () => contratos.find((c) => String(c.id) === String(contratoId)) || null,

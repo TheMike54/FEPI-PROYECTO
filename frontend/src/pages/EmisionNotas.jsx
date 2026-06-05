@@ -12,7 +12,8 @@ import { api } from '../services/api.js';
 //  · La emisión/respuesta es la PARTE CENTRAL; el libro va detrás de "Ver bitácora".
 
 const folioFmt = (n) => (n == null ? '—' : 'BIT-' + String(n).padStart(4, '0'));
-const soloFecha = (s) => (s ? String(s).slice(0, 10) : '');
+// Pase 2.2: las notas muestran fecha Y HORA (la columna `fecha` es TIMESTAMPTZ). Mismo formato es-MX
+// que ya se usa para las firmas (firmado_en), para coherencia visual en toda la bitácora.
 const fechaHora = (s) => (s ? new Date(s).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : '');
 const ROL_LABEL = { residente: 'Residente', superintendente: 'Superintendente', supervision: 'Supervisión' };
 
@@ -189,7 +190,8 @@ export default function EmisionNotas() {
           <div className="flex items-center gap-2">
             {n.tag && <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-violet-100 text-violet-800" data-testid={`tag-${n.numero}`}>#{n.tag}</span>}
             <span className={`px-2 py-0.5 rounded text-[11px] font-semibold ${ac.cls}`} data-testid={`aceptacion-${n.numero}`}>{ac.label}</span>
-            <span className="text-xs text-slate-500">{soloFecha(n.fecha)}</span>
+            {/* Pase 2.2: fecha Y HORA de creación de la nota (la columna es TIMESTAMPTZ; antes se recortaba con soloFecha). */}
+            <span className="text-xs text-slate-500" data-testid={`nota-fecha-${n.numero}`}>{fechaHora(n.fecha)}</span>
           </div>
         </div>
         {n.asunto && <div className="text-xs font-semibold text-slate-800">{n.asunto}</div>}

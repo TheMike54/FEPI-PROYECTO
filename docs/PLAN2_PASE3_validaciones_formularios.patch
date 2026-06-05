@@ -1,0 +1,560 @@
+diff --git a/backend/src/controllers/pagos.controller.js b/backend/src/controllers/pagos.controller.js
+index c1b98b8..1968540 100644
+--- a/backend/src/controllers/pagos.controller.js
++++ b/backend/src/controllers/pagos.controller.js
+@@ -58,7 +58,7 @@ async function registrarPago(req, res) {
+ 
+       // Estimación REAL: existe, del contrato, estado pagable, no pagada. FOR UPDATE serializa el
+       // no-doble-pago contra otra transacción concurrente.
+-      const e = await client.query('SELECT id, contrato_id, numero, estado, neto FROM estimaciones WHERE id = $1 FOR UPDATE', [estimacionId]);
++      const e = await client.query('SELECT id, contrato_id, numero, estado, neto, integrada_en FROM estimaciones WHERE id = $1 FOR UPDATE', [estimacionId]);
+       if (e.rowCount === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'La estimación indicada no existe' }); }
+       const est = e.rows[0];
+       if (est.contrato_id !== contratoId) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'La estimación no pertenece al contrato indicado' }); }
+@@ -70,6 +70,19 @@ async function registrarPago(req, res) {
+       const dup = await client.query('SELECT 1 FROM pagos WHERE estimacion_id = $1 LIMIT 1', [estimacionId]);
+       if (dup.rowCount > 0) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'Esta estimación ya tiene un pago registrado' }); }
+ 
++      // Plan2 Pase3: la fecha del pago NO puede ser anterior al día en que se integró la estimación
++      // (integrada_en). No se paga antes de que la estimación exista formalmente. Comparación por DÍA
++      // en UTC: fecha_pago es DATE (sin hora); integrada_en es TIMESTAMPTZ. El MISMO día de la
++      // integración SÍ es válido (estricto <). fechaPago ya viene validada como 'AAAA-MM-DD' (string),
++      // por lo que la comparación lexicográfica equivale a la cronológica. [validar fundamento con el profe].
++      if (est.integrada_en) {
++        const diaIntegracion = new Date(est.integrada_en).toISOString().slice(0, 10); // 'AAAA-MM-DD' (UTC)
++        if (fechaPago < diaIntegracion) {
++          await client.query('ROLLBACK');
++          return res.status(400).json({ error: `La fecha de pago (${fechaPago}) no puede ser anterior a la fecha de integración de la estimación (${diaIntegracion})` });
++        }
++      }
++
+       // El importe = NETO de la estimación (server-side, no arbitrario). [validar: parcial vs exacto].
+       const importe = est.neto;
+       const estimacionRef = `Estimación #${est.numero}`;
+diff --git a/frontend/e2e/_helpers.js b/frontend/e2e/_helpers.js
+index 647f7ab..9f050fc 100644
+--- a/frontend/e2e/_helpers.js
++++ b/frontend/e2e/_helpers.js
+@@ -187,6 +187,9 @@ export async function altaLlenarJuridicos(page, d = {}) {
+  *  - Siempre agrega la fianza de CUMPLIMIENTO (art. 47 + 48 fr. II LOPSRM) en la fila índice 0.
+  *  - Con `conAnticipo:true` agrega además la fianza de ANTICIPO (art. 48 fr. I) en la fila índice 1.
+  * Montos pequeños (≤ monto del contrato de los tests, $5,000). Vigencia futura (no vencida).
++ * Plan2 Pase3: el monto de la fianza de ANTICIPO es DERIVADO (read-only) = %anticipo × monto del
++ * contrato; ya NO se teclea. El CALLER debe fijar `anticipo-input` (> 0) ANTES de llamar con
++ * conAnticipo:true, para que el monto derivado sea > 0 y la póliza quede válida.
+  */
+ export async function altaLlenarGarantias(page, { conAnticipo = false } = {}) {
+   await page.getByRole('button', { name: '+ Agregar póliza' }).click();
+@@ -197,10 +200,9 @@ export async function altaLlenarGarantias(page, { conAnticipo = false } = {}) {
+   await page.getByTestId('garantia-vigencia-0').fill('2027-06-01');
+   if (conAnticipo) {
+     await page.getByRole('button', { name: '+ Agregar póliza' }).click();
+-    await page.getByTestId('garantia-tipo-1').selectOption('Anticipo');
++    await page.getByTestId('garantia-tipo-1').selectOption('Anticipo'); // → monto auto-derivado (read-only)
+     await page.getByTestId('garantia-afianzadora-1').fill('Afianzadora E2E, S.A.');
+     await page.getByTestId('garantia-poliza-1').fill('POL-ANT-001');
+-    await page.getByTestId('garantia-monto-1').fill('1000');
+     await page.getByTestId('garantia-vigencia-1').fill('2027-06-01');
+   }
+ }
+diff --git a/frontend/e2e/alta-v5-navegacion-lineal.spec.js b/frontend/e2e/alta-v5-navegacion-lineal.spec.js
+index 7681d70..fee461e 100644
+--- a/frontend/e2e/alta-v5-navegacion-lineal.spec.js
++++ b/frontend/e2e/alta-v5-navegacion-lineal.spec.js
+@@ -131,7 +131,8 @@ test.describe('alta-v5 — navegación lineal + garantías/jurídicos obligatori
+     await page.getByTestId('garantia-tipo-1').selectOption('Anticipo');
+     await page.getByTestId('garantia-afianzadora-1').fill('Afianzadora E2E, S.A.');
+     await page.getByTestId('garantia-poliza-1').fill('POL-ANT-001');
+-    await page.getByTestId('garantia-monto-1').fill('1000');
++    // Plan2 Pase3: el monto del anticipo es DERIVADO (read-only) = 20% × $5,000 = $1,000 (no se teclea).
++    await expect(page.getByTestId('garantia-monto-1')).toHaveValue('1000');
+     await page.getByTestId('garantia-vigencia-1').fill('2027-06-01');
+     await expect(page.getByTestId('garantias-ok')).toBeVisible();
+     await page.getByTestId('btn-siguiente').click();
+diff --git a/frontend/e2e/garantia-anticipo-autofill.spec.js b/frontend/e2e/garantia-anticipo-autofill.spec.js
+new file mode 100644
+index 0000000..41e61ab
+--- /dev/null
++++ b/frontend/e2e/garantia-anticipo-autofill.spec.js
+@@ -0,0 +1,62 @@
++// @ts-check
++// Plan2 Pase3 — ALTA / paso "Garantías": al elegir tipo de póliza = ANTICIPO, el monto se AUTO-LLENA
++// (read-only) = (% de anticipo) × (monto del contrato). Ejemplo guía: 30% de $1,000,000 = $300,000.
++//
++// NO toca el gating/100%/cuadre del alta (núcleo G1-G8): este spec solo verifica el auto-fill en el
++// paso de garantías (no intenta avanzar/guardar). LOGIN REAL (backend+BD). No corre en CI.
++import { test, expect } from '@playwright/test';
++import {
++  freshHome, enterAppMode, goToViaSidebar,
++  altaLlenarDatosGenerales, altaAgregarConcepto, altaLlenarJuridicos,
++} from './_helpers.js';
++
++test.skip(!!process.env.CI, 'Plan2 Pase3: login real requiere backend+BD; se corre en local');
++
++// Lleva el wizard al paso 4 (garantías) con un contrato de monto = $1,000,000 (1000 × $1,000).
++async function irAGarantias1M(page) {
++  await altaLlenarDatosGenerales(page, { plazo: 60, fechaInicio: '2026-06-01' });
++  await page.getByTestId('btn-siguiente').click();                  // → catálogo (1)
++  await altaAgregarConcepto(page, 0, { cantidad: 1000, pu: 1000 }); // monto = 1,000,000
++  await page.getByTestId('btn-siguiente').click();                  // → programa (2)
++  await page.getByTestId('celda-0-1').fill('1000');                 // cuadra 100%
++  await page.getByTestId('btn-siguiente').click();                  // → jurídicos (3)
++  await altaLlenarJuridicos(page);
++  await page.getByTestId('btn-siguiente').click();                  // → garantías (4)
++}
++
++test.describe('Plan2 Pase3 — fianza de anticipo con monto derivado (auto-fill)', () => {
++  test.beforeEach(async ({ page }) => {
++    await freshHome(page);
++    await enterAppMode(page, 'residente');
++    await goToViaSidebar(page, '/contratos/alta');
++  });
++
++  test('30% × $1,000,000 = $300,000, read-only y reactivo al % de anticipo', async ({ page }) => {
++    await irAGarantias1M(page);
++    await page.getByTestId('anticipo-input').fill('30');
++    await page.getByRole('button', { name: '+ Agregar póliza' }).click();
++    await page.getByTestId('garantia-tipo-0').selectOption('Anticipo');
++
++    // (a) AUTO-FILL: 30% de 1,000,000 = 300,000.
++    await expect(page.getByTestId('garantia-monto-0')).toHaveValue('300000');
++    // (b) READ-ONLY: el usuario no puede teclear el monto del anticipo.
++    await expect(page.getByTestId('garantia-monto-0')).not.toBeEditable();
++    // (c) Hint del derivado visible.
++    await expect(page.getByTestId('garantia-monto-derivado-0')).toBeVisible();
++
++    // (d) REACTIVO: cambiar el % recalcula el monto derivado (10% → 100,000).
++    await page.getByTestId('anticipo-input').fill('10');
++    await expect(page.getByTestId('garantia-monto-0')).toHaveValue('100000');
++  });
++
++  test('una póliza NO-anticipo conserva el monto editable a mano', async ({ page }) => {
++    await irAGarantias1M(page);
++    await page.getByTestId('anticipo-input').fill('30');
++    await page.getByRole('button', { name: '+ Agregar póliza' }).click();
++    await page.getByTestId('garantia-tipo-0').selectOption('Cumplimiento');
++    // Cumplimiento: el monto es editable (no derivado).
++    await expect(page.getByTestId('garantia-monto-0')).toBeEditable();
++    await page.getByTestId('garantia-monto-0').fill('50000');
++    await expect(page.getByTestId('garantia-monto-0')).toHaveValue('50000');
++  });
++});
+diff --git a/frontend/e2e/hu-registro.spec.js b/frontend/e2e/hu-registro.spec.js
+index c2fee11..b53f927 100644
+--- a/frontend/e2e/hu-registro.spec.js
++++ b/frontend/e2e/hu-registro.spec.js
+@@ -36,10 +36,13 @@ async function loginReal(page, email, password) {
+ }
+ 
+ test('HU-Registro — auto-registro, rechazo por pendiente, aprobación y acceso', async ({ page }) => {
+-  const email = `nuevo.e2e.${Date.now()}@sigecop.test`;
+-  // Corrección profe (04-jun): el registro exige nombre + apellido(s) (≥2 palabras); "Usuario Prueba"
+-  // las cumple. El sufijo numérico (Date.now) solo hace único el valor mostrado en el header.
+-  const nombre = `Usuario Prueba ${Date.now()}`;
++  const ts = Date.now();
++  const email = `nuevo.e2e.${ts}@sigecop.test`;
++  // Plan2 Pase3: el registro captura nombre(s) y apellido(s) por SEPARADO y los CONCATENA en el
++  // campo `nombre`. El sufijo numérico (ts) solo hace único el valor mostrado en el header.
++  const nombres = 'Usuario';
++  const apellidos = `Prueba ${ts}`;
++  const nombre = `${nombres} ${apellidos}`; // 'Usuario Prueba {ts}' — lo que el form concatena y guarda
+ 
+   await freshHome(page);
+ 
+@@ -47,7 +50,8 @@ test('HU-Registro — auto-registro, rechazo por pendiente, aprobación y acceso
+   await page.getByTestId('link-registro').click();
+   await expect(page.getByTestId('form-registro')).toBeVisible();
+ 
+-  await page.getByTestId('reg-nombre').fill(nombre);
++  await page.getByTestId('reg-nombres').fill(nombres);
++  await page.getByTestId('reg-apellidos').fill(apellidos);
+   await page.getByTestId('reg-email').fill(email);
+   await page.getByTestId('reg-rol').selectOption('residente');
+   await page.getByTestId('reg-password').fill(PWD_NUEVO);
+@@ -93,27 +97,38 @@ test('HU-Registro — auto-registro, rechazo por pendiente, aprobación y acceso
+   await page.getByRole('button', { name: 'Salir' }).click();
+   await loginReal(page, email, PWD_NUEVO);
+ 
+-  // Entró al sistema: login fuera y el header muestra su nombre.
++  // Entró al sistema: login fuera y el header muestra su nombre COMPLETO ya CONCATENADO
++  // (prueba end-to-end de que nombre[s] + apellido[s] → un solo `nombre` = 'Usuario Prueba {ts}').
+   await expect(page.locator('#login-usuario')).toHaveCount(0);
+   await expect(page.getByText(nombre)).toBeVisible();
+ });
+ 
+-// Corrección profe (04-jun): el nombre completo (nombre + apellidos) aparece en la bitácora; no se
+-// admite registrarse con un solo nombre. Validación de cliente (espejo del candado del backend).
+-test('HU-Registro — el nombre debe incluir apellido(s): rechaza un solo nombre', async ({ page }) => {
++// Plan2 Pase3: el nombre se captura en DOS campos OBLIGATORIOS por separado (nombre[s] + apellido[s]).
++// El nombre completo aparece en la bitácora (art. 123 RLOPSRM). Validación de cliente; al enviar
++// se CONCATENAN en el campo `nombre` (el backend recibe ese campo único, sin cambios).
++test('HU-Registro — exige nombre(s) Y apellido(s) por separado', async ({ page }) => {
+   await freshHome(page);
+   await page.getByTestId('link-registro').click();
+   await expect(page.getByTestId('form-registro')).toBeVisible();
+ 
+-  await page.getByTestId('reg-nombre').fill('Iván');                 // un solo token → inválido
++  // Campos comunes válidos.
+   await page.getByTestId('reg-email').fill(`solo.nombre.${Date.now()}@sigecop.test`);
+   await page.getByTestId('reg-rol').selectOption('residente');
+   await page.getByTestId('reg-password').fill(PWD_NUEVO);
+   await page.getByTestId('reg-password2').fill(PWD_NUEVO);
+-  await page.getByTestId('reg-submit').click();
+ 
+-  // No envía: muestra error y sigue en el formulario de registro.
++  // (a) Solo nombre(s), SIN apellido(s) → rechazado (el apellido es obligatorio aparte).
++  await page.getByTestId('reg-nombres').fill('Iván');
++  await page.getByTestId('reg-apellidos').fill('');
++  await page.getByTestId('reg-submit').click();
+   await expect(page.getByTestId('registro-error')).toBeVisible();
+   await expect(page.getByTestId('registro-error')).toContainText('apellido');
+   await expect(page.getByTestId('form-registro')).toBeVisible();
++
++  // (b) Solo apellido(s), SIN nombre(s) → también rechazado (el nombre es obligatorio aparte).
++  await page.getByTestId('reg-nombres').fill('');
++  await page.getByTestId('reg-apellidos').fill('Pérez López');
++  await page.getByTestId('reg-submit').click();
++  await expect(page.getByTestId('registro-error')).toContainText('nombre');
++  await expect(page.getByTestId('form-registro')).toBeVisible();
+ });
+diff --git a/frontend/e2e/pago-fecha-integrada.spec.js b/frontend/e2e/pago-fecha-integrada.spec.js
+new file mode 100644
+index 0000000..2b1b457
+--- /dev/null
++++ b/frontend/e2e/pago-fecha-integrada.spec.js
+@@ -0,0 +1,110 @@
++// @ts-check
++// Plan2 Pase3 — HU-21: la fecha del pago NO puede ser anterior a la fecha de integración de la
++// estimación (integrada_en). No se paga antes de que la estimación se integre.
++//
++// API-directa (sin UI): siembra contrato + PDF firmado ligado (requisito de integración) + estimación
++// integrada, y luego registra el pago como FINANZAS. La validación es server-side en pagos.controller.
++// SOLO se añade la validación de fecha; el cálculo del monto (importe = neto) NO se toca.
++//
++// LOGIN REAL (requiere backend+BD; cuentas semilla). No corre en CI.
++import { test, expect } from '@playwright/test';
++
++test.skip(!!process.env.CI, 'Plan2 Pase3: login real requiere backend+BD; se corre en local');
++
++const API = 'http://localhost:4000/api';
++const PASS = 'Sigecop2026!';
++const PDF = Buffer.from('%PDF-1.4\n%E2E\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n');
++const loginApi = async (request, email) => (await request.post(`${API}/auth/login`, { data: { email, password: PASS } })).json();
++const auth = (t) => ({ Authorization: `Bearer ${t}` });
++
++// Siembra un contrato (con PDF firmado) e integra UNA estimación. Devuelve { cid, est, F }, donde
++// `est` es la estimación integrada (incluye integrada_en y neto) y `F` el token de finanzas.
++// Anticipo 0 → sin amortización y sin PDF de autorización (no supera el umbral del 30%).
++async function sembrarEstimacionIntegrada(request) {
++  const [R, S, V, D, F] = await Promise.all([
++    loginApi(request, 'residente@sigecop.test'),
++    loginApi(request, 'contratista@sigecop.test'),
++    loginApi(request, 'supervision@sigecop.test'),
++    loginApi(request, 'dependencia@sigecop.test'),
++    loginApi(request, 'finanzas@sigecop.test'),
++  ]);
++  const folio = `E2E-PAGO-${Date.now()}-${Math.round(Math.random() * 1e6)}`;
++  const cr = await request.post(`${API}/contratos`, {
++    headers: auth(R.token),
++    data: {
++      folio, tipo: 'Obra pública sobre la base de precios unitarios', objeto: 'Pago fecha e2e',
++      plazoDias: 60, fechaInicio: '2026-06-01',
++      superintendenteId: S.user.id, supervisionId: V.user.id, dependenciaId: D.user.id,
++      anticipoPct: 0, penaConvencionalPct: null, juridicos: {},
++      conceptos: [{ clave: 'C-001', concepto: 'Concepto guía', unidad: 'm³', cantidad: 1000, pu: 200 }],
++      ciclo: 'mensual',
++      programa: [{ clave: 'C-001', periodoNumero: 1, cantidad: 1000 }],
++      garantias: [],
++    },
++  });
++  expect(cr.status(), 'crear contrato').toBe(201);
++  const cid = (await cr.json()).id;
++
++  // PDF firmado ligado: sin él, integrarEstimacion responde 409 (formalización HU-01).
++  const up = await request.post(`${API}/contratos/${cid}/documento`, {
++    headers: auth(R.token),
++    multipart: { documento: { name: 'firmado.pdf', mimeType: 'application/pdf', buffer: PDF } },
++  });
++  expect(up.status(), 'subir PDF firmado').toBe(201);
++
++  // contrato_concepto_id real (vía el avance del contrato).
++  const av = await request.get(`${API}/estimaciones/contrato/${cid}/avance`, { headers: auth(S.token) });
++  const ccid = (await av.json())[0].contrato_concepto_id;
++
++  // Integra la estimación como superintendente (contratista). integrada_en = NOW() (al integrar).
++  const er = await request.post(`${API}/estimaciones`, {
++    headers: auth(S.token),
++    data: {
++      contrato_id: cid, periodo_inicio: '2026-06-01', periodo_fin: '2026-06-30',
++      generadores: [{ contrato_concepto_id: ccid, cantidad_periodo: 400 }], notas: [],
++    },
++  });
++  expect(er.status(), 'integrar estimación').toBe(201);
++  const est = await er.json();
++  return { cid, est, F };
++}
++
++// Cuerpo del pago. El importe NO se envía: se deriva del neto de la estimación (server-side).
++const pagoBody = (cid, estId, fechaPago) => ({
++  contrato_id: cid, estimacion_id: estId, fecha_pago: fechaPago,
++  referencia: 'SPEI-E2E-0001', factura_cfdi: 'CFDI-E2E-0001', fecha_factura: fechaPago,
++});
++
++test.describe('Plan2 Pase3 — el pago no puede ser anterior a la integración de la estimación (HU-21)', () => {
++  test('RECHAZO: fecha de pago anterior a integrada_en → 400 con mensaje claro', async ({ request }) => {
++    const { cid, est, F } = await sembrarEstimacionIntegrada(request);
++    const r = await request.post(`${API}/pagos`, {
++      headers: auth(F.token),
++      data: pagoBody(cid, est.id, '2000-01-01'), // claramente anterior a la integración
++    });
++    expect(r.status(), 'pago con fecha anterior a la integración').toBe(400);
++    expect((await r.json()).error).toMatch(/integraci[oó]n|integrada/i);
++  });
++
++  test('FELIZ: fecha de pago = día de integración → 201 e importe = neto (cálculo intacto)', async ({ request }) => {
++    const { cid, est, F } = await sembrarEstimacionIntegrada(request);
++    const diaIntegracion = String(est.integrada_en).slice(0, 10); // mismo día (válido: comparación estricta <)
++    const r = await request.post(`${API}/pagos`, {
++      headers: auth(F.token),
++      data: pagoBody(cid, est.id, diaIntegracion),
++    });
++    expect(r.status(), 'pago en el día de la integración').toBe(201);
++    const pago = await r.json();
++    expect(pago.estimacion_id, 'pago amarrado a la estimación').toBe(est.id);
++    expect(Number(pago.importe), 'importe = neto de la estimación (no se tocó el cálculo)').toBe(Number(est.neto));
++  });
++
++  test('FELIZ: fecha de pago posterior a la integración → 201', async ({ request }) => {
++    const { cid, est, F } = await sembrarEstimacionIntegrada(request);
++    const r = await request.post(`${API}/pagos`, {
++      headers: auth(F.token),
++      data: pagoBody(cid, est.id, '2026-12-31'), // muy posterior a la integración
++    });
++    expect(r.status(), 'pago posterior a la integración').toBe(201);
++  });
++});
+diff --git a/frontend/src/pages/AltaContrato.jsx b/frontend/src/pages/AltaContrato.jsx
+index d1ce210..eb51896 100644
+--- a/frontend/src/pages/AltaContrato.jsx
++++ b/frontend/src/pages/AltaContrato.jsx
+@@ -527,7 +527,7 @@ function AnticipoAutorizacionPDF({ contratoId, soloLectura, pendingFile, onPickF
+   );
+ }
+ 
+-function TabGarantias({ rows, onCell, onAdd, onRemove, anticipoPct, setAnticipoPct, soloLectura, errIdx, errAnticipo, contratoId, montoContrato, pdfAnticipoFile, setPdfAnticipoFile }) {
++function TabGarantias({ rows, onCell, onPatch, onAdd, onRemove, anticipoPct, setAnticipoPct, soloLectura, errIdx, errAnticipo, contratoId, montoContrato, pdfAnticipoFile, setPdfAnticipoFile }) {
+   const hoy = new Date();
+   const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+   const ap = Number(anticipoPct) || 0;
+@@ -568,10 +568,17 @@ function TabGarantias({ rows, onCell, onAdd, onRemove, anticipoPct, setAnticipoP
+               const vencida = p.vigencia && p.vigencia < hoyStr;
+               // alta-v2 (1.4): marca EN VIVO si la garantía excede el monto del contrato.
+               const excede = Number(p.monto) > 0 && montoContrato > 0 && Number(p.monto) > montoContrato;
++              // Plan2 Pase3: la fianza de ANTICIPO tiene monto DERIVADO (read-only) = %anticipo × monto
++              // del contrato. montoAntStr es la cadena que se fija al state (al elegir el tipo y vía el
++              // useEffect del padre cuando cambia el % o el monto). '' si no hay % o monto.
++              const esAnticipo = p.tipo === TIPO_ANTICIPO;
++              const montoAntStr = montoContrato > 0 && ap > 0 ? String(round2(montoContrato * ap / 100)) : '';
+               return (
+                 <tr key={p.rid} className={`border-t border-slate-200 ${(errIdx === i || excede) ? 'bg-red-50' : ''}`}>
+                   <td className="px-2 py-1 align-top">
+-                    <select className={inputCls(errIdx === i && !String(p.tipo).trim())} value={p.tipo} onChange={onCell(i, 'tipo')} disabled={soloLectura} data-testid={`garantia-tipo-${i}`}>
++                    <select className={inputCls(errIdx === i && !String(p.tipo).trim())} value={p.tipo}
++                      onChange={(e) => { const t = e.target.value; onPatch(i, t === TIPO_ANTICIPO ? { tipo: t, monto: montoAntStr } : { tipo: t }); }}
++                      disabled={soloLectura} data-testid={`garantia-tipo-${i}`}>
+                       <option value="">— Selecciona —</option>
+                       {TIPOS_GARANTIA.map((t) => <option key={t} value={t}>{t}</option>)}
+                     </select>
+@@ -579,7 +586,8 @@ function TabGarantias({ rows, onCell, onAdd, onRemove, anticipoPct, setAnticipoP
+                   <td className="px-2 py-1 align-top"><input className="sg-input" value={p.afianzadora} onChange={onCell(i, 'afianzadora')} disabled={soloLectura} data-testid={`garantia-afianzadora-${i}`} /></td>
+                   <td className="px-2 py-1 align-top"><input className="sg-input font-mono text-xs" value={p.poliza} onChange={onCell(i, 'poliza')} disabled={soloLectura} data-testid={`garantia-poliza-${i}`} /></td>
+                   <td className="px-2 py-1 align-top">
+-                    <input type="number" min="0" step="0.01" className={`sg-input text-right${excede ? ' border-red-500 ring-1 ring-red-400' : ''}`} value={p.monto} onChange={onCell(i, 'monto')} disabled={soloLectura} data-testid={`garantia-monto-${i}`} />
++                    <input type="number" min="0" step="0.01" className={`sg-input text-right${esAnticipo ? ' bg-slate-100 cursor-not-allowed' : ''}${excede ? ' border-red-500 ring-1 ring-red-400' : ''}`} value={p.monto} onChange={onCell(i, 'monto')} readOnly={esAnticipo} disabled={soloLectura} data-testid={`garantia-monto-${i}`} title={esAnticipo ? 'Derivado: % de anticipo × monto del contrato (no editable)' : undefined} />
++                    {esAnticipo && <span className="block text-xs text-slate-500 mt-1" data-testid={`garantia-monto-derivado-${i}`}>Derivado: {ap}% × monto del contrato (no editable)</span>}
+                     {excede && <span className="block text-xs text-red-600 mt-1" data-testid={`garantia-excede-${i}`}>⚠ excede el monto del contrato</span>}
+                   </td>
+                   <td className="px-2 py-1 align-top">
+@@ -1153,6 +1161,25 @@ export default function AltaContrato() {
+   }));
+   const montoDerivado = round2(conceptos.reduce((s, c) => s + (Number(importeDe(c.cantidad, c.pu)) || 0), 0));
+ 
++  // Plan2 Pase3: la fianza de ANTICIPO se DERIVA = (% de anticipo) × (monto del contrato), read-only.
++  // Mantiene sincronizado el monto de las pólizas tipo Anticipo cuando cambia el % o el monto del
++  // contrato (montoDerivado). Setter funcional (lee `prev`, sin meter `garantias` en deps) + guard
++  // `cambio` para no entrar en bucle de render. El input se pinta read-only en TabGarantias y la
++  // selección inicial del tipo "Anticipo" llena el monto en el mismo tick (onChange del select).
++  useEffect(() => {
++    const ap = Number(anticipoPct) || 0;
++    const derivado = montoDerivado > 0 && ap > 0 ? String(round2(montoDerivado * ap / 100)) : '';
++    setGarantias((prev) => {
++      let cambio = false;
++      const next = prev.map((g) => {
++        if (g.tipo !== TIPO_ANTICIPO || g.monto === derivado) return g;
++        cambio = true;
++        return { ...g, monto: derivado };
++      });
++      return cambio ? next : prev;
++    });
++  }, [anticipoPct, montoDerivado]);
++
+   useEffect(() => { setErrores(ERR0); }, [datosGenerales, datosJuridicos, anticipoPct, conceptos, celdas, ciclo, garantias, superintendenteId, supervisionId, dependenciaId]);
+ 
+   // Cuentas asignables al equipo (solo el residente puede consultarlas; si el rol
+@@ -1565,7 +1592,7 @@ export default function AltaContrato() {
+     ) },
+     { label: 'Datos jurídicos', content: wrapTab(<TabJuridicos datos={datosJuridicos} set={setDatosJur} err={errores.campos} />) },
+     { label: 'Garantías, penalizaciones y amortización', content: wrapTab(
+-      <TabGarantias rows={garantias} onCell={mkCell(setGarantias)} onAdd={mkAdd(setGarantias, { tipo: '', afianzadora: '', poliza: '', monto: '', vigencia: '' })} onRemove={mkRemove(setGarantias)} anticipoPct={anticipoPct} setAnticipoPct={setAnticipoPct} soloLectura={soloLectura} errIdx={errores.garantiaIdx} errAnticipo={errores.campos.anticipoPct} contratoId={contratoGuardadoId} montoContrato={montoDerivado} pdfAnticipoFile={pdfAnticipoFile} setPdfAnticipoFile={setPdfAnticipoFile} />
++      <TabGarantias rows={garantias} onCell={mkCell(setGarantias)} onPatch={mkPatch(setGarantias)} onAdd={mkAdd(setGarantias, { tipo: '', afianzadora: '', poliza: '', monto: '', vigencia: '' })} onRemove={mkRemove(setGarantias)} anticipoPct={anticipoPct} setAnticipoPct={setAnticipoPct} soloLectura={soloLectura} errIdx={errores.garantiaIdx} errAnticipo={errores.campos.anticipoPct} contratoId={contratoGuardadoId} montoContrato={montoDerivado} pdfAnticipoFile={pdfAnticipoFile} setPdfAnticipoFile={setPdfAnticipoFile} />
+     ) },
+     { label: 'PDF firmado', content: wrapTab(<TabPdfFirmado contratoId={contratoGuardadoId} soloLectura={soloLectura} pendingFile={pdfFirmadoFile} onPickFile={setPdfFirmadoFile} />) },
+     { label: 'Registrados', content: (
+diff --git a/frontend/src/pages/SeleccionRol.jsx b/frontend/src/pages/SeleccionRol.jsx
+index a844ecd..6e24c3a 100644
+--- a/frontend/src/pages/SeleccionRol.jsx
++++ b/frontend/src/pages/SeleccionRol.jsx
+@@ -100,7 +100,11 @@ function FormLogin({ onIrRegistro, mensaje, setMensaje }) {
+ const esNombreCompleto = (n) => (String(n || '').trim().match(/\p{L}{2,}/gu) || []).length >= 2;
+ 
+ function FormRegistro({ onIrLogin, setMensaje }) {
+-  const [nombre, setNombre] = useState('');
++  // Plan2 Pase3: el nombre se captura en DOS campos OBLIGATORIOS (nombre[s] + apellido[s]) y se
++  // CONCATENAN al enviar; la columna `nombre` (fuente única) y todos los lugares que la muestran
++  // siguen igual (el backend recibe el mismo campo `nombre`).
++  const [nombres, setNombres] = useState('');
++  const [apellidos, setApellidos] = useState('');
+   const [email, setEmail] = useState('');
+   const [password, setPassword] = useState('');
+   const [password2, setPassword2] = useState('');
+@@ -113,10 +117,20 @@ function FormRegistro({ onIrLogin, setMensaje }) {
+     if (loading) return;
+     setErrorLocal(null);
+ 
+-    if (!nombre.trim() || !email.trim() || !password) {
++    if (!nombres.trim()) {
++      setErrorLocal('Captura tu(s) nombre(s).');
++      return;
++    }
++    if (!apellidos.trim()) {
++      setErrorLocal('Captura tu(s) apellido(s).');
++      return;
++    }
++    if (!email.trim() || !password) {
+       setErrorLocal('Completa todos los campos.');
+       return;
+     }
++    // Concatena nombre(s) + apellido(s) en el campo `nombre` (fuente única; espejo del backend).
++    const nombre = `${nombres.trim()} ${apellidos.trim()}`.replace(/\s+/g, ' ').trim();
+     if (!esNombreCompleto(nombre)) {
+       setErrorLocal('Captura tu nombre y apellido(s): el nombre completo aparece en la bitácora.');
+       return;
+@@ -132,7 +146,7 @@ function FormRegistro({ onIrLogin, setMensaje }) {
+ 
+     setLoading(true);
+     try {
+-      await api.register({ nombre: nombre.trim(), email: email.trim(), password, rolSolicitado });
++      await api.register({ nombre, email: email.trim(), password, rolSolicitado });
+       // Vuelve al login mostrando el mensaje de cuenta pendiente.
+       setMensaje({
+         tipo: 'exito',
+@@ -161,15 +175,28 @@ function FormRegistro({ onIrLogin, setMensaje }) {
+       )}
+       <form className="space-y-4" data-testid="form-registro" onSubmit={handleSubmit}>
+         <div>
+-          <label className="sg-label" htmlFor="reg-nombre">Nombre completo</label>
++          <label className="sg-label" htmlFor="reg-nombres">Nombre(s)</label>
++          <input
++            id="reg-nombres"
++            data-testid="reg-nombres"
++            type="text"
++            className="sg-input"
++            placeholder="Ej. María"
++            value={nombres}
++            onChange={(e) => setNombres(e.target.value)}
++            disabled={loading}
++          />
++        </div>
++        <div>
++          <label className="sg-label" htmlFor="reg-apellidos">Apellido(s)</label>
+           <input
+-            id="reg-nombre"
+-            data-testid="reg-nombre"
++            id="reg-apellidos"
++            data-testid="reg-apellidos"
+             type="text"
+             className="sg-input"
+-            placeholder="Ej. Ing. María López Hernández"
+-            value={nombre}
+-            onChange={(e) => setNombre(e.target.value)}
++            placeholder="Ej. López Hernández"
++            value={apellidos}
++            onChange={(e) => setApellidos(e.target.value)}
+             disabled={loading}
+           />
+         </div>
+diff --git a/frontend/src/pages/SolicitudRegistro.jsx b/frontend/src/pages/SolicitudRegistro.jsx
+index bedde6d..fcd333e 100644
+--- a/frontend/src/pages/SolicitudRegistro.jsx
++++ b/frontend/src/pages/SolicitudRegistro.jsx
+@@ -13,7 +13,10 @@ import { api } from '../services/api.js';
+ const esNombreCompleto = (n) => (String(n || '').trim().match(/\p{L}{2,}/gu) || []).length >= 2;
+ 
+ export default function SolicitudRegistro() {
+-  const [nombre, setNombre] = useState('');
++  // Plan2 Pase3: nombre dividido en dos campos OBLIGATORIOS (nombre[s] + apellido[s]); se CONCATENAN
++  // al enviar para no cambiar la columna `nombre` (fuente única) ni los lugares que la muestran.
++  const [nombres, setNombres] = useState('');
++  const [apellidos, setApellidos] = useState('');
+   const [email, setEmail] = useState('');
+   const [rolSolicitado, setRolSolicitado] = useState(ROLES[0].id);
+   const [password, setPassword] = useState('');
+@@ -27,10 +30,20 @@ export default function SolicitudRegistro() {
+     if (loading) return;
+     setError(null);
+ 
+-    if (!nombre.trim() || !email.trim() || !password) {
++    if (!nombres.trim()) {
++      setError('Captura tu(s) nombre(s).');
++      return;
++    }
++    if (!apellidos.trim()) {
++      setError('Captura tu(s) apellido(s).');
++      return;
++    }
++    if (!email.trim() || !password) {
+       setError('Completa nombre, correo y contraseña.');
+       return;
+     }
++    // Concatena nombre(s) + apellido(s) en el campo `nombre` (fuente única; espejo del backend).
++    const nombre = `${nombres.trim()} ${apellidos.trim()}`.replace(/\s+/g, ' ').trim();
+     if (!esNombreCompleto(nombre)) {
+       setError('Captura tu nombre y apellido(s): el nombre completo aparece en la bitácora.');
+       return;
+@@ -46,7 +59,7 @@ export default function SolicitudRegistro() {
+ 
+     setLoading(true);
+     try {
+-      await api.register({ nombre: nombre.trim(), email: email.trim(), password, rolSolicitado });
++      await api.register({ nombre, email: email.trim(), password, rolSolicitado });
+       setExito(true);
+     } catch (err) {
+       setError(err.message || 'No se pudo completar el registro.');
+@@ -103,9 +116,14 @@ export default function SolicitudRegistro() {
+               )}
+               <div className="space-y-4">
+                 <div>
+-                  <label className="sg-label" htmlFor="sol-nombre">Nombre completo *</label>
+-                  <input id="sol-nombre" data-testid="sol-nombre" className="sg-input" placeholder="Ej. Ing. María López Hernández"
+-                    value={nombre} onChange={(e) => setNombre(e.target.value)} disabled={loading} />
++                  <label className="sg-label" htmlFor="sol-nombres">Nombre(s) *</label>
++                  <input id="sol-nombres" data-testid="sol-nombres" className="sg-input" placeholder="Ej. María"
++                    value={nombres} onChange={(e) => setNombres(e.target.value)} disabled={loading} />
++                </div>
++                <div>
++                  <label className="sg-label" htmlFor="sol-apellidos">Apellido(s) *</label>
++                  <input id="sol-apellidos" data-testid="sol-apellidos" className="sg-input" placeholder="Ej. López Hernández"
++                    value={apellidos} onChange={(e) => setApellidos(e.target.value)} disabled={loading} />
+                 </div>
+                 <div>
+                   <label className="sg-label" htmlFor="sol-email">Correo electrónico *</label>

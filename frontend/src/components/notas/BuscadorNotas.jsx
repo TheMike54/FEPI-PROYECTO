@@ -47,7 +47,11 @@ const CLASE_ACEPTACION = {
   anulada: 'bg-slate-200 text-slate-600'
 };
 
+// soloFecha (yyyy-mm-dd) se usa para COMPARAR contra los inputs type=date del filtro por rango.
 const soloFecha = (f) => (f || '').slice(0, 10);
+// Pase 2.2: para MOSTRAR la fecha de una nota se incluye la HORA (columna TIMESTAMPTZ). Mismo
+// formato es-MX que la bitácora (EmisionNotas). NO usar en el filtro (rompería el rango por fecha).
+const fechaHora = (f) => (f ? new Date(f).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : '');
 
 // Hook con el estado de los filtros y los resultados derivados (AND). Lo usan tanto
 // la página (HU-10) como el modal (HU-12); cada uno aporta su propio `notas` ya
@@ -220,7 +224,7 @@ export default function BuscadorNotas({
                         </span>
                         {n.tag && <span className="ml-1 inline-block px-2 py-0.5 bg-violet-100 text-violet-800 text-[11px] font-semibold rounded" data-testid={`tag-resultado-${n.numero}`}>#{n.tag}</span>}
                       </td>
-                      <td className="p-3">{soloFecha(n.fecha)}</td>
+                      <td className="p-3" data-testid={`bn-fecha-${n.numero}`}>{fechaHora(n.fecha)}</td>
                       <td className="p-3">{n.emisor_nombre || '—'}</td>
                       <td className="p-3 text-xs">
                         {n.vinculada_a ? (

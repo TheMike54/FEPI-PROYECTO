@@ -35,11 +35,15 @@ function BarraAvance({ label, pct, color, testid }) {
     </div>
   );
 }
-// dd/mm/aaaa sin corrimiento de zona horaria (parte de fecha de un ISO/Date).
+// dd/mm/aaaa sin corrimiento de zona horaria (parte de fecha de un ISO/Date). Para fechas tipo DATE
+// (periodos, integrada_en) que NO llevan hora; NO cambiar.
 const fechaMX = (iso) => {
   const p = (iso || '').slice(0, 10).split('-');
   return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : '—';
 };
+// Pase 2.2: para la fecha de una NOTA de bitácora (columna TIMESTAMPTZ) se muestra fecha Y HORA,
+// mismo formato es-MX que la bitácora. Solo para notas; las demás celdas siguen con fechaMX.
+const fechaHora = (iso) => (iso ? new Date(iso).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : '—');
 const EPS = 1e-6;
 
 const CLASE_ESTADO = {
@@ -209,7 +213,7 @@ function ModalDetalle({ estimacion, onCerrar }) {
                       <tr key={n.nota_id} className="border-t border-slate-200">
                         <td className="p-2 font-mono text-xs">#{n.numero}</td>
                         <td className="p-2">{n.tipo}</td>
-                        <td className="p-2">{fechaMX(n.fecha)}</td>
+                        <td className="p-2">{fechaHora(n.fecha)}</td>
                         <td className="p-2 text-slate-700">{n.asunto || '—'}</td>
                         <td className="p-2">{n.estado}</td>
                       </tr>
@@ -438,7 +442,7 @@ function TabNotasVinculadas({ vinculadas, onAbrir, onQuitar, soloLectura }) {
                 <tr key={n.id} className="border-t border-slate-200 hover:bg-slate-50">
                   <td className="p-3 font-mono text-xs">#{n.numero}</td>
                   <td className="p-3">{n.tipo_etiqueta || n.tipo}</td>
-                  <td className="p-3">{fechaMX(n.fecha)}</td>
+                  <td className="p-3">{fechaHora(n.fecha)}</td>
                   <td className="p-3">{n.emisor_nombre || '—'}</td>
                   <td className="p-3 text-slate-700">{n.asunto || '—'}</td>
                   <td className="p-3 text-center">

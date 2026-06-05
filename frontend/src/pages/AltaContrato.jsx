@@ -7,6 +7,7 @@ import RegionEditable from '../components/vista/RegionEditable.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { api } from '../services/api.js';
 import MatrizProgramaLectura, { periodoQueContiene } from '../components/programa/MatrizProgramaLectura.jsx';
+import { Link } from 'react-router-dom'; // Pase 4: acceso directo a la lista de alertas del contrato
 // alta-v2 (4.2): el alta arranca VACÍA (sin datos dummy). Ya no se importa conceptosDummy
 // ni polizasGarantiaDummy.
 
@@ -799,8 +800,12 @@ function DocumentosDetalle({ contratoId }) {
 // (detalleContrato: cabecera + conceptos + garantías + jurídicos) y la matriz del programa
 // (leerProgramaObra), sin inputs editables. (2.2) muestra/descarga ambos PDFs.
 function ModalDetalleContrato({ contratoId, onClose }) {
+  // Pase 4: el indicador de alertas de atraso solo lo ven los roles con acceso a HU-07
+  // (residente=E, supervisión=C). El backend además acota por participación (403 si no es parte).
+  const { sinAcceso: sinAccesoAlertas } = useVistaHU('HU-07');
   const [data, setData] = useState(null);
   const [programa, setPrograma] = useState(null);
+  const [alertas, setAlertas] = useState(null); // null = sin cargar / sin acceso / 403 → no se muestra indicador
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState(null);
 
@@ -812,11 +817,21 @@ function ModalDetalleContrato({ contratoId, onClose }) {
         const d = await api.detalleContrato(contratoId);
         if (vivo) setData(d);
         try { const p = await api.leerProgramaObra(contratoId); if (vivo) setPrograma(p); } catch (_) { /* contrato sin programa */ }
+        // Pase 4: alertas de atraso (presentación/lectura). Solo si el rol tiene acceso a HU-07; un
+        // 403 (cuenta sin participación) deja el indicador oculto (NUNCA inventa alertas).
+        if (!sinAccesoAlertas) {
+          try { const al = await api.alertasDeContrato(contratoId); if (vivo) setAlertas(Array.isArray(al) ? al : []); }
+          catch (_) { if (vivo) setAlertas(null); }
+        }
       } catch (e) { if (vivo) setError(e.message || 'No se pudo cargar el contrato'); }
       finally { if (vivo) setCargando(false); }
     })();
     return () => { vivo = false; };
-  }, [contratoId]);
+  }, [contratoId, sinAccesoAlertas]);
+
+  // Pase 4: conteo de conceptos EN ATRASO = alertas disparadas (misma fórmula que la vista HU-07).
+  const alertasEnAtraso = Array.isArray(alertas) ? alertas.filter((a) => a.disparada).length : 0;
+  const totalAlertas = Array.isArray(alertas) ? alertas.length : 0;
 
   const jur = data && data.datos_juridicos
     ? (typeof data.datos_juridicos === 'string' ? (() => { try { return JSON.parse(data.datos_juridicos); } catch { return null; } })() : data.datos_juridicos)
@@ -861,6 +876,25 @@ function ModalDetalleContrato({ contratoId, onClose }) {
                   <Campo label="Supervisión" valor={data.supervision_nombre} />
                 </div>
               </section>
+
+              {/* Pase 4: indicador de alertas de atraso + acceso directo a la lista del contrato.
+                  Presentación/lectura: gateado por rol (HU-07) y por participación (403 → oculto). */}
+              {!sinAccesoAlertas && Array.isArray(alertas) && (
+                <section data-testid="detalle-alertas">
+                  <h4 className="font-bold text-sigecop-blue mb-3">Alertas de atraso</h4>
+                  {alertasEnAtraso > 0 ? (
+                    <div className="flex flex-wrap items-center justify-between gap-3 bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 rounded" data-testid="detalle-alertas-atraso">
+                      <span className="text-sm font-semibold text-slate-800">⚠ {alertasEnAtraso} {alertasEnAtraso === 1 ? 'concepto' : 'conceptos'} en atraso</span>
+                      <Link to={`/seguimiento/alertas?contrato=${contratoId}`} className="text-sm font-semibold text-sigecop-accent hover:underline whitespace-nowrap" data-testid="detalle-link-alertas">Ver alertas del contrato →</Link>
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap items-center justify-between gap-3 bg-green-50 border-l-4 border-green-500 px-4 py-3 rounded" data-testid="detalle-alertas-ok">
+                      <span className="text-sm text-green-800">✓ Sin conceptos en atraso{totalAlertas > 0 ? ` · ${totalAlertas} alerta${totalAlertas === 1 ? '' : 's'} configurada${totalAlertas === 1 ? '' : 's'}` : ' · sin alertas configuradas'}</span>
+                      <Link to={`/seguimiento/alertas?contrato=${contratoId}`} className="text-sm font-semibold text-sigecop-accent hover:underline whitespace-nowrap" data-testid="detalle-link-alertas">Ver alertas del contrato →</Link>
+                    </div>
+                  )}
+                </section>
+              )}
 
               {Array.isArray(data.conceptos) && data.conceptos.length > 0 && (
                 <section>
