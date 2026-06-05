@@ -107,5 +107,8 @@ export const api = {
   sustituirPersona: (contratoId, payload) => request(`/roster/contrato/${contratoId}/sustituir`, { method: 'POST', body: JSON.stringify(payload) }),
   // HU-14: historial del ciclo de cobro (cada estimación con su estado y transiciones,
   // orden cronológico). Acotado por participación en el backend.
-  historialEstimaciones: (contratoId) => request(`/estimaciones-ciclo/contrato/${contratoId}/historial`)
+  historialEstimaciones: (contratoId) => request(`/estimaciones-ciclo/contrato/${contratoId}/historial`),
+  // HU-13: envío de la estimación. Sella la fecha (enviada_en/por) y avanza a 'enviada'.
+  // Solo el superintendente del contrato (lo valida el backend); arranca el plazo art. 54.
+  enviarEstimacion: (id) => request(`/estimaciones-ciclo/estimacion/${id}/enviar`, { method: 'POST' })
 };
