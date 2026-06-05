@@ -625,6 +625,17 @@ async function vincularNota(req, res) {
       if (notFound) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'El contrato no tiene bitácora aperturada' }); }
       if (!rolEnContrato) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'No eres parte firmante de este contrato; no puedes responder notas' }); }
 
+      // B-2 (auditoría — art. 123 fr. VI RLOPSRM: trazabilidad/auditabilidad de las referencias de la
+      // bitácora) [validar texto literal con el profe]: la nota-respuesta DEBE quedar en la MISMA
+      // bitácora que la nota referenciada. Hoy se DERIVA (la respuesta se crea en apertura.id, que es la
+      // bitácora de la nota original), pero se hace EXPLÍCITO para VERIFICAR la invariante y que sea
+      // inmune a refactors futuros del flujo de vinculación (que la nota destino no quede ligada a una
+      // bitácora/contrato distinto). El cruce por una persona ajena ya lo frena el 403 de participación.
+      if (apertura.id !== bitacoraId) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'La nota referenciada no pertenece a esta bitácora; no se puede vincular una nota fuera de su propio contrato (art. 123 fr. VI RLOPSRM)' });
+      }
+
       const v = await validarTipoParaRol(client, tipo, rolEnContrato);
       if (!v.ok) { await client.query('ROLLBACK'); return res.status(v.status).json({ error: v.error }); }
 

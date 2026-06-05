@@ -1,0 +1,695 @@
+diff --git a/backend/server.js b/backend/server.js
+index 083242c..eb0a652 100644
+--- a/backend/server.js
++++ b/backend/server.js
+@@ -12,6 +12,7 @@ const estimacionesRoutes = require('./src/routes/estimaciones.routes');
+ const rosterRoutes = require('./src/routes/roster.routes');  // Pasada F: sustitución de personas (art. 125 fr. I g)
+ const conveniosRoutes = require('./src/routes/convenios.routes');  // Pasada HU-03: convenios modificatorios (art. 59 LOPSRM)
+ const alertasRoutes = require('./src/routes/alertas.routes');
++const estimacionPrepRoutes = require('./src/routes/estimacion-prep.routes');  // Etapa A: solo-lectura para la pantalla única de estimación
+ const { initDb } = require('./src/db/init');
+ 
+ const app = express();
+@@ -38,6 +39,7 @@ app.use('/api/estimaciones', estimacionesRoutes);
+ app.use('/api/roster', rosterRoutes);
+ app.use('/api/convenios', conveniosRoutes);
+ app.use('/api/alertas', alertasRoutes);
++app.use('/api/estimacion-prep', estimacionPrepRoutes);
+ 
+ app.use((req, res) => {
+   res.status(404).json({ error: 'Ruta no encontrada' });
+diff --git a/backend/src/controllers/estimacion-prep.controller.js b/backend/src/controllers/estimacion-prep.controller.js
+new file mode 100644
+index 0000000..feada58
+--- /dev/null
++++ b/backend/src/controllers/estimacion-prep.controller.js
+@@ -0,0 +1,140 @@
++// HU-12 / Etapa A (presentación) — endpoint de SOLO LECTURA para la "pantalla única" de estimación.
++// NO toca el núcleo (integrarEstimacion / G1-G8): solo LEE y expone lo que la carátula viva, el
++// semáforo de plan y las barras de avance necesitan, sin que el cliente tenga que recalcular el plan
++// por periodos. Reusa las MISMAS consultas que el POST (acumulado previo, art. 118, y el plan A2 6c)
++// para que el "disponible este periodo" del semáforo coincida EXACTO con lo que el servidor validará.
++//   · ya_estimado            = Σ cantidad_periodo de estimaciones NO rechazadas (= acumulado_anterior).
++//   · planeado_hasta_periodo = Σ programa_obra hasta el periodo (cp.fin <= periodo_fin); null sin programa.
++//   · disponible_periodo     = (tiene_programa&periodo ? planeado_hasta : contratado) − ya_estimado.
++// Acotado por participación (esParteOSupervision, igual que avance/detalle).
++const { pool } = require('../db/pool');
++const { esParteOSupervision } = require('../lib/acceso');
++
++const PATRON_FECHA = /^\d{4}-\d{2}-\d{2}$/;
++
++// GET /api/estimacion-prep/contrato/:contratoId?periodo_fin=AAAA-MM-DD
++async function preparacionEstimacion(req, res) {
++  try {
++    const contratoId = Number(req.params.contratoId);
++    if (!Number.isInteger(contratoId) || contratoId <= 0) return res.status(400).json({ error: 'contratoId inválido' });
++    const periodoFin = typeof req.query.periodo_fin === 'string' && PATRON_FECHA.test(req.query.periodo_fin)
++      ? req.query.periodo_fin : null;
++
++    const c = await pool.query(
++      `SELECT id, monto, anticipo_pct, created_by, residente_id, superintendente_id, supervision_id
++         FROM contratos WHERE id = $1`,
++      [contratoId]
++    );
++    if (c.rowCount === 0) return res.status(404).json({ error: 'El contrato indicado no existe' });
++    const contrato = c.rows[0];
++    if (!esParteOSupervision(req.user, contrato)) {
++      return res.status(403).json({ error: 'No tienes acceso a este contrato' });
++    }
++    const montoContrato = Number(contrato.monto) || 0;
++    const anticipoPct = contrato.anticipo_pct == null ? 0 : Number(contrato.anticipo_pct);
++    const importeAnticipo = Math.round((montoContrato * anticipoPct / 100 + Number.EPSILON) * 100) / 100;
++
++    // Conceptos del catálogo + PU + contratado (clave puede no existir en contratos legacy).
++    const cc = await pool.query(
++      `SELECT cc.id AS contrato_concepto_id, cc.orden, cc.clave, cc.concepto, cc.unidad,
++              cc.cantidad AS cantidad_contratada, cc.pu
++         FROM contrato_conceptos cc
++        WHERE cc.contrato_id = $1
++        ORDER BY cc.orden`,
++      [contratoId]
++    );
++    if (cc.rowCount === 0) {
++      return res.status(200).json({
++        contrato: { monto: contrato.monto, anticipo_pct: anticipoPct, importe_anticipo: importeAnticipo.toFixed(2) },
++        tiene_programa: false, periodo_fin: periodoFin, conceptos: [],
++        avance: { fisico_ejecutado: '0.00', fisico_pct: null, planeado_valor: '0.00', planeado_pct: null }
++      });
++    }
++    const ids = cc.rows.map((r) => r.contrato_concepto_id);
++
++    // ya_estimado por concepto (= acumulado_anterior del POST: estimaciones NO rechazadas).
++    const acu = await pool.query(
++      `SELECT eg.contrato_concepto_id AS cid, COALESCE(SUM(eg.cantidad_periodo),0) AS acum
++         FROM estimacion_generadores eg JOIN estimaciones e ON e.id = eg.estimacion_id
++        WHERE e.contrato_id = $1 AND e.estado <> 'rechazada' AND eg.contrato_concepto_id = ANY($2::int[])
++        GROUP BY eg.contrato_concepto_id`,
++      [contratoId, ids]
++    );
++    const acuMap = new Map(acu.rows.map((r) => [r.cid, Number(r.acum)]));
++
++    // ¿tiene programa A2? (igual gating que el POST 6c).
++    const tp = await pool.query(
++      'SELECT 1 FROM programa_obra po JOIN contrato_conceptos cc ON cc.id=po.contrato_concepto_id WHERE cc.contrato_id=$1 LIMIT 1',
++      [contratoId]
++    );
++    const tienePrograma = tp.rowCount > 0;
++
++    // planeado por concepto: hasta el periodo (cp.fin <= periodo_fin) si se pasó; si no, TOTAL.
++    let planMap = new Map();
++    if (tienePrograma) {
++      const plan = periodoFin
++        ? await pool.query(
++            `SELECT po.contrato_concepto_id AS cid, COALESCE(SUM(po.cantidad),0) AS planeado
++               FROM programa_obra po JOIN contrato_periodos cp ON cp.id = po.contrato_periodo_id
++              WHERE po.contrato_concepto_id = ANY($1::int[]) AND cp.fin <= $2::date
++              GROUP BY po.contrato_concepto_id`,
++            [ids, periodoFin]
++          )
++        : await pool.query(
++            `SELECT po.contrato_concepto_id AS cid, COALESCE(SUM(po.cantidad),0) AS planeado
++               FROM programa_obra po
++              WHERE po.contrato_concepto_id = ANY($1::int[])
++              GROUP BY po.contrato_concepto_id`,
++            [ids]
++          );
++      planMap = new Map(plan.rows.map((r) => [r.cid, Number(r.planeado)]));
++    }
++
++    let fisicoValor = 0;     // Σ (ya_estimado × pu) — valor de obra ya estimada/ejecutada acumulada
++    let planeadoValor = 0;   // Σ (planeado_hasta_periodo × pu) — curva S esperada a la fecha
++    const conceptos = cc.rows.map((r) => {
++      const cid = r.contrato_concepto_id;
++      const pu = Number(r.pu) || 0;
++      const contratado = Number(r.cantidad_contratada) || 0;
++      const yaEstimado = acuMap.get(cid) || 0;
++      const planeado = tienePrograma ? (planMap.get(cid) || 0) : null;
++      // El tope del periodo es el plan (si hay programa) acotado por lo contratado (art. 118 nunca se supera).
++      const tope = tienePrograma ? Math.min(planeado, contratado) : contratado;
++      const disponible = Math.max(0, tope - yaEstimado);
++      fisicoValor += yaEstimado * pu;
++      if (tienePrograma) planeadoValor += (planeado || 0) * pu;
++      return {
++        contrato_concepto_id: cid,
++        clave: r.clave || null,
++        concepto: r.concepto,
++        unidad: r.unidad,
++        cantidad_contratada: r.cantidad_contratada,
++        pu: r.pu,
++        ya_estimado: yaEstimado,
++        planeado_hasta_periodo: planeado,
++        disponible_periodo: disponible
++      };
++    });
++
++    const pct = (a, b) => (b > 0 ? Number(((a / b) * 100).toFixed(2)) : null);
++    return res.status(200).json({
++      contrato: { monto: contrato.monto, anticipo_pct: anticipoPct, importe_anticipo: importeAnticipo.toFixed(2) },
++      tiene_programa: tienePrograma,
++      periodo_fin: periodoFin,
++      conceptos,
++      // Barras: avance físico (lo ejecutado/estimado, en valor) vs programado (curva S del programa).
++      // [validar la definición exacta físico/financiero con el profe].
++      avance: {
++        fisico_ejecutado: fisicoValor.toFixed(2),
++        fisico_pct: pct(fisicoValor, montoContrato),
++        planeado_valor: planeadoValor.toFixed(2),
++        planeado_pct: tienePrograma ? pct(planeadoValor, montoContrato) : null
++      }
++    });
++  } catch (err) {
++    console.error('[preparacionEstimacion]', err);
++    return res.status(500).json({ error: 'Error interno' });
++  }
++}
++
++module.exports = { preparacionEstimacion };
+diff --git a/backend/src/routes/estimacion-prep.routes.js b/backend/src/routes/estimacion-prep.routes.js
+new file mode 100644
+index 0000000..e32d83e
+--- /dev/null
++++ b/backend/src/routes/estimacion-prep.routes.js
+@@ -0,0 +1,12 @@
++const express = require('express');
++const { authMiddleware } = require('../middlewares/auth.middleware');
++const { preparacionEstimacion } = require('../controllers/estimacion-prep.controller');
++
++const router = express.Router();
++router.use(authMiddleware);
++
++// SOLO LECTURA (Etapa A): datos derivados para la pantalla única de estimación (semáforo de plan,
++// saldos, barras de avance). Acotado por participación en el controller. No hay escritura.
++router.get('/contrato/:contratoId', preparacionEstimacion);
++
++module.exports = router;
+diff --git a/frontend/e2e/estimacion-pantalla-unica.spec.js b/frontend/e2e/estimacion-pantalla-unica.spec.js
+new file mode 100644
+index 0000000..ee72145
+--- /dev/null
++++ b/frontend/e2e/estimacion-pantalla-unica.spec.js
+@@ -0,0 +1,96 @@
++// @ts-check
++// Etapa A — Pantalla ÚNICA de estimación (presentación). Verifica:
++//   · carátula VIVA: recalcula al teclear (el neto oficial lo materializa el backend).
++//   · ejemplo guía: C-001 PU=200, anticipo 30%, vol=400 → bruto 80,000 − amort 24,000 (art.143)
++//     − 5 al millar 400 (art.191) = neto $55,600.
++//   · semáforo de PLAN: si el volumen excede lo planeado para el periodo, marca rojo y DESHABILITA
++//     "Confirmar" (solo ADELANTA la validación del server; el server sigue validando al integrar).
++// Núcleo server-side (G1-G8) intacto: estos tests NO integran; ejercitan la presentación viva.
++// LOGIN REAL (backend+BD). No corre en CI.
++import { test, expect } from '@playwright/test';
++import { freshHome, enterAppMode, goToViaSidebar } from './_helpers.js';
++
++test.skip(!!process.env.CI, 'Etapa A estimación: login real requiere backend+BD; se corre en local');
++
++const API = 'http://localhost:4000/api';
++const PASS = 'Sigecop2026!';
++const VIEW = '/estimaciones/integracion';
++const loginApi = async (request, email) => (await request.post(`${API}/auth/login`, { data: { email, password: PASS } })).json();
++
++// Contrato guía: 1 concepto C-001 PU=200, contratado 1000, anticipo 30%, programa 400@P1 + 600@P2
++// (cuadra 100%). Mensual desde 2026-06-01 → P1 = 2026-06-01..2026-06-30 (planeado hasta 06-30 = 400).
++// El contratista (= superintendente del contrato) integra; lo creamos como residente por API.
++async function crearContratoGuia(request) {
++  const [R, S, V, D] = await Promise.all([
++    loginApi(request, 'residente@sigecop.test'),
++    loginApi(request, 'contratista@sigecop.test'),
++    loginApi(request, 'supervision@sigecop.test'),
++    loginApi(request, 'dependencia@sigecop.test')
++  ]);
++  const folio = `E2E-EST-${Date.now()}`;
++  const r = await request.post(`${API}/contratos`, {
++    headers: { Authorization: `Bearer ${R.token}` },
++    data: {
++      folio, tipo: 'Obra pública sobre la base de precios unitarios', objeto: 'Estimación e2e',
++      plazoDias: 60, fechaInicio: '2026-06-01',
++      superintendenteId: S.user.id, supervisionId: V.user.id, dependenciaId: D.user.id,
++      anticipoPct: 30, juridicos: {},
++      conceptos: [{ clave: 'C-001', concepto: 'Concepto guía', unidad: 'm³', cantidad: 1000, pu: 200 }],
++      ciclo: 'mensual',
++      programa: [
++        { clave: 'C-001', periodoNumero: 1, cantidad: 400 },
++        { clave: 'C-001', periodoNumero: 2, cantidad: 600 }
++      ],
++      garantias: []
++    }
++  });
++  expect(r.status(), 'crear contrato guía').toBe(201);
++  return folio;
++}
++
++async function abrirEstimacion(page, request) {
++  const folio = await crearContratoGuia(request);
++  await freshHome(page);
++  await enterAppMode(page, 'contratista'); // superintendente del contrato guía
++  await goToViaSidebar(page, VIEW);
++  const sel = page.getByTestId('select-contrato');
++  const val = await sel.locator('option', { hasText: folio }).first().getAttribute('value');
++  await sel.selectOption(val);
++  await expect(page.getByTestId('barras-avance')).toBeVisible(); // prep (solo lectura) cargó
++  return folio;
++}
++
++const volInput = (page) => page.getByTestId('tabla-generadores').locator('input[type="number"]').first();
++
++test.describe('Etapa A — pantalla única de estimación', () => {
++  test('carátula viva: C-001 vol=400 (PU 200, anticipo 30%) → neto $55,600 y recalcula al teclear', async ({ page, request }) => {
++    await abrirEstimacion(page, request);
++    const vol = volInput(page);
++    await vol.fill('400');
++    // bruto 80,000 − amort 24,000 − 5 al millar 400 = neto 55,600 (mismo redondeo que el server).
++    await expect(page.getByTestId('caratula-neto-preview')).toContainText('55,600');
++    await expect(page.getByTestId('saldo-estimacion-actual')).toContainText('80,000'); // bruto de este periodo
++    // RECALCULA al teclear: 200 × 200 × (1 − 0.30 − 0.005) = 27,800.
++    await vol.fill('200');
++    await expect(page.getByTestId('caratula-neto-preview')).toContainText('27,800');
++    await expect(page.getByTestId('caratula-neto-preview')).not.toContainText('55,600');
++  });
++
++  test('semáforo de plan: vol > planeado del periodo → rojo + Confirmar deshabilitado', async ({ page, request }) => {
++    await abrirEstimacion(page, request);
++    // Acota el plan al periodo P1 (planeado = 400): el corte usa periodo_fin (mismo que valida el server).
++    await page.getByTestId('periodo-inicio').fill('2026-06-01');
++    await page.getByTestId('periodo-fin').fill('2026-06-30');
++    const disp = page.locator('[data-testid^="gen-disponible-"]').first();
++    await expect(disp).toContainText('400'); // prep recargó con el corte → disponible este periodo = 400
++    const vol = volInput(page);
++    // 400 = exactamente lo planeado → dentro del plan, Confirmar habilitado.
++    await vol.fill('400');
++    await expect(page.getByTestId('semaforo-plan-exceso')).toHaveCount(0);
++    await expect(page.getByTestId('btn-integrar')).toBeEnabled();
++    // 500 > 400 planeado (pero < 1000 contratado: es el PLAN, no art.118) → rojo + bloquea Confirmar.
++    await vol.fill('500');
++    await expect(page.getByTestId('semaforo-plan-exceso')).toBeVisible();
++    await expect(page.getByTestId('btn-integrar')).toBeDisabled();
++  });
++});
+diff --git a/frontend/src/pages/IntegracionEstimacion.jsx b/frontend/src/pages/IntegracionEstimacion.jsx
+index 13c7036..506f53b 100644
+--- a/frontend/src/pages/IntegracionEstimacion.jsx
++++ b/frontend/src/pages/IntegracionEstimacion.jsx
+@@ -17,6 +17,23 @@ import { api } from '../services/api.js';
+ const fmtMXN = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+ const moneda = (n) => fmtMXN.format(Number(n) || 0);
+ const num = (n) => (Number(n) || 0).toLocaleString('es-MX', { maximumFractionDigits: 4 });
++// Redondeo a 2 decimales (centavos), ESPEJO del r2() del backend: la carátula viva muestra
++// EXACTAMENTE lo que materializará el server (importe=ROUND(cant×pu,2); amort/retención ROUND a 2).
++const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
++// Barra de avance (0–100%) con etiqueta. Presentación pura.
++function BarraAvance({ label, pct, color, testid }) {
++  const v = pct == null ? null : Math.max(0, Math.min(100, Number(pct)));
++  return (
++    <div data-testid={testid}>
++      <div className="flex justify-between text-xs text-slate-600 mb-1">
++        <span>{label}</span><span className="font-mono">{v == null ? '—' : `${v.toFixed(1)}%`}</span>
++      </div>
++      <div className="h-3 w-full rounded-full bg-slate-100 overflow-hidden">
++        <div className={`h-full ${color}`} style={{ width: `${v == null ? 0 : v}%` }} />
++      </div>
++    </div>
++  );
++}
+ // dd/mm/aaaa sin corrimiento de zona horaria (parte de fecha de un ISO/Date).
+ const fechaMX = (iso) => {
+   const p = (iso || '').slice(0, 10).split('-');
+@@ -212,7 +229,7 @@ function ModalDetalle({ estimacion, onCerrar }) {
+ 
+ // --------------------------- Tabs internos --------------------------------
+ 
+-function TabGeneradores({ filas, onCantidad }) {
++function TabGeneradores({ filas, onCantidad, tienePlan }) {
+   if (filas.length === 0) {
+     return (
+       <div>
+@@ -222,12 +239,14 @@ function TabGeneradores({ filas, onCantidad }) {
+     );
+   }
+   const hayExceso = filas.some((f) => f.excede);
++  const hayExcesoPlan = filas.some((f) => f.excedePlan);
+   return (
+     <div>
+-      <h3 className="text-lg font-bold text-sigecop-blue mb-4">Números generadores del periodo</h3>
++      <h3 className="text-lg font-bold text-sigecop-blue mb-1">1 · Captura del volumen ejecutado</h3>
+       <p className="text-sm text-slate-600 mb-3">
+-        Captura la cantidad ejecutada este periodo por concepto. El importe, el acumulado y el % de
+-        avance se calculan en vivo contra el catálogo y el acumulado previo (art. 118 RLOPSRM).
++        Teclea la cantidad ejecutada este periodo por concepto. Importe, acumulado y % de avance se
++        calculan en vivo. El <strong>semáforo de plan</strong> marca en rojo si superas lo planeado para
++        el periodo (adelanta la validación del servidor, art. 45-A-X/52 + 118 RLOPSRM); el neto oficial lo confirma el backend.
+       </p>
+       <div className="overflow-x-auto border border-slate-200 rounded-md mb-3">
+         <table className="w-full text-sm" data-testid="tabla-generadores">
+@@ -236,7 +255,9 @@ function TabGeneradores({ filas, onCantidad }) {
+               <th className="text-left px-3 py-2">Concepto</th>
+               <th className="text-left px-3 py-2 w-16">Unidad</th>
+               <th className="text-right px-3 py-2 w-28">Contratado</th>
+-              <th className="text-right px-3 py-2 w-28">Acum. previo</th>
++              <th className="text-right px-3 py-2 w-28">Ya estimado</th>
++              {tienePlan && <th className="text-right px-3 py-2 w-28" title="Planeado en el programa hasta este periodo (curva S)">Planeado</th>}
++              {tienePlan && <th className="text-right px-3 py-2 w-28" title="Disponible para estimar este periodo = planeado − ya estimado">Disp. periodo</th>}
+               <th className="text-right px-3 py-2 w-32">PU</th>
+               <th className="text-right px-3 py-2 w-32">Este periodo</th>
+               <th className="text-right px-3 py-2 w-32">Importe</th>
+@@ -245,58 +266,68 @@ function TabGeneradores({ filas, onCantidad }) {
+             </tr>
+           </thead>
+           <tbody>
+-            {filas.map((f) => (
+-              <tr key={f.contrato_concepto_id} className={`border-t border-slate-200 ${f.excede ? 'bg-red-50' : 'hover:bg-slate-50'}`}>
++            {filas.map((f) => {
++              const malo = f.excede || f.excedePlan;
++              return (
++              <tr key={f.contrato_concepto_id} className={`border-t border-slate-200 ${malo ? 'bg-red-50' : 'hover:bg-slate-50'}`} data-testid={`gen-fila-${f.contrato_concepto_id}`} data-excede-plan={f.excedePlan ? 'true' : undefined}>
+                 <td className="px-3 py-2">
+-                  {f.excede && <span title="Excede lo contratado" className="text-red-600 mr-1">⚠</span>}
++                  {malo && <span title={f.excede ? 'Excede lo contratado (art. 118)' : 'Excede lo planeado para el periodo'} className="text-red-600 mr-1">⚠</span>}
+                   {f.concepto}
+                 </td>
+                 <td className="px-3 py-2 text-slate-600">{f.unidad}</td>
+                 <td className="px-3 py-2 text-right">{num(f.contratado)}</td>
+                 <td className="px-3 py-2 text-right text-slate-600">{num(f.anterior)}</td>
++                {tienePlan && <td className="px-3 py-2 text-right text-slate-600" data-testid={`gen-planeado-${f.contrato_concepto_id}`}>{f.planeado == null ? '—' : num(f.planeado)}</td>}
++                {tienePlan && <td className={`px-3 py-2 text-right font-semibold ${f.excedePlan ? 'text-red-700' : 'text-sigecop-green-validation'}`} data-testid={`gen-disponible-${f.contrato_concepto_id}`}>{num(f.disponible)}</td>}
+                 <td className="px-3 py-2 text-right font-mono text-xs text-slate-600">{moneda(f.pu)}</td>
+                 <td className="px-3 py-2">
+                   <input
+                     type="number"
+                     min="0"
+                     step="any"
+-                    className={`sg-input text-right ${f.excede ? 'border-red-500 ring-2 ring-red-200' : ''}`}
++                    className={`sg-input text-right ${malo ? 'border-red-500 ring-2 ring-red-200' : ''}`}
+                     value={f.valor}
+                     onChange={(e) => onCantidad(f.contrato_concepto_id, e.target.value)}
+                     data-testid={`gen-cantidad-${f.contrato_concepto_id}`}
+                   />
+                 </td>
+                 <td className="px-3 py-2 text-right font-mono">{moneda(f.importe)}</td>
+-                <td className={`px-3 py-2 text-right font-semibold ${f.excede ? 'text-red-700' : ''}`}>{num(f.acumulado)}</td>
+-                <td className={`px-3 py-2 text-right ${f.excede ? 'text-red-700 font-bold' : ''}`}>{f.avancePct.toFixed(1)}%</td>
++                <td className={`px-3 py-2 text-right font-semibold ${malo ? 'text-red-700' : ''}`}>{num(f.acumulado)}</td>
++                <td className={`px-3 py-2 text-right ${malo ? 'text-red-700 font-bold' : ''}`}>{f.avancePct.toFixed(1)}%</td>
+               </tr>
+-            ))}
++            );})}
+           </tbody>
+         </table>
+       </div>
++      {hayExcesoPlan && (
++        <div className="bg-red-50 border-l-4 border-red-500 px-4 py-3 text-sm text-red-800 rounded-r-md mb-2" data-testid="semaforo-plan-exceso">
++          <strong>⚠ Excede lo planeado para el periodo</strong> en uno o más conceptos (programa de obra,
++          art. 45 ap. A fr. X RLOPSRM + art. 52 LOPSRM). Reduce la cantidad o ajusta el programa. No se puede confirmar así.
++        </div>
++      )}
+       {hayExceso ? (
+         <div className="bg-red-50 border-l-4 border-red-500 px-4 py-3 text-sm text-red-800 rounded-r-md" data-testid="aviso-exceso">
+           <strong>⚠ La cantidad acumulada excede lo contratado</strong> en uno o más conceptos. Ajusta las
+           cantidades o tramita un convenio modificatorio (art. 118 RLOPSRM). No se puede integrar así.
+         </div>
+-      ) : (
++      ) : !hayExcesoPlan && (
+         <div className="bg-green-50 border-l-4 border-sigecop-green-validation px-4 py-3 text-sm text-sigecop-green-validation rounded-r-md">
+-          ✓ Las cantidades acumuladas están dentro de lo contratado.
++          ✓ Las cantidades están dentro de lo contratado{tienePlan ? ' y de lo planeado para el periodo' : ''}.
+         </div>
+       )}
+     </div>
+   );
+ }
+ 
+-function TabCaratula({ caratula, anticipoPct, deductivas, onDeductivas }) {
++function TabCaratula({ caratula, anticipoPct, deductivas, onDeductivas, acumulados }) {
+   const renglones = [
+-    { label: 'Subtotal del periodo', importe: caratula.subtotal, formula: 'Σ (cantidad_periodo × PU) de los generadores con avance' },
+-    { label: `(−) Amortización de anticipo (${anticipoPct}%)`, importe: -caratula.amortizacion, formula: `subtotal × ${anticipoPct}/100 (art. 143 fr. I RLOPSRM)` },
+-    { label: '(−) Retención 5 al millar (art. 191 LFD)', importe: -caratula.retencion, formula: 'subtotal × 0.005' }
++    { label: 'Importe bruto del periodo', importe: caratula.subtotal, formula: 'Σ ROUND(volumen ejecutado × PU, 2) de los generadores con avance' },
++    { label: `(−) Amortización de anticipo (${anticipoPct}%)`, importe: -caratula.amortizacion, formula: `subtotal × ${anticipoPct}/100 — art. 143 fr. I RLOPSRM`, art: 'art. 143 RLOPSRM' },
++    { label: '(−) Retención 5 al millar (0.5%)', importe: -caratula.retencion, formula: 'subtotal × 0.005 — art. 191 LFD', art: 'art. 191 LFD' }
+   ];
+   return (
+     <div>
+-      <h3 className="text-lg font-bold text-sigecop-blue mb-1">Carátula de cálculo</h3>
++      <h3 className="text-lg font-bold text-sigecop-blue mb-1">2 · Carátula del periodo (viva)</h3>
+       <p className="text-xs text-amber-700 mb-3 italic">
+         Vista previa que recalcula al teclear. El neto OFICIAL lo materializa el backend al integrar
+         (fuente única de verdad, sin IVA — art. 2 fr. XIX RLOPSRM).
+@@ -306,7 +337,10 @@ function TabCaratula({ caratula, anticipoPct, deductivas, onDeductivas }) {
+           <tbody>
+             {renglones.map((r, i) => (
+               <tr key={i} className="border-t border-slate-200" title={r.formula}>
+-                <td className="px-4 py-3 text-slate-800">{r.label}</td>
++                <td className="px-4 py-3 text-slate-800">
++                  {r.label}
++                  {r.art && <span className="ml-2 inline-block text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5 cursor-help align-middle" title={r.formula} data-testid={`caratula-art-${i}`}>ⓘ {r.art}</span>}
++                </td>
+                 <td className="px-4 py-3 text-right font-mono text-slate-800">{moneda(r.importe)}</td>
+               </tr>
+             ))}
+@@ -324,6 +358,11 @@ function TabCaratula({ caratula, anticipoPct, deductivas, onDeductivas }) {
+                 />
+               </td>
+             </tr>
++            {/* Etapa C (falta el % del profe, art. 138/139 RLOPSRM [validar]): renglón PREVISTO en $0. */}
++            <tr className="border-t border-slate-200 text-slate-400" title="Se calculará en una etapa posterior, cuando el profe confirme el % y la regla de disparo (art. 138/139 RLOPSRM).">
++              <td className="px-4 py-3">(−) Retención por atraso <span className="text-[10px] uppercase tracking-wide bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 ml-1">próxima etapa</span></td>
++              <td className="px-4 py-3 text-right font-mono" data-testid="caratula-retencion-atraso">{moneda(0)}</td>
++            </tr>
+             <tr className={`border-t border-slate-200 font-bold ${caratula.neto < 0 ? 'bg-red-50' : 'bg-sigecop-blue-light'}`}>
+               <td className={`px-4 py-3 ${caratula.neto < 0 ? 'text-red-700' : 'text-sigecop-blue'}`}>(=) Neto a pagar (preview)</td>
+               <td className={`px-4 py-3 text-right font-mono text-base ${caratula.neto < 0 ? 'text-red-700' : 'text-sigecop-blue'}`} data-testid="caratula-neto-preview">
+@@ -338,6 +377,24 @@ function TabCaratula({ caratula, anticipoPct, deductivas, onDeductivas }) {
+           Las deductivas dejan el neto en negativo; el backend rechazará la integración (ajusta las deductivas).
+         </div>
+       )}
++      {acumulados && (
++        <div className="overflow-x-auto border border-slate-200 rounded-md mb-4 max-w-2xl" data-testid="tabla-saldos">
++          <table className="w-full text-sm">
++            <thead className="bg-slate-50 text-slate-700"><tr>
++              <th className="text-left px-4 py-2 font-semibold">Acumulado del contrato (sin IVA)</th>
++              <th className="text-right px-4 py-2 font-semibold">Importe</th>
++              <th className="text-right px-4 py-2 font-semibold w-20">%</th>
++            </tr></thead>
++            <tbody>
++              <tr className="border-t border-slate-200"><td className="px-4 py-2">Importe del contrato</td><td className="px-4 py-2 text-right font-mono">{moneda(acumulados.monto)}</td><td className="px-4 py-2 text-right text-slate-400">100%</td></tr>
++              <tr className="border-t border-slate-200"><td className="px-4 py-2">Estimado acumulado anterior</td><td className="px-4 py-2 text-right font-mono">{moneda(acumulados.estAnt)}</td><td className="px-4 py-2 text-right text-slate-500">{acumulados.pct(acumulados.estAnt)}</td></tr>
++              <tr className="border-t border-slate-200"><td className="px-4 py-2">(+) Esta estimación (periodo)</td><td className="px-4 py-2 text-right font-mono" data-testid="saldo-estimacion-actual">{moneda(acumulados.estActual)}</td><td className="px-4 py-2 text-right text-slate-500">{acumulados.pct(acumulados.estActual)}</td></tr>
++              <tr className="border-t border-slate-200 font-semibold"><td className="px-4 py-2">(=) Estimado acumulado</td><td className="px-4 py-2 text-right font-mono" data-testid="saldo-acumulado">{moneda(acumulados.estAcum)}</td><td className="px-4 py-2 text-right">{acumulados.pct(acumulados.estAcum)}</td></tr>
++              <tr className="border-t border-slate-200 font-semibold text-sigecop-blue"><td className="px-4 py-2">Saldo por estimar</td><td className="px-4 py-2 text-right font-mono" data-testid="saldo-por-estimar">{moneda(acumulados.saldoPorEstimar)}</td><td className="px-4 py-2 text-right">{acumulados.pct(acumulados.saldoPorEstimar)}</td></tr>
++            </tbody>
++          </table>
++        </div>
++      )}
+       <div className="bg-blue-50 border-l-4 border-blue-500 px-4 py-3 text-sm text-blue-900 rounded-r-md max-w-2xl">
+         Amortización del anticipo conforme al <strong>art. 143 fr. I RLOPSRM</strong> y retención del{' '}
+         <strong>5 al millar (art. 191 LFD)</strong>. La estimación se calcula <strong>sin IVA</strong>.
+@@ -423,6 +480,8 @@ export default function IntegracionEstimacion() {
+   const [tipos, setTipos] = useState([]);
+ 
+   const [avance, setAvance] = useState([]);
++  // Etapa A: datos derivados (solo lectura) para el semáforo de plan + saldos + barras de avance.
++  const [prep, setPrep] = useState(null);
+   const [historial, setHistorial] = useState([]);
+   const [notasContrato, setNotasContrato] = useState([]);
+   const [cargando, setCargando] = useState(false);
+@@ -458,16 +517,22 @@ export default function IntegracionEstimacion() {
+     const data = await api.estimacionesDeContrato(id);
+     setHistorial(Array.isArray(data) ? data : []);
+   }, []);
++  // Etapa A: prep (semáforo de plan/saldos/barras). El planeado se acota al periodo elegido
++  // (mismo corte cp.fin <= periodo_fin que valida el server); sin periodo, planeado total de referencia.
++  const recargarPrep = useCallback(async (id, pFin) => {
++    try { setPrep(await api.preparacionEstimacion(id, pFin || undefined)); }
++    catch (_) { setPrep(null); }
++  }, []);
+ 
+   const seleccionarContrato = useCallback(async (id) => {
+     setContratoId(id);
+-    setAvance([]); setHistorial([]); setNotasContrato([]);
++    setAvance([]); setPrep(null); setHistorial([]); setNotasContrato([]);
+     setCantidades({}); setDeductivas('0'); setPeriodoInicio(''); setPeriodoFin('');
+     setNotasVinculadas([]); setResultado(null); setErrorIntegrar(null);
+     if (!id) return;
+     setCargando(true);
+     try {
+-      await Promise.all([recargarAvance(id), recargarHistorial(id)]);
++      await Promise.all([recargarAvance(id), recargarHistorial(id), recargarPrep(id, '')]);
+       // Notas del contrato para el modal (404 = sin bitácora → simplemente no hay notas).
+       try {
+         const n = await api.notasDeContrato(id);
+@@ -481,7 +546,22 @@ export default function IntegracionEstimacion() {
+     } finally {
+       setCargando(false);
+     }
+-  }, [recargarAvance, recargarHistorial, showToast]);
++  }, [recargarAvance, recargarHistorial, recargarPrep, showToast]);
++
++  // Etapa A: al fijar/cambiar el periodo-fin, recalcular el plan acotado a ese corte (el semáforo
++  // "disponible este periodo" usa planeado hasta cp.fin <= periodo_fin, igual que el server).
++  useEffect(() => {
++    if (!contratoId || !periodoFin) return;
++    recargarPrep(contratoId, periodoFin);
++  }, [contratoId, periodoFin, recargarPrep]);
++
++  // Datos de plan por concepto (semáforo): del endpoint de solo lectura (Etapa A).
++  const prepMap = useMemo(() => {
++    const m = new Map();
++    if (prep && Array.isArray(prep.conceptos)) prep.conceptos.forEach((p) => m.set(p.contrato_concepto_id, p));
++    return m;
++  }, [prep]);
++  const tienePlan = !!(prep && prep.tiene_programa);
+ 
+   const filas = useMemo(() => avance.map((a) => {
+     const valor = cantidades[a.contrato_concepto_id] ?? '';
+@@ -490,22 +570,46 @@ export default function IntegracionEstimacion() {
+     const anterior = Number(a.acumulado_anterior);
+     const pu = Number(a.pu);
+     const acumulado = anterior + periodo;
+-    const excede = acumulado > contratado + EPS;
++    const excede = acumulado > contratado + EPS; // art. 118 (tope contratado, candado duro existente)
+     const avancePct = contratado > 0 ? (acumulado / contratado) * 100 : 0;
+-    return { ...a, valor, periodo, contratado, anterior, pu, acumulado, excede, avancePct, importe: periodo * pu };
+-  }), [avance, cantidades]);
+-
+-  const hayExceso = filas.some((f) => f.excede);
++    // Semáforo de PLAN (adelanta G5/A2: no estimar más de lo planeado hasta el periodo, art. 45-A-X/52).
++    const p = prepMap.get(a.contrato_concepto_id);
++    const planeado = p && p.planeado_hasta_periodo != null ? Number(p.planeado_hasta_periodo) : null;
++    const disponible = p ? Number(p.disponible_periodo) : Math.max(0, contratado - anterior);
++    const excedePlan = planeado != null && periodo > disponible + EPS;
++    return { ...a, valor, periodo, contratado, anterior, pu, acumulado, excede,
++      planeado, disponible, excedePlan, avancePct, importe: round2(periodo * pu) };
++  }), [avance, cantidades, prepMap]);
++
++  const hayExceso = filas.some((f) => f.excede);          // art. 118 (contratado)
++  const hayExcesoPlan = filas.some((f) => f.excedePlan);  // plan del periodo (semáforo)
+   const hayLineas = filas.some((f) => f.periodo > 0);
+ 
++  // Carátula VIVA con el MISMO redondeo del backend (r2). Renglón "retención por atraso" PREVISTO
++  // pero en $0 (Etapa C: falta el % del profe — art. 138/139 RLOPSRM [validar]); no se calcula aquí.
+   const caratula = useMemo(() => {
+-    const subtotal = filas.reduce((s, f) => s + (f.periodo > 0 ? f.importe : 0), 0);
+-    const amortizacion = subtotal * anticipoPct / 100;
+-    const retencion = subtotal * 0.005;
+-    const deduc = Number(deductivas) || 0;
+-    return { subtotal, amortizacion, retencion, neto: subtotal - amortizacion - retencion - deduc };
++    const subtotal = round2(filas.reduce((s, f) => s + (f.periodo > 0 ? f.importe : 0), 0));
++    const amortizacion = round2(subtotal * anticipoPct / 100);
++    const retencion = round2(subtotal * 0.005);
++    const deduc = round2(Number(deductivas) || 0);
++    const retencionAtraso = 0; // Etapa C
++    return { subtotal, amortizacion, retencion, deduc, retencionAtraso,
++      neto: round2(subtotal - amortizacion - retencion - deduc - retencionAtraso) };
+   }, [filas, anticipoPct, deductivas]);
+ 
++  // Acumulados/saldos (estilo carátula real, sin IVA): estimado acumulado anterior (del prep:
++  // Σ ya_estimado×PU) + esta estimación (subtotal vivo) = acumulado; saldo = monto − acumulado.
++  const acumulados = useMemo(() => {
++    if (!prep || !prep.contrato) return null;
++    const monto = Number(prep.contrato.monto) || 0;
++    const estAnt = Number(prep.avance?.fisico_ejecutado) || 0;
++    const estActual = caratula.subtotal;
++    const estAcum = round2(estAnt + estActual);
++    const saldoPorEstimar = round2(monto - estAcum);
++    const pct = (x) => (monto > 0 ? `${(x / monto * 100).toFixed(1)}%` : '—');
++    return { monto, estAnt, estActual, estAcum, saldoPorEstimar, pct };
++  }, [prep, caratula.subtotal]);
++
+   const onCantidad = (cid, valor) => setCantidades((prev) => ({ ...prev, [cid]: valor }));
+ 
+   const idsVinculados = useMemo(() => notasVinculadas.map((n) => n.id), [notasVinculadas]);
+@@ -519,7 +623,7 @@ export default function IntegracionEstimacion() {
+   const quitarNota = (id) => setNotasVinculadas((prev) => prev.filter((n) => n.id !== id));
+ 
+   const integrar = async () => {
+-    if (!contratoId || hayExceso || integrando) return;
++    if (!contratoId || hayExceso || hayExcesoPlan || integrando) return;
+     const generadores = filas.filter((f) => f.periodo > 0).map((f) => ({ contrato_concepto_id: f.contrato_concepto_id, cantidad_periodo: f.periodo }));
+     if (generadores.length === 0) { showToast('Captura al menos un concepto con cantidad mayor a 0'); return; }
+     if (!periodoInicio || !periodoFin) { showToast('Indica el periodo (inicio y fin)'); return; }
+@@ -560,17 +664,11 @@ export default function IntegracionEstimacion() {
+ 
+   const wrapTab = (node) => <RegionEditable disabled={soloLectura}>{node}</RegionEditable>;
+ 
+-  const tabs = [
+-    { label: 'Carátula', content: wrapTab(<TabCaratula caratula={caratula} anticipoPct={anticipoPct} deductivas={deductivas} onDeductivas={setDeductivas} />) },
+-    { label: 'Números generadores', content: wrapTab(<TabGeneradores filas={filas} onCantidad={onCantidad} />) },
+-    { label: 'Registro fotográfico', content: wrapTab(<TabPlaceholder titulo="Registro fotográfico del periodo" />) },
+-    { label: 'Soportes', content: wrapTab(<TabPlaceholder titulo="Soportes documentales" />) },
+-    { label: `Notas vinculadas (${notasVinculadas.length})`, content: wrapTab(
+-      <TabNotasVinculadas vinculadas={notasVinculadas} onAbrir={() => setModalAbierto(true)} onQuitar={quitarNota} soloLectura={soloLectura} />
+-    ) }
+-  ];
++  // Avance físico-financiero (live): ejecutado/estimado acumulado vs programado (curva S).
++  const avanceFisicoPct = acumulados && acumulados.monto > 0
++    ? (acumulados.estAnt + caratula.subtotal) / acumulados.monto * 100 : null;
+ 
+-  const integrarDeshabilitado = soloLectura || integrando || hayExceso || !hayLineas;
++  const integrarDeshabilitado = soloLectura || integrando || hayExceso || hayExcesoPlan || !hayLineas;
+ 
+   return (
+     <div>
+@@ -661,19 +759,46 @@ export default function IntegracionEstimacion() {
+             </div>
+           )}
+ 
+-          <Tabs tabs={tabs} />
++          {/* VISTA ÚNICA (Etapa A): captura → barras de avance → carátula viva + saldos → notas. */}
++          <div className="space-y-6">
++            {wrapTab(<TabGeneradores filas={filas} onCantidad={onCantidad} tienePlan={tienePlan} />)}
++
++            {prep && (
++              <div className="bg-white border border-slate-200 rounded-md p-4" data-testid="barras-avance">
++                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">Avance del contrato</h3>
++                <div className="space-y-3 max-w-2xl">
++                  <BarraAvance label="Avance físico-financiero (ejecutado/estimado acumulado)" pct={avanceFisicoPct} color="bg-sigecop-accent" testid="barra-fisico" />
++                  {tienePlan && <BarraAvance label="Avance programado (curva S del programa hasta el periodo)" pct={prep.avance?.planeado_pct} color="bg-blue-400" testid="barra-programado" />}
++                </div>
++                <p className="text-xs text-slate-500 mt-2">
++                  Sin IVA (art. 2 fr. XIX RLOPSRM). En esta etapa el avance estimado ≈ ejecutado (la estimación formaliza lo ejecutado); la separación fina físico vs financiero (obra ejecutada aún no estimada/pagada) se afina después. <span className="text-slate-400">[validar]</span>
++                </p>
++              </div>
++            )}
++
++            {wrapTab(<TabCaratula caratula={caratula} anticipoPct={anticipoPct} deductivas={deductivas} onDeductivas={setDeductivas} acumulados={acumulados} />)}
++
++            {wrapTab(
++              <TabNotasVinculadas vinculadas={notasVinculadas} onAbrir={() => setModalAbierto(true)} onQuitar={quitarNota} soloLectura={soloLectura} />
++            )}
++          </div>
+ 
+           {!soloLectura && (
+-            <div className="mt-6 flex justify-end">
++            <div className="mt-6 flex flex-col items-end gap-2">
++              {(hayExceso || hayExcesoPlan) && (
++                <span className="text-xs text-red-700" data-testid="confirmar-bloqueado-hint">
++                  {hayExceso ? 'Hay conceptos que exceden lo contratado (art. 118).' : 'Hay conceptos que exceden lo planeado para el periodo.'} No se puede confirmar.
++                </span>
++              )}
+               <button
+                 type="button"
+                 className="sg-btn-primary disabled:bg-slate-300 disabled:cursor-not-allowed"
+                 onClick={integrar}
+                 disabled={integrarDeshabilitado}
+-                title={hayExceso ? 'Hay conceptos que exceden lo contratado' : (!hayLineas ? 'Captura al menos un concepto con cantidad > 0' : '')}
++                title={hayExceso ? 'Hay conceptos que exceden lo contratado' : hayExcesoPlan ? 'Hay conceptos que exceden lo planeado del periodo' : (!hayLineas ? 'Captura al menos un concepto con cantidad > 0' : '')}
+                 data-testid="btn-integrar"
+               >
+-                {integrando ? 'Integrando…' : 'Integrar estimación'}
++                {integrando ? 'Integrando…' : 'Confirmar e integrar estimación'}
+               </button>
+             </div>
+           )}
+diff --git a/frontend/src/services/api.js b/frontend/src/services/api.js
+index eb28f09..5bfd9a2 100644
+--- a/frontend/src/services/api.js
++++ b/frontend/src/services/api.js
+@@ -99,6 +99,9 @@ export const api = {
+   // HU-12: estimaciones (integración + consulta + avance para el preview).
+   avanceContrato: (contratoId) => request(`/estimaciones/contrato/${contratoId}/avance`),
+   estimacionesDeContrato: (contratoId) => request(`/estimaciones/contrato/${contratoId}`),
++  // Etapa A (solo lectura): datos derivados para la pantalla única (semáforo de plan, saldos, barras).
++  // periodoFin opcional: si se pasa, el planeado se acota a ese periodo (mismo corte que valida el server).
++  preparacionEstimacion: (contratoId, periodoFin) => request(`/estimacion-prep/contrato/${contratoId}${periodoFin ? `?periodo_fin=${encodeURIComponent(periodoFin)}` : ''}`),
+   detalleEstimacion: (id) => request(`/estimaciones/${id}`),
+   integrarEstimacion: (payload) => request('/estimaciones', { method: 'POST', body: JSON.stringify(payload) }),
+   // Pasada F: roster del contrato (sustitución de personas, art. 125 fr. I g RLOPSRM). Lectura por

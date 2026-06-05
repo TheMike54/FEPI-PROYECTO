@@ -176,13 +176,22 @@ export default function RosterContrato() {
                 </select>
 
                 <label className="block text-xs font-medium text-slate-600 mb-1">Nueva persona</label>
+                {/* B-1 (auditoría selección-vs-texto libre): la nueva persona SIEMPRE se SELECCIONA de
+                    cuentas reales del rol correcto. Se ELIMINA el fallback de teclear el ID a mano
+                    (sust-nuevo-id): un ID tecleado rompe la trazabilidad/auditabilidad. Si no hay
+                    cuentas elegibles, se avisa (no se captura). El backend valida existencia/activa/rol
+                    igual (roster.controller, art. 125 fr. I g RLOPSRM) — esto solo endurece la UI. */}
                 {elegibles.length > 0 ? (
                   <select data-testid="sust-nuevo" className="sg-input mb-3" value={nuevoId} onChange={(e) => setNuevoId(e.target.value)} disabled={!rolSust}>
                     <option value="">— Elige a la nueva persona —</option>
                     {elegibles.map((u) => <option key={u.id} value={u.id}>{u.nombre} ({u.email})</option>)}
                   </select>
                 ) : (
-                  <input data-testid="sust-nuevo-id" type="number" min="1" className="sg-input mb-3" placeholder="ID de la nueva persona" value={nuevoId} onChange={(e) => setNuevoId(e.target.value)} disabled={!rolSust} />
+                  <div data-testid="sust-sin-elegibles" className="mb-3 bg-amber-50 border-l-4 border-amber-400 px-3 py-2 text-sm text-amber-800 rounded-r-md">
+                    {rolSust
+                      ? 'No hay cuentas disponibles para este rol. Debe registrarse y aprobarse una cuenta con el rol correcto antes de poder sustituir.'
+                      : 'Elige primero el rol a sustituir para ver las cuentas disponibles.'}
+                  </div>
                 )}
 
                 <label className="block text-xs font-medium text-slate-600 mb-1">Motivo (obligatorio)</label>

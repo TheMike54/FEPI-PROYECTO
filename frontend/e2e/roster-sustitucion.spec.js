@@ -41,3 +41,71 @@ for (const rol of [{ id: 'contratista', alias: 'Contratista' }, { id: 'supervisi
     });
   });
 }
+
+// ---------------------------------------------------------------------------
+// Etapa B / Fix B-1 (auditoría selección-vs-texto libre): la nueva persona SIEMPRE se SELECCIONA;
+// se eliminó el fallback de teclear el ID a mano (sust-nuevo-id). Lista vacía → aviso, sin input.
+// ---------------------------------------------------------------------------
+const API = 'http://localhost:4000/api';
+const PASS = 'Sigecop2026!';
+const loginApi = async (request, email) => (await request.post(`${API}/auth/login`, { data: { email, password: PASS } })).json();
+
+async function crearContratoB1(request) {
+  const [R, S, D] = await Promise.all([
+    loginApi(request, 'residente@sigecop.test'),
+    loginApi(request, 'contratista@sigecop.test'),
+    loginApi(request, 'dependencia@sigecop.test')
+  ]);
+  const folio = `E2E-B1-${Date.now()}`;
+  const r = await request.post(`${API}/contratos`, {
+    headers: { Authorization: `Bearer ${R.token}` },
+    data: {
+      folio, tipo: 'Obra pública sobre la base de precios unitarios', objeto: 'Roster B1', plazoDias: 60, fechaInicio: '2026-06-01',
+      superintendenteId: S.user.id, supervisionId: null, dependenciaId: D.user.id, anticipoPct: null, juridicos: {},
+      conceptos: [{ clave: 'A1', concepto: 'c', unidad: 'm³', cantidad: 100, pu: 50 }],
+      ciclo: 'mensual', programa: [{ clave: 'A1', periodoNumero: 1, cantidad: 100 }], garantias: []
+    }
+  });
+  expect(r.status(), 'crear contrato B1').toBe(201);
+  return { id: (await r.json()).id, R };
+}
+
+async function abrirRoster(page, request) {
+  const { id } = await crearContratoB1(request);
+  await freshHome(page);
+  await enterAppMode(page, 'residente'); // creador → es parte y ve el roster
+  await page.locator(`aside a[href="${VIEW_PATH}"]`).first().click();
+  await page.waitForLoadState('networkidle');
+  await page.getByTestId('roster-contrato').selectOption({ value: String(id) });
+  return id;
+}
+
+test.describe('Roster — Fix B-1: selección (sin input numérico de ID)', () => {
+  test('con elegibles, la nueva persona se SELECCIONA; el input de ID a mano ya NO existe', async ({ page, request }) => {
+    await abrirRoster(page, request);
+    await page.getByTestId('sust-rol').selectOption('superintendente'); // → cuentas rol contratista (hay)
+    await expect(page.getByTestId('sust-nuevo')).toBeVisible();
+    await expect(page.getByTestId('sust-nuevo-id')).toHaveCount(0); // eliminado
+    // No hay NINGÚN input numérico de captura de ID en el formulario de sustitución.
+    await expect(page.getByTestId('roster-form-sustituir').locator('input[type="number"]')).toHaveCount(0);
+  });
+
+  test('lista vacía → aviso claro, SIN input para teclear ID', async ({ page, request }) => {
+    await abrirRoster(page, request);
+    // Como residente, listar cuentas de rol 'residente' exige rol dependencia → 403 → lista vacía.
+    await page.getByTestId('sust-rol').selectOption('residente');
+    await expect(page.getByTestId('sust-sin-elegibles')).toBeVisible();
+    await expect(page.getByTestId('sust-sin-elegibles')).toContainText('No hay cuentas disponibles');
+    await expect(page.getByTestId('sust-nuevo-id')).toHaveCount(0);
+    await expect(page.getByTestId('sust-nuevo')).toHaveCount(0);
+  });
+
+  test('el backend sigue rechazando un ID inexistente (400)', async ({ request }) => {
+    const { id, R } = await crearContratoB1(request);
+    const r = await request.post(`${API}/roster/contrato/${id}/sustituir`, {
+      headers: { Authorization: `Bearer ${R.token}` },
+      data: { rol: 'superintendente', nuevoUsuarioId: 99999999, motivo: 'prueba id inexistente' }
+    });
+    expect(r.status(), 'ID inexistente debe ser 400').toBe(400);
+  });
+});

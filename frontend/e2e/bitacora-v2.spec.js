@@ -185,4 +185,32 @@ test.describe('Bitácora v2 — apertura=nota#1, firma, candado, tipos, datos m�
     // BUG 3: el botón de anular dice exactamente "Anular" (sin la anotación "(dice/debe decir)").
     await expect(page.getByTestId('btn-anular-3')).toHaveText('Anular');
   });
+
+  // Fix B-2 (auditoría — art. 123 fr. VI RLOPSRM): al vincular/responder una nota, el participante del
+  // contrato puede; quien NO es parte es rechazado (guard de participación, protege contra vincular notas
+  // de un contrato ajeno). El check explícito de "misma bitácora" es defensivo (la respuesta se crea en la
+  // bitácora de la nota referenciada por construcción). Todo por API.
+  test('(B-2) vincular nota: el participante puede (201); quien NO es parte del contrato → 403 descriptivo', async ({ request }) => {
+    const { R, S, V } = await actores(request);
+    const D = await login(request, 'dependencia@sigecop.test'); // logueado, pero NO firmante de este contrato
+    const folio = `BITUI-VINC-${Date.now()}`;
+    const cid = await crearContrato(request, R.token, folio, S.user.id, V.user.id);
+    const apId = await aperturar(request, R.token, cid);
+    await firmarApertura(request, R.token, apId);
+    await firmarApertura(request, S.token, apId);
+    await firmarApertura(request, V.token, apId);
+    const em = await emitir(request, R.token, apId, { tipo: 'res_estimaciones', contenido: 'Nota base a vincular' });
+    expect(em.status()).toBe(201);
+    const notaId = (await em.json()).id;
+    const vincular = (token, body) => request.post(`${API}/bitacora/notas/${notaId}/vincular`, { headers: auth(token), data: body });
+
+    // Camino feliz: el residente (parte del contrato) vincula una respuesta → 201.
+    const ok = await vincular(R.token, { tipo: 'res_estimaciones', contenido: 'Respuesta vinculada' });
+    expect(ok.status(), 'participante vincula').toBe(201);
+
+    // Quien NO es parte del contrato (dependencia, no firmante) NO puede vincular → 403 descriptivo.
+    const den = await vincular(D.token, { tipo: 'res_estimaciones', contenido: 'Intruso' });
+    expect(den.status(), 'no-parte vincula').toBe(403);
+    expect((await den.json()).error).toContain('No eres parte');
+  });
 });
