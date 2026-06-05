@@ -114,7 +114,7 @@ async function integrarEstimacion(req, res) {
 
       // (1) Contrato + auth localizada. 404 antes que 403 (espejo de la bitácora).
       const cres = await client.query(
-        `SELECT id, anticipo_pct, created_by, residente_id, superintendente_id, supervision_id
+        `SELECT id, monto, anticipo_pct, pena_convencional_pct, created_by, residente_id, superintendente_id, supervision_id
            FROM contratos WHERE id = $1`,
         [contratoId]
       );
@@ -126,6 +126,10 @@ async function integrarEstimacion(req, res) {
       }
       // Sin % de anticipo definido => 0 (no hay amortización que aplicar).
       const anticipoPct = contrato.anticipo_pct == null ? 0 : Number(contrato.anticipo_pct);
+      // Etapa C: % de pena por atraso pactado en el contrato (art. 138/139 RLOPSRM). NULL = sin pena
+      // → retención por atraso = 0. monto del contrato para el avance físico/financiero (snapshot).
+      const penaPct = contrato.pena_convencional_pct == null ? null : Number(contrato.pena_convencional_pct);
+      const montoContrato = Number(contrato.monto) || 0;
 
       // (1b) GATING SERVER-SIDE del PDF firmado del contrato (antes solo era de UI, salteable por
       //      API directo). No se integra una estimación (carátula financiera append-only) sobre un
@@ -255,6 +259,31 @@ async function integrarEstimacion(req, res) {
         }
       }
 
+      // (6d) ETAPA C — ATRASO GLOBAL (en valor) + pagado acumulado, para la retención por atraso y el
+      //      avance financiero. El contrato va ATRASADO si su EJECUTADO acumulado en valor
+      //      (Σ ya_estimado×pu de toda la obra + esta estimación) es MENOR al PROGRAMADO acumulado al
+      //      periodo (Σ planeado_hasta_periodo×pu). Global, sobre TODO el catálogo. Sin programa →
+      //      programado=0 → no medible → no atraso. [validar regla de disparo (global/concepto, bruto/neto)].
+      const gv = await client.query(
+        `SELECT
+           COALESCE(SUM(prev.ejec * cc.pu), 0)::numeric(18,4)     AS ejec_prev_valor,
+           COALESCE(SUM(plan.planeado * cc.pu), 0)::numeric(18,4) AS programado_valor
+         FROM contrato_conceptos cc
+         LEFT JOIN (SELECT eg.contrato_concepto_id cid, SUM(eg.cantidad_periodo) ejec
+                      FROM estimacion_generadores eg JOIN estimaciones e ON e.id = eg.estimacion_id
+                     WHERE e.contrato_id = $1 AND e.estado <> 'rechazada' GROUP BY 1) prev ON prev.cid = cc.id
+         LEFT JOIN (SELECT po.contrato_concepto_id cid, SUM(po.cantidad) planeado
+                      FROM programa_obra po JOIN contrato_periodos cp ON cp.id = po.contrato_periodo_id
+                     WHERE cp.fin <= $2::date GROUP BY 1) plan ON plan.cid = cc.id
+         WHERE cc.contrato_id = $1`,
+        [contratoId, periodoFin]
+      );
+      const ejecPrevValor = Number(gv.rows[0].ejec_prev_valor);
+      const programadoValor = Number(gv.rows[0].programado_valor);
+      // Pagado acumulado (HU-21) para el avance financiero (esta estimación aún no está pagada).
+      const pg = await client.query("SELECT COALESCE(SUM(importe), 0)::numeric(18,2) AS pagado FROM pagos WHERE contrato_id = $1", [contratoId]);
+      const pagadoAcum = Number(pg.rows[0].pagado);
+
       // (6b) Carátula con UN SOLO motor de redondeo (Postgres NUMERIC) y la MISMA fórmula
       //      Σ ROUND(cantidad×pu, 2) que el catálogo (contratos.controller) y que el detalle
       //      reproducido (detalleEstimacion): subtotal === Σ importes del detalle, al centavo.
@@ -273,6 +302,13 @@ async function integrarEstimacion(req, res) {
       const prm = lineas.flatMap((l, i) => [i, l.cantidad_periodo, l.pu_snapshot]);
       const pA = prm.push(anticipoPct); // índice 1-based de anticipoPct
       const pD = prm.push(deductivas);  // índice 1-based de deductivas
+      const pPena = prm.push(penaPct);            // % pena por atraso (NULL si no pactada)
+      const pEjec = prm.push(ejecPrevValor);      // ejecutado prev en valor (sin esta estimación)
+      const pProg = prm.push(programadoValor);    // programado acumulado en valor al periodo
+      // Etapa C: EXTIENDE el neto con la retención por ATRASO (art. 138/139 RLOPSRM). Solo aplica si hay
+      // pena pactada (pena_pct != NULL), hay programa (programado>0) y el contrato va atrasado
+      // (ejecutado = ejec_prev + ESTA estimación < programado). retencion_atraso = ROUND(pena × bruto, 2).
+      // El 5 al millar y la amortización NO cambian (G1-G8 intactos): solo se RESTA un renglón más.
       const cal = await client.query(
         `WITH gen(idx, cant, pu) AS (VALUES ${vals}),
               lin AS (SELECT idx, ROUND(cant * pu, 2)::numeric(14,2) AS importe FROM gen),
@@ -280,20 +316,31 @@ async function integrarEstimacion(req, res) {
          SELECT s.subtotal,
                 ROUND(s.subtotal * $${pA}::numeric / 100, 2)::numeric(14,2) AS amortizacion,
                 ROUND(s.subtotal * 0.005, 2)::numeric(14,2)                 AS retencion,
+                CASE WHEN $${pPena}::numeric IS NOT NULL AND $${pProg}::numeric > 0
+                       AND ($${pEjec}::numeric + s.subtotal) < $${pProg}::numeric - 0.000001
+                     THEN ROUND(s.subtotal * $${pPena}::numeric, 2) ELSE 0 END::numeric(14,2) AS retencion_atraso,
                 (s.subtotal
                    - ROUND(s.subtotal * $${pA}::numeric / 100, 2)
                    - ROUND(s.subtotal * 0.005, 2)
-                   - $${pD}::numeric(14,2))::numeric(14,2)                  AS neto,
+                   - $${pD}::numeric(14,2)
+                   - CASE WHEN $${pPena}::numeric IS NOT NULL AND $${pProg}::numeric > 0
+                            AND ($${pEjec}::numeric + s.subtotal) < $${pProg}::numeric - 0.000001
+                          THEN ROUND(s.subtotal * $${pPena}::numeric, 2) ELSE 0 END)::numeric(14,2) AS neto,
                 (SELECT json_agg(importe::text ORDER BY idx) FROM lin)      AS importes
            FROM sub s`,
         prm
       );
-      const { subtotal, amortizacion, retencion, neto, importes } = cal.rows[0];
+      const { subtotal, amortizacion, retencion, retencion_atraso, neto, importes } = cal.rows[0];
       lineas.forEach((l, i) => { l.importe = importes[i]; }); // importe SQL-exacto para la respuesta
-      // Las deductivas (manuales) no pueden dejar el neto en negativo.
+      // Avance físico (ejecutado en valor / monto) y financiero (pagado / monto), en %, snapshot al integrar.
+      const r4 = (n) => Math.round((Number(n) + Number.EPSILON) * 1e4) / 1e4;
+      const ejecValor = ejecPrevValor + Number(subtotal);
+      const avanceFisicoPct = montoContrato > 0 ? r4(ejecValor / montoContrato * 100) : null;
+      const avanceFinancieroPct = montoContrato > 0 ? r4(pagadoAcum / montoContrato * 100) : null;
+      // Las deducciones (deductivas + retención por atraso) no pueden dejar el neto en negativo.
       if (Number(neto) < 0) {
         await client.query('ROLLBACK');
-        return res.status(400).json({ error: 'Las deductivas no pueden dejar el neto en negativo' });
+        return res.status(400).json({ error: 'Las deducciones (deductivas / retención por atraso) no pueden dejar el neto en negativo' });
       }
 
       // (7) Numeración correlativa atómica y carátula.
@@ -306,11 +353,14 @@ async function integrarEstimacion(req, res) {
       const ins = await client.query(
         `INSERT INTO estimaciones
            (contrato_id, numero, periodo_inicio, periodo_fin, estado, anticipo_pct_snapshot,
-            subtotal, amortizacion, retencion, deductivas, neto, integrada_por)
-         VALUES ($1, $2, $3, $4, 'integrada', $5, $6, $7, $8, $9, $10, $11)
+            subtotal, amortizacion, retencion, deductivas, neto, integrada_por,
+            retencion_atraso, avance_fisico_pct, avance_financiero_pct)
+         VALUES ($1, $2, $3, $4, 'integrada', $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
          RETURNING id, contrato_id, numero, periodo_inicio, periodo_fin, estado, anticipo_pct_snapshot,
-                   subtotal, amortizacion, retencion, deductivas, neto, integrada_por, integrada_en`,
-        [contratoId, numero, periodoInicio, periodoFin, anticipoPct, subtotal, amortizacion, retencion, deductivas, neto, req.user.id]
+                   subtotal, amortizacion, retencion, deductivas, neto, integrada_por, integrada_en,
+                   retencion_atraso, avance_fisico_pct, avance_financiero_pct`,
+        [contratoId, numero, periodoInicio, periodoFin, anticipoPct, subtotal, amortizacion, retencion, deductivas, neto, req.user.id,
+         retencion_atraso, avanceFisicoPct, avanceFinancieroPct]
       );
       const estimacion = ins.rows[0];
 

@@ -21,7 +21,7 @@ async function preparacionEstimacion(req, res) {
       ? req.query.periodo_fin : null;
 
     const c = await pool.query(
-      `SELECT id, monto, anticipo_pct, created_by, residente_id, superintendente_id, supervision_id
+      `SELECT id, monto, anticipo_pct, pena_convencional_pct, created_by, residente_id, superintendente_id, supervision_id
          FROM contratos WHERE id = $1`,
       [contratoId]
     );
@@ -33,6 +33,12 @@ async function preparacionEstimacion(req, res) {
     const montoContrato = Number(contrato.monto) || 0;
     const anticipoPct = contrato.anticipo_pct == null ? 0 : Number(contrato.anticipo_pct);
     const importeAnticipo = Math.round((montoContrato * anticipoPct / 100 + Number.EPSILON) * 100) / 100;
+    // Etapa C: % de pena por atraso pactado (NULL = sin pena → retención $0) + pagado acumulado (HU-21)
+    // para el avance financiero. La carátula viva calcula la retención por atraso con estos datos.
+    const penaPct = contrato.pena_convencional_pct == null ? null : Number(contrato.pena_convencional_pct);
+    const pgq = await pool.query('SELECT COALESCE(SUM(importe),0) AS pagado FROM pagos WHERE contrato_id = $1', [contratoId]);
+    const pagadoAcum = Number(pgq.rows[0].pagado);
+    const financieroPct = montoContrato > 0 ? Number(((pagadoAcum / montoContrato) * 100).toFixed(2)) : null;
 
     // Conceptos del catálogo + PU + contratado (clave puede no existir en contratos legacy).
     const cc = await pool.query(
@@ -45,9 +51,10 @@ async function preparacionEstimacion(req, res) {
     );
     if (cc.rowCount === 0) {
       return res.status(200).json({
-        contrato: { monto: contrato.monto, anticipo_pct: anticipoPct, importe_anticipo: importeAnticipo.toFixed(2) },
+        contrato: { monto: contrato.monto, anticipo_pct: anticipoPct, importe_anticipo: importeAnticipo.toFixed(2), pena_convencional_pct: penaPct },
         tiene_programa: false, periodo_fin: periodoFin, conceptos: [],
-        avance: { fisico_ejecutado: '0.00', fisico_pct: null, planeado_valor: '0.00', planeado_pct: null }
+        avance: { fisico_ejecutado: '0.00', fisico_pct: null, planeado_valor: '0.00', planeado_pct: null,
+                  pagado_acumulado: pagadoAcum.toFixed(2), financiero_pct: financieroPct, atraso_previo: false }
       });
     }
     const ids = cc.rows.map((r) => r.contrato_concepto_id);
@@ -118,17 +125,22 @@ async function preparacionEstimacion(req, res) {
 
     const pct = (a, b) => (b > 0 ? Number(((a / b) * 100).toFixed(2)) : null);
     return res.status(200).json({
-      contrato: { monto: contrato.monto, anticipo_pct: anticipoPct, importe_anticipo: importeAnticipo.toFixed(2) },
+      contrato: { monto: contrato.monto, anticipo_pct: anticipoPct, importe_anticipo: importeAnticipo.toFixed(2), pena_convencional_pct: penaPct },
       tiene_programa: tienePrograma,
       periodo_fin: periodoFin,
       conceptos,
-      // Barras: avance físico (lo ejecutado/estimado, en valor) vs programado (curva S del programa).
-      // [validar la definición exacta físico/financiero con el profe].
+      // Barras + retención por atraso (Etapa C): físico (ejecutado en valor) vs programado (curva S) vs
+      // financiero (pagado/monto). atraso_previo = ya atrasado SIN la estimación actual; la carátula viva
+      // recalcula el atraso REAL sumando el bruto del periodo (fisico_ejecutado + bruto < planeado_valor).
+      // [validar la definición físico/financiero y la regla de disparo con el profe].
       avance: {
         fisico_ejecutado: fisicoValor.toFixed(2),
         fisico_pct: pct(fisicoValor, montoContrato),
         planeado_valor: planeadoValor.toFixed(2),
-        planeado_pct: tienePrograma ? pct(planeadoValor, montoContrato) : null
+        planeado_pct: tienePrograma ? pct(planeadoValor, montoContrato) : null,
+        pagado_acumulado: pagadoAcum.toFixed(2),
+        financiero_pct: financieroPct,
+        atraso_previo: tienePrograma && planeadoValor > 0 && fisicoValor < planeadoValor - 1e-6
       }
     });
   } catch (err) {

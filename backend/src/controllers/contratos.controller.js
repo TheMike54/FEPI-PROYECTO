@@ -79,6 +79,13 @@ async function crearContrato(req, res) {
   if (anticipoPct !== null && (anticipoPct < 0 || anticipoPct > 100)) {
     return res.status(400).json({ error: 'anticipoPct debe estar entre 0 y 100' });
   }
+  // Etapa C: % de pena por atraso (penas convencionales, art. 138/139 RLOPSRM), OPCIONAL: fracción 0–1
+  // (ej. 0.05 = 5%). Vacío/ausente → NULL (sin pena pactada → retención por atraso $0). No afecta el
+  // gating del alta ni la regla del 100% (es un dato más de la cabecera). [validar tasa con el profe].
+  const penaConvencionalPct = numOrNull(body.penaConvencionalPct);
+  if (penaConvencionalPct !== null && (penaConvencionalPct < 0 || penaConvencionalPct > 1)) {
+    return res.status(400).json({ error: 'penaConvencionalPct, si se envía, debe estar entre 0 y 1 (ej. 0.05 = 5%)' });
+  }
 
   // Sub-bloques opcionales (no bloquean el guardado si vienen vacios).
   const conceptos = Array.isArray(body.conceptos) ? body.conceptos : [];
@@ -263,15 +270,17 @@ async function crearContrato(req, res) {
         `INSERT INTO contratos
            (folio, tipo, objeto, contratista, dependencia, monto, plazo_dias,
             fecha_inicio, fecha_termino, created_by, datos_juridicos, anticipo_pct,
-            residente_id, superintendente_id, supervision_id, ciclo_estimacion, dependencia_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+            residente_id, superintendente_id, supervision_id, ciclo_estimacion, dependencia_id,
+            pena_convencional_pct)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
          RETURNING id`,
         [
           folio, tipo, objeto, contratista, dependencia, monto, plazoDias,
           fechaInicio, fechaTerminoDerivada, req.user.id,
           juridicos ? JSON.stringify(juridicos) : null,
           anticipoPct,
-          req.user.id, superintendenteId, supervisionId, ciclo, dependenciaId
+          req.user.id, superintendenteId, supervisionId, ciclo, dependenciaId,
+          penaConvencionalPct
         ]
       );
       const contratoId = cab.rows[0].id;

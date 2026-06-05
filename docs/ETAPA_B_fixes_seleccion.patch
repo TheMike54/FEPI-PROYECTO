@@ -1,0 +1,163 @@
+diff --git a/backend/src/controllers/bitacora.controller.js b/backend/src/controllers/bitacora.controller.js
+index 0f74d1c..2ff4aaf 100644
+--- a/backend/src/controllers/bitacora.controller.js
++++ b/backend/src/controllers/bitacora.controller.js
+@@ -625,6 +625,17 @@ async function vincularNota(req, res) {
+       if (notFound) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'El contrato no tiene bitácora aperturada' }); }
+       if (!rolEnContrato) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'No eres parte firmante de este contrato; no puedes responder notas' }); }
+ 
++      // B-2 (auditoría — art. 123 fr. VI RLOPSRM: trazabilidad/auditabilidad de las referencias de la
++      // bitácora) [validar texto literal con el profe]: la nota-respuesta DEBE quedar en la MISMA
++      // bitácora que la nota referenciada. Hoy se DERIVA (la respuesta se crea en apertura.id, que es la
++      // bitácora de la nota original), pero se hace EXPLÍCITO para VERIFICAR la invariante y que sea
++      // inmune a refactors futuros del flujo de vinculación (que la nota destino no quede ligada a una
++      // bitácora/contrato distinto). El cruce por una persona ajena ya lo frena el 403 de participación.
++      if (apertura.id !== bitacoraId) {
++        await client.query('ROLLBACK');
++        return res.status(400).json({ error: 'La nota referenciada no pertenece a esta bitácora; no se puede vincular una nota fuera de su propio contrato (art. 123 fr. VI RLOPSRM)' });
++      }
++
+       const v = await validarTipoParaRol(client, tipo, rolEnContrato);
+       if (!v.ok) { await client.query('ROLLBACK'); return res.status(v.status).json({ error: v.error }); }
+ 
+diff --git a/frontend/e2e/bitacora-v2.spec.js b/frontend/e2e/bitacora-v2.spec.js
+index e37042b..e1f9d76 100644
+--- a/frontend/e2e/bitacora-v2.spec.js
++++ b/frontend/e2e/bitacora-v2.spec.js
+@@ -185,4 +185,32 @@ test.describe('Bitácora v2 — apertura=nota#1, firma, candado, tipos, datos m
+     // BUG 3: el botón de anular dice exactamente "Anular" (sin la anotación "(dice/debe decir)").
+     await expect(page.getByTestId('btn-anular-3')).toHaveText('Anular');
+   });
++
++  // Fix B-2 (auditoría — art. 123 fr. VI RLOPSRM): al vincular/responder una nota, el participante del
++  // contrato puede; quien NO es parte es rechazado (guard de participación, protege contra vincular notas
++  // de un contrato ajeno). El check explícito de "misma bitácora" es defensivo (la respuesta se crea en la
++  // bitácora de la nota referenciada por construcción). Todo por API.
++  test('(B-2) vincular nota: el participante puede (201); quien NO es parte del contrato → 403 descriptivo', async ({ request }) => {
++    const { R, S, V } = await actores(request);
++    const D = await login(request, 'dependencia@sigecop.test'); // logueado, pero NO firmante de este contrato
++    const folio = `BITUI-VINC-${Date.now()}`;
++    const cid = await crearContrato(request, R.token, folio, S.user.id, V.user.id);
++    const apId = await aperturar(request, R.token, cid);
++    await firmarApertura(request, R.token, apId);
++    await firmarApertura(request, S.token, apId);
++    await firmarApertura(request, V.token, apId);
++    const em = await emitir(request, R.token, apId, { tipo: 'res_estimaciones', contenido: 'Nota base a vincular' });
++    expect(em.status()).toBe(201);
++    const notaId = (await em.json()).id;
++    const vincular = (token, body) => request.post(`${API}/bitacora/notas/${notaId}/vincular`, { headers: auth(token), data: body });
++
++    // Camino feliz: el residente (parte del contrato) vincula una respuesta → 201.
++    const ok = await vincular(R.token, { tipo: 'res_estimaciones', contenido: 'Respuesta vinculada' });
++    expect(ok.status(), 'participante vincula').toBe(201);
++
++    // Quien NO es parte del contrato (dependencia, no firmante) NO puede vincular → 403 descriptivo.
++    const den = await vincular(D.token, { tipo: 'res_estimaciones', contenido: 'Intruso' });
++    expect(den.status(), 'no-parte vincula').toBe(403);
++    expect((await den.json()).error).toContain('No eres parte');
++  });
+ });
+diff --git a/frontend/e2e/roster-sustitucion.spec.js b/frontend/e2e/roster-sustitucion.spec.js
+index b2a4862..877d55e 100644
+--- a/frontend/e2e/roster-sustitucion.spec.js
++++ b/frontend/e2e/roster-sustitucion.spec.js
+@@ -41,3 +41,71 @@ for (const rol of [{ id: 'contratista', alias: 'Contratista' }, { id: 'supervisi
+     });
+   });
+ }
++
++// ---------------------------------------------------------------------------
++// Etapa B / Fix B-1 (auditoría selección-vs-texto libre): la nueva persona SIEMPRE se SELECCIONA;
++// se eliminó el fallback de teclear el ID a mano (sust-nuevo-id). Lista vacía → aviso, sin input.
++// ---------------------------------------------------------------------------
++const API = 'http://localhost:4000/api';
++const PASS = 'Sigecop2026!';
++const loginApi = async (request, email) => (await request.post(`${API}/auth/login`, { data: { email, password: PASS } })).json();
++
++async function crearContratoB1(request) {
++  const [R, S, D] = await Promise.all([
++    loginApi(request, 'residente@sigecop.test'),
++    loginApi(request, 'contratista@sigecop.test'),
++    loginApi(request, 'dependencia@sigecop.test')
++  ]);
++  const folio = `E2E-B1-${Date.now()}`;
++  const r = await request.post(`${API}/contratos`, {
++    headers: { Authorization: `Bearer ${R.token}` },
++    data: {
++      folio, tipo: 'Obra pública sobre la base de precios unitarios', objeto: 'Roster B1', plazoDias: 60, fechaInicio: '2026-06-01',
++      superintendenteId: S.user.id, supervisionId: null, dependenciaId: D.user.id, anticipoPct: null, juridicos: {},
++      conceptos: [{ clave: 'A1', concepto: 'c', unidad: 'm³', cantidad: 100, pu: 50 }],
++      ciclo: 'mensual', programa: [{ clave: 'A1', periodoNumero: 1, cantidad: 100 }], garantias: []
++    }
++  });
++  expect(r.status(), 'crear contrato B1').toBe(201);
++  return { id: (await r.json()).id, R };
++}
++
++async function abrirRoster(page, request) {
++  const { id } = await crearContratoB1(request);
++  await freshHome(page);
++  await enterAppMode(page, 'residente'); // creador → es parte y ve el roster
++  await page.locator(`aside a[href="${VIEW_PATH}"]`).first().click();
++  await page.waitForLoadState('networkidle');
++  await page.getByTestId('roster-contrato').selectOption({ value: String(id) });
++  return id;
++}
++
++test.describe('Roster — Fix B-1: selección (sin input numérico de ID)', () => {
++  test('con elegibles, la nueva persona se SELECCIONA; el input de ID a mano ya NO existe', async ({ page, request }) => {
++    await abrirRoster(page, request);
++    await page.getByTestId('sust-rol').selectOption('superintendente'); // → cuentas rol contratista (hay)
++    await expect(page.getByTestId('sust-nuevo')).toBeVisible();
++    await expect(page.getByTestId('sust-nuevo-id')).toHaveCount(0); // eliminado
++    // No hay NINGÚN input numérico de captura de ID en el formulario de sustitución.
++    await expect(page.getByTestId('roster-form-sustituir').locator('input[type="number"]')).toHaveCount(0);
++  });
++
++  test('lista vacía → aviso claro, SIN input para teclear ID', async ({ page, request }) => {
++    await abrirRoster(page, request);
++    // Como residente, listar cuentas de rol 'residente' exige rol dependencia → 403 → lista vacía.
++    await page.getByTestId('sust-rol').selectOption('residente');
++    await expect(page.getByTestId('sust-sin-elegibles')).toBeVisible();
++    await expect(page.getByTestId('sust-sin-elegibles')).toContainText('No hay cuentas disponibles');
++    await expect(page.getByTestId('sust-nuevo-id')).toHaveCount(0);
++    await expect(page.getByTestId('sust-nuevo')).toHaveCount(0);
++  });
++
++  test('el backend sigue rechazando un ID inexistente (400)', async ({ request }) => {
++    const { id, R } = await crearContratoB1(request);
++    const r = await request.post(`${API}/roster/contrato/${id}/sustituir`, {
++      headers: { Authorization: `Bearer ${R.token}` },
++      data: { rol: 'superintendente', nuevoUsuarioId: 99999999, motivo: 'prueba id inexistente' }
++    });
++    expect(r.status(), 'ID inexistente debe ser 400').toBe(400);
++  });
++});
+diff --git a/frontend/src/pages/RosterContrato.jsx b/frontend/src/pages/RosterContrato.jsx
+index daa99a9..2f61cbe 100644
+--- a/frontend/src/pages/RosterContrato.jsx
++++ b/frontend/src/pages/RosterContrato.jsx
+@@ -176,13 +176,22 @@ export default function RosterContrato() {
+                 </select>
+ 
+                 <label className="block text-xs font-medium text-slate-600 mb-1">Nueva persona</label>
++                {/* B-1 (auditoría selección-vs-texto libre): la nueva persona SIEMPRE se SELECCIONA de
++                    cuentas reales del rol correcto. Se ELIMINA el fallback de teclear el ID a mano
++                    (sust-nuevo-id): un ID tecleado rompe la trazabilidad/auditabilidad. Si no hay
++                    cuentas elegibles, se avisa (no se captura). El backend valida existencia/activa/rol
++                    igual (roster.controller, art. 125 fr. I g RLOPSRM) — esto solo endurece la UI. */}
+                 {elegibles.length > 0 ? (
+                   <select data-testid="sust-nuevo" className="sg-input mb-3" value={nuevoId} onChange={(e) => setNuevoId(e.target.value)} disabled={!rolSust}>
+                     <option value="">— Elige a la nueva persona —</option>
+                     {elegibles.map((u) => <option key={u.id} value={u.id}>{u.nombre} ({u.email})</option>)}
+                   </select>
+                 ) : (
+-                  <input data-testid="sust-nuevo-id" type="number" min="1" className="sg-input mb-3" placeholder="ID de la nueva persona" value={nuevoId} onChange={(e) => setNuevoId(e.target.value)} disabled={!rolSust} />
++                  <div data-testid="sust-sin-elegibles" className="mb-3 bg-amber-50 border-l-4 border-amber-400 px-3 py-2 text-sm text-amber-800 rounded-r-md">
++                    {rolSust
++                      ? 'No hay cuentas disponibles para este rol. Debe registrarse y aprobarse una cuenta con el rol correcto antes de poder sustituir.'
++                      : 'Elige primero el rol a sustituir para ver las cuentas disponibles.'}
++                  </div>
+                 )}
+ 
+                 <label className="block text-xs font-medium text-slate-600 mb-1">Motivo (obligatorio)</label>

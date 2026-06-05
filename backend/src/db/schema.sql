@@ -1125,6 +1125,31 @@ END $$;
 CREATE INDEX IF NOT EXISTS idx_estimaciones_reemplaza_a ON estimaciones(reemplaza_a);
 
 -- ---------------------------------------------------------------------
+-- ETAPA C (Fundación) — Retención por ATRASO (penas convencionales, art. 138/139 RLOPSRM) +
+-- avance físico/financiero snapshot en la estimación. Migración ADITIVA e idempotente.
+--   · contratos.pena_convencional_pct: % de pena por atraso pactado POR CONTRATO (fracción 0–1,
+--     ej. 0.05 = 5%). NULLABLE: NULL = sin pena pactada → retención por atraso = $0.
+--     [validar tasa/regla de disparo (global vs por concepto; sobre bruto vs neto) con el profe].
+--   · estimaciones.retencion_atraso: monto retenido por atraso en ESTA estimación (snapshot inmutable).
+--   · estimaciones.avance_fisico_pct / avance_financiero_pct: % de avance al integrar (snapshot).
+-- ---------------------------------------------------------------------
+ALTER TABLE contratos ADD COLUMN IF NOT EXISTS pena_convencional_pct NUMERIC(5,4);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_contratos_pena_pct') THEN
+    ALTER TABLE contratos ADD CONSTRAINT chk_contratos_pena_pct
+      CHECK (pena_convencional_pct IS NULL OR (pena_convencional_pct >= 0 AND pena_convencional_pct <= 1));
+  END IF;
+END $$;
+ALTER TABLE estimaciones ADD COLUMN IF NOT EXISTS retencion_atraso      NUMERIC(14,2) NOT NULL DEFAULT 0;
+ALTER TABLE estimaciones ADD COLUMN IF NOT EXISTS avance_fisico_pct     NUMERIC(7,4);
+ALTER TABLE estimaciones ADD COLUMN IF NOT EXISTS avance_financiero_pct NUMERIC(7,4);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_estimaciones_retencion_atraso') THEN
+    ALTER TABLE estimaciones ADD CONSTRAINT chk_estimaciones_retencion_atraso CHECK (retencion_atraso >= 0);
+  END IF;
+END $$;
+
+-- ---------------------------------------------------------------------
 -- HU-15 (Equipo 3) — estimacion_observaciones: observaciones de la revisión, por
 -- sección, con tipo/severidad y ciclo de vida (abierta→solventada). El turnado
 -- supervisión→residencia y el semáforo de 15 días (art. 54 párr. 1 LOPSRM: la

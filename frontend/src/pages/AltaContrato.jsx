@@ -105,7 +105,8 @@ const DATOS_INICIALES = {
   tipo: 'Obra pública sobre la base de precios unitarios',
   objeto: '',
   plazoDias: '',
-  fechaInicio: ''
+  fechaInicio: '',
+  penaConvencionalPct: '' // Etapa C: % de pena por atraso (opcional, fracción 0–1)
 };
 const JURIDICOS_INICIALES = {
   firmanteDependencia: '',
@@ -195,6 +196,10 @@ function TabDatosGenerales({ datos, set, err, equipo, montoDerivado }) {
         </Field>
         <Field label="Fecha de término (calculada)" hint="Se deriva del inicio + plazo (LOPSRM 31-V). No editable.">
           <input className="sg-input bg-slate-100 text-slate-700" value={terminoDerivado ? fmtFechaES(terminoDerivado) : '—'} readOnly data-testid="termino-derivado" />
+        </Field>
+        {/* Etapa C: % de pena por atraso (penas convencionales, art. 138/139 RLOPSRM). OPCIONAL. */}
+        <Field label="% de pena por atraso (opcional)" hint="Penas convencionales por atraso (art. 138/139 RLOPSRM). Fracción 0–1 (ej. 0.05 = 5%). Vacío = sin pena.">
+          <input type="number" min="0" max="1" step="0.0001" className={inputCls(e.penaConvencionalPct)} value={datos.penaConvencionalPct} onChange={set('penaConvencionalPct')} data-testid="dg-pena" placeholder="0.05" />
         </Field>
       </div>
 
@@ -1401,6 +1406,9 @@ export default function AltaContrato() {
         // el texto del nombre de la cuenta (contratista = superintendente; dependencia = dependenciaId).
         plazoDias: Number(datosGenerales.plazoDias),
         fechaInicio: datosGenerales.fechaInicio,
+        // Etapa C: % de pena por atraso (opcional, fracción 0–1). Vacío → null (sin pena).
+        penaConvencionalPct: datosGenerales.penaConvencionalPct === '' || datosGenerales.penaConvencionalPct == null
+          ? null : Number(datosGenerales.penaConvencionalPct),
         superintendenteId: Number(superintendenteId),
         supervisionId: supervisionId ? Number(supervisionId) : null,
         dependenciaId: dependenciaId ? Number(dependenciaId) : null,

@@ -359,9 +359,9 @@ function TabCaratula({ caratula, anticipoPct, deductivas, onDeductivas, acumulad
               </td>
             </tr>
             {/* Etapa C (falta el % del profe, art. 138/139 RLOPSRM [validar]): renglón PREVISTO en $0. */}
-            <tr className="border-t border-slate-200 text-slate-400" title="Se calculará en una etapa posterior, cuando el profe confirme el % y la regla de disparo (art. 138/139 RLOPSRM).">
-              <td className="px-4 py-3">(−) Retención por atraso <span className="text-[10px] uppercase tracking-wide bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 ml-1">próxima etapa</span></td>
-              <td className="px-4 py-3 text-right font-mono" data-testid="caratula-retencion-atraso">{moneda(0)}</td>
+            <tr className={`border-t border-slate-200 ${caratula.retencionAtraso > 0 ? 'text-red-700' : 'text-slate-400'}`} title="Penas convencionales por atraso (art. 138/139 RLOPSRM). Aplica si hay % de pena pactado en el contrato y la obra va atrasada vs su programa al periodo.">
+              <td className="px-4 py-3">(−) Retención por atraso {caratula.atraso && <span className="text-[10px] uppercase tracking-wide bg-red-100 text-red-700 border border-red-200 rounded px-1.5 py-0.5 ml-1" data-testid="badge-atraso">atraso</span>}</td>
+              <td className="px-4 py-3 text-right font-mono" data-testid="caratula-retencion-atraso">{moneda(caratula.retencionAtraso)}</td>
             </tr>
             <tr className={`border-t border-slate-200 font-bold ${caratula.neto < 0 ? 'bg-red-50' : 'bg-sigecop-blue-light'}`}>
               <td className={`px-4 py-3 ${caratula.neto < 0 ? 'text-red-700' : 'text-sigecop-blue'}`}>(=) Neto a pagar (preview)</td>
@@ -587,15 +587,26 @@ export default function IntegracionEstimacion() {
 
   // Carátula VIVA con el MISMO redondeo del backend (r2). Renglón "retención por atraso" PREVISTO
   // pero en $0 (Etapa C: falta el % del profe — art. 138/139 RLOPSRM [validar]); no se calcula aquí.
+  // Etapa C: datos para la retención por atraso (del prep, solo lectura): % de pena pactado y los
+  // valores para medir el atraso GLOBAL (ejecutado vs programado al periodo).
+  const penaPct = prep?.contrato?.pena_convencional_pct != null ? Number(prep.contrato.pena_convencional_pct) : null;
+  const planeadoValor = prep?.avance?.planeado_valor != null ? Number(prep.avance.planeado_valor) : 0;
+  const fisicoPrev = prep?.avance?.fisico_ejecutado != null ? Number(prep.avance.fisico_ejecutado) : 0;
+  const tieneProgValor = !!(prep?.tiene_programa) && planeadoValor > 0;
+
   const caratula = useMemo(() => {
     const subtotal = round2(filas.reduce((s, f) => s + (f.periodo > 0 ? f.importe : 0), 0));
     const amortizacion = round2(subtotal * anticipoPct / 100);
     const retencion = round2(subtotal * 0.005);
     const deduc = round2(Number(deductivas) || 0);
-    const retencionAtraso = 0; // Etapa C
-    return { subtotal, amortizacion, retencion, deduc, retencionAtraso,
+    // Etapa C: retención por atraso = pena × bruto SI hay pena pactada Y el contrato va atrasado
+    // (ejecutado = ya_estimado + ESTA estimación < programado al periodo). Espejo del cálculo del server.
+    const ejecutadoLive = fisicoPrev + subtotal;
+    const atraso = penaPct != null && tieneProgValor && ejecutadoLive < planeadoValor - 1e-6;
+    const retencionAtraso = atraso ? round2(penaPct * subtotal) : 0;
+    return { subtotal, amortizacion, retencion, deduc, retencionAtraso, atraso,
       neto: round2(subtotal - amortizacion - retencion - deduc - retencionAtraso) };
-  }, [filas, anticipoPct, deductivas]);
+  }, [filas, anticipoPct, deductivas, penaPct, planeadoValor, fisicoPrev, tieneProgValor]);
 
   // Acumulados/saldos (estilo carátula real, sin IVA): estimado acumulado anterior (del prep:
   // Σ ya_estimado×PU) + esta estimación (subtotal vivo) = acumulado; saldo = monto − acumulado.
@@ -767,11 +778,12 @@ export default function IntegracionEstimacion() {
               <div className="bg-white border border-slate-200 rounded-md p-4" data-testid="barras-avance">
                 <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">Avance del contrato</h3>
                 <div className="space-y-3 max-w-2xl">
-                  <BarraAvance label="Avance físico-financiero (ejecutado/estimado acumulado)" pct={avanceFisicoPct} color="bg-sigecop-accent" testid="barra-fisico" />
+                  <BarraAvance label="Avance físico (ejecutado/estimado acumulado, en valor)" pct={avanceFisicoPct} color="bg-sigecop-accent" testid="barra-fisico" />
                   {tienePlan && <BarraAvance label="Avance programado (curva S del programa hasta el periodo)" pct={prep.avance?.planeado_pct} color="bg-blue-400" testid="barra-programado" />}
+                  <BarraAvance label="Avance financiero (pagado acumulado / monto)" pct={prep.avance?.financiero_pct} color="bg-emerald-400" testid="barra-financiero" />
                 </div>
                 <p className="text-xs text-slate-500 mt-2">
-                  Sin IVA (art. 2 fr. XIX RLOPSRM). En esta etapa el avance estimado ≈ ejecutado (la estimación formaliza lo ejecutado); la separación fina físico vs financiero (obra ejecutada aún no estimada/pagada) se afina después. <span className="text-slate-400">[validar]</span>
+                  Sin IVA (art. 2 fr. XIX RLOPSRM). Físico = obra ejecutada/estimada en valor; financiero = lo efectivamente pagado (HU-21). Al integrar se guarda el snapshot de ambos avances en la estimación. <span className="text-slate-400">[validar definición físico/financiero]</span>
                 </p>
               </div>
             )}
