@@ -65,9 +65,9 @@ async function alertasDeContrato(req, res) {
          FROM alerta_atraso a
          JOIN contrato_conceptos cc ON cc.id = a.contrato_concepto_id
          LEFT JOIN (
-           SELECT contrato_concepto_id, SUM(cantidad) AS ejecutado
-             FROM concepto_avance
-            GROUP BY contrato_concepto_id
+           SELECT ca.contrato_concepto_id, SUM(ca.cantidad) AS ejecutado
+             FROM concepto_avance ca
+            GROUP BY ca.contrato_concepto_id
          ) av ON av.contrato_concepto_id = a.contrato_concepto_id
         WHERE cc.contrato_id = $1
         ORDER BY a.created_at DESC, a.id DESC`,
