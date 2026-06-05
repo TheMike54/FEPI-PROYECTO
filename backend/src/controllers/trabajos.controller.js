@@ -245,6 +245,11 @@ async function registrarAvance(req, res) {
     try {
       await client.query('BEGIN');
 
+      // Cierre de carrera del art. 118 (mismo patrón del no-doble-pago G3 en pagos): se toma el lock
+      // de la fila del concepto ANTES de leer el acumulado, así dos POST concurrentes al MISMO concepto
+      // se serializan (el segundo espera al COMMIT del primero y revalida sobre el acumulado ya escrito).
+      await client.query('SELECT 1 FROM contrato_conceptos WHERE id = $1 FOR UPDATE', [conceptoId]);
+
       const concepto = await cargarConceptoContrato(client, conceptoId);
       if (!concepto) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Concepto no encontrado' }); }
       if (!esParteOSupervision(req.user, concepto)) {
