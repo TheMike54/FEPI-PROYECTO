@@ -131,7 +131,8 @@ test.describe('alta-v5 — navegación lineal + garantías/jurídicos obligatori
     await page.getByTestId('garantia-tipo-1').selectOption('Anticipo');
     await page.getByTestId('garantia-afianzadora-1').fill('Afianzadora E2E, S.A.');
     await page.getByTestId('garantia-poliza-1').fill('POL-ANT-001');
-    await page.getByTestId('garantia-monto-1').fill('1000');
+    // Plan2 Pase3: el monto del anticipo es DERIVADO (read-only) = 20% × $5,000 = $1,000 (no se teclea).
+    await expect(page.getByTestId('garantia-monto-1')).toHaveValue('1000');
     await page.getByTestId('garantia-vigencia-1').fill('2027-06-01');
     await expect(page.getByTestId('garantias-ok')).toBeVisible();
     await page.getByTestId('btn-siguiente').click();

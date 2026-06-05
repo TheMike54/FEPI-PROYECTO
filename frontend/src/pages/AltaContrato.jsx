@@ -527,7 +527,7 @@ function AnticipoAutorizacionPDF({ contratoId, soloLectura, pendingFile, onPickF
   );
 }
 
-function TabGarantias({ rows, onCell, onAdd, onRemove, anticipoPct, setAnticipoPct, soloLectura, errIdx, errAnticipo, contratoId, montoContrato, pdfAnticipoFile, setPdfAnticipoFile }) {
+function TabGarantias({ rows, onCell, onPatch, onAdd, onRemove, anticipoPct, setAnticipoPct, soloLectura, errIdx, errAnticipo, contratoId, montoContrato, pdfAnticipoFile, setPdfAnticipoFile }) {
   const hoy = new Date();
   const hoyStr = `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
   const ap = Number(anticipoPct) || 0;
@@ -568,10 +568,17 @@ function TabGarantias({ rows, onCell, onAdd, onRemove, anticipoPct, setAnticipoP
               const vencida = p.vigencia && p.vigencia < hoyStr;
               // alta-v2 (1.4): marca EN VIVO si la garantía excede el monto del contrato.
               const excede = Number(p.monto) > 0 && montoContrato > 0 && Number(p.monto) > montoContrato;
+              // Plan2 Pase3: la fianza de ANTICIPO tiene monto DERIVADO (read-only) = %anticipo × monto
+              // del contrato. montoAntStr es la cadena que se fija al state (al elegir el tipo y vía el
+              // useEffect del padre cuando cambia el % o el monto). '' si no hay % o monto.
+              const esAnticipo = p.tipo === TIPO_ANTICIPO;
+              const montoAntStr = montoContrato > 0 && ap > 0 ? String(round2(montoContrato * ap / 100)) : '';
               return (
                 <tr key={p.rid} className={`border-t border-slate-200 ${(errIdx === i || excede) ? 'bg-red-50' : ''}`}>
                   <td className="px-2 py-1 align-top">
-                    <select className={inputCls(errIdx === i && !String(p.tipo).trim())} value={p.tipo} onChange={onCell(i, 'tipo')} disabled={soloLectura} data-testid={`garantia-tipo-${i}`}>
+                    <select className={inputCls(errIdx === i && !String(p.tipo).trim())} value={p.tipo}
+                      onChange={(e) => { const t = e.target.value; onPatch(i, t === TIPO_ANTICIPO ? { tipo: t, monto: montoAntStr } : { tipo: t }); }}
+                      disabled={soloLectura} data-testid={`garantia-tipo-${i}`}>
                       <option value="">— Selecciona —</option>
                       {TIPOS_GARANTIA.map((t) => <option key={t} value={t}>{t}</option>)}
                     </select>
@@ -579,7 +586,8 @@ function TabGarantias({ rows, onCell, onAdd, onRemove, anticipoPct, setAnticipoP
                   <td className="px-2 py-1 align-top"><input className="sg-input" value={p.afianzadora} onChange={onCell(i, 'afianzadora')} disabled={soloLectura} data-testid={`garantia-afianzadora-${i}`} /></td>
                   <td className="px-2 py-1 align-top"><input className="sg-input font-mono text-xs" value={p.poliza} onChange={onCell(i, 'poliza')} disabled={soloLectura} data-testid={`garantia-poliza-${i}`} /></td>
                   <td className="px-2 py-1 align-top">
-                    <input type="number" min="0" step="0.01" className={`sg-input text-right${excede ? ' border-red-500 ring-1 ring-red-400' : ''}`} value={p.monto} onChange={onCell(i, 'monto')} disabled={soloLectura} data-testid={`garantia-monto-${i}`} />
+                    <input type="number" min="0" step="0.01" className={`sg-input text-right${esAnticipo ? ' bg-slate-100 cursor-not-allowed' : ''}${excede ? ' border-red-500 ring-1 ring-red-400' : ''}`} value={p.monto} onChange={onCell(i, 'monto')} readOnly={esAnticipo} disabled={soloLectura} data-testid={`garantia-monto-${i}`} title={esAnticipo ? 'Derivado: % de anticipo × monto del contrato (no editable)' : undefined} />
+                    {esAnticipo && <span className="block text-xs text-slate-500 mt-1" data-testid={`garantia-monto-derivado-${i}`}>Derivado: {ap}% × monto del contrato (no editable)</span>}
                     {excede && <span className="block text-xs text-red-600 mt-1" data-testid={`garantia-excede-${i}`}>⚠ excede el monto del contrato</span>}
                   </td>
                   <td className="px-2 py-1 align-top">
@@ -1153,6 +1161,25 @@ export default function AltaContrato() {
   }));
   const montoDerivado = round2(conceptos.reduce((s, c) => s + (Number(importeDe(c.cantidad, c.pu)) || 0), 0));
 
+  // Plan2 Pase3: la fianza de ANTICIPO se DERIVA = (% de anticipo) × (monto del contrato), read-only.
+  // Mantiene sincronizado el monto de las pólizas tipo Anticipo cuando cambia el % o el monto del
+  // contrato (montoDerivado). Setter funcional (lee `prev`, sin meter `garantias` en deps) + guard
+  // `cambio` para no entrar en bucle de render. El input se pinta read-only en TabGarantias y la
+  // selección inicial del tipo "Anticipo" llena el monto en el mismo tick (onChange del select).
+  useEffect(() => {
+    const ap = Number(anticipoPct) || 0;
+    const derivado = montoDerivado > 0 && ap > 0 ? String(round2(montoDerivado * ap / 100)) : '';
+    setGarantias((prev) => {
+      let cambio = false;
+      const next = prev.map((g) => {
+        if (g.tipo !== TIPO_ANTICIPO || g.monto === derivado) return g;
+        cambio = true;
+        return { ...g, monto: derivado };
+      });
+      return cambio ? next : prev;
+    });
+  }, [anticipoPct, montoDerivado]);
+
   useEffect(() => { setErrores(ERR0); }, [datosGenerales, datosJuridicos, anticipoPct, conceptos, celdas, ciclo, garantias, superintendenteId, supervisionId, dependenciaId]);
 
   // Cuentas asignables al equipo (solo el residente puede consultarlas; si el rol
@@ -1565,7 +1592,7 @@ export default function AltaContrato() {
     ) },
     { label: 'Datos jurídicos', content: wrapTab(<TabJuridicos datos={datosJuridicos} set={setDatosJur} err={errores.campos} />) },
     { label: 'Garantías, penalizaciones y amortización', content: wrapTab(
-      <TabGarantias rows={garantias} onCell={mkCell(setGarantias)} onAdd={mkAdd(setGarantias, { tipo: '', afianzadora: '', poliza: '', monto: '', vigencia: '' })} onRemove={mkRemove(setGarantias)} anticipoPct={anticipoPct} setAnticipoPct={setAnticipoPct} soloLectura={soloLectura} errIdx={errores.garantiaIdx} errAnticipo={errores.campos.anticipoPct} contratoId={contratoGuardadoId} montoContrato={montoDerivado} pdfAnticipoFile={pdfAnticipoFile} setPdfAnticipoFile={setPdfAnticipoFile} />
+      <TabGarantias rows={garantias} onCell={mkCell(setGarantias)} onPatch={mkPatch(setGarantias)} onAdd={mkAdd(setGarantias, { tipo: '', afianzadora: '', poliza: '', monto: '', vigencia: '' })} onRemove={mkRemove(setGarantias)} anticipoPct={anticipoPct} setAnticipoPct={setAnticipoPct} soloLectura={soloLectura} errIdx={errores.garantiaIdx} errAnticipo={errores.campos.anticipoPct} contratoId={contratoGuardadoId} montoContrato={montoDerivado} pdfAnticipoFile={pdfAnticipoFile} setPdfAnticipoFile={setPdfAnticipoFile} />
     ) },
     { label: 'PDF firmado', content: wrapTab(<TabPdfFirmado contratoId={contratoGuardadoId} soloLectura={soloLectura} pendingFile={pdfFirmadoFile} onPickFile={setPdfFirmadoFile} />) },
     { label: 'Registrados', content: (

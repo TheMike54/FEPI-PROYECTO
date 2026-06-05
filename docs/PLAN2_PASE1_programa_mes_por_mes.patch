@@ -1,0 +1,496 @@
+diff --git a/frontend/e2e/plan2-programa-mes-por-mes.spec.js b/frontend/e2e/plan2-programa-mes-por-mes.spec.js
+new file mode 100644
+index 0000000..a929c0a
+--- /dev/null
++++ b/frontend/e2e/plan2-programa-mes-por-mes.spec.js
+@@ -0,0 +1,108 @@
++// @ts-check
++// E2E Pase 1 (Plan 2) — Programa de obra MES POR MES + fix del bug "no registrado".
++//
++// Bug: un contrato CON programa de obra A2 (matriz concepto × periodo, capturada en el alta y
++// guardada en programa_obra + contrato_periodos) aparecía como "no tiene programa de obra
++// registrado" en el expediente (HU-04), porque detalleContrato sólo leía contrato_actividades
++// (A1, deprecated). Fix: las 3 vistas leen la matriz vía GET /contratos/:id/programa y la pintan
++// MES POR MES con MatrizProgramaLectura. Aquí se valida que el contrato de ejemplo muestra su
++// programa en las 3 vistas: (a) detalle en Registrados, (b) expediente HU-04, (c) panel plegable
++// de la captura de estimación HU-12.
++//
++// Requiere backend+BD (login real); se corre en local, no en CI.
++
++import { test, expect } from '@playwright/test';
++import { freshHome, enterAppMode, goToViaSidebar } from './_helpers.js';
++
++test.skip(!!process.env.CI, 'login real requiere backend+BD; se corre en local');
++
++const API = 'http://localhost:4000/api';
++const PASS = 'Sigecop2026!';
++
++async function loginApi(request, email) {
++  return (await request.post(`${API}/auth/login`, { data: { email, password: PASS } })).json();
++}
++
++// Crea un contrato CON programa de obra A2 que cuadra al 100%: concepto A1 contratado 100, planeado
++// 100 en el periodo 1 (plazo 60 mensual → 2 periodos). Equipo completo para que lo vea cualquier
++// rol con acceso. Devuelve { folio, id } (el id alimenta el botón "ver-info-:id" de Registrados).
++async function crearContratoConPrograma(request) {
++  const [R, S, V, D] = await Promise.all([
++    loginApi(request, 'residente@sigecop.test'),
++    loginApi(request, 'contratista@sigecop.test'),
++    loginApi(request, 'supervision@sigecop.test'),
++    loginApi(request, 'dependencia@sigecop.test')
++  ]);
++  const folio = `E2E-P2PROG-${Date.now()}`;
++  const r = await request.post(`${API}/contratos`, {
++    headers: { Authorization: `Bearer ${R.token}` },
++    data: {
++      folio, tipo: 'Obra pública sobre la base de precios unitarios', objeto: 'Programa mes por mes e2e',
++      plazoDias: 60, fechaInicio: '2026-06-01',
++      superintendenteId: S.user.id, supervisionId: V.user.id, dependenciaId: D.user.id,
++      anticipoPct: null, juridicos: {},
++      conceptos: [{ clave: 'A1', concepto: 'Concepto e2e', unidad: 'm³', cantidad: 100, pu: 50 }],
++      ciclo: 'mensual', programa: [{ clave: 'A1', periodoNumero: 1, cantidad: 100 }], garantias: []
++    }
++  });
++  expect(r.status(), 'crear contrato con programa').toBe(201);
++  const body = await r.json();
++  return { folio, id: body.id };
++}
++
++async function seleccionarPorFolio(page, folio) {
++  const sel = page.getByTestId('select-contrato');
++  await expect(sel).toBeVisible();
++  const val = await sel.locator('option', { hasText: folio }).first().getAttribute('value');
++  await sel.selectOption(val);
++}
++
++test.describe('Pase 1 — programa de obra mes por mes (3 vistas)', () => {
++  test('(b) expediente HU-04: muestra la matriz, ya no "no registrado"', async ({ page, request }) => {
++    const { folio } = await crearContratoConPrograma(request);
++    await freshHome(page);
++    await enterAppMode(page, 'residente');
++    await goToViaSidebar(page, '/contratos/expediente');
++    await seleccionarPorFolio(page, folio);
++
++    // El bloque "Programa de obra" abre por defecto: debe verse la MATRIZ con sus 2 periodos,
++    // no el aviso viejo de "no registrado", y sin error de carga.
++    await expect(page.getByTestId('matriz-programa')).toBeVisible();
++    await expect(page.getByTestId('matriz-periodo-1')).toBeVisible();
++    await expect(page.getByTestId('matriz-periodo-2')).toBeVisible();
++    await expect(page.getByText('no tiene programa de obra registrado')).toHaveCount(0);
++    await expect(page.getByTestId('aviso-error')).toHaveCount(0);
++  });
++
++  test('(c) captura de estimación HU-12: panel plegable con la matriz', async ({ page, request }) => {
++    const { folio } = await crearContratoConPrograma(request);
++    await freshHome(page);
++    await enterAppMode(page, 'contratista'); // superintendente asignado al contrato
++    await goToViaSidebar(page, '/estimaciones/integracion');
++    await seleccionarPorFolio(page, folio);
++
++    const panel = page.getByTestId('panel-programa-obra');
++    await expect(panel).toBeVisible();
++    // <details> colapsado: la matriz no se ve hasta abrir el resumen.
++    await expect(page.getByTestId('matriz-programa')).toBeHidden();
++    await panel.locator('summary').click();
++    await expect(page.getByTestId('matriz-programa')).toBeVisible();
++    await expect(page.getByTestId('matriz-periodo-1')).toBeVisible();
++  });
++
++  test('(a) detalle en Registrados: el modal muestra la matriz mes por mes', async ({ page, request }) => {
++    const { id } = await crearContratoConPrograma(request);
++    await freshHome(page);
++    await enterAppMode(page, 'residente');
++    await goToViaSidebar(page, '/contratos/alta');
++
++    // "Registrados" es la pestaña auxiliar (siempre navegable, alta-v5.1).
++    await page.locator('button', { hasText: 'Registrados' }).first().click();
++    await page.getByTestId(`ver-info-${id}`).click();
++
++    const modal = page.getByTestId('modal-detalle');
++    await expect(modal).toBeVisible();
++    await expect(modal.getByTestId('matriz-programa')).toBeVisible();
++    await expect(modal.getByText('Programa de obra (mes por mes)')).toBeVisible();
++  });
++});
+diff --git a/frontend/src/components/programa/MatrizProgramaLectura.jsx b/frontend/src/components/programa/MatrizProgramaLectura.jsx
+new file mode 100644
+index 0000000..7b032e0
+--- /dev/null
++++ b/frontend/src/components/programa/MatrizProgramaLectura.jsx
+@@ -0,0 +1,114 @@
++import { useMemo } from 'react';
++
++// Pase 1 (Plan 2) — Matriz CONCEPTO × PERIODO del programa de obra en SOLO LECTURA.
++// Espejo read-only de TabProgramaMatriz del alta (art. 45 fr. X RLOPSRM): filas = conceptos
++// del catálogo, columnas = periodos del ciclo (art. 54), celda = cantidad planeada. Reutilizable
++// en el detalle de Registrados, el expediente (HU-04) y la captura de estimación (HU-12), en vez
++// del resumen por concepto. Los datos salen de GET /api/contratos/:id/programa (leerProgramaObra):
++//   programa = { ciclo, periodos:[{id,numero,inicio,fin}], conceptos:[{id,clave,concepto,cantidad}],
++//               celdas:[{contrato_concepto_id,contrato_periodo_id,cantidad}], reconciliacion? }
++
++// Fecha ISO (YYYY-MM-DD) → "dd/mm" sin corrimiento de zona horaria.
++function ddmm(iso) {
++  const p = String(iso || '').slice(0, 10).split('-');
++  return p.length === 3 ? `${p[2]}/${p[1]}` : '—';
++}
++// Redondeo a 3 decimales (espejo del round3 de la matriz del alta; las cantidades son NUMERIC(14,3)).
++const r3 = (n) => Math.round((Number(n) + Number.EPSILON) * 1000) / 1000;
++
++// Número (1..n) del periodo cuyo rango [inicio, fin] contiene la fecha ISO dada; null si ninguno.
++// Lo usa cada vista para resaltar el "periodo actual" donde aplique (comparación lexicográfica de
++// ISO, sin construir Date → sin sesgo de zona horaria).
++export function periodoQueContiene(periodos, iso) {
++  if (!Array.isArray(periodos) || !iso) return null;
++  const f = String(iso).slice(0, 10);
++  const p = periodos.find((x) => String(x.inicio).slice(0, 10) <= f && f <= String(x.fin).slice(0, 10));
++  return p ? p.numero : null;
++}
++
++export default function MatrizProgramaLectura({ programa, periodoResaltadoNumero = null }) {
++  const periodos = Array.isArray(programa?.periodos) ? programa.periodos : [];
++  const conceptos = Array.isArray(programa?.conceptos) ? programa.conceptos : [];
++  const celdas = Array.isArray(programa?.celdas) ? programa.celdas : [];
++
++  // Índice por "ccId:pId" → cantidad, para pintar cada celda en O(1).
++  const celdaMap = useMemo(() => {
++    const m = new Map();
++    celdas.forEach((c) => m.set(`${c.contrato_concepto_id}:${c.contrato_periodo_id}`, c.cantidad));
++    return m;
++  }, [celdas]);
++
++  if (periodos.length === 0 || conceptos.length === 0) {
++    return (
++      <p className="text-sm text-slate-400 italic" data-testid="matriz-programa-vacia">
++        Este contrato no tiene programa de obra (matriz concepto × periodo) registrado.
++      </p>
++    );
++  }
++
++  return (
++    <div data-testid="matriz-programa">
++      <div className="overflow-x-auto border border-slate-200 rounded-md">
++        <table className="text-sm">
++          <thead className="bg-sigecop-blue-light text-sigecop-blue">
++            <tr>
++              <th className="text-left px-3 py-2 sticky left-0 bg-sigecop-blue-light w-28">Clave</th>
++              <th className="text-left px-3 py-2 w-56">Concepto</th>
++              {periodos.map((p) => {
++                const hot = p.numero === periodoResaltadoNumero;
++                return (
++                  <th
++                    key={p.id ?? p.numero}
++                    className={`text-right px-2 py-2 w-24 ${hot ? 'bg-blue-200 text-blue-900' : ''}`}
++                    title={`${ddmm(p.inicio)} – ${ddmm(p.fin)}`}
++                    data-testid={`matriz-periodo-${p.numero}`}
++                  >
++                    P{p.numero}{hot ? ' •' : ''}
++                    <div className="text-[10px] font-normal text-blue-700">{ddmm(p.inicio)}</div>
++                  </th>
++                );
++              })}
++              <th className="text-right px-2 py-2 w-24">Σ planeado</th>
++              <th className="text-right px-2 py-2 w-24">Contratado</th>
++              <th className="text-right px-2 py-2 w-24">Restante</th>
++            </tr>
++          </thead>
++          <tbody>
++            {conceptos.map((c, i) => {
++              const planeado = r3(periodos.reduce((s, p) => s + (Number(celdaMap.get(`${c.id}:${p.id}`)) || 0), 0));
++              const contratado = r3(Number(c.cantidad) || 0);
++              const restante = r3(contratado - planeado);
++              const cuadra = Math.abs(restante) <= 0.001;
++              const restCls = cuadra ? 'text-green-700' : restante < 0 ? 'text-red-700 font-bold' : 'text-amber-700';
++              return (
++                <tr key={c.id ?? i} className="border-t border-slate-200">
++                  <td className="px-3 py-1 font-mono text-xs sticky left-0 bg-white">{c.clave || '—'}</td>
++                  <td className="px-3 py-1 truncate max-w-[14rem]" title={c.concepto}>{c.concepto || '—'}</td>
++                  {periodos.map((p) => {
++                    const v = Number(celdaMap.get(`${c.id}:${p.id}`)) || 0;
++                    const hot = p.numero === periodoResaltadoNumero;
++                    return (
++                      <td
++                        key={p.id ?? p.numero}
++                        className={`px-2 py-1 text-right ${hot ? 'bg-blue-50 font-semibold' : ''} ${v > 0 ? 'text-slate-800' : 'text-slate-300'}`}
++                        data-testid={`matriz-celda-${i}-${p.numero}`}
++                      >
++                        {v > 0 ? r3(v) : '·'}
++                      </td>
++                    );
++                  })}
++                  <td className="px-2 py-1 text-right font-semibold">{planeado}</td>
++                  <td className="px-2 py-1 text-right text-slate-600">{contratado}</td>
++                  <td className={`px-2 py-1 text-right ${restCls}`}>{restante}</td>
++                </tr>
++              );
++            })}
++          </tbody>
++        </table>
++      </div>
++      <p className="text-xs text-slate-500 mt-1">
++        Ciclo: {programa.ciclo || '—'} · {periodos.length} periodo{periodos.length === 1 ? '' : 's'}. La celda es la cantidad planeada del concepto en ese periodo (art. 45 fr. X RLOPSRM){periodoResaltadoNumero ? ' · • = periodo actual' : ''}.
++      </p>
++    </div>
++  );
++}
+diff --git a/frontend/src/pages/AltaContrato.jsx b/frontend/src/pages/AltaContrato.jsx
+index 09332d9..d1ce210 100644
+--- a/frontend/src/pages/AltaContrato.jsx
++++ b/frontend/src/pages/AltaContrato.jsx
+@@ -6,6 +6,7 @@ import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
+ import RegionEditable from '../components/vista/RegionEditable.jsx';
+ import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
+ import { api } from '../services/api.js';
++import MatrizProgramaLectura, { periodoQueContiene } from '../components/programa/MatrizProgramaLectura.jsx';
+ // alta-v2 (4.2): el alta arranca VACÍA (sin datos dummy). Ya no se importa conceptosDummy
+ // ni polizasGarantiaDummy.
+ 
+@@ -880,29 +881,15 @@ function ModalDetalleContrato({ contratoId, onClose }) {
+                 </section>
+               )}
+ 
+-              {programa && Array.isArray(programa.reconciliacion) && programa.reconciliacion.length > 0 && (
++              {/* Pase 1 (Plan 2): programa de obra MES POR MES (matriz concepto × periodo) en vez del
++                  resumen por concepto. Resalta el periodo que contiene la fecha de hoy, si aplica. */}
++              {programa && Array.isArray(programa.periodos) && programa.periodos.length > 0 && (
+                 <section>
+-                  <h4 className="font-bold text-sigecop-blue mb-3">Programa de obra (resumen por concepto)</h4>
+-                  <div className="overflow-x-auto border border-slate-200 rounded">
+-                    <table className="w-full text-sm">
+-                      <thead className="bg-sigecop-blue-light text-sigecop-blue"><tr>
+-                        <th className="text-left px-3 py-2">Clave</th><th className="text-left px-3 py-2">Concepto</th>
+-                        <th className="text-right px-3 py-2">Contratado</th><th className="text-right px-3 py-2">Planeado</th><th className="text-right px-3 py-2">Restante</th>
+-                      </tr></thead>
+-                      <tbody>
+-                        {programa.reconciliacion.map((r) => (
+-                          <tr key={r.contrato_concepto_id} className="border-t border-slate-200">
+-                            <td className="px-3 py-1 font-mono text-xs">{r.clave || '—'}</td>
+-                            <td className="px-3 py-1">{r.concepto}</td>
+-                            <td className="px-3 py-1 text-right">{r.contratado}</td>
+-                            <td className="px-3 py-1 text-right">{r.planeado}</td>
+-                            <td className="px-3 py-1 text-right">{r.restante}</td>
+-                          </tr>
+-                        ))}
+-                      </tbody>
+-                    </table>
+-                  </div>
+-                  <p className="text-xs text-slate-500 mt-1">Ciclo: {programa.ciclo || '—'} · {Array.isArray(programa.periodos) ? programa.periodos.length : 0} periodo(s).</p>
++                  <h4 className="font-bold text-sigecop-blue mb-3">Programa de obra (mes por mes)</h4>
++                  <MatrizProgramaLectura
++                    programa={programa}
++                    periodoResaltadoNumero={periodoQueContiene(programa.periodos, new Date().toISOString().slice(0, 10))}
++                  />
+                 </section>
+               )}
+ 
+diff --git a/frontend/src/pages/ConsultaExpediente.jsx b/frontend/src/pages/ConsultaExpediente.jsx
+index 4ebfbcc..1089070 100644
+--- a/frontend/src/pages/ConsultaExpediente.jsx
++++ b/frontend/src/pages/ConsultaExpediente.jsx
+@@ -6,6 +6,7 @@ import BannerContexto from '../components/vista/BannerContexto.jsx';
+ import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
+ import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
+ import { api } from '../services/api.js';
++import MatrizProgramaLectura, { periodoQueContiene } from '../components/programa/MatrizProgramaLectura.jsx';
+ 
+ // HU-04 cableado al backend. El expediente sale de GET /api/contratos/:id, que
+ // devuelve la cabecera + los bloques hijos (conceptos, actividades, garantias) +
+@@ -181,8 +182,27 @@ function BloqueCatalogo({ conceptos, folio }) {
+   );
+ }
+ 
+-function BloquePrograma({ actividades, folio }) {
+-  const handleExcel = () => {
++// Pase 1 (Plan 2): el expediente mostraba "no registrado" porque solo leía contrato_actividades
++// (A1, deprecated) y nunca la matriz A2 (programa_obra + contrato_periodos). Ahora, si el contrato
++// tiene la matriz, se pinta MES POR MES (vía leerProgramaObra); si solo tiene actividades viejas,
++// se muestra la tabla A1; si no tiene ninguna, "no registrado".
++function BloquePrograma({ programa, actividades, folio }) {
++  const periodos = Array.isArray(programa?.periodos) ? programa.periodos : [];
++  const tieneMatriz = periodos.length > 0 && Array.isArray(programa?.conceptos) && programa.conceptos.length > 0;
++
++  // Excel de la matriz: una fila por concepto, una columna por periodo.
++  const handleExcelMatriz = () => {
++    const celdaMap = new Map();
++    (programa.celdas || []).forEach((c) => celdaMap.set(`${c.contrato_concepto_id}:${c.contrato_periodo_id}`, c.cantidad));
++    const filas = programa.conceptos.map((c) => {
++      const fila = { Clave: c.clave || '', Concepto: c.concepto };
++      periodos.forEach((p) => { fila[`P${p.numero}`] = num(celdaMap.get(`${c.id}:${p.id}`)); });
++      return fila;
++    });
++    descargarExcel(filas, 'Programa', `programa_${folio}.xlsx`);
++  };
++  // Excel de las actividades viejas (A1).
++  const handleExcelActividades = () => {
+     const filas = actividades.map((p) => ({
+       Actividad: p.actividad,
+       Inicio: soloFecha(p.inicio),
+@@ -191,6 +211,20 @@ function BloquePrograma({ actividades, folio }) {
+     }));
+     descargarExcel(filas, 'Programa', `programa_${folio}.xlsx`);
+   };
++
++  if (tieneMatriz) {
++    return (
++      <div>
++        <MatrizProgramaLectura
++          programa={programa}
++          periodoResaltadoNumero={periodoQueContiene(periodos, new Date().toISOString().slice(0, 10))}
++        />
++        <div className="mt-4 flex justify-end gap-2">
++          <BtnDescargar etiqueta="Programa (Excel)" onClick={handleExcelMatriz} testid="btn-descargar-programa-0" />
++        </div>
++      </div>
++    );
++  }
+   if (actividades.length === 0) {
+     return <p className="text-sm text-slate-400 italic">Este contrato no tiene programa de obra registrado.</p>;
+   }
+@@ -221,7 +255,7 @@ function BloquePrograma({ actividades, folio }) {
+       <div className="mt-4 flex justify-end gap-2">
+         <BtnDescargar
+           etiqueta="Programa (Excel)"
+-          onClick={handleExcel}
++          onClick={handleExcelActividades}
+           testid="btn-descargar-programa-0"
+         />
+       </div>
+@@ -333,6 +367,7 @@ export default function ConsultaExpediente() {
+   const [contratos, setContratos] = useState([]);
+   const [contratoId, setContratoId] = useState('');
+   const [expediente, setExpediente] = useState(null);
++  const [programa, setPrograma] = useState(null); // Pase 1: matriz A2 (leerProgramaObra)
+   const [cargando, setCargando] = useState(false);
+   const [error, setError] = useState('');
+   const [query, setQuery] = useState('');
+@@ -349,6 +384,7 @@ export default function ConsultaExpediente() {
+   const seleccionarContrato = useCallback(async (id) => {
+     setContratoId(id);
+     setExpediente(null);
++    setPrograma(null);
+     setError('');
+     setQuery('');
+     if (!id) return;
+@@ -356,6 +392,9 @@ export default function ConsultaExpediente() {
+     try {
+       const data = await api.detalleContrato(id);
+       setExpediente(data);
++      // Pase 1: la matriz A2 vive en otro endpoint (programa_obra + contrato_periodos). 404/sin
++      // programa → null y el bloque cae al fallback (actividades viejas o "no registrado").
++      try { setPrograma(await api.leerProgramaObra(id)); } catch (_) { setPrograma(null); }
+     } catch (e) {
+       // El acotamiento es server-side: 403 = sin acceso a este contrato.
+       setError(
+@@ -375,6 +414,7 @@ export default function ConsultaExpediente() {
+     const c = expediente;
+     const conceptos = Array.isArray(c.conceptos) ? c.conceptos : [];
+     const actividades = Array.isArray(c.actividades) ? c.actividades : [];
++    const periodosProg = Array.isArray(programa?.periodos) ? programa.periodos : [];
+     const garantias = Array.isArray(c.garantias) ? c.garantias : [];
+     const jur = c.datos_juridicos || null;
+     const equipo = {
+@@ -413,14 +453,18 @@ export default function ConsultaExpediente() {
+         titulo: 'Programa de obra',
+         icono: '📅',
+         haceMatch: (q, campo) => {
++          // El periodo puede venir de la matriz A2 (periodos del ciclo) o de las actividades A1.
+           if (campo === 'periodo') {
+-            return actividades.some((p) => `${soloFecha(p.inicio)} ${soloFecha(p.termino)}`.toLowerCase().includes(q));
++            return periodosProg.some((p) => `${soloFecha(p.inicio)} ${soloFecha(p.fin)}`.toLowerCase().includes(q))
++              || actividades.some((p) => `${soloFecha(p.inicio)} ${soloFecha(p.termino)}`.toLowerCase().includes(q));
+           }
+           if (campo === 'documento') return 'programa obra'.includes(q);
+-          const blob = actividades.map((p) => `${p.actividad} ${soloFecha(p.inicio)} ${soloFecha(p.termino)}`).join(' ').toLowerCase();
++          const blob = (`${programa?.ciclo || ''} `
++            + periodosProg.map((p) => `${soloFecha(p.inicio)} ${soloFecha(p.fin)}`).join(' ') + ' '
++            + actividades.map((p) => `${p.actividad} ${soloFecha(p.inicio)} ${soloFecha(p.termino)}`).join(' ')).toLowerCase();
+           return blob.includes(q);
+         },
+-        body: <BloquePrograma actividades={actividades} folio={c.folio} />
++        body: <BloquePrograma programa={programa} actividades={actividades} folio={c.folio} />
+       },
+       {
+         id: 'fianzas',
+@@ -445,7 +489,7 @@ export default function ConsultaExpediente() {
+         body: <BloqueJuridicos juridicos={jur} equipo={equipo} folio={c.folio} />
+       }
+     ];
+-  }, [expediente]);
++  }, [expediente, programa]);
+ 
+   // Buscador con semántica AND: un bloque coincide si TODOS los términos de la
+   // búsqueda hacen match sobre el campo seleccionado (criterio 2, art. lógica Y).
+diff --git a/frontend/src/pages/IntegracionEstimacion.jsx b/frontend/src/pages/IntegracionEstimacion.jsx
+index 838f5b8..2e9c9ec 100644
+--- a/frontend/src/pages/IntegracionEstimacion.jsx
++++ b/frontend/src/pages/IntegracionEstimacion.jsx
+@@ -8,6 +8,7 @@ import BuscadorNotas, { useFiltrosNotas } from '../components/notas/BuscadorNota
+ import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
+ import { useToast } from '../components/ui/Toast.jsx';
+ import { api } from '../services/api.js';
++import MatrizProgramaLectura, { periodoQueContiene } from '../components/programa/MatrizProgramaLectura.jsx';
+ 
+ // HU-12 Fase 3 — cableado al backend real. El superintendente del contrato integra
+ // la estimación del periodo como expediente (art. 132 RLOPSRM). Toda la verdad del
+@@ -482,6 +483,7 @@ export default function IntegracionEstimacion() {
+   const [avance, setAvance] = useState([]);
+   // Etapa A: datos derivados (solo lectura) para el semáforo de plan + saldos + barras de avance.
+   const [prep, setPrep] = useState(null);
++  const [programa, setPrograma] = useState(null); // Pase 1: matriz A2 para el panel "Ver programa de obra"
+   const [historial, setHistorial] = useState([]);
+   const [notasContrato, setNotasContrato] = useState([]);
+   const [cargando, setCargando] = useState(false);
+@@ -526,13 +528,15 @@ export default function IntegracionEstimacion() {
+ 
+   const seleccionarContrato = useCallback(async (id) => {
+     setContratoId(id);
+-    setAvance([]); setPrep(null); setHistorial([]); setNotasContrato([]);
++    setAvance([]); setPrep(null); setPrograma(null); setHistorial([]); setNotasContrato([]);
+     setCantidades({}); setDeductivas('0'); setPeriodoInicio(''); setPeriodoFin('');
+     setNotasVinculadas([]); setResultado(null); setErrorIntegrar(null);
+     if (!id) return;
+     setCargando(true);
+     try {
+       await Promise.all([recargarAvance(id), recargarHistorial(id), recargarPrep(id, '')]);
++      // Pase 1: matriz del programa de obra para el panel plegable (404/sin programa → null).
++      try { setPrograma(await api.leerProgramaObra(id)); } catch (_) { setPrograma(null); }
+       // Notas del contrato para el modal (404 = sin bitácora → simplemente no hay notas).
+       try {
+         const n = await api.notasDeContrato(id);
+@@ -562,6 +566,17 @@ export default function IntegracionEstimacion() {
+     return m;
+   }, [prep]);
+   const tienePlan = !!(prep && prep.tiene_programa);
++  // Pase 1: periodo a resaltar en el panel del programa = el periodo cuya fecha-fin coincide con el
++  // periodo-fin capturado; si no, el que contiene esa fecha (o la de hoy como referencia).
++  const periodoResaltadoEstim = useMemo(() => {
++    const ps = Array.isArray(programa?.periodos) ? programa.periodos : [];
++    if (ps.length === 0) return null;
++    if (periodoFin) {
++      const exacto = ps.find((p) => String(p.fin).slice(0, 10) === periodoFin);
++      if (exacto) return exacto.numero;
++    }
++    return periodoQueContiene(ps, periodoFin || periodoInicio || new Date().toISOString().slice(0, 10));
++  }, [programa, periodoFin, periodoInicio]);
+ 
+   const filas = useMemo(() => avance.map((a) => {
+     const valor = cantidades[a.contrato_concepto_id] ?? '';
+@@ -788,6 +803,19 @@ export default function IntegracionEstimacion() {
+               </div>
+             )}
+ 
++            {/* Pase 1 (Plan 2): panel plegable con el programa de obra MES POR MES (matriz concepto ×
++                periodo), con el periodo capturado resaltado. Solo lectura; no afecta el cálculo. */}
++            {programa && Array.isArray(programa.periodos) && programa.periodos.length > 0 && (
++              <details className="bg-white border border-slate-200 rounded-md" data-testid="panel-programa-obra">
++                <summary className="cursor-pointer select-none px-4 py-3 text-sm font-bold uppercase tracking-wider text-slate-700">
++                  Ver programa de obra (mes por mes)
++                </summary>
++                <div className="px-4 pb-4">
++                  <MatrizProgramaLectura programa={programa} periodoResaltadoNumero={periodoResaltadoEstim} />
++                </div>
++              </details>
++            )}
++
+             {wrapTab(<TabCaratula caratula={caratula} anticipoPct={anticipoPct} deductivas={deductivas} onDeductivas={setDeductivas} acumulados={acumulados} />)}
+ 
+             {wrapTab(

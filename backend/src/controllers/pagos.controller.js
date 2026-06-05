@@ -58,7 +58,7 @@ async function registrarPago(req, res) {
 
       // Estimación REAL: existe, del contrato, estado pagable, no pagada. FOR UPDATE serializa el
       // no-doble-pago contra otra transacción concurrente.
-      const e = await client.query('SELECT id, contrato_id, numero, estado, neto FROM estimaciones WHERE id = $1 FOR UPDATE', [estimacionId]);
+      const e = await client.query('SELECT id, contrato_id, numero, estado, neto, integrada_en FROM estimaciones WHERE id = $1 FOR UPDATE', [estimacionId]);
       if (e.rowCount === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'La estimación indicada no existe' }); }
       const est = e.rows[0];
       if (est.contrato_id !== contratoId) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'La estimación no pertenece al contrato indicado' }); }
@@ -69,6 +69,19 @@ async function registrarPago(req, res) {
       if (!['integrada', 'autorizada'].includes(est.estado)) { await client.query('ROLLBACK'); return res.status(409).json({ error: `Solo puede pagarse una estimación integrada o autorizada (estado actual: ${est.estado})` }); }
       const dup = await client.query('SELECT 1 FROM pagos WHERE estimacion_id = $1 LIMIT 1', [estimacionId]);
       if (dup.rowCount > 0) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'Esta estimación ya tiene un pago registrado' }); }
+
+      // Plan2 Pase3: la fecha del pago NO puede ser anterior al día en que se integró la estimación
+      // (integrada_en). No se paga antes de que la estimación exista formalmente. Comparación por DÍA
+      // en UTC: fecha_pago es DATE (sin hora); integrada_en es TIMESTAMPTZ. El MISMO día de la
+      // integración SÍ es válido (estricto <). fechaPago ya viene validada como 'AAAA-MM-DD' (string),
+      // por lo que la comparación lexicográfica equivale a la cronológica. [validar fundamento con el profe].
+      if (est.integrada_en) {
+        const diaIntegracion = new Date(est.integrada_en).toISOString().slice(0, 10); // 'AAAA-MM-DD' (UTC)
+        if (fechaPago < diaIntegracion) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ error: `La fecha de pago (${fechaPago}) no puede ser anterior a la fecha de integración de la estimación (${diaIntegracion})` });
+        }
+      }
 
       // El importe = NETO de la estimación (server-side, no arbitrario). [validar: parcial vs exacto].
       const importe = est.neto;

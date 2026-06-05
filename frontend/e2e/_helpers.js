@@ -187,6 +187,9 @@ export async function altaLlenarJuridicos(page, d = {}) {
  *  - Siempre agrega la fianza de CUMPLIMIENTO (art. 47 + 48 fr. II LOPSRM) en la fila índice 0.
  *  - Con `conAnticipo:true` agrega además la fianza de ANTICIPO (art. 48 fr. I) en la fila índice 1.
  * Montos pequeños (≤ monto del contrato de los tests, $5,000). Vigencia futura (no vencida).
+ * Plan2 Pase3: el monto de la fianza de ANTICIPO es DERIVADO (read-only) = %anticipo × monto del
+ * contrato; ya NO se teclea. El CALLER debe fijar `anticipo-input` (> 0) ANTES de llamar con
+ * conAnticipo:true, para que el monto derivado sea > 0 y la póliza quede válida.
  */
 export async function altaLlenarGarantias(page, { conAnticipo = false } = {}) {
   await page.getByRole('button', { name: '+ Agregar póliza' }).click();
@@ -197,10 +200,9 @@ export async function altaLlenarGarantias(page, { conAnticipo = false } = {}) {
   await page.getByTestId('garantia-vigencia-0').fill('2027-06-01');
   if (conAnticipo) {
     await page.getByRole('button', { name: '+ Agregar póliza' }).click();
-    await page.getByTestId('garantia-tipo-1').selectOption('Anticipo');
+    await page.getByTestId('garantia-tipo-1').selectOption('Anticipo'); // → monto auto-derivado (read-only)
     await page.getByTestId('garantia-afianzadora-1').fill('Afianzadora E2E, S.A.');
     await page.getByTestId('garantia-poliza-1').fill('POL-ANT-001');
-    await page.getByTestId('garantia-monto-1').fill('1000');
     await page.getByTestId('garantia-vigencia-1').fill('2027-06-01');
   }
 }

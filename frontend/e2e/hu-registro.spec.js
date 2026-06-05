@@ -36,10 +36,13 @@ async function loginReal(page, email, password) {
 }
 
 test('HU-Registro — auto-registro, rechazo por pendiente, aprobación y acceso', async ({ page }) => {
-  const email = `nuevo.e2e.${Date.now()}@sigecop.test`;
-  // Corrección profe (04-jun): el registro exige nombre + apellido(s) (≥2 palabras); "Usuario Prueba"
-  // las cumple. El sufijo numérico (Date.now) solo hace único el valor mostrado en el header.
-  const nombre = `Usuario Prueba ${Date.now()}`;
+  const ts = Date.now();
+  const email = `nuevo.e2e.${ts}@sigecop.test`;
+  // Plan2 Pase3: el registro captura nombre(s) y apellido(s) por SEPARADO y los CONCATENA en el
+  // campo `nombre`. El sufijo numérico (ts) solo hace único el valor mostrado en el header.
+  const nombres = 'Usuario';
+  const apellidos = `Prueba ${ts}`;
+  const nombre = `${nombres} ${apellidos}`; // 'Usuario Prueba {ts}' — lo que el form concatena y guarda
 
   await freshHome(page);
 
@@ -47,7 +50,8 @@ test('HU-Registro — auto-registro, rechazo por pendiente, aprobación y acceso
   await page.getByTestId('link-registro').click();
   await expect(page.getByTestId('form-registro')).toBeVisible();
 
-  await page.getByTestId('reg-nombre').fill(nombre);
+  await page.getByTestId('reg-nombres').fill(nombres);
+  await page.getByTestId('reg-apellidos').fill(apellidos);
   await page.getByTestId('reg-email').fill(email);
   await page.getByTestId('reg-rol').selectOption('residente');
   await page.getByTestId('reg-password').fill(PWD_NUEVO);
@@ -93,27 +97,38 @@ test('HU-Registro — auto-registro, rechazo por pendiente, aprobación y acceso
   await page.getByRole('button', { name: 'Salir' }).click();
   await loginReal(page, email, PWD_NUEVO);
 
-  // Entró al sistema: login fuera y el header muestra su nombre.
+  // Entró al sistema: login fuera y el header muestra su nombre COMPLETO ya CONCATENADO
+  // (prueba end-to-end de que nombre[s] + apellido[s] → un solo `nombre` = 'Usuario Prueba {ts}').
   await expect(page.locator('#login-usuario')).toHaveCount(0);
   await expect(page.getByText(nombre)).toBeVisible();
 });
 
-// Corrección profe (04-jun): el nombre completo (nombre + apellidos) aparece en la bitácora; no se
-// admite registrarse con un solo nombre. Validación de cliente (espejo del candado del backend).
-test('HU-Registro — el nombre debe incluir apellido(s): rechaza un solo nombre', async ({ page }) => {
+// Plan2 Pase3: el nombre se captura en DOS campos OBLIGATORIOS por separado (nombre[s] + apellido[s]).
+// El nombre completo aparece en la bitácora (art. 123 RLOPSRM). Validación de cliente; al enviar
+// se CONCATENAN en el campo `nombre` (el backend recibe ese campo único, sin cambios).
+test('HU-Registro — exige nombre(s) Y apellido(s) por separado', async ({ page }) => {
   await freshHome(page);
   await page.getByTestId('link-registro').click();
   await expect(page.getByTestId('form-registro')).toBeVisible();
 
-  await page.getByTestId('reg-nombre').fill('Iván');                 // un solo token → inválido
+  // Campos comunes válidos.
   await page.getByTestId('reg-email').fill(`solo.nombre.${Date.now()}@sigecop.test`);
   await page.getByTestId('reg-rol').selectOption('residente');
   await page.getByTestId('reg-password').fill(PWD_NUEVO);
   await page.getByTestId('reg-password2').fill(PWD_NUEVO);
-  await page.getByTestId('reg-submit').click();
 
-  // No envía: muestra error y sigue en el formulario de registro.
+  // (a) Solo nombre(s), SIN apellido(s) → rechazado (el apellido es obligatorio aparte).
+  await page.getByTestId('reg-nombres').fill('Iván');
+  await page.getByTestId('reg-apellidos').fill('');
+  await page.getByTestId('reg-submit').click();
   await expect(page.getByTestId('registro-error')).toBeVisible();
   await expect(page.getByTestId('registro-error')).toContainText('apellido');
+  await expect(page.getByTestId('form-registro')).toBeVisible();
+
+  // (b) Solo apellido(s), SIN nombre(s) → también rechazado (el nombre es obligatorio aparte).
+  await page.getByTestId('reg-nombres').fill('');
+  await page.getByTestId('reg-apellidos').fill('Pérez López');
+  await page.getByTestId('reg-submit').click();
+  await expect(page.getByTestId('registro-error')).toContainText('nombre');
   await expect(page.getByTestId('form-registro')).toBeVisible();
 });

@@ -13,7 +13,10 @@ import { api } from '../services/api.js';
 const esNombreCompleto = (n) => (String(n || '').trim().match(/\p{L}{2,}/gu) || []).length >= 2;
 
 export default function SolicitudRegistro() {
-  const [nombre, setNombre] = useState('');
+  // Plan2 Pase3: nombre dividido en dos campos OBLIGATORIOS (nombre[s] + apellido[s]); se CONCATENAN
+  // al enviar para no cambiar la columna `nombre` (fuente única) ni los lugares que la muestran.
+  const [nombres, setNombres] = useState('');
+  const [apellidos, setApellidos] = useState('');
   const [email, setEmail] = useState('');
   const [rolSolicitado, setRolSolicitado] = useState(ROLES[0].id);
   const [password, setPassword] = useState('');
@@ -27,10 +30,20 @@ export default function SolicitudRegistro() {
     if (loading) return;
     setError(null);
 
-    if (!nombre.trim() || !email.trim() || !password) {
+    if (!nombres.trim()) {
+      setError('Captura tu(s) nombre(s).');
+      return;
+    }
+    if (!apellidos.trim()) {
+      setError('Captura tu(s) apellido(s).');
+      return;
+    }
+    if (!email.trim() || !password) {
       setError('Completa nombre, correo y contraseña.');
       return;
     }
+    // Concatena nombre(s) + apellido(s) en el campo `nombre` (fuente única; espejo del backend).
+    const nombre = `${nombres.trim()} ${apellidos.trim()}`.replace(/\s+/g, ' ').trim();
     if (!esNombreCompleto(nombre)) {
       setError('Captura tu nombre y apellido(s): el nombre completo aparece en la bitácora.');
       return;
@@ -46,7 +59,7 @@ export default function SolicitudRegistro() {
 
     setLoading(true);
     try {
-      await api.register({ nombre: nombre.trim(), email: email.trim(), password, rolSolicitado });
+      await api.register({ nombre, email: email.trim(), password, rolSolicitado });
       setExito(true);
     } catch (err) {
       setError(err.message || 'No se pudo completar el registro.');
@@ -103,9 +116,14 @@ export default function SolicitudRegistro() {
               )}
               <div className="space-y-4">
                 <div>
-                  <label className="sg-label" htmlFor="sol-nombre">Nombre completo *</label>
-                  <input id="sol-nombre" data-testid="sol-nombre" className="sg-input" placeholder="Ej. Ing. María López Hernández"
-                    value={nombre} onChange={(e) => setNombre(e.target.value)} disabled={loading} />
+                  <label className="sg-label" htmlFor="sol-nombres">Nombre(s) *</label>
+                  <input id="sol-nombres" data-testid="sol-nombres" className="sg-input" placeholder="Ej. María"
+                    value={nombres} onChange={(e) => setNombres(e.target.value)} disabled={loading} />
+                </div>
+                <div>
+                  <label className="sg-label" htmlFor="sol-apellidos">Apellido(s) *</label>
+                  <input id="sol-apellidos" data-testid="sol-apellidos" className="sg-input" placeholder="Ej. López Hernández"
+                    value={apellidos} onChange={(e) => setApellidos(e.target.value)} disabled={loading} />
                 </div>
                 <div>
                   <label className="sg-label" htmlFor="sol-email">Correo electrónico *</label>

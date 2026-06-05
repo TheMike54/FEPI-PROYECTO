@@ -100,7 +100,11 @@ function FormLogin({ onIrRegistro, mensaje, setMensaje }) {
 const esNombreCompleto = (n) => (String(n || '').trim().match(/\p{L}{2,}/gu) || []).length >= 2;
 
 function FormRegistro({ onIrLogin, setMensaje }) {
-  const [nombre, setNombre] = useState('');
+  // Plan2 Pase3: el nombre se captura en DOS campos OBLIGATORIOS (nombre[s] + apellido[s]) y se
+  // CONCATENAN al enviar; la columna `nombre` (fuente única) y todos los lugares que la muestran
+  // siguen igual (el backend recibe el mismo campo `nombre`).
+  const [nombres, setNombres] = useState('');
+  const [apellidos, setApellidos] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
@@ -113,10 +117,20 @@ function FormRegistro({ onIrLogin, setMensaje }) {
     if (loading) return;
     setErrorLocal(null);
 
-    if (!nombre.trim() || !email.trim() || !password) {
+    if (!nombres.trim()) {
+      setErrorLocal('Captura tu(s) nombre(s).');
+      return;
+    }
+    if (!apellidos.trim()) {
+      setErrorLocal('Captura tu(s) apellido(s).');
+      return;
+    }
+    if (!email.trim() || !password) {
       setErrorLocal('Completa todos los campos.');
       return;
     }
+    // Concatena nombre(s) + apellido(s) en el campo `nombre` (fuente única; espejo del backend).
+    const nombre = `${nombres.trim()} ${apellidos.trim()}`.replace(/\s+/g, ' ').trim();
     if (!esNombreCompleto(nombre)) {
       setErrorLocal('Captura tu nombre y apellido(s): el nombre completo aparece en la bitácora.');
       return;
@@ -132,7 +146,7 @@ function FormRegistro({ onIrLogin, setMensaje }) {
 
     setLoading(true);
     try {
-      await api.register({ nombre: nombre.trim(), email: email.trim(), password, rolSolicitado });
+      await api.register({ nombre, email: email.trim(), password, rolSolicitado });
       // Vuelve al login mostrando el mensaje de cuenta pendiente.
       setMensaje({
         tipo: 'exito',
@@ -161,15 +175,28 @@ function FormRegistro({ onIrLogin, setMensaje }) {
       )}
       <form className="space-y-4" data-testid="form-registro" onSubmit={handleSubmit}>
         <div>
-          <label className="sg-label" htmlFor="reg-nombre">Nombre completo</label>
+          <label className="sg-label" htmlFor="reg-nombres">Nombre(s)</label>
           <input
-            id="reg-nombre"
-            data-testid="reg-nombre"
+            id="reg-nombres"
+            data-testid="reg-nombres"
             type="text"
             className="sg-input"
-            placeholder="Ej. Ing. María López Hernández"
-            value={nombre}
-            onChange={(e) => setNombre(e.target.value)}
+            placeholder="Ej. María"
+            value={nombres}
+            onChange={(e) => setNombres(e.target.value)}
+            disabled={loading}
+          />
+        </div>
+        <div>
+          <label className="sg-label" htmlFor="reg-apellidos">Apellido(s)</label>
+          <input
+            id="reg-apellidos"
+            data-testid="reg-apellidos"
+            type="text"
+            className="sg-input"
+            placeholder="Ej. López Hernández"
+            value={apellidos}
+            onChange={(e) => setApellidos(e.target.value)}
             disabled={loading}
           />
         </div>
