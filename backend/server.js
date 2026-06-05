@@ -14,6 +14,7 @@ const conveniosRoutes = require('./src/routes/convenios.routes');  // Pasada HU-
 const alertasRoutes = require('./src/routes/alertas.routes');
 const estimacionPrepRoutes = require('./src/routes/estimacion-prep.routes');  // Etapa A: solo-lectura para la pantalla única de estimación
 const estimacionesCicloRoutes = require('./src/routes/estimaciones-ciclo.routes');  // HU-14 (Equipo 3): historial del ciclo de cobro
+const trabajosRoutes = require('./src/routes/trabajos.routes');  // HU-06 (Equipo 2): registro de trabajos terminados (avance por concepto, art. 118)
 const { initDb } = require('./src/db/init');
 
 const app = express();
@@ -42,6 +43,9 @@ app.use('/api/convenios', conveniosRoutes);
 app.use('/api/alertas', alertasRoutes);
 app.use('/api/estimacion-prep', estimacionPrepRoutes);
 app.use('/api/estimaciones-ciclo', estimacionesCicloRoutes);
+// HU-06 montado DESPUÉS de app.use(cors()) (línea 22): los headers de CORS deben aplicar a /api/trabajos
+// (lección de HU-07). Lectura por participación + escritura solo contratista (gate en trabajos.routes).
+app.use('/api/trabajos', trabajosRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Ruta no encontrada' });
