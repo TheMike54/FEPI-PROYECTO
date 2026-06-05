@@ -1058,6 +1058,10 @@ const REQ_GENERALES = ['folio', 'tipo', 'objeto', 'contratista', 'dependencia', 
 // queda como pestaña auxiliar de consulta, fuera de la progresión obligatoria.
 const PASOS_WIZARD = [0, 1, 2, 3, 4, 5];
 const ULTIMO_PASO_WIZARD = 5;
+// alta-v5.1: índice de la pestaña auxiliar "Registrados" (lista de contratos guardados, SOLO
+// LECTURA). Va justo DESPUÉS del último paso del wizard y queda FUERA del gating lineal de la
+// captura: es navegable SIEMPRE (captura vacía, a medias o completa), sin permitir saltarse pasos.
+const IDX_REGISTRADOS = ULTIMO_PASO_WIZARD + 1;
 
 export default function AltaContrato() {
   const { showToast } = useToast();
@@ -1101,6 +1105,13 @@ export default function AltaContrato() {
   // accesible = min(pasoMaxAlcanzado + 1, primerPasoInvalido): así solo se desbloquea la SIGUIENTE
   // pestaña (no todas de golpe) y se re-bloquean las posteriores si se rompe un paso previo.
   const [pasoMaxAlcanzado, setPasoMaxAlcanzado] = useState(0);
+  // alta-v5.1: paso de captura desde el que se entró a "Registrados", para poder VOLVER sin perder
+  // la captura en progreso. El formulario vive en el padre y sobrevive el cambio de pestaña; este
+  // puntero solo recuerda a dónde regresar (no se resetea ni se da por guardada la captura).
+  // SEÑAL DETERMINISTA (no depende de `dirty`): null = NO hay sesión de captura activa (formulario
+  // limpio / recién guardado) → en Registrados se ofrece «+ Capturar nuevo contrato»; un número
+  // (0..ULTIMO) = se entró a Registrados desde una captura activa → se ofrece «← Volver a la captura».
+  const [pasoPrevioCaptura, setPasoPrevioCaptura] = useState(null);
   // alta-v2 (1.3): mensaje de error del wizard PERSISTENTE — el usuario lo cierra con la ✕;
   // NO se auto-descarta como el Toast (que dura 3 s). Se limpia al cerrar, al avanzar bien,
   // al guardar o al cancelar.
@@ -1411,7 +1422,7 @@ export default function AltaContrato() {
       // BUG 1: alta exitosa → limpia TODOS los campos (alta nueva vacía + pestañas re-bloqueadas)
       // y REDIRIGE a "Registrados". Ya no hay estado de éxito con "Ver registrados →".
       resetFormulario();
-      setTabActivo(6); // pestaña "Registrados"
+      setTabActivo(IDX_REGISTRADOS); // pestaña "Registrados"
       await cargarContratos();
       showToast('Contrato guardado: ' + payload.folio + '. Disponible en Registrados.');
     } catch (err) {
@@ -1446,6 +1457,7 @@ export default function AltaContrato() {
     setPdfFirmadoFile(null);
     setPdfAnticipoFile(null);
     setPasoMaxAlcanzado(0); // re-bloquea: vuelve al paso 1
+    setPasoPrevioCaptura(null); // alta-v5.1: ya no hay sesión de captura activa (Registrados → "nuevo")
     setContratoGuardadoId(null);
     setDirty(false);
     montadoRef.current = false; // re-armar el detector de "sucio"
@@ -1487,18 +1499,32 @@ export default function AltaContrato() {
   // obligatorias=paso 4 y PDF firmado=paso 5) Y PDF firmado presente (adjuntado o ya-guardado).
   // (validarPaso(5) ya exige el PDF; el segundo conjunto lo hace EXPLÍCITO e inmune a cambios futuros.)
   const capturaCompleta = (primerPasoInvalido > ULTIMO_PASO_WIZARD) && (!!pdfFirmadoFile || !!contratoGuardadoId);
-  // tabsBloqueados: durante la captura, TODAS las pestañas salvo la activa quedan deshabilitadas
-  // (los nombres no navegan); con la captura completa, NINGUNA (salto/revisión libre por nombre).
+  // tabsBloqueados: durante la captura, todos los PASOS DE CAPTURA salvo el activo quedan
+  // deshabilitados (los nombres no navegan); con la captura completa, ninguno (salto/revisión libre).
+  // alta-v5.1: "Registrados" (IDX_REGISTRADOS) NUNCA se bloquea — es la lista de guardados en solo
+  // lectura, navegable siempre; por eso el bucle llega solo hasta ULTIMO_PASO_WIZARD (excluye Registrados).
   const tabsBloqueados = (() => {
     const s = new Set();
     if (capturaCompleta) return s;
-    for (let i = 0; i <= ULTIMO_PASO_WIZARD + 1; i++) { if (i !== tabActivo) s.add(i); }
+    for (let i = 0; i <= ULTIMO_PASO_WIZARD; i++) { if (i !== tabActivo) s.add(i); }
     return s;
   })();
-  // Click en el NOMBRE de una pestaña: NO navega durante la captura (defensa redundante con
-  // tabsBloqueados —que ya deshabilita los botones—); con la captura completa, salto libre.
+  // Click en el NOMBRE de una pestaña.
+  //  · "Registrados" (IDX_REGISTRADOS): SIEMPRE navega (lista de guardados en solo lectura), aun
+  //    durante la captura. NO se pierde la captura en progreso (el formulario vive en el padre y
+  //    sobrevive el cambio de pestaña); se recuerda el paso para volver con «← Volver a la captura».
+  //    Solo lleva a la lista: NO entra a ningún paso de captura ni permite saltarse el orden.
+  //  · Pasos de CAPTURA (0..ULTIMO): NO navegan durante la captura (gating lineal intacto: solo
+  //    «Siguiente»/«Atrás»); con la captura completa, salto/revisión libre por nombre.
   const clicNombrePestaña = (target) => {
-    if (!capturaCompleta) return;
+    if (target === IDX_REGISTRADOS) {
+      if (tabActivo <= ULTIMO_PASO_WIZARD) setPasoPrevioCaptura(tabActivo);
+      setErrores(ERR0);
+      setErrorWizard(null);
+      setTabActivo(IDX_REGISTRADOS);
+      return;
+    }
+    if (!capturaCompleta) return; // pasos de captura: gating lineal (solo Siguiente/Atrás)
     setErrores(ERR0);
     setErrorWizard(null);
     setTabActivo(target);
@@ -1579,9 +1605,14 @@ export default function AltaContrato() {
                 {guardando ? 'Guardando…' : 'Guardar contrato'}
               </button>
             </>
+          ) : pasoPrevioCaptura != null ? (
+            // alta-v5.1: en "Registrados" CON una captura activa (se entró desde un paso del wizard).
+            // El botón VUELVE al paso donde se estaba capturando SIN resetear: preserva los datos (no
+            // se pierden en silencio ni se dan por guardados). Para descartar está «Cancelar» (con confirmación).
+            <button type="button" className="sg-btn-primary" disabled={soloLectura} onClick={() => { setErrores(ERR0); setErrorWizard(null); setTabActivo(pasoPrevioCaptura); }} data-testid="btn-volver-captura">← Volver a la captura</button>
           ) : (
-            // alta-v5: en "Registrados" (post-guardado / consulta) los nombres de pestaña no navegan
-            // durante la captura, así que la vía explícita de regreso al wizard es este botón.
+            // alta-v5: en "Registrados" con el formulario LIMPIO (recién guardado o nunca tocado) los
+            // nombres de pestaña no navegan en captura, así que la vía explícita al wizard es este botón.
             <button type="button" className="sg-btn-primary" disabled={soloLectura} onClick={() => { resetFormulario(); setTabActivo(0); }} data-testid="btn-nueva-alta">+ Capturar nuevo contrato</button>
           )}
         </div>

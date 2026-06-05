@@ -56,7 +56,9 @@ test.describe('alta-v5 — navegación lineal + garantías/jurídicos obligatori
     await expect(tab(page, /Datos jurídicos/)).toBeDisabled();
     await expect(tab(page, /Garantías/)).toBeDisabled();
     await expect(tab(page, /PDF firmado/)).toBeDisabled();
-    await expect(tab(page, /Registrados/)).toBeDisabled();
+    // alta-v5.1: "Registrados" (lista de guardados, solo lectura) queda SIEMPRE navegable, incluso
+    // durante la captura. Los PASOS de captura siguen bloqueados (gating lineal intacto).
+    await expect(tab(page, /Registrados/)).toBeEnabled();
     expect(await page.locator('button[data-bloqueado="true"]').count()).toBeGreaterThan(0);
     // Prueba de COMPORTAMIENTO (no solo del atributo disabled): aunque se FUERCE el evento click
     // sobre el NOMBRE de una pestaña, el handler (clicNombrePestaña) NO navega durante la captura.
