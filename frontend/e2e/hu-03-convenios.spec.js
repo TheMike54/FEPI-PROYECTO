@@ -4,7 +4,7 @@
 // La página ConveniosModificatorios.jsx consume el backend REAL de convenios (art. 59 LOPSRM):
 //   · GET  /api/convenios/contrato/:id      → { convenios:[…], versiones:[…] }
 //   · GET  /api/convenios/version/:versionId → snapshot inmutable del programa
-//   · POST /api/convenios/contrato/:id       → crea el convenio (Fase 1: solo tipo 'plazo')
+//   · POST /api/convenios/contrato/:id       → crea el convenio (plazo / monto / programa / mixto)
 // Por eso ESTE spec ejercita el flujo real (login real + token), no el prototipo dummy:
 //   1. Acceso por rol: dependencia ('E') ve el form; residente/contratista/supervisión ('C')
 //      solo consulta (banner, sin form); finanzas (null) ni en Sidebar ni en Inicio.
@@ -242,5 +242,182 @@ test.describe('HU-03 — versiones del programa (lectura)', () => {
     await page.locator('[data-testid^="btn-ver-version-"]').first().click();
     await expect(page.getByTestId('detalle-version').getByTestId('matriz-programa')).toBeVisible();
     await expect(page.getByTestId('matriz-programa')).toContainText('CONC-01');
+  });
+});
+
+// ===========================================================================
+// Fase 2 — editor de catálogo + matriz (convenios de monto / programa / mixto).
+// El backend deriva el monto (Σ ROUND(cant×pu,2)) y revalida cuadre 100% + art. 118 +
+// guardrail. El seed da SMOKE-HU03-001: monto 100,000 (CONC-01 100×600, CONC-02 50×800),
+// 2 periodos, programa que cuadra (CONC-01 60/40, CONC-02 20/30).
+// ===========================================================================
+
+test.describe('HU-03 Fase 2 — editor de matriz (monto / programa)', () => {
+  test.beforeEach(async ({ page }) => {
+    await freshHome(page);
+    await enterAppMode(page, 'dependencia');
+    await goToViaSidebar(page, VIEW_PATH);
+    await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
+    await seleccionarContratoPorFolio(page, FOLIO_SEED);
+  });
+
+  test('monto: el editor precarga el vigente, deriva el monto y, cuadrado, registra (201) → v2 vigente', async ({ page }) => {
+    await page.getByTestId('cm-tipo').selectOption('monto');
+    // Precarga del programa vigente: el editor aparece con los 2 conceptos sembrados.
+    await expect(page.getByTestId('editor-programa-convenio')).toBeVisible();
+    await expect(page.getByTestId('cm-concepto-clave-0')).toHaveValue('CONC-01');
+    await expect(page.getByTestId('cm-concepto-clave-1')).toHaveValue('CONC-02');
+    // La clave de un concepto EXISTENTE es read-only (el backend casa por clave; catálogo completo).
+    await expect(page.getByTestId('cm-concepto-clave-0')).toBeDisabled();
+    // Monto vigente DERIVADO = 100,000; el programa precargado cuadra al 100%.
+    await expect(page.getByTestId('cm-monto-nuevo')).toContainText('100,000');
+    await expect(page.getByTestId('cm-programa-cuadra')).toBeVisible();
+
+    // Sube el P.U. de CONC-01 600 → 700 (cantidad intacta → el cuadre se conserva).
+    await page.getByTestId('cm-concepto-pu-0').fill('700');
+    await expect(page.getByTestId('cm-monto-nuevo')).toContainText('110,000'); // 100×700 + 50×800
+    await expect(page.getByTestId('cm-programa-cuadra')).toBeVisible();
+    await expect(page.getByTestId('aviso-sfp')).toHaveCount(0); // +10% ≤ 25%: sin guardrail
+    await page.getByTestId('cm-motivo').fill('Ajuste de precio unitario de excavación (dictamen DT-2026-09).');
+
+    const resp = page.waitForResponse((r) => r.url().includes('/convenios/contrato/') && r.request().method() === 'POST');
+    await page.getByTestId('btn-registrar-convenio').click();
+    expect((await resp).status()).toBe(201);
+
+    // Historial: 1 convenio de Monto. Versiones: v1 (superseded) + v2 (vigente, monto 110,000).
+    await expect(filasConvenios(page)).toHaveCount(1);
+    await expect(filasConvenios(page).first()).toContainText('Monto');
+    await expect(filasVersiones(page)).toHaveCount(2);
+    await expect(filasVersiones(page).filter({ hasText: 'Vigente' })).toHaveCount(1);
+    await expect(filasVersiones(page).filter({ hasText: 'Vigente' })).toContainText('110,000');
+  });
+
+  test('programa: descuadre BLOQUEA el botón; al re-cuadrar registra (201) → v2 vigente', async ({ page }) => {
+    await page.getByTestId('cm-tipo').selectOption('programa');
+    await expect(page.getByTestId('editor-programa-convenio')).toBeVisible();
+    await page.getByTestId('cm-motivo').fill('Redistribución del programa (dictamen DT-2026-10).');
+    await expect(page.getByTestId('cm-programa-cuadra')).toBeVisible();
+
+    // Sube la cantidad contratada de CONC-01 a 120 (las celdas siguen sumando 100 → restante 20).
+    await page.getByTestId('cm-concepto-cantidad-0').fill('120');
+    await expect(page.getByTestId('cm-programa-descuadre')).toBeVisible();
+    await expect(page.getByTestId('btn-registrar-convenio')).toBeDisabled();
+
+    // Re-cuadra: CONC-01 P1 60 → 80 (80 + 40 = 120). Vuelve a cuadrar → botón habilitado.
+    await page.getByTestId('cm-celda-0-1').fill('80');
+    await expect(page.getByTestId('cm-programa-cuadra')).toBeVisible();
+    await expect(page.getByTestId('btn-registrar-convenio')).toBeEnabled();
+
+    // Registro end-to-end del tipo 'programa' (CONC-01 120 ≥ 80 estimado → art.118 OK; +12% ≤ 25%).
+    const resp = page.waitForResponse((r) => r.url().includes('/convenios/contrato/') && r.request().method() === 'POST');
+    await page.getByTestId('btn-registrar-convenio').click();
+    expect((await resp).status()).toBe(201);
+    await expect(filasConvenios(page)).toHaveCount(1);
+    await expect(filasConvenios(page).first()).toContainText('Programa');
+    await expect(filasVersiones(page)).toHaveCount(2);
+    await expect(filasVersiones(page).filter({ hasText: 'Vigente' })).toHaveCount(1);
+  });
+
+  test('mixto: cambia monto (P.U.) Y plazo en un solo convenio; registra (201) → tipo Mixto, v2 vigente', async ({ page }) => {
+    await page.getByTestId('cm-tipo').selectOption('mixto');
+    // Mixto muestra AMBOS: el editor de programa y el campo de plazo.
+    await expect(page.getByTestId('editor-programa-convenio')).toBeVisible();
+    await expect(page.getByTestId('cm-plazo-nuevo')).toBeVisible();
+    await page.getByTestId('cm-programa-cuadra').waitFor();
+
+    // Sin plazo todavía → no se puede registrar (mixto exige programa OK + plazo cambiado).
+    await page.getByTestId('cm-concepto-pu-0').fill('700');             // monto 100,000 → 110,000 (+10%)
+    await page.getByTestId('cm-motivo').fill('Ajuste de P.U. y ampliación de plazo (dictamen DT-2026-11).');
+    await expect(page.getByTestId('btn-registrar-convenio')).toBeDisabled();
+
+    await page.getByTestId('cm-plazo-nuevo').fill('200');               // plazo 180 → 200 (+11%)
+    await expect(page.getByTestId('btn-registrar-convenio')).toBeEnabled();
+
+    const resp = page.waitForResponse((r) => r.url().includes('/convenios/contrato/') && r.request().method() === 'POST');
+    await page.getByTestId('btn-registrar-convenio').click();
+    expect((await resp).status()).toBe(201);
+    await expect(filasConvenios(page)).toHaveCount(1);
+    await expect(filasConvenios(page).first()).toContainText('Mixto');
+    // El cambio refleja AMBOS: plazo 200 y monto 110,000.
+    await expect(filasConvenios(page).first()).toContainText('200');
+    await expect(filasConvenios(page).first()).toContainText('110,000');
+    await expect(filasVersiones(page).filter({ hasText: 'Vigente' })).toContainText('110,000');
+  });
+
+  test('agregar / quitar concepto nuevo: el monto sube y vuelve; registrar agrega el concepto', async ({ page }) => {
+    await page.getByTestId('cm-tipo').selectOption('monto');
+    await expect(page.getByTestId('editor-programa-convenio')).toBeVisible();
+    await expect(page.getByTestId('cm-monto-nuevo')).toContainText('100,000');
+
+    // Agrega un concepto nuevo CONC-03 (10 × 1000 = 10,000) → monto 110,000.
+    await page.getByTestId('cm-agregar-concepto').click();
+    await page.getByTestId('cm-concepto-clave-2').fill('CONC-03');
+    await page.getByTestId('cm-concepto-nombre-2').fill('Acarreo (nuevo)');
+    await page.getByTestId('cm-concepto-unidad-2').fill('m3');
+    await page.getByTestId('cm-concepto-cantidad-2').fill('10');
+    await page.getByTestId('cm-concepto-pu-2').fill('1000');
+    await expect(page.getByTestId('cm-monto-nuevo')).toContainText('110,000');
+
+    // Quitar el concepto nuevo revierte el monto a 100,000.
+    await page.getByTestId('cm-concepto-quitar-2').click();
+    await expect(page.getByTestId('cm-monto-nuevo')).toContainText('100,000');
+    await expect(page.getByTestId('cm-concepto-clave-2')).toHaveCount(0);
+
+    // Lo agrega de nuevo y cuadra su celda (10 en P1) → registra (201) y CONC-03 queda en el catálogo.
+    await page.getByTestId('cm-agregar-concepto').click();
+    await page.getByTestId('cm-concepto-clave-2').fill('CONC-03');
+    await page.getByTestId('cm-concepto-nombre-2').fill('Acarreo (nuevo)');
+    await page.getByTestId('cm-concepto-unidad-2').fill('m3');
+    await page.getByTestId('cm-concepto-cantidad-2').fill('10');
+    await page.getByTestId('cm-concepto-pu-2').fill('1000');
+    await page.getByTestId('cm-celda-2-1').fill('10'); // 10 en P1 → cuadra (10 = 10)
+    await page.getByTestId('cm-motivo').fill('Alta de concepto de acarreo (dictamen DT-2026-12).');
+    await expect(page.getByTestId('cm-programa-cuadra')).toBeVisible();
+
+    const resp = page.waitForResponse((r) => r.url().includes('/convenios/contrato/') && r.request().method() === 'POST');
+    await page.getByTestId('btn-registrar-convenio').click();
+    expect((await resp).status()).toBe(201);
+    await expect(filasConvenios(page)).toHaveCount(1);
+    // La versión vigente refleja el monto con el concepto nuevo (110,000) y su snapshot lo incluye.
+    await expect(filasVersiones(page).filter({ hasText: 'Vigente' })).toContainText('110,000');
+    // "Ver programa" de la versión VIGENTE (no la v1 original) → su matriz incluye CONC-03.
+    await filasVersiones(page).filter({ hasText: 'Vigente' }).locator('[data-testid^="btn-ver-version-"]').click();
+    await expect(page.getByTestId('detalle-version').getByTestId('matriz-programa')).toContainText('CONC-03');
+  });
+
+  test('art. 118: reducir CONC-01 (100) por debajo de lo ya estimado (80) → backend RECHAZA (400)', async ({ page }) => {
+    await page.getByTestId('cm-tipo').selectOption('monto');
+    await expect(page.getByTestId('editor-programa-convenio')).toBeVisible();
+    await page.getByTestId('cm-motivo').fill('Reducción de cantidad de excavación (prueba art. 118).');
+    // CONC-01 cantidad 100 → 70 (< 80 ya estimado). Re-cuadra sus celdas a 70 para pasar el cuadre cliente.
+    await page.getByTestId('cm-concepto-cantidad-0').fill('70');
+    await page.getByTestId('cm-celda-0-1').fill('40'); // 40 + 30 = 70
+    await page.getByTestId('cm-celda-0-2').fill('30');
+    await expect(page.getByTestId('cm-programa-cuadra')).toBeVisible();
+    await expect(page.getByTestId('btn-registrar-convenio')).toBeEnabled();
+
+    const resp = page.waitForResponse((r) => r.url().includes('/convenios/contrato/') && r.request().method() === 'POST');
+    await page.getByTestId('btn-registrar-convenio').click();
+    expect((await resp).status()).toBe(400); // art. 118 RLOPSRM: no por debajo de lo estimado
+    // El backend mostró el motivo (art. 118) y NO se creó convenio ni versión nueva.
+    await expect(filasConvenios(page)).toHaveCount(0);
+    await expect(filasVersiones(page)).toHaveCount(1);
+  });
+
+  test('guardrail del 25% sobre el MONTO: +30% muestra aviso y el backend RECHAZA (400)', async ({ page }) => {
+    await page.getByTestId('cm-tipo').selectOption('monto');
+    await expect(page.getByTestId('editor-programa-convenio')).toBeVisible();
+    await page.getByTestId('cm-motivo').fill('Incremento de precio unitario (prueba del guardrail de monto).');
+    // CONC-01 pu 600 → 900 → monto 130,000 (+30%). Cuadre intacto (cantidad sin cambio).
+    await page.getByTestId('cm-concepto-pu-0').fill('900');
+    await expect(page.getByTestId('cm-monto-nuevo')).toContainText('130,000');
+    await expect(page.getByTestId('aviso-sfp')).toBeVisible(); // la UI avisa, no bloquea el botón
+
+    const resp = page.waitForResponse((r) => r.url().includes('/convenios/contrato/') && r.request().method() === 'POST');
+    await page.getByTestId('btn-registrar-convenio').click();
+    expect((await resp).status()).toBe(400); // guardrail parametrizable (default 25%)
+    // No se creó convenio ni versión nueva.
+    await expect(filasConvenios(page)).toHaveCount(0);
+    await expect(filasVersiones(page)).toHaveCount(1); // sigue solo la v1 sembrada
   });
 });
