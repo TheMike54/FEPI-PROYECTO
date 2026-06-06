@@ -46,6 +46,43 @@ function tablaGantt(page) {
   return page.locator('[data-testid="seccion-gantt"] table').first();
 }
 
+// HU-05 quedó CABLEADA a datos reales: los filtros (Concepto/Periodo), la curva y la matriz solo
+// aparecen tras SELECCIONAR un contrato. Creamos uno por API (residente = creador → lo ve) con su
+// equipo completo. Solo se toca el .spec (mismo patrón que HU-07/HU-04).
+const API = 'http://localhost:4000/api';
+const PASS = 'Sigecop2026!';
+async function loginApi(request, email) {
+  return (await request.post(`${API}/auth/login`, { data: { email, password: PASS } })).json();
+}
+async function crearContratoConConceptos(request) {
+  const [R, S, V, D] = await Promise.all([
+    loginApi(request, 'residente@sigecop.test'),
+    loginApi(request, 'contratista@sigecop.test'),
+    loginApi(request, 'supervision@sigecop.test'),
+    loginApi(request, 'dependencia@sigecop.test')
+  ]);
+  const folio = `E2E-HU05-${Date.now()}`;
+  const r = await request.post(`${API}/contratos`, {
+    headers: { Authorization: `Bearer ${R.token}` },
+    data: {
+      folio, tipo: 'Obra pública sobre la base de precios unitarios', objeto: 'Curva de avance e2e',
+      plazoDias: 60, fechaInicio: '2026-06-01',
+      superintendenteId: S.user.id, supervisionId: V.user.id, dependenciaId: D.user.id,
+      anticipoPct: null, juridicos: {},
+      conceptos: [{ clave: 'A1', concepto: 'Concepto e2e', unidad: 'm³', cantidad: 100, pu: 50 }],
+      ciclo: 'mensual', programa: [{ clave: 'A1', periodoNumero: 1, cantidad: 100 }], garantias: []
+    }
+  });
+  expect(r.status(), 'crear contrato con conceptos').toBe(201);
+  return folio;
+}
+async function seleccionarContratoPorFolio(page, folio) {
+  const sel = page.getByTestId('select-contrato');
+  await expect(sel).toBeVisible();
+  const val = await sel.locator('option', { hasText: folio }).first().getAttribute('value');
+  await sel.selectOption(val);
+}
+
 // ---------------------------------------------------------------------------
 // MODO APLICACION — Residente ejecuta
 // ---------------------------------------------------------------------------
@@ -67,11 +104,15 @@ test.describe('HU-05 — modo aplicacion (Residente: ejecuta)', () => {
     });
   });
 
-  test('filtros editables; sin aviso de solo consulta', async ({ page }) => {
+  test('filtros editables; sin aviso de solo consulta', async ({ page, request }) => {
+    const folio = await crearContratoConConceptos(request); // residente = creador → lo ve
     await goToViaSidebar(page, VIEW_PATH);
+    // El aviso es por ROL (se evalúa antes de elegir contrato): residente (nivel E) no lo ve.
+    await expectSinAvisoSoloConsulta(page);
+    // Datos reales: los filtros (Concepto/Periodo) solo aparecen tras SELECCIONAR un contrato.
+    await seleccionarContratoPorFolio(page, folio);
     await expect(selectConcepto(page)).toBeEnabled();
     await expect(selectPeriodo(page)).toBeEnabled();
-    await expectSinAvisoSoloConsulta(page);
   });
 });
 
