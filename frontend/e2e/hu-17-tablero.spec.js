@@ -1,91 +1,146 @@
 // @ts-check
-// E2E HU-17 — Tablero de estimaciones del contrato.
+// E2E HU-17 — Tablero de estimaciones (FLUJO REAL: login + backend + BD).
 //
-// Cubre el comportamiento del prototipo:
-//   · Indicadores agregados arriba del tablero (avance físico %, monto total,
-//     monto pagado, monto pendiente, días promedio en cada estado).
-//   · Cada tarjeta muestra la línea de tiempo del estado (mini-stepper) y el
-//     responsable.
-//   · Filtros por estado, periodo y responsable funcionan con lógica Y.
-//   · El panel "Mis pendientes" muestra los pendientes del rol activo (o del
-//     residente en modo proyecto).
+// Reescrito desde el prototipo dummy al endpoint real GET /api/tablero/estimaciones.
+// La vista es AGREGADA y de SOLO LECTURA; el backend acota por participación
+// (lib/acceso.js) y calcula conteos/montos server-side. Este spec siembra dos
+// contratos (SMK17-001 = el equipo es parte; SMK17-002 = ajeno) con estimaciones
+// en varios estados y verifica:
+//   · El grid muestra las estimaciones aceptadas/en proceso y EXCLUYE la rechazada (CA-1).
+//   · Los montos (neto) llegan cuadrados server-side (formateados en la tarjeta).
+//   · "Mis pendientes" CAMBIA según el rol (residente revisa lo 'enviada';
+//     contratista envía lo 'integrada' y reingresa lo 'rechazada').
+//   · ACOTAMIENTO: un operativo (residente) NO ve el contrato ajeno; dependencia
+//     (ve todo) SÍ lo ve.
+//   · Finanzas no tiene acceso a la HU (PERMISOS[HU-17].finanzas = null).
 //
 // PERMISOS[HU-17]: residente='E' · contratista/supervision/dependencia='C' · finanzas=null
 //
 // Helpers comunes: ver frontend/e2e/_helpers.js.
 
 import { test, expect } from '@playwright/test';
-import {
-  freshHome,
-  enterAppMode,
-  goToViaSidebar,
-  sidebarLinkFor,
-  cardInInicioFor,
-  expectMetadataAcademicaOculta
-} from './_helpers.js';
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
+import { freshHome, enterAppMode, goToViaSidebar, sidebarLinkFor } from './_helpers.js';
 
 // alta-v2: la suite entra con login real → requiere backend+BD; se corre en local (no en CI).
 test.skip(!!process.env.CI, 'alta-v2: login real requiere backend+BD; se corre en local');
 
 const VIEW_PATH = '/estimaciones/tablero';
 const TITULO = 'Tablero de estimaciones';
-const SPRINT = 'Sprint 8';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SEED_DIR = path.resolve(__dirname, '../../backend/scripts');
+
+/** Corre un .sql contra la BD del stack local vía `docker exec -i sigecop_db psql`. */
+function runSql(file) {
+  const sql = readFileSync(path.join(SEED_DIR, file));
+  execFileSync(
+    'docker',
+    ['exec', '-i', 'sigecop_db', 'psql', '-U', 'sigecop', '-d', 'sigecop_db', '-v', 'ON_ERROR_STOP=1', '-q'],
+    { input: sql, stdio: ['pipe', 'ignore', 'inherit'] }
+  );
+}
+
+test.beforeAll(() => runSql('seed_smoke_hu17.sql'));
+test.afterAll(() => runSql('unseed_smoke_hu17.sql'));
+
+// Tarjetas sembradas del contrato del que el equipo ES parte (SMK17-001).
+const card = (numero) => `[data-testid="tarjeta-est-SMK17-001-${numero}"]`;
+const cardAjeno = (numero) => `[data-testid="tarjeta-est-SMK17-002-${numero}"]`;
 
 // ---------------------------------------------------------------------------
-// MODO APLICACION — Residente ejecuta
+// Residente (ejecuta): ve SU contrato, no el ajeno; pendiente = revisar lo enviado.
 // ---------------------------------------------------------------------------
-
-test.describe('HU-17 — modo aplicacion (Residente: ejecuta)', () => {
+test.describe('HU-17 — Residente (es parte de SMK17-001)', () => {
   test.beforeEach(async ({ page }) => {
     await freshHome(page);
     await enterAppMode(page, 'residente');
-  });
-
-  test('sidebar muestra HU-17 y la vista carga sin metadata academica', async ({ page }) => {
     await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
     await goToViaSidebar(page, VIEW_PATH);
     await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
-    await expectMetadataAcademicaOculta(page, {
-      huId: 'HU-17',
-      sprintLabel: SPRINT,
-      rolAcademicoLabel: 'Residente'
-    });
   });
 
-  test('panel Mis pendientes muestra pendientes del residente', async ({ page }) => {
-    await goToViaSidebar(page, VIEW_PATH);
-    await expect(page.getByText('Estimación 3 espera tu autorización')).toBeVisible();
+  test('grid muestra las 4 estimaciones en proceso y EXCLUYE la rechazada (CA-1)', async ({ page }) => {
+    // #1..#4 (pagada/autorizada/enviada/integrada) están; #5 (rechazada) NO.
+    await expect(page.locator(card(1))).toBeVisible();
+    await expect(page.locator(card(2))).toBeVisible();
+    await expect(page.locator(card(3))).toBeVisible();
+    await expect(page.locator(card(4))).toBeVisible();
+    await expect(page.locator(card(5))).toHaveCount(0);
+    // El contador de rechazadas SÍ refleja la métrica (≥ 1 sembrada).
+    await expect(page.getByTestId('contador-estado-rechazada')).toContainText('1');
+  });
+
+  test('el monto neto llega cuadrado server-side (tarjeta pagada = $199,000.00)', async ({ page }) => {
+    await expect(page.locator(card(1))).toContainText('$ 199,000.00');
+  });
+
+  test('Mis pendientes (residente) = revisar la estimación enviada (#3), no las del contratista', async ({ page }) => {
+    // Aserción por PRESENCIA/ROL (no por total): la BD puede traer datos de otras
+    // corridas. Lo que prueba la HU es el filtrado por rol según el estado.
+    const mis = page.getByTestId('mis-pendientes');
+    await expect(mis).toContainText('SMK17-001 · Estimación N.º 3');
+    await expect(mis).toContainText('Revisar');
+    // #4 (enviar) y #5 (reingresar) son del CONTRATISTA, no del residente.
+    await expect(mis).not.toContainText('SMK17-001 · Estimación N.º 4');
+    await expect(mis).not.toContainText('SMK17-001 · Estimación N.º 5');
+  });
+
+  test('ACOTAMIENTO: NO ve el contrato ajeno (SMK17-002)', async ({ page }) => {
+    await expect(page.locator(cardAjeno(1))).toHaveCount(0);
+    await expect(page.locator(cardAjeno(2))).toHaveCount(0);
+    // Y ningún pendiente referencia el contrato ajeno.
+    await expect(page.getByTestId('mis-pendientes')).not.toContainText('SMK17-002');
   });
 });
 
 // ---------------------------------------------------------------------------
-// MODO APLICACION — Contratista / Supervisión / Dependencia consultan
+// Contratista (consulta, pero ES superintendente de SMK17-001): sus pendientes
+// son enviar la integrada (#4) y reingresar la rechazada (#5).
 // ---------------------------------------------------------------------------
-
-for (const rol of [
-  { id: 'contratista', alias: 'Contratista', pendiente: 'Estimación 5 presentada, en espera de revisión' },
-  { id: 'supervision', alias: 'Supervisión', pendiente: 'Estimación 4 espera tu revisión técnica' },
-  { id: 'dependencia', alias: 'Dependencia', pendiente: 'Estimación 2 lista para programar el pago' }
-]) {
-  test.describe(`HU-17 — modo aplicacion (${rol.alias}: consulta)`, () => {
-    test.beforeEach(async ({ page }) => {
-      await freshHome(page);
-      await enterAppMode(page, rol.id);
-    });
-
-    test(`Mis pendientes muestra los del rol ${rol.alias}`, async ({ page }) => {
-      await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
-      await goToViaSidebar(page, VIEW_PATH);
-      await expect(page.getByText(rol.pendiente)).toBeVisible();
-    });
+test.describe('HU-17 — Contratista (superintendente de SMK17-001)', () => {
+  test.beforeEach(async ({ page }) => {
+    await freshHome(page);
+    await enterAppMode(page, 'contratista');
+    await goToViaSidebar(page, VIEW_PATH);
   });
-}
+
+  test('Mis pendientes (contratista) = enviar #4 y reingresar #5', async ({ page }) => {
+    // Presencia, no total (la BD puede traer estimaciones de otras corridas).
+    const mis = page.getByTestId('mis-pendientes');
+    await expect(mis).toContainText('SMK17-001 · Estimación N.º 4');
+    await expect(mis).toContainText('Enviar');
+    await expect(mis).toContainText('SMK17-001 · Estimación N.º 5');
+    await expect(mis).toContainText('Reingresar');
+    // La #3 (enviada) es del RESIDENTE/SUPERVISIÓN, no del contratista.
+    await expect(mis).not.toContainText('SMK17-001 · Estimación N.º 3');
+  });
+});
 
 // ---------------------------------------------------------------------------
-// MODO APLICACION — Finanzas sin acceso
+// Dependencia (ve todo): ve AMBOS contratos -> el acotamiento difiere por rol.
 // ---------------------------------------------------------------------------
+test.describe('HU-17 — Dependencia (ve todo)', () => {
+  test.beforeEach(async ({ page }) => {
+    await freshHome(page);
+    await enterAppMode(page, 'dependencia');
+    await goToViaSidebar(page, VIEW_PATH);
+  });
 
-test.describe('HU-17 — modo aplicacion (Finanzas: sin acceso)', () => {
+  test('ve el contrato propio del equipo Y el ajeno (SMK17-002)', async ({ page }) => {
+    await expect(page.locator(card(1))).toBeVisible();           // SMK17-001
+    await expect(page.locator(cardAjeno(1))).toBeVisible();      // SMK17-002 integrada
+    await expect(page.locator(cardAjeno(2))).toBeVisible();      // SMK17-002 pagada
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Finanzas: sin acceso a la HU.
+// ---------------------------------------------------------------------------
+test.describe('HU-17 — Finanzas (sin acceso)', () => {
   test.beforeEach(async ({ page }) => {
     await freshHome(page);
     await enterAppMode(page, 'finanzas');

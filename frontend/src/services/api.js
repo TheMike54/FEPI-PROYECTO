@@ -96,6 +96,8 @@ export const api = {
   // HU-21: registro del pago efectuado.
   registrarPago: (payload) => request('/pagos', { method: 'POST', body: JSON.stringify(payload) }),
   listarPagos: (contratoId) => request(`/pagos/contrato/${contratoId}`),
+  // HU-17: tablero agregado de estimaciones (acotado por participación en el backend).
+  tableroEstimaciones: () => request('/tablero/estimaciones'),
   // HU-12: estimaciones (integración + consulta + avance para el preview).
   avanceContrato: (contratoId) => request(`/estimaciones/contrato/${contratoId}/avance`),
   estimacionesDeContrato: (contratoId) => request(`/estimaciones/contrato/${contratoId}`),
