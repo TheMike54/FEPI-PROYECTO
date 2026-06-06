@@ -125,5 +125,12 @@ export const api = {
   eliminarAvance: (id) => request(`/trabajos/${id}`, { method: 'DELETE' }),
   // HU-13: envío de la estimación. Sella la fecha (enviada_en/por) y avanza a 'enviada'.
   // Solo el superintendente del contrato (lo valida el backend); arranca el plazo art. 54.
-  enviarEstimacion: (id) => request(`/estimaciones-ciclo/estimacion/${id}/enviar`, { method: 'POST' })
+  enviarEstimacion: (id) => request(`/estimaciones-ciclo/estimacion/${id}/enviar`, { method: 'POST' }),
+  // HU-03 (Fundación): convenios modificatorios (art. 59 LOPSRM). El backend YA EXISTE
+  // (tabla inmutable + versionado del programa). Lectura por participación; crear = solo
+  // dependencia/residente/created_by (lo valida el backend). El monto/deltas/flags SFP(art.102)
+  // y ajuste(art.59 Bis) son server-side; aquí solo se consume.
+  convenios: (contratoId) => request(`/convenios/contrato/${contratoId}`),
+  versionPrograma: (versionId) => request(`/convenios/version/${versionId}`),
+  crearConvenio: (contratoId, payload) => request(`/convenios/contrato/${contratoId}`, { method: 'POST', body: JSON.stringify(payload) })
 };

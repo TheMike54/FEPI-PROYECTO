@@ -1,0 +1,397 @@
+diff --git a/frontend/e2e/detalle-indicador-atraso.spec.js b/frontend/e2e/detalle-indicador-atraso.spec.js
+new file mode 100644
+index 0000000..9f00564
+--- /dev/null
++++ b/frontend/e2e/detalle-indicador-atraso.spec.js
+@@ -0,0 +1,115 @@
++// @ts-check
++// Plan2 Pase 4 — visibilidad de alertas de atraso: el detalle del contrato (modal en Registrados)
++// muestra un indicador "N conceptos en atraso" + acceso directo a la lista de alertas, para que
++// residente y supervisión las vean sin entrar a buscarlas. Una cuenta SIN acceso (HU-07) no lo ve.
++// Solo presentación/lectura: NO cambia la lógica de evaluación (server) ni los permisos.
++//
++// La alerta "disparada" exige avance físico (concepto_avance), que HOY no tiene endpoint (HU-06);
++// se siembra por SQL (docker exec psql), como hu-14. LOGIN REAL + Docker. No corre en CI.
++import { test, expect } from '@playwright/test';
++import { execSync } from 'node:child_process';
++import { freshHome, enterAppMode, goToViaSidebar } from './_helpers.js';
++
++test.skip(!!process.env.CI, 'Plan2 Pase4: login real + docker psql; se corre en local');
++
++const API = 'http://localhost:4000/api';
++const PASS = 'Sigecop2026!';
++const loginApi = async (request, email) => (await request.post(`${API}/auth/login`, { data: { email, password: PASS } })).json();
++const auth = (t) => ({ Authorization: `Bearer ${t}` });
++const ccidsSembrados = [];
++
++function sqlExec(sql) {
++  execSync('docker exec -i sigecop_db psql -U sigecop -d sigecop_db -v ON_ERROR_STOP=1', {
++    input: sql, stdio: ['pipe', 'ignore', 'pipe'],
++  });
++}
++
++// Crea un contrato con equipo completo + 1 alerta de atraso DISPARADA (avance 10% < umbral 80%).
++// Devuelve { cid, folio, ccid }. El avance físico se siembra por SQL (HU-06 no tiene endpoint).
++async function crearContratoConAlertaDisparada(request) {
++  const [R, S, V, D] = await Promise.all([
++    loginApi(request, 'residente@sigecop.test'),
++    loginApi(request, 'contratista@sigecop.test'),
++    loginApi(request, 'supervision@sigecop.test'),
++    loginApi(request, 'dependencia@sigecop.test'),
++  ]);
++  const folio = `E2E-ALERTA-${Date.now()}-${Math.round(Math.random() * 1e6)}`;
++  const cr = await request.post(`${API}/contratos`, {
++    headers: auth(R.token),
++    data: {
++      folio, tipo: 'Obra pública sobre la base de precios unitarios', objeto: 'Alerta atraso e2e',
++      plazoDias: 60, fechaInicio: '2026-06-01',
++      superintendenteId: S.user.id, supervisionId: V.user.id, dependenciaId: D.user.id,
++      anticipoPct: 0, juridicos: {},
++      conceptos: [{ clave: 'C-001', concepto: 'Concepto en atraso', unidad: 'm³', cantidad: 100, pu: 100 }],
++      ciclo: 'mensual', programa: [{ clave: 'C-001', periodoNumero: 1, cantidad: 100 }], garantias: [],
++    },
++  });
++  expect(cr.status(), 'crear contrato').toBe(201);
++  const cid = (await cr.json()).id;
++
++  // contrato_concepto_id real (vía el avance del contrato).
++  const av = await request.get(`${API}/estimaciones/contrato/${cid}/avance`, { headers: auth(S.token) });
++  const ccid = (await av.json())[0].contrato_concepto_id;
++
++  // Alerta de atraso (umbral 80%) creada por el residente (HU-07 = E).
++  const al = await request.post(`${API}/alertas`, {
++    headers: auth(R.token),
++    data: { contrato_concepto_id: ccid, umbral_pct: 80, canal: 'sistema' },
++  });
++  expect(al.status(), 'crear alerta').toBe(201);
++
++  // Avance físico 10 de 100 = 10% < 80% → la alerta DISPARA. Sin endpoint HU-06: INSERT por SQL.
++  sqlExec(`INSERT INTO concepto_avance (contrato_concepto_id, cantidad) VALUES (${ccid}, 10);`);
++  ccidsSembrados.push(ccid);
++  return { cid, folio, ccid };
++}
++
++test.afterAll(() => {
++  if (ccidsSembrados.length === 0) return;
++  try { sqlExec(`DELETE FROM concepto_avance WHERE contrato_concepto_id IN (${ccidsSembrados.join(',')});`); } catch (_) { /* best-effort */ }
++});
++
++async function abrirDetalle(page, rolId, cid) {
++  await freshHome(page);
++  await enterAppMode(page, rolId);
++  await goToViaSidebar(page, '/contratos/alta');
++  await page.locator('button', { hasText: 'Registrados' }).first().click();
++  await page.getByTestId(`ver-info-${cid}`).click();
++  await expect(page.getByTestId('modal-detalle')).toBeVisible();
++}
++
++test.describe('Plan2 Pase4 — indicador de alertas de atraso en el detalle del contrato', () => {
++  test('residente (con acceso) ve "1 concepto en atraso" + link a las alertas', async ({ page, request }) => {
++    const { cid } = await crearContratoConAlertaDisparada(request);
++    await abrirDetalle(page, 'residente', cid);
++    await expect(page.getByTestId('detalle-alertas')).toBeVisible();
++    await expect(page.getByTestId('detalle-alertas-atraso')).toContainText('1 concepto en atraso');
++    const link = page.getByTestId('detalle-link-alertas');
++    await expect(link).toBeVisible();
++    await expect(link).toHaveAttribute('href', `/seguimiento/alertas?contrato=${cid}`);
++  });
++
++  test('supervisión (con acceso) también ve el indicador de atraso', async ({ page, request }) => {
++    const { cid } = await crearContratoConAlertaDisparada(request);
++    await abrirDetalle(page, 'supervision', cid);
++    await expect(page.getByTestId('detalle-alertas-atraso')).toContainText('en atraso');
++  });
++
++  test('contratista (sin acceso a HU-07) abre el detalle pero NO ve el indicador', async ({ page, request }) => {
++    const { cid } = await crearContratoConAlertaDisparada(request);
++    await abrirDetalle(page, 'contratista', cid);
++    await expect(page.getByTestId('modal-detalle')).toBeVisible();        // sí puede ver el contrato (HU-01 C)
++    await expect(page.getByTestId('detalle-alertas')).toHaveCount(0);     // pero NO el indicador de alertas (HU-07 sin acceso)
++    await expect(page.getByTestId('detalle-link-alertas')).toHaveCount(0);
++  });
++
++  test('acceso directo: el link preselecciona el contrato en la vista de alertas', async ({ page, request }) => {
++    const { cid } = await crearContratoConAlertaDisparada(request);
++    await abrirDetalle(page, 'residente', cid);
++    await page.getByTestId('detalle-link-alertas').click();
++    // La vista HU-07 carga con el contrato YA seleccionado y su alerta disparada visible.
++    await expect(page.getByTestId('select-contrato')).toHaveValue(String(cid));
++    await expect(page.getByTestId('lista-disparadas')).toBeVisible();
++  });
++});
+diff --git a/frontend/e2e/nota-fecha-hora.spec.js b/frontend/e2e/nota-fecha-hora.spec.js
+new file mode 100644
+index 0000000..bee12eb
+--- /dev/null
++++ b/frontend/e2e/nota-fecha-hora.spec.js
+@@ -0,0 +1,78 @@
++// @ts-check
++// Plan2 Pase 2.2 — cada nota de bitácora muestra FECHA Y HORA de creación (la columna `fecha` es
++// TIMESTAMPTZ; antes la UI la recortaba con soloFecha a solo el día). Cambio frontend-puro.
++//
++// Siembra por API (patrón de bitácora-v2): contrato + apertura + 3 firmas + nota emitida; luego en la
++// UI (HU-09, /bitacora/notas) se verifica que la fecha de la nota incluye la hora (formato HH:MM).
++// LOGIN REAL (backend+BD). No corre en CI.
++import { test, expect } from '@playwright/test';
++import { freshHome, enterAppMode, goToViaSidebar } from './_helpers.js';
++
++test.skip(!!process.env.CI, 'Plan2 Pase2.2: login real requiere backend+BD; se corre en local');
++
++const API = 'http://localhost:4000/api';
++const PASS = 'Sigecop2026!';
++const login = async (ctx, email) => (await ctx.post(`${API}/auth/login`, { data: { email, password: PASS } })).json();
++const auth = (token) => ({ Authorization: `Bearer ${token}` });
++
++async function actores(ctx) {
++  const R = await login(ctx, 'residente@sigecop.test');
++  const S = await login(ctx, 'contratista@sigecop.test');
++  const V = await login(ctx, 'supervision@sigecop.test');
++  return { R, S, V };
++}
++async function crearContrato(ctx, token, folio, superId, supId) {
++  const D = await login(ctx, 'dependencia@sigecop.test');
++  const r = await ctx.post(`${API}/contratos`, {
++    headers: auth(token),
++    data: {
++      folio, tipo: 'Obra pública sobre la base de precios unitarios', objeto: 'Obra e2e fecha+hora',
++      plazoDias: 60, fechaInicio: '2026-06-01',
++      superintendenteId: superId, supervisionId: supId, dependenciaId: D.user.id, anticipoPct: null, juridicos: {},
++      conceptos: [{ clave: 'A1', concepto: 'Concepto e2e', unidad: 'm³', cantidad: 100, pu: 50 }],
++      ciclo: 'mensual', programa: [{ clave: 'A1', periodoNumero: 1, cantidad: 100 }], garantias: [],
++    },
++  });
++  expect(r.status(), 'crear contrato').toBe(201);
++  return (await r.json()).id;
++}
++async function aperturar(ctx, token, contratoId) {
++  const r = await ctx.post(`${API}/bitacora/apertura`, {
++    headers: auth(token),
++    data: {
++      contratoId, fechaEntregaSitio: '2026-06-01', plazoFirmaDias: 2,
++      domicilioDependencia: 'Av. Reforma 1', telefonoDependencia: '7471234567',
++      domicilioContratista: 'Calle Obra 2', telefonoContratista: '7479876543',
++      descripcionTrabajos: 'Construcción de nave', caracteristicasSitio: 'Terreno plano',
++    },
++  });
++  expect(r.status(), 'apertura').toBe(201);
++  return (await r.json()).id;
++}
++const firmarApertura = (ctx, token, apId) => ctx.post(`${API}/bitacora/${apId}/firmar`, { headers: auth(token) });
++const emitir = (ctx, token, apId, body) => ctx.post(`${API}/bitacora/${apId}/notas`, { headers: auth(token), data: body });
++
++test('Plan2 Pase2.2 — la nota de bitácora muestra fecha Y hora de creación', async ({ page, request }) => {
++  const { R, S, V } = await actores(request);
++  const folio = `E2E-FH-${Date.now()}`;
++  const cid = await crearContrato(request, R.token, folio, S.user.id, V.user.id);
++  const apId = await aperturar(request, R.token, cid);
++  await firmarApertura(request, R.token, apId);
++  await firmarApertura(request, S.token, apId);
++  await firmarApertura(request, V.token, apId);
++  const em = await emitir(request, R.token, apId, { tipo: 'res_estimaciones', contenido: 'Autorizo estimación' });
++  expect(em.status()).toBe(201); // nota #2 (la apertura es la #1)
++
++  await freshHome(page);
++  await enterAppMode(page, 'residente');
++  await goToViaSidebar(page, '/bitacora/notas');
++  await page.getByTestId('select-contrato').selectOption({ value: String(cid) });
++  // El libro de bitácora (lista de notas) va detrás de "Ver bitácora".
++  await page.getByTestId('btn-ver-bitacora').click();
++
++  // La fecha de la nota emitida (#2) ahora incluye HORA (HH:MM), no solo el día.
++  const fecha = page.getByTestId('nota-fecha-2');
++  await expect(fecha).toBeVisible();
++  await expect(fecha, 'incluye la fecha (dd/mm/aa)').toContainText(/\d{1,2}\/\d{1,2}\/\d{2,4}/);
++  await expect(fecha, 'incluye la hora (HH:MM)').toContainText(/\d{1,2}:\d{2}/);
++});
+diff --git a/frontend/src/components/notas/BuscadorNotas.jsx b/frontend/src/components/notas/BuscadorNotas.jsx
+index ae45aa5..a417291 100644
+--- a/frontend/src/components/notas/BuscadorNotas.jsx
++++ b/frontend/src/components/notas/BuscadorNotas.jsx
+@@ -47,7 +47,11 @@ const CLASE_ACEPTACION = {
+   anulada: 'bg-slate-200 text-slate-600'
+ };
+ 
++// soloFecha (yyyy-mm-dd) se usa para COMPARAR contra los inputs type=date del filtro por rango.
+ const soloFecha = (f) => (f || '').slice(0, 10);
++// Pase 2.2: para MOSTRAR la fecha de una nota se incluye la HORA (columna TIMESTAMPTZ). Mismo
++// formato es-MX que la bitácora (EmisionNotas). NO usar en el filtro (rompería el rango por fecha).
++const fechaHora = (f) => (f ? new Date(f).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : '');
+ 
+ // Hook con el estado de los filtros y los resultados derivados (AND). Lo usan tanto
+ // la página (HU-10) como el modal (HU-12); cada uno aporta su propio `notas` ya
+@@ -220,7 +224,7 @@ export default function BuscadorNotas({
+                         </span>
+                         {n.tag && <span className="ml-1 inline-block px-2 py-0.5 bg-violet-100 text-violet-800 text-[11px] font-semibold rounded" data-testid={`tag-resultado-${n.numero}`}>#{n.tag}</span>}
+                       </td>
+-                      <td className="p-3">{soloFecha(n.fecha)}</td>
++                      <td className="p-3" data-testid={`bn-fecha-${n.numero}`}>{fechaHora(n.fecha)}</td>
+                       <td className="p-3">{n.emisor_nombre || '—'}</td>
+                       <td className="p-3 text-xs">
+                         {n.vinculada_a ? (
+diff --git a/frontend/src/pages/AlertasAtraso.jsx b/frontend/src/pages/AlertasAtraso.jsx
+index b7010df..1c9d51b 100644
+--- a/frontend/src/pages/AlertasAtraso.jsx
++++ b/frontend/src/pages/AlertasAtraso.jsx
+@@ -3,6 +3,7 @@ import HeaderVista from '../components/vista/HeaderVista.jsx';
+ import BannerContexto from '../components/vista/BannerContexto.jsx';
+ import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
+ import RegionEditable from '../components/vista/RegionEditable.jsx';
++import { useSearchParams } from 'react-router-dom';
+ import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
+ import { api } from '../services/api.js';
+ 
+@@ -80,6 +81,17 @@ export default function AlertasAtraso() {
+     }
+   }, [cargarAlertas]);
+ 
++  // Pase 4: si llegamos con ?contrato=ID (acceso directo desde el detalle del contrato), preselecciona
++  // ese contrato en cuanto la lista esté cargada y mientras el usuario no haya elegido otro a mano.
++  const [searchParams] = useSearchParams();
++  const contratoQuery = searchParams.get('contrato');
++  useEffect(() => {
++    if (sinSesion || !contratoQuery || contratoId) return;
++    if (contratos.some((c) => String(c.id) === String(contratoQuery))) {
++      seleccionarContrato(String(contratoQuery));
++    }
++  }, [sinSesion, contratoQuery, contratoId, contratos, seleccionarContrato]);
++
+   const contratoSel = useMemo(
+     () => contratos.find((c) => String(c.id) === String(contratoId)) || null,
+     [contratos, contratoId]
+diff --git a/frontend/src/pages/AltaContrato.jsx b/frontend/src/pages/AltaContrato.jsx
+index eb51896..f756b35 100644
+--- a/frontend/src/pages/AltaContrato.jsx
++++ b/frontend/src/pages/AltaContrato.jsx
+@@ -7,6 +7,7 @@ import RegionEditable from '../components/vista/RegionEditable.jsx';
+ import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
+ import { api } from '../services/api.js';
+ import MatrizProgramaLectura, { periodoQueContiene } from '../components/programa/MatrizProgramaLectura.jsx';
++import { Link } from 'react-router-dom'; // Pase 4: acceso directo a la lista de alertas del contrato
+ // alta-v2 (4.2): el alta arranca VACÍA (sin datos dummy). Ya no se importa conceptosDummy
+ // ni polizasGarantiaDummy.
+ 
+@@ -799,8 +800,12 @@ function DocumentosDetalle({ contratoId }) {
+ // (detalleContrato: cabecera + conceptos + garantías + jurídicos) y la matriz del programa
+ // (leerProgramaObra), sin inputs editables. (2.2) muestra/descarga ambos PDFs.
+ function ModalDetalleContrato({ contratoId, onClose }) {
++  // Pase 4: el indicador de alertas de atraso solo lo ven los roles con acceso a HU-07
++  // (residente=E, supervisión=C). El backend además acota por participación (403 si no es parte).
++  const { sinAcceso: sinAccesoAlertas } = useVistaHU('HU-07');
+   const [data, setData] = useState(null);
+   const [programa, setPrograma] = useState(null);
++  const [alertas, setAlertas] = useState(null); // null = sin cargar / sin acceso / 403 → no se muestra indicador
+   const [cargando, setCargando] = useState(true);
+   const [error, setError] = useState(null);
+ 
+@@ -812,11 +817,21 @@ function ModalDetalleContrato({ contratoId, onClose }) {
+         const d = await api.detalleContrato(contratoId);
+         if (vivo) setData(d);
+         try { const p = await api.leerProgramaObra(contratoId); if (vivo) setPrograma(p); } catch (_) { /* contrato sin programa */ }
++        // Pase 4: alertas de atraso (presentación/lectura). Solo si el rol tiene acceso a HU-07; un
++        // 403 (cuenta sin participación) deja el indicador oculto (NUNCA inventa alertas).
++        if (!sinAccesoAlertas) {
++          try { const al = await api.alertasDeContrato(contratoId); if (vivo) setAlertas(Array.isArray(al) ? al : []); }
++          catch (_) { if (vivo) setAlertas(null); }
++        }
+       } catch (e) { if (vivo) setError(e.message || 'No se pudo cargar el contrato'); }
+       finally { if (vivo) setCargando(false); }
+     })();
+     return () => { vivo = false; };
+-  }, [contratoId]);
++  }, [contratoId, sinAccesoAlertas]);
++
++  // Pase 4: conteo de conceptos EN ATRASO = alertas disparadas (misma fórmula que la vista HU-07).
++  const alertasEnAtraso = Array.isArray(alertas) ? alertas.filter((a) => a.disparada).length : 0;
++  const totalAlertas = Array.isArray(alertas) ? alertas.length : 0;
+ 
+   const jur = data && data.datos_juridicos
+     ? (typeof data.datos_juridicos === 'string' ? (() => { try { return JSON.parse(data.datos_juridicos); } catch { return null; } })() : data.datos_juridicos)
+@@ -862,6 +877,25 @@ function ModalDetalleContrato({ contratoId, onClose }) {
+                 </div>
+               </section>
+ 
++              {/* Pase 4: indicador de alertas de atraso + acceso directo a la lista del contrato.
++                  Presentación/lectura: gateado por rol (HU-07) y por participación (403 → oculto). */}
++              {!sinAccesoAlertas && Array.isArray(alertas) && (
++                <section data-testid="detalle-alertas">
++                  <h4 className="font-bold text-sigecop-blue mb-3">Alertas de atraso</h4>
++                  {alertasEnAtraso > 0 ? (
++                    <div className="flex flex-wrap items-center justify-between gap-3 bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 rounded" data-testid="detalle-alertas-atraso">
++                      <span className="text-sm font-semibold text-slate-800">⚠ {alertasEnAtraso} {alertasEnAtraso === 1 ? 'concepto' : 'conceptos'} en atraso</span>
++                      <Link to={`/seguimiento/alertas?contrato=${contratoId}`} className="text-sm font-semibold text-sigecop-accent hover:underline whitespace-nowrap" data-testid="detalle-link-alertas">Ver alertas del contrato →</Link>
++                    </div>
++                  ) : (
++                    <div className="flex flex-wrap items-center justify-between gap-3 bg-green-50 border-l-4 border-green-500 px-4 py-3 rounded" data-testid="detalle-alertas-ok">
++                      <span className="text-sm text-green-800">✓ Sin conceptos en atraso{totalAlertas > 0 ? ` · ${totalAlertas} alerta${totalAlertas === 1 ? '' : 's'} configurada${totalAlertas === 1 ? '' : 's'}` : ' · sin alertas configuradas'}</span>
++                      <Link to={`/seguimiento/alertas?contrato=${contratoId}`} className="text-sm font-semibold text-sigecop-accent hover:underline whitespace-nowrap" data-testid="detalle-link-alertas">Ver alertas del contrato →</Link>
++                    </div>
++                  )}
++                </section>
++              )}
++
+               {Array.isArray(data.conceptos) && data.conceptos.length > 0 && (
+                 <section>
+                   <h4 className="font-bold text-sigecop-blue mb-3">Catálogo de conceptos</h4>
+diff --git a/frontend/src/pages/EmisionNotas.jsx b/frontend/src/pages/EmisionNotas.jsx
+index ac04d5a..9ad2029 100644
+--- a/frontend/src/pages/EmisionNotas.jsx
++++ b/frontend/src/pages/EmisionNotas.jsx
+@@ -12,7 +12,8 @@ import { api } from '../services/api.js';
+ //  · La emisión/respuesta es la PARTE CENTRAL; el libro va detrás de "Ver bitácora".
+ 
+ const folioFmt = (n) => (n == null ? '—' : 'BIT-' + String(n).padStart(4, '0'));
+-const soloFecha = (s) => (s ? String(s).slice(0, 10) : '');
++// Pase 2.2: las notas muestran fecha Y HORA (la columna `fecha` es TIMESTAMPTZ). Mismo formato es-MX
++// que ya se usa para las firmas (firmado_en), para coherencia visual en toda la bitácora.
+ const fechaHora = (s) => (s ? new Date(s).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : '');
+ const ROL_LABEL = { residente: 'Residente', superintendente: 'Superintendente', supervision: 'Supervisión' };
+ 
+@@ -189,7 +190,8 @@ export default function EmisionNotas() {
+           <div className="flex items-center gap-2">
+             {n.tag && <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-violet-100 text-violet-800" data-testid={`tag-${n.numero}`}>#{n.tag}</span>}
+             <span className={`px-2 py-0.5 rounded text-[11px] font-semibold ${ac.cls}`} data-testid={`aceptacion-${n.numero}`}>{ac.label}</span>
+-            <span className="text-xs text-slate-500">{soloFecha(n.fecha)}</span>
++            {/* Pase 2.2: fecha Y HORA de creación de la nota (la columna es TIMESTAMPTZ; antes se recortaba con soloFecha). */}
++            <span className="text-xs text-slate-500" data-testid={`nota-fecha-${n.numero}`}>{fechaHora(n.fecha)}</span>
+           </div>
+         </div>
+         {n.asunto && <div className="text-xs font-semibold text-slate-800">{n.asunto}</div>}
+diff --git a/frontend/src/pages/IntegracionEstimacion.jsx b/frontend/src/pages/IntegracionEstimacion.jsx
+index 2e9c9ec..7f48778 100644
+--- a/frontend/src/pages/IntegracionEstimacion.jsx
++++ b/frontend/src/pages/IntegracionEstimacion.jsx
+@@ -35,11 +35,15 @@ function BarraAvance({ label, pct, color, testid }) {
+     </div>
+   );
+ }
+-// dd/mm/aaaa sin corrimiento de zona horaria (parte de fecha de un ISO/Date).
++// dd/mm/aaaa sin corrimiento de zona horaria (parte de fecha de un ISO/Date). Para fechas tipo DATE
++// (periodos, integrada_en) que NO llevan hora; NO cambiar.
+ const fechaMX = (iso) => {
+   const p = (iso || '').slice(0, 10).split('-');
+   return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : '—';
+ };
++// Pase 2.2: para la fecha de una NOTA de bitácora (columna TIMESTAMPTZ) se muestra fecha Y HORA,
++// mismo formato es-MX que la bitácora. Solo para notas; las demás celdas siguen con fechaMX.
++const fechaHora = (iso) => (iso ? new Date(iso).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : '—');
+ const EPS = 1e-6;
+ 
+ const CLASE_ESTADO = {
+@@ -209,7 +213,7 @@ function ModalDetalle({ estimacion, onCerrar }) {
+                       <tr key={n.nota_id} className="border-t border-slate-200">
+                         <td className="p-2 font-mono text-xs">#{n.numero}</td>
+                         <td className="p-2">{n.tipo}</td>
+-                        <td className="p-2">{fechaMX(n.fecha)}</td>
++                        <td className="p-2">{fechaHora(n.fecha)}</td>
+                         <td className="p-2 text-slate-700">{n.asunto || '—'}</td>
+                         <td className="p-2">{n.estado}</td>
+                       </tr>
+@@ -438,7 +442,7 @@ function TabNotasVinculadas({ vinculadas, onAbrir, onQuitar, soloLectura }) {
+                 <tr key={n.id} className="border-t border-slate-200 hover:bg-slate-50">
+                   <td className="p-3 font-mono text-xs">#{n.numero}</td>
+                   <td className="p-3">{n.tipo_etiqueta || n.tipo}</td>
+-                  <td className="p-3">{fechaMX(n.fecha)}</td>
++                  <td className="p-3">{fechaHora(n.fecha)}</td>
+                   <td className="p-3">{n.emisor_nombre || '—'}</td>
+                   <td className="p-3 text-slate-700">{n.asunto || '—'}</td>
+                   <td className="p-3 text-center">
