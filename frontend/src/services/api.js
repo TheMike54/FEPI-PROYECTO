@@ -122,5 +122,8 @@ export const api = {
   trabajosDeContrato: (contratoId) => request(`/trabajos/contrato/${contratoId}`),
   registrarAvance: (payload) => request('/trabajos', { method: 'POST', body: JSON.stringify(payload) }),
   actualizarAvance: (id, payload) => request(`/trabajos/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
-  eliminarAvance: (id) => request(`/trabajos/${id}`, { method: 'DELETE' })
+  eliminarAvance: (id) => request(`/trabajos/${id}`, { method: 'DELETE' }),
+  // HU-13: envío de la estimación. Sella la fecha (enviada_en/por) y avanza a 'enviada'.
+  // Solo el superintendente del contrato (lo valida el backend); arranca el plazo art. 54.
+  enviarEstimacion: (id) => request(`/estimaciones-ciclo/estimacion/${id}/enviar`, { method: 'POST' })
 };

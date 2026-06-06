@@ -3,7 +3,7 @@
 // server.js como /api/estimaciones-ciclo (ver bloque "PARA FUNDACIÓN" del PR).
 const express = require('express');
 const { authMiddleware } = require('../middlewares/auth.middleware');
-const { historialEstimaciones } = require('../controllers/estimaciones-ciclo.controller');
+const { historialEstimaciones, enviarEstimacion } = require('../controllers/estimaciones-ciclo.controller');
 
 const router = express.Router();
 
@@ -13,5 +13,9 @@ router.use(authMiddleware);
 
 // Historial del contrato: cada estimación con su estado y sus transiciones (cronológico).
 router.get('/contrato/:contratoId/historial', historialEstimaciones);
+
+// HU-13: envío de la estimación (sella enviada_en/por, estado integrada -> enviada).
+// El acotamiento (solo el superintendente del contrato) se hace en el controller.
+router.post('/estimacion/:id/enviar', enviarEstimacion);
 
 module.exports = router;
