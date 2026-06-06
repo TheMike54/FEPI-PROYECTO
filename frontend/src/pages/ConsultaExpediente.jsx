@@ -357,6 +357,71 @@ function BloqueJuridicos({ juridicos, equipo, folio }) {
   );
 }
 
+// Pase 2.3 — Roster histórico / sustituciones de personas (art. 125 RLOPSRM). Lee el endpoint
+// propio GET /api/roster/contrato/:id (NO detalleContrato, que es zona congelada). El histórico es
+// append-only por (contrato, rol): la fila con vigencia_hasta NULL es la VIGENTE; las cerradas son
+// personas pasadas; cada sustitución (sustituye_a != null) asienta su nota en la bitácora.
+const ROL_LABEL_ROSTER = { residente: 'Residente', superintendente: 'Superintendente', supervision: 'Supervisión' };
+
+function BloqueRoster({ roster }) {
+  const historial = Array.isArray(roster?.historial) ? roster.historial : [];
+  if (historial.length === 0) {
+    return <p className="text-sm text-slate-400 italic">Este contrato no tiene roster versionado ni sustituciones registradas.</p>;
+  }
+  const sustituciones = historial.filter((h) => h.sustituye_a != null).length;
+  return (
+    <div data-testid="roster-expediente">
+      <p className="text-xs text-slate-500 mb-3">
+        Histórico de personas por rol (art. 125 RLOPSRM): {sustituciones} sustitución(es) registrada(s).
+        Cada sustitución asienta su nota en la bitácora del contrato (art. 123 fr. III).
+      </p>
+      <div className="overflow-x-auto border border-slate-200 rounded-md">
+        <table className="w-full text-sm">
+          <thead className="bg-sigecop-blue-light text-sigecop-blue">
+            <tr>
+              <th className="text-left px-3 py-2 w-36">Rol</th>
+              <th className="text-left px-3 py-2">Persona</th>
+              <th className="text-left px-3 py-2 w-28">Desde</th>
+              <th className="text-left px-3 py-2 w-28">Hasta</th>
+              <th className="text-left px-3 py-2">Motivo</th>
+              <th className="text-center px-3 py-2 w-28">Bitácora</th>
+            </tr>
+          </thead>
+          <tbody>
+            {historial.map((h) => {
+              const vigente = h.vigencia_hasta == null;
+              return (
+                <tr
+                  key={h.id}
+                  className={`border-t border-slate-200 ${vigente ? 'bg-green-50' : 'hover:bg-slate-50'}`}
+                  data-testid={`roster-fila-${h.id}`}
+                >
+                  <td className="px-3 py-2">{ROL_LABEL_ROSTER[h.rol] || h.rol}</td>
+                  <td className="px-3 py-2 font-medium">{h.usuario_nombre || `Usuario #${h.usuario_id}`}</td>
+                  <td className="px-3 py-2">{soloFecha(h.vigencia_desde)}</td>
+                  <td className="px-3 py-2">
+                    {vigente
+                      ? <span className="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-green-100 text-sigecop-green-validation">Vigente</span>
+                      : soloFecha(h.vigencia_hasta)}
+                  </td>
+                  <td className="px-3 py-2 text-slate-700">{h.motivo || '—'}</td>
+                  <td className="px-3 py-2 text-center text-xs">
+                    {h.sustituye_a == null
+                      ? <span className="text-slate-400">—</span>
+                      : h.nota_id
+                        ? <span className="text-sigecop-green-validation" title={`Nota de bitácora #${h.nota_id}`}>📝 asentada</span>
+                        : <span className="text-sigecop-amber-attention">pendiente al abrir</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 export default function ConsultaExpediente() {
   // soloLectura no bloquea la consulta (todos los roles con acceso consultan); el
   // hook se mantiene por la metadata académica y el aviso del HeaderVista.
@@ -368,6 +433,7 @@ export default function ConsultaExpediente() {
   const [contratoId, setContratoId] = useState('');
   const [expediente, setExpediente] = useState(null);
   const [programa, setPrograma] = useState(null); // Pase 1: matriz A2 (leerProgramaObra)
+  const [roster, setRoster] = useState(null);     // Pase 2.3: roster histórico / sustituciones
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
@@ -385,6 +451,7 @@ export default function ConsultaExpediente() {
     setContratoId(id);
     setExpediente(null);
     setPrograma(null);
+    setRoster(null);
     setError('');
     setQuery('');
     if (!id) return;
@@ -395,6 +462,9 @@ export default function ConsultaExpediente() {
       // Pase 1: la matriz A2 vive en otro endpoint (programa_obra + contrato_periodos). 404/sin
       // programa → null y el bloque cae al fallback (actividades viejas o "no registrado").
       try { setPrograma(await api.leerProgramaObra(id)); } catch (_) { setPrograma(null); }
+      // Pase 2.3: el roster histórico/sustituciones sale de su PROPIO endpoint (no de detalleContrato,
+      // que es zona congelada). Acotado por participación server-side; 403/404 → null.
+      try { setRoster(await api.rosterContrato(id)); } catch (_) { setRoster(null); }
     } catch (e) {
       // El acotamiento es server-side: 403 = sin acceso a este contrato.
       setError(
@@ -487,9 +557,20 @@ export default function ConsultaExpediente() {
           return blob.includes(q);
         },
         body: <BloqueJuridicos juridicos={jur} equipo={equipo} folio={c.folio} />
+      },
+      {
+        id: 'roster',
+        titulo: 'Roster y sustituciones de personas',
+        icono: '👥',
+        haceMatch: (q, campo) => {
+          if (campo === 'documento') return 'roster sustitución personas equipo'.includes(q);
+          const blob = (roster?.historial || []).map((h) => `${h.usuario_nombre || ''} ${h.rol} ${h.motivo || ''}`).join(' ').toLowerCase();
+          return blob.includes(q);
+        },
+        body: <BloqueRoster roster={roster} />
       }
     ];
-  }, [expediente, programa]);
+  }, [expediente, programa, roster]);
 
   // Buscador con semántica AND: un bloque coincide si TODOS los términos de la
   // búsqueda hacen match sobre el campo seleccionado (criterio 2, art. lógica Y).
@@ -612,7 +693,7 @@ export default function ConsultaExpediente() {
       <SeccionCriterios
         huId="HU-04"
         criterios={[
-          { numero: 1, texto: 'El expediente muestra en una sola vista los 5 bloques del contrato: configuración, catálogo, programa, fianzas y documentos jurídicos.' },
+          { numero: 1, texto: 'El expediente muestra en una sola vista los bloques del contrato: configuración, catálogo, programa, fianzas, documentos jurídicos y el roster/sustituciones de personas (art. 125 RLOPSRM).' },
           { numero: 2, texto: 'El buscador filtra los bloques por folio, contratista, objeto, periodo o tipo de documento, con lógica Y.' },
           { numero: 3, texto: 'Cada documento del expediente puede descargarse individualmente desde su bloque.' }
         ]}

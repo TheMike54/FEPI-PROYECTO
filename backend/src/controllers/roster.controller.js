@@ -15,6 +15,9 @@
 // firmas FUTURAS, nunca las pasadas.
 const { pool } = require('../db/pool');
 const { esParteOSupervision } = require('../lib/acceso');
+// Pase 2.3 — la sustitución asienta su nota en la bitácora (art. 123 fr. III / 125 fr. I g RLOPSRM).
+// Se reutiliza el folio atómico y la redacción del controller de bitácora (NO se duplica la lógica).
+const { insertarNotaAtomica, textoNotaSustitucion } = require('./bitacora.controller');
 
 const ROLES_ROSTER = ['residente', 'superintendente', 'supervision'];
 // rol-de-roster → rol-de-cuenta esperado (convención del alta/HU-12: el superintendente es una
@@ -151,23 +154,59 @@ async function sustituirPersona(req, res) {
       // (2) CREAR la nueva asignación ACTIVA, ligada a la anterior (sustituye_a) — identidad del JWT.
       const nueva = await client.query(
         `INSERT INTO contrato_roster (contrato_id, rol, usuario_id, vigencia_desde, motivo, sustituye_a, nota_id, registrado_por)
-         VALUES ($1, $2, $3, CURRENT_DATE, $4, $5, $6, $7) RETURNING id`,
+         VALUES ($1, $2, $3, CURRENT_DATE, $4, $5, $6, $7) RETURNING id, vigencia_desde`,
         [contratoId, rol, nuevoUsuarioId, motivo, anteriorRosterId, notaId, req.user.id]
       );
-      // (3) SINCRONIZAR el caché escalar de contratos (lo lee lib/acceso.js) — UN solo punto de
+      const nuevaAsignacionId = nueva.rows[0].id;
+
+      // (3) NOTA DE BITÁCORA (Pase 2.3, art. 123 fr. III: la bitácora asienta los hechos
+      //     relevantes; la sustitución de personas lo es, art. 125 fr. I g). AUTOMÁTICA y ATÓMICA:
+      //     si el contrato YA tiene bitácora aperturada, se asienta aquí mismo (mismo BEGIN/COMMIT)
+      //     reusando el folio correlativo del controller de bitácora; si NO hay bitácora, se DIFIERE
+      //     (la sustitución NO se bloquea) y se asentará al abrir la bitácora (abrirBitacora).
+      let notaCreada = null;
+      const bit = await client.query('SELECT id FROM bitacora_aperturas WHERE contrato_id = $1', [contratoId]);
+      if (bit.rowCount > 0 && anteriorRosterId != null) {
+        // Sustitución real (hay titular anterior). Nombre del anterior para la nota.
+        let anteriorNombre = null;
+        if (anteriorUsuarioId != null) {
+          const an = await client.query('SELECT nombre FROM usuarios WHERE id = $1', [anteriorUsuarioId]);
+          anteriorNombre = an.rows[0] ? an.rows[0].nombre : null;
+        }
+        const { asunto, contenido } = textoNotaSustitucion({
+          rol, anteriorNombre, anteriorId: anteriorUsuarioId,
+          nuevoNombre: nuevo.nombre, nuevoId: nuevoUsuarioId,
+          motivo, fecha: nueva.rows[0].vigencia_desde, diferida: false
+        });
+        // emisor = quien ejecuta (del JWT). [validar profe] si el emisor formal debe ser el residente.
+        notaCreada = await insertarNotaAtomica(client, {
+          bitacoraId: bit.rows[0].id, tipo: 'res_sustitucion', asunto, contenido,
+          emisorId: req.user.id, tag: 'sustitucion'
+        });
+        await client.query('UPDATE contrato_roster SET nota_id = $1 WHERE id = $2', [notaCreada.id, nuevaAsignacionId]);
+      }
+
+      // (4) SINCRONIZAR el caché escalar de contratos (lo lee lib/acceso.js) — UN solo punto de
       //     escritura, transaccional, para que el caché NUNCA derive del roster. (contratos no
       //     tiene trigger de inmutabilidad; COL_CACHE es whitelist fija, sin inyección.)
       await client.query(`UPDATE contratos SET ${COL_CACHE[rol]} = $1 WHERE id = $2`, [nuevoUsuarioId, contratoId]);
 
       await client.query('COMMIT');
+      // nota_diferida: hubo sustitución real pero aún no hay bitácora → la nota se asienta al abrir.
+      const notaDiferida = bit.rowCount === 0 && anteriorRosterId != null;
       return res.status(201).json({
         ok: true,
         contrato_id: contratoId,
         rol,
         anterior_usuario_id: anteriorUsuarioId,
         nuevo_usuario_id: nuevoUsuarioId,
-        nueva_asignacion_id: nueva.rows[0].id,
-        es_alta: anteriorRosterId == null
+        nueva_asignacion_id: nuevaAsignacionId,
+        es_alta: anteriorRosterId == null,
+        nota: notaCreada ? { id: notaCreada.id, numero: notaCreada.numero, tipo: notaCreada.tipo } : null,
+        nota_diferida: notaDiferida,
+        aviso: notaDiferida
+          ? 'La sustitución quedó registrada; su nota de bitácora se asentará automáticamente al abrir la bitácora.'
+          : null
       });
     } catch (e) {
       try { await client.query('ROLLBACK'); } catch (_) { /* el client pudo morir */ }

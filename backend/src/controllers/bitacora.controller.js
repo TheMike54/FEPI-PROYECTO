@@ -166,6 +166,35 @@ async function abrirBitacora(req, res) {
         [bitacora.id, resumenApertura, req.user.id]
       );
 
+      // Pase 2.3 — Asiento DIFERIDO: si hubo sustituciones del roster ANTES de abrir la bitácora
+      // (filas con sustituye_a y sin nota), genera ahora sus notas (art. 125 fr. I g), numeradas
+      // TRAS la #1 de apertura. El folio refleja el orden de ASIENTO; el contenido cita la fecha
+      // real del acto. El emisor es el residente que apertura. [validar profe] el asiento
+      // retroactivo de notas de sustitución (orden folio vs. fecha del hecho, art. 123 fr. V/VI).
+      const pendientesSust = await client.query(
+        `SELECT r.id, r.rol, r.usuario_id, un.nombre AS nuevo_nombre, r.motivo, r.vigencia_desde,
+                ra.usuario_id AS anterior_id, ua.nombre AS anterior_nombre
+           FROM contrato_roster r
+           LEFT JOIN usuarios un ON un.id = r.usuario_id
+           LEFT JOIN contrato_roster ra ON ra.id = r.sustituye_a
+           LEFT JOIN usuarios ua ON ua.id = ra.usuario_id
+          WHERE r.contrato_id = $1 AND r.sustituye_a IS NOT NULL AND r.nota_id IS NULL
+          ORDER BY r.vigencia_desde, r.id`,
+        [contratoId]
+      );
+      for (const s of pendientesSust.rows) {
+        const { asunto, contenido } = textoNotaSustitucion({
+          rol: s.rol, anteriorNombre: s.anterior_nombre, anteriorId: s.anterior_id,
+          nuevoNombre: s.nuevo_nombre, nuevoId: s.usuario_id, motivo: s.motivo,
+          fecha: s.vigencia_desde, diferida: true
+        });
+        const nota = await insertarNotaAtomica(client, {
+          bitacoraId: bitacora.id, tipo: 'res_sustitucion', asunto, contenido,
+          emisorId: req.user.id, tag: 'sustitucion'
+        });
+        await client.query('UPDATE contrato_roster SET nota_id = $1 WHERE id = $2', [nota.id, s.id]);
+      }
+
       await client.query('COMMIT');
       return res.status(201).json(bitacora);
     } catch (e) {
@@ -329,6 +358,27 @@ async function insertarNotaAtomica(client, { bitacoraId, tipo, asunto, contenido
     [bitacoraId, tipo, asunto || null, contenido, emisorId, vinculadaA || null, tag || null]
   );
   return ins.rows[0];
+}
+
+// Pase 2.3 — Redacta el asunto/contenido de la nota AUTOMÁTICA de sustitución de personas
+// (art. 125 fr. I g RLOPSRM). Compartida por roster.controller (al sustituir, en vivo) y por
+// abrirBitacora (al asentar las sustituciones previas DIFERIDAS). `diferida` añade la aclaración
+// temporal cuando la nota se asienta al abrir la bitácora (el hecho ocurrió antes que el folio).
+const ROL_LABEL_SUST = { residente: 'residente de obra', superintendente: 'superintendente', supervision: 'supervisión' };
+function textoNotaSustitucion({ rol, anteriorNombre, anteriorId, nuevoNombre, nuevoId, motivo, fecha, diferida }) {
+  const rl = ROL_LABEL_SUST[rol] || rol;
+  const ant = anteriorNombre || (anteriorId ? `Usuario #${anteriorId}` : '— sin titular previo —');
+  const nue = nuevoNombre || (nuevoId ? `Usuario #${nuevoId}` : '—');
+  const f = String(fecha || '').slice(0, 10);
+  const asunto = `Sustitución de ${rl}`;
+  const cola = diferida
+    ? ` Sustitución ocurrida el ${f}; asentada al abrir la bitácora.`
+    : '';
+  const contenido =
+    `Sustitución de personas (art. 125 fr. I inciso g RLOPSRM). Rol: ${rl}. ` +
+    `Persona anterior: ${ant}. Persona nueva: ${nue}. Motivo: ${motivo || '—'}. ` +
+    `Fecha del acto: ${f}.${cola} Asiento automático del sistema.`;
+  return { asunto, contenido };
 }
 
 function leerCamposNota(body) {
@@ -723,5 +773,8 @@ module.exports = {
   notasDeContrato,
   anularNota,
   vincularNota,
-  firmarNota
+  firmarNota,
+  // Pase 2.3 — reutilizados por roster.controller para la nota automática de sustitución.
+  insertarNotaAtomica,
+  textoNotaSustitucion
 };
