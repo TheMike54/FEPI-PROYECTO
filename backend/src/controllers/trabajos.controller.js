@@ -324,6 +324,12 @@ async function actualizarAvance(req, res) {
       if (ares.rowCount === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Avance no encontrado' }); }
       const actual = ares.rows[0];
 
+      // Candado SIMÉTRICO al POST (cierre del art. 118): además del lock de la fila editada (arriba),
+      // se toma el lock de la fila del CONCEPTO para que un POST y un PATCH —o dos PATCH— concurrentes
+      // sobre el MISMO concepto se serialicen al revalidar el acumulado. Orden de locks avance→concepto
+      // (el POST solo toma el concepto y nunca filas de avance) ⇒ sin ciclos/deadlock.
+      await client.query('SELECT 1 FROM contrato_conceptos WHERE id = $1 FOR UPDATE', [actual.contrato_concepto_id]);
+
       const concepto = await cargarConceptoContrato(client, actual.contrato_concepto_id);
       if (!concepto) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Concepto no encontrado' }); }
       if (!esParteOSupervision(req.user, concepto)) {
