@@ -15,6 +15,7 @@ import {
   enterAppMode,
   goToViaSidebar,
   sidebarLinkFor,
+  expectAvisoSoloConsulta,
   expectSinAvisoSoloConsulta,
   expectMetadataAcademicaOculta,
 } from './_helpers.js';
@@ -91,6 +92,7 @@ for (const rol of [
     await freshHome(page);
     await enterAppMode(page, rol.id);
     await goToViaSidebar(page, VIEW_PATH);
+    await expectAvisoSoloConsulta(page);                                    // banner "solo consulta" (HeaderVista) para el rol C
     await page.getByTestId('select-contrato').selectOption({ value: String(cid) });
     await expect(page.getByTestId('tabla-conceptos')).toBeVisible();        // puede CONSULTAR el avance
     await expect(page.getByTestId('btn-registrar-avance')).toHaveCount(0);  // NO puede capturar (soloLectura)

@@ -35,6 +35,7 @@ DECLARE
   v_p1 INTEGER;
   v_p2 INTEGER;
   v_ver INTEGER;
+  v_est INTEGER;
 BEGIN
   -- (0) Resuelve las cuentas demo POR EMAIL: el e2e loguea por email y el acceso compara
   --     contra usuarios.id (esParteOSupervision); amarrar por email — no por id 1/2/3 —
@@ -105,10 +106,15 @@ BEGIN
     (v_c2, v_p1, 20.000), (v_c2, v_p2, 30.000)
   ON CONFLICT (contrato_concepto_id, contrato_periodo_id) DO UPDATE SET cantidad = EXCLUDED.cantidad;
 
-  -- (5) RESET de convenios/versiones (re-runnable). Borra versiones primero (su FK
+  -- (5) RESET de convenios/versiones/estimaciones (re-runnable). Borra versiones primero (su FK
   --     convenio_id es NO ACTION) y luego los convenios; deja el plazo ya reseteado en (1).
+  --     También borra estimaciones (cascada a generadores) para resembrar la de art. 118 limpia.
+  DELETE FROM estimaciones WHERE contrato_id = v_contrato_id;
   DELETE FROM programa_version WHERE contrato_id = v_contrato_id;
   DELETE FROM convenios_modificatorios WHERE contrato_id = v_contrato_id;
+  -- Un convenio de monto/programa puede AGREGAR conceptos (orden > 2); bórralos para volver al
+  -- catálogo base de 2 conceptos (cascada a programa_obra). Así el seed es 100% re-ejecutable.
+  DELETE FROM contrato_conceptos WHERE contrato_id = v_contrato_id AND orden > 2;
 
   -- (6) Snapshot v1 del programa (ORIGINAL). En producción lo crea el 1.er convenio que
   --     toca el programa; aquí se siembra para que la lectura de versiones tenga dato.
@@ -126,8 +132,20 @@ BEGIN
     JOIN contrato_periodos  cp ON cp.id = po.contrato_periodo_id
    WHERE cc.contrato_id = v_contrato_id;
 
-  RAISE NOTICE 'SEED HU-03 listo: contrato_id=%, conceptos=[%,%], periodos=[%,%], version_v1=%',
-    v_contrato_id, v_c1, v_c2, v_p1, v_p2, v_ver;
+  -- (7) Estimación INTEGRADA con 80 de CONC-01 (pu 600): base para probar art. 118 RLOPSRM —
+  --     un convenio NO puede reducir CONC-01 por debajo de 80 ya estimado. subtotal=48,000,
+  --     retención=240 (5 al millar), neto=47,760 (sin anticipo). CONC-01 contratado (100) ≥ 80,
+  --     así que NO afecta a los demás casos (que mantienen CONC-01 ≥ 80 o solo cambian el P.U.).
+  INSERT INTO estimaciones (contrato_id, numero, periodo_inicio, periodo_fin, estado,
+                            anticipo_pct_snapshot, subtotal, amortizacion, retencion, deductivas, neto, integrada_por)
+  VALUES (v_contrato_id, 1, DATE '2026-01-01', DATE '2026-01-31', 'integrada',
+          0.00, 48000.00, 0.00, 240.00, 0.00, 47760.00, v_resid)
+  RETURNING id INTO v_est;
+  INSERT INTO estimacion_generadores (estimacion_id, contrato_concepto_id, cantidad_periodo, cantidad_anterior_acum, pu_snapshot)
+  VALUES (v_est, v_c1, 80.0000, 0.0000, 600.00);
+
+  RAISE NOTICE 'SEED HU-03 listo: contrato_id=%, conceptos=[%,%], periodos=[%,%], version_v1=%, estimacion=%',
+    v_contrato_id, v_c1, v_c2, v_p1, v_p2, v_ver, v_est;
 END $$;
 
 -- Verificación rápida de lo sembrado.

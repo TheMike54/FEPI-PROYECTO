@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import BannerContexto from '../components/vista/BannerContexto.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import RegionEditable from '../components/vista/RegionEditable.jsx';
 import MatrizProgramaLectura from '../components/programa/MatrizProgramaLectura.jsx';
+import EditorProgramaConvenio from '../components/convenios/EditorProgramaConvenio.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
@@ -13,11 +14,12 @@ import { api } from '../services/api.js';
 // obra). La fuente de la verdad es el backend: aquí NO se calcula monto ni se fabrican datos;
 // el monto/deltas/clasificación SFP(art.102 RLOPSRM)/ajuste(art.59 Bis) se derivan server-side.
 //
-// ALCANCE de esta pasada (Fase 1): convenio de PLAZO end-to-end + historial inmutable de
-// convenios + lectura de las versiones del programa (reusa MatrizProgramaLectura). El convenio
-// de MONTO/PROGRAMA/MIXTO exige re-capturar el catálogo + la matriz completos (el backend
-// deriva el monto de Σ cant×pu, no se teclea) → editor de matriz = follow-on; aquí se ofrece
-// solo el tipo 'plazo' para crear, y los demás se listan deshabilitados.
+// ALCANCE (Fase 1 + Fase 2): convenio de PLAZO end-to-end + EDITOR de catálogo+matriz para los
+// convenios de MONTO/PROGRAMA/MIXTO (re-captura del catálogo + el programa completos; el backend
+// DERIVA el monto de Σ ROUND(cant×pu,2) y revalida cuadre 100% + art. 118 + guardrail) + historial
+// inmutable + lectura de versiones del programa (reusa MatrizProgramaLectura). El editor precarga
+// el programa VIGENTE (detalleContrato + leerProgramaObra), permite ajustar conceptos/celdas y
+// agregar conceptos; los periodos son los vigentes (no se regeneran en Etapa 1).
 //
 // Quién crea: solo 'dependencia' (permisos.js HU-03 nivel 'E'); el resto entra en solo-consulta
 // (HeaderVista emite el banner). El backend es la 2.ª barrera (403 si no eres autoridad).
@@ -29,6 +31,8 @@ import { api } from '../services/api.js';
 const fmtMXN = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const moneda = (n) => (n == null ? '—' : fmtMXN.format(Number(n) || 0));
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+const round3 = (n) => Math.round((Number(n) + Number.EPSILON) * 1000) / 1000;
+const TOL_PROGRAMA = 0.0005; // espejo del backend/alta: cuadre 100% por concepto (media milésima)
 
 // dd/mm/aaaa hh:mm de un TIMESTAMPTZ (sello del evento, art.… ; lección Pase 2.2: con hora).
 const fechaHora = (iso) => {
@@ -46,8 +50,8 @@ const fechaMX = (iso) => {
 };
 
 const TIPO_LABEL = { monto: 'Monto', plazo: 'Plazo', programa: 'Programa', mixto: 'Mixto (combinado)' };
-// Solo 'plazo' es creable en esta pasada (los otros exigen el editor de matriz, follow-on).
-const TIPOS_CREABLES = ['plazo'];
+// Fase 2: los cuatro tipos son creables (monto/programa/mixto usan el editor de matriz).
+const TIPOS_CREABLES = ['plazo', 'monto', 'programa', 'mixto'];
 const TIPOS_TODOS = ['plazo', 'monto', 'programa', 'mixto'];
 
 const pct = (n) => (n == null ? '—' : `${Number(n) >= 0 ? '+' : ''}${round2(n)}%`);
@@ -101,9 +105,22 @@ export default function ConveniosModificatorios() {
   const [detalleVersion, setDetalleVersion] = useState(null);
   const [cargandoVersion, setCargandoVersion] = useState(false);
 
+  // Fase 2 — editor de catálogo + matriz (convenios de monto/programa/mixto).
+  const [cmConceptos, setCmConceptos] = useState([]); // [{rid, conceptoId?, existente, clave, concepto, unidad, cantidad, pu}]
+  const [cmCeldas, setCmCeldas] = useState({});       // {"rid:numero": cantidad}
+  const [cmPeriodos, setCmPeriodos] = useState([]);   // [{id, numero, inicio, fin}] vigentes (no se regeneran)
+  const [cargandoEditor, setCargandoEditor] = useState(false);
+  const [editorError, setEditorError] = useState(null);
+  const ridSeq = useRef(0);        // contador para rid únicos de conceptos nuevos
+  const precargaToken = useRef(0);  // invalida precargas en vuelo (anti race al cambiar contrato/tipo)
+
   const selected = useMemo(() => contratos.find((c) => String(c.id) === String(contratoId)) || null, [contratos, contratoId]);
   const plazoVigente = detalle?.plazo_dias != null ? Number(detalle.plazo_dias) : null;
   const montoVigente = detalle?.monto != null ? Number(detalle.monto) : null;
+
+  // Qué toca el convenio según el tipo (mismo criterio que el backend: crearConvenio).
+  const tocaPrograma = tipo === 'monto' || tipo === 'programa' || tipo === 'mixto';
+  const tocaPlazo = tipo === 'plazo' || tipo === 'mixto';
 
   useEffect(() => {
     if (sinSesion) return;
@@ -134,41 +151,174 @@ export default function ConveniosModificatorios() {
     setConvenios([]); setVersiones([]); setDetalle(null);
     setVerVersionId(null); setDetalleVersion(null);
     setPlazoNuevo(''); setMotivo(''); setFolio('');
+    setCmConceptos([]); setCmCeldas({}); setCmPeriodos([]); setEditorError(null);
+    precargaToken.current++; // invalida cualquier precarga del contrato anterior aún en vuelo
     cargarContrato(id);
   }, [cargarContrato]);
+
+  // Precarga el editor con el programa VIGENTE: catálogo con P.U. (detalleContrato) + periodos y
+  // celdas (leerProgramaObra). Las celdas del vigente se reindexan por rid sintético + periodo.
+  // Guarda anti-race: si entra otra precarga (o cambia el contrato) mientras esta espera, su token
+  // queda obsoleto y NO aplica su setState (evita que datos viejos pisen el estado actual).
+  const precargarEditor = useCallback(async () => {
+    if (!contratoId) return;
+    const token = ++precargaToken.current;
+    setCargandoEditor(true); setEditorError(null);
+    try {
+      const [det, prog] = await Promise.all([
+        detalle ? Promise.resolve(detalle) : api.detalleContrato(contratoId),
+        api.leerProgramaObra(contratoId),
+      ]);
+      if (token !== precargaToken.current) return; // precarga obsoleta: descártala
+      const catalogo = Array.isArray(det?.conceptos) ? det.conceptos : [];
+      const ridPorId = new Map();
+      const conceptosEditor = catalogo.map((c) => {
+        const rid = `c${c.id}`;
+        ridPorId.set(c.id, rid);
+        return {
+          rid, conceptoId: c.id, existente: true,
+          clave: c.clave || '', concepto: c.concepto || '', unidad: c.unidad || '',
+          cantidad: c.cantidad != null ? String(c.cantidad) : '',
+          pu: c.pu != null ? String(c.pu) : '',
+        };
+      });
+      const periodosEditor = (Array.isArray(prog?.periodos) ? prog.periodos : [])
+        .map((p) => ({ id: p.id, numero: p.numero, inicio: p.inicio, fin: p.fin }))
+        .sort((a, b) => a.numero - b.numero);
+      const numeroPorId = new Map(periodosEditor.map((p) => [p.id, p.numero]));
+      const celdasEditor = {};
+      for (const cel of (Array.isArray(prog?.celdas) ? prog.celdas : [])) {
+        const rid = ridPorId.get(cel.contrato_concepto_id);
+        const numero = numeroPorId.get(cel.contrato_periodo_id);
+        if (rid != null && numero != null) celdasEditor[`${rid}:${numero}`] = String(cel.cantidad);
+      }
+      setCmConceptos(conceptosEditor);
+      setCmPeriodos(periodosEditor);
+      setCmCeldas(celdasEditor);
+    } catch (e) {
+      if (token !== precargaToken.current) return; // precarga obsoleta: no pises el estado actual
+      setEditorError(e.status === 403 ? 'No tienes acceso al programa de este contrato' : 'No se pudo cargar el programa vigente del contrato');
+      setCmConceptos([]); setCmPeriodos([]); setCmCeldas({});
+    } finally {
+      if (token === precargaToken.current) setCargandoEditor(false);
+    }
+  }, [contratoId, detalle]);
+
+  // Al pasar a un tipo que toca el programa (con contrato + detalle cargados), precarga el editor.
+  useEffect(() => {
+    if (tocaPrograma && contratoId && detalle) precargarEditor();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tocaPrograma, contratoId, detalle]);
+
+  // --- Handlers del editor ---
+  const setCmConceptoField = useCallback((idx, field, value) => {
+    setCmConceptos((prev) => prev.map((c, i) => (i === idx ? { ...c, [field]: value } : c)));
+  }, []);
+  const addCmConcepto = useCallback(() => {
+    const rid = `n${ridSeq.current++}`;
+    setCmConceptos((prev) => [...prev, { rid, existente: false, clave: '', concepto: '', unidad: '', cantidad: '', pu: '' }]);
+  }, []);
+  const removeCmConcepto = useCallback((idx) => {
+    const target = cmConceptos[idx];
+    if (!target || target.existente) return; // los conceptos existentes no se borran (catálogo completo)
+    setCmConceptos((prev) => prev.filter((_, i) => i !== idx));
+    setCmCeldas((cs) => {
+      const next = {};
+      for (const [k, v] of Object.entries(cs)) if (!k.startsWith(`${target.rid}:`)) next[k] = v;
+      return next;
+    });
+  }, [cmConceptos]);
+  const setCmCelda = useCallback((rid, numero, value) => {
+    setCmCeldas((prev) => ({ ...prev, [`${rid}:${numero}`]: value }));
+  }, []);
 
   // Preview EN VIVO del delta de plazo (espejo del cálculo server-side, solo informativo).
   const plazoNuevoNum = Number(plazoNuevo) || 0;
   const deltaPlazoPct = (plazoVigente && plazoVigente > 0 && plazoNuevoNum > 0)
     ? round2(((plazoNuevoNum - plazoVigente) / plazoVigente) * 100)
     : null;
-  const absDelta = deltaPlazoPct != null ? Math.abs(deltaPlazoPct) : null;
-  const superaSfp = absDelta != null && absDelta > 25;    // art. 102 RLOPSRM (+ guardrail bloquea)
-  const superaAjuste = absDelta != null && absDelta > 50; // art. 59 Bis LOPSRM
 
-  const datosOk = tipo === 'plazo'
-    && plazoNuevoNum > 0
-    && plazoVigente != null
-    && plazoNuevoNum !== plazoVigente
-    && motivo.trim().length > 0;
-  const puedeRegistrar = !soloLectura && !registrando && datosOk;
+  // Derivaciones del editor (monto al centavo + cuadre 100% por concepto). El backend revalida.
+  const cmMontoNuevo = useMemo(
+    () => round2(cmConceptos.reduce((s, c) => s + round2((Number(c.cantidad) || 0) * (Number(c.pu) || 0)), 0)),
+    [cmConceptos]
+  );
+  const cmResumen = useMemo(
+    () => cmConceptos.map((c) => {
+      const contratado = round3(Number(c.cantidad) || 0);
+      const planeado = round3(cmPeriodos.reduce((s, p) => s + (Number(cmCeldas[`${c.rid}:${p.numero}`]) || 0), 0));
+      return { rid: c.rid, contratado, planeado, restante: round3(contratado - planeado) };
+    }),
+    [cmConceptos, cmPeriodos, cmCeldas]
+  );
+  const cmCuadra = cmResumen.length > 0 && cmPeriodos.length > 0 && cmResumen.every((r) => Math.abs(r.restante) <= TOL_PROGRAMA);
+  // Cada concepto requiere clave + cantidad > 0 + P.U. > 0. El > 0 (no >= 0) impide poner en CERO
+  // un concepto EXISTENTE (que el backend no puede borrar): un 0 accidental sería pérdida de dato.
+  const cmCamposOk = cmConceptos.length > 0 && cmConceptos.every((c) => String(c.clave).trim() && Number(c.cantidad) > 0 && Number(c.pu) > 0);
+  const cmSinDup = new Set(cmConceptos.map((c) => String(c.clave).trim())).size === cmConceptos.length;
+  const cmDeltaMontoPct = (montoVigente != null && montoVigente > 0)
+    ? round2(((cmMontoNuevo - montoVigente) / montoVigente) * 100)
+    : null;
+
+  // Avisos EN VIVO de los umbrales (informativos; el backend bloquea con el guardrail). Toma el
+  // mayor |delta| aplicable según el tipo: plazo (tocaPlazo) y/o monto (tocaPrograma).
+  const absPlazo = (tocaPlazo && deltaPlazoPct != null) ? Math.abs(deltaPlazoPct) : null;
+  const absMonto = (tocaPrograma && cmDeltaMontoPct != null) ? Math.abs(cmDeltaMontoPct) : null;
+  const hayDelta = absPlazo != null || absMonto != null;
+  const absDeltaMax = Math.max(absPlazo ?? 0, absMonto ?? 0);
+  const superaSfp = hayDelta && absDeltaMax > 25;    // art. 102 RLOPSRM (+ guardrail bloquea)
+  const superaAjuste = hayDelta && absDeltaMax > 50; // art. 59 Bis LOPSRM
+  const deltaDesc = [
+    absPlazo != null ? `plazo ${pct(deltaPlazoPct)}` : null,
+    absMonto != null ? `monto ${pct(cmDeltaMontoPct)}` : null,
+  ].filter(Boolean).join(' · ');
+
+  // Validez por tipo (espeja las exigencias del backend; el botón se gatea con esto, salvo el
+  // guardrail 25% que es aviso + rechazo server-side, como en el plazo de Fase 1).
+  const plazoCambiaOk = plazoNuevoNum > 0 && plazoVigente != null && plazoNuevoNum !== plazoVigente;
+  const programaOk = cmCamposOk && cmSinDup && cmCuadra;
+  const datosOk = motivo.trim().length > 0 && (
+    tipo === 'plazo' ? plazoCambiaOk
+      : tipo === 'mixto' ? (programaOk && plazoCambiaOk)
+        : programaOk // monto | programa
+  );
+  const puedeRegistrar = !soloLectura && !registrando && !cargandoEditor && datosOk;
 
   const handleRegistrar = useCallback(async () => {
-    if (soloLectura || registrando) return;
-    if (tipo !== 'plazo') return; // los otros tipos exigen el editor de matriz (follow-on)
+    if (!puedeRegistrar) return;
     setRegistrando(true);
     try {
-      const payload = { tipo: 'plazo', motivo: motivo.trim(), plazo_nuevo_dias: plazoNuevoNum };
+      const payload = { tipo, motivo: motivo.trim() };
       if (folio.trim()) payload.folio = folio.trim();
+      if (tocaPlazo) payload.plazo_nuevo_dias = plazoNuevoNum;
+      if (tocaPrograma) {
+        // Catálogo NUEVO completo (el backend deriva el monto y casa por clave).
+        payload.conceptos = cmConceptos.map((c) => ({
+          clave: String(c.clave).trim(), concepto: c.concepto || '', unidad: c.unidad || '',
+          cantidad: Number(c.cantidad) || 0, pu: Number(c.pu) || 0,
+        }));
+        // Programa NUEVO completo (solo celdas > 0; el backend revalida cuadre 100%).
+        const celdas = [];
+        for (const c of cmConceptos) {
+          for (const p of cmPeriodos) {
+            const v = Number(cmCeldas[`${c.rid}:${p.numero}`]) || 0;
+            if (v > 0) celdas.push({ clave: String(c.clave).trim(), periodoNumero: p.numero, cantidad: v });
+          }
+        }
+        payload.celdas = celdas;
+      }
       const res = await api.crearConvenio(Number(contratoId), payload);
       const avisos = [];
       if (res.requiere_revision_sfp) avisos.push('requiere revisión SFP (art. 102 RLOPSRM)');
       if (res.requiere_ajuste_costos) avisos.push('da derecho a ajuste de costos (art. 59 Bis)');
-      // El 201 no incluye `folio`; usa el capturado (si lo hubo) o el correlativo CM-NNN.
       const ref = folio.trim() || res.folio || `CM-${String(res.numero).padStart(3, '0')}`;
-      showToast(`Convenio ${ref} registrado (plazo ${res.plazo_anterior_dias}→${res.plazo_nuevo_dias} días)${avisos.length ? ' · ' + avisos.join(' · ') : ''}.`);
+      const cambios = [];
+      if (res.plazo_anterior_dias !== res.plazo_nuevo_dias) cambios.push(`plazo ${res.plazo_anterior_dias}→${res.plazo_nuevo_dias} días`);
+      if (String(res.monto_anterior) !== String(res.monto_nuevo)) cambios.push(`monto ${moneda(res.monto_anterior)}→${moneda(res.monto_nuevo)}`);
+      showToast(`Convenio ${ref} registrado${cambios.length ? ' (' + cambios.join(' · ') + ')' : ''}${avisos.length ? ' · ' + avisos.join(' · ') : ''}.`);
       setPlazoNuevo(''); setMotivo(''); setFolio('');
-      await cargarContrato(contratoId); // recarga: el plazo vigente y el historial cambiaron
+      setCmConceptos([]); setCmCeldas({}); setCmPeriodos([]);
+      await cargarContrato(contratoId); // recarga vigente + historial; la precarga del editor se redispara
     } catch (e) {
       const msg = e.payload?.error || (
         e.status === 403 ? 'Solo la dependencia o el residente asignado puede registrar convenios'
@@ -178,7 +328,7 @@ export default function ConveniosModificatorios() {
     } finally {
       setRegistrando(false);
     }
-  }, [soloLectura, registrando, tipo, motivo, plazoNuevoNum, folio, contratoId, showToast, cargarContrato]);
+  }, [puedeRegistrar, tipo, motivo, folio, tocaPlazo, tocaPrograma, plazoNuevoNum, cmConceptos, cmPeriodos, cmCeldas, contratoId, showToast, cargarContrato]);
 
   const verVersion = useCallback(async (versionId) => {
     if (verVersionId === versionId) { setVerVersionId(null); setDetalleVersion(null); return; }
@@ -253,8 +403,9 @@ export default function ConveniosModificatorios() {
             <div className="bg-white border border-slate-200 rounded-md p-6 mb-6">
               <h2 className="text-lg font-bold text-sigecop-blue mb-1">Nuevo convenio modificatorio</h2>
               <p className="text-xs text-slate-500 mb-4">
-                Art. 59 LOPSRM. En esta versión se registra el convenio de <strong>plazo</strong>;
-                los de monto/programa/mixto requieren re-capturar el catálogo y el programa (próxima entrega).
+                Art. 59 LOPSRM. Convenios de <strong>plazo</strong>, <strong>monto</strong>, <strong>programa</strong> o
+                <strong> mixto</strong>. Para monto/programa/mixto se re-captura el catálogo y el programa completos
+                (el monto se DERIVA, no se teclea); el sistema versiona el programa de forma inmutable al registrar.
               </p>
 
               <RegionEditable disabled={soloLectura}>
@@ -275,7 +426,7 @@ export default function ConveniosModificatorios() {
                     </select>
                   </div>
 
-                  {tipo === 'plazo' && (
+                  {tocaPlazo && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className="sg-label">Plazo vigente</label>
@@ -308,6 +459,46 @@ export default function ConveniosModificatorios() {
                     </div>
                   )}
 
+                  {/* Editor de catálogo + matriz (convenios de monto/programa/mixto). */}
+                  {tocaPrograma && (
+                    <div>
+                      {cargandoEditor && <p className="text-sm text-slate-500">Cargando programa vigente…</p>}
+                      {editorError && (
+                        <div className="bg-red-50 border-l-4 border-red-500 px-4 py-3 text-sm text-red-800 rounded-r-md" data-testid="cm-editor-error">
+                          {editorError}
+                        </div>
+                      )}
+                      {!cargandoEditor && !editorError && (
+                        <>
+                          <EditorProgramaConvenio
+                            conceptos={cmConceptos}
+                            periodos={cmPeriodos}
+                            celdas={cmCeldas}
+                            soloLectura={soloLectura}
+                            onConceptoField={setCmConceptoField}
+                            onAddConcepto={addCmConcepto}
+                            onRemoveConcepto={removeCmConcepto}
+                            onCelda={setCmCelda}
+                            resumen={cmResumen}
+                            montoNuevo={cmMontoNuevo}
+                            cuadra={cmCuadra}
+                          />
+                          {cmDeltaMontoPct != null && (
+                            <p className="text-xs text-slate-600 mt-2" data-testid="cm-delta-monto">
+                              Variación de monto: <strong>{pct(cmDeltaMontoPct)}</strong> ({moneda(montoVigente)} → {moneda(cmMontoNuevo)}).
+                            </p>
+                          )}
+                          {!cmSinDup && (
+                            <p className="text-xs text-red-700 mt-1" data-testid="cm-claves-dup">Hay claves de concepto repetidas; corrige antes de registrar.</p>
+                          )}
+                          {cmSinDup && !cmCamposOk && cmConceptos.length > 0 && (
+                            <p className="text-xs text-red-700 mt-1" data-testid="cm-campos-incompletos">Cada concepto requiere clave, cantidad &gt; 0 y P.U. &gt; 0 (un concepto existente no se pone en cero).</p>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+
                   <div>
                     <label className="sg-label">Motivo / dictamen técnico * <span className="text-slate-400">(art. 99 RLOPSRM)</span></label>
                     <textarea
@@ -337,7 +528,7 @@ export default function ConveniosModificatorios() {
                       className="bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 text-sm text-slate-800 rounded-r-md"
                       data-testid="aviso-sfp"
                     >
-                      ⚠️ La variación de plazo (<strong>{pct(deltaPlazoPct)}</strong>) supera el 25%: dispara
+                      ⚠️ La variación (<strong>{deltaDesc}</strong>) supera el 25%: dispara
                       <strong> revisión de la Secretaría de la Función Pública</strong> (RLOPSRM art. 102).
                       El sistema tiene un guardrail configurable en 25% (decisión de configuración, NO el tope
                       legal del art. 59) que <strong>rechazará el registro</strong> mientras esté activo.
