@@ -365,19 +365,32 @@ async function insertarNotaAtomica(client, { bitacoraId, tipo, asunto, contenido
 // abrirBitacora (al asentar las sustituciones previas DIFERIDAS). `diferida` añade la aclaración
 // temporal cuando la nota se asienta al abrir la bitácora (el hecho ocurrió antes que el folio).
 const ROL_LABEL_SUST = { residente: 'residente de obra', superintendente: 'superintendente', supervision: 'supervisión' };
+// O1-W3c (testing del equipo, 09-jun): la fecha del acto va en ESPAÑOL ("6 de junio de 2026").
+// Antes: String(fecha).slice(0,10) sobre el Date que entrega pg para DATE → "Sat Jun 06" (los
+// 10 primeros chars del toString en inglés). Acepta Date o string ISO; el día se interpreta en
+// UTC (pg entrega DATE a medianoche UTC) para no correrse un día.
+function fechaLargaES(fecha) {
+  if (!fecha) return '—';
+  const d = fecha instanceof Date ? fecha : new Date(`${String(fecha).slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return String(fecha).slice(0, 10);
+  return d.toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+}
 function textoNotaSustitucion({ rol, anteriorNombre, anteriorId, nuevoNombre, nuevoId, motivo, fecha, diferida }) {
   const rl = ROL_LABEL_SUST[rol] || rol;
   const ant = anteriorNombre || (anteriorId ? `Usuario #${anteriorId}` : '— sin titular previo —');
   const nue = nuevoNombre || (nuevoId ? `Usuario #${nuevoId}` : '—');
-  const f = String(fecha || '').slice(0, 10);
-  const asunto = `Sustitución de ${rl}`;
+  const f = fechaLargaES(fecha);
+  // O1-W3a: el TÍTULO dice QUIÉN se sustituyó (antes era genérico). Clamp al VARCHAR(200) de asunto.
+  const asunto = `Sustitución de ${rl}: ${ant} → ${nue}`.slice(0, 200);
   const cola = diferida
     ? ` Sustitución ocurrida el ${f}; asentada al abrir la bitácora.`
     : '';
+  // O1-W3b: redacción NARRATIVA; el motivo es del CAMBIO de la persona anterior (no un atributo
+  // de la persona nueva, como leía antes).
   const contenido =
-    `Sustitución de personas (art. 125 fr. I inciso g RLOPSRM). Rol: ${rl}. ` +
-    `Persona anterior: ${ant}. Persona nueva: ${nue}. Motivo: ${motivo || '—'}. ` +
-    `Fecha del acto: ${f}.${cola} Asiento automático del sistema.`;
+    `Se sustituye a ${ant} como ${rl} del contrato. Motivo del cambio: ${motivo || '—'}. ` +
+    `Entra ${nue} a partir del ${f}.${cola} ` +
+    `(art. 125 fr. I inciso g RLOPSRM; asiento automático del sistema.)`;
   return { asunto, contenido };
 }
 

@@ -76,6 +76,20 @@ test.describe('Etapa A — pantalla única de estimación', () => {
     await expect(page.getByTestId('caratula-neto-preview')).not.toContainText('55,600');
   });
 
+  // O1-P17 (revisión profe, 09-jun): la carátula dice QUÉ estimación se está formando, con número
+  // correlativo (próximo = MAX+1 del historial) ligado al periodo del programa de obra.
+  test('P17: la carátula muestra "Estimación No. N — Periodo P" prominente', async ({ page, request }) => {
+    await abrirEstimacion(page, request);
+    // Contrato nuevo sin estimaciones → la próxima es la No. 1. El periodo se deriva del programa
+    // al capturar el periodo-fin (cierre del P1 = 2026-06-30).
+    await page.getByTestId('periodo-inicio').fill('2026-06-01');
+    await page.getByTestId('periodo-fin').fill('2026-06-30');
+    const numero = page.getByTestId('caratula-numero-estimacion');
+    await expect(numero).toBeVisible();
+    await expect(numero).toContainText('Estimación No. 1');
+    await expect(numero).toContainText('Periodo 1');
+  });
+
   test('semáforo de plan: vol > planeado del periodo → rojo + Confirmar deshabilitado', async ({ page, request }) => {
     await abrirEstimacion(page, request);
     // Acota el plan al periodo P1 (planeado = 400): el corte usa periodo_fin (mismo que valida el server).

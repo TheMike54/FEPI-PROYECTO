@@ -114,6 +114,29 @@ test.describe('HU-05 — modo aplicacion (Residente: ejecuta)', () => {
     await expect(selectConcepto(page)).toBeEnabled();
     await expect(selectPeriodo(page)).toBeEnabled();
   });
+
+  // O1-P16 (revisión profe, 09-jun): (a) las curvas inician en 0% en el inicio del contrato —
+  // el primer punto ya no es el cierre del periodo 1; (b) tooltip con el valor al pasar el mouse.
+  test('P16: la curva inicia en 0 (punto "Inicio") y los puntos dan tooltip con el valor', async ({ page, request }) => {
+    const folio = await crearContratoConConceptos(request);
+    await goToViaSidebar(page, VIEW_PATH);
+    await seleccionarContratoPorFolio(page, folio);
+    // El punto de ORIGEN existe para la serie programado (índice 0 del arreglo de la curva)…
+    await expect(page.getByTestId('curva-pt-programado-0')).toBeAttached();
+    // …y al pasar el mouse, el tooltip dice "Inicio" con valor 0.0%. (En el origen las 3 series
+    // coinciden en 0%: se hace hover sobre la de ARRIBA —financiero, la última dibujada— para no
+    // chocar con el check de intercepción de Playwright.)
+    await page.getByTestId('curva-pt-financiero-0').hover();
+    const tooltip = page.getByTestId('curva-tooltip');
+    await expect(tooltip).toBeVisible();
+    await expect(tooltip).toContainText('Inicio');
+    await expect(tooltip).toContainText('0.0%');
+    // Un punto de PERIODO también da su valor (P1 cuadra el 100% del único concepto programado).
+    const p1 = page.getByTestId('curva-pt-programado-1');
+    await p1.hover();
+    await expect(tooltip).toContainText('P1');
+    await expect(tooltip).toContainText('100.0%');
+  });
 });
 
 // ---------------------------------------------------------------------------

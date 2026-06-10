@@ -112,12 +112,12 @@ export default function RegistroPago() {
       />
 
       {sinSesion ? (
-        <div className="bg-slate-50 border border-slate-200 rounded-md px-4 py-6 text-center text-sm text-slate-600">
+        <div className="bg-pagina border border-borde rounded-md px-4 py-6 text-center text-sm text-slate-600">
           Inicia sesión en modo aplicación para registrar o consultar pagos.
         </div>
       ) : (
         <>
-          <div className="bg-white border border-slate-200 rounded-md p-4 mb-6 max-w-2xl">
+          <div className="bg-white border border-borde rounded-lg p-4 mb-6 max-w-2xl">
             <label className="sg-label">Contrato</label>
             <select className="sg-input" value={contratoId} onChange={(e) => seleccionar(e.target.value)} data-testid="select-contrato">
               <option value="">— Selecciona un contrato —</option>
@@ -137,7 +137,7 @@ export default function RegistroPago() {
           )}
 
           {contratoId && !soloLectura && (
-            <div className="bg-white border border-slate-200 rounded-md p-6 mb-6">
+            <div className="bg-white border border-borde rounded-lg p-6 mb-6">
               <h2 className="text-lg font-bold text-sigecop-blue mb-4">Datos del pago</h2>
               <RegionEditable disabled={soloLectura}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -154,7 +154,7 @@ export default function RegistroPago() {
 
                   <div>
                     <label className="sg-label">Importe a pagar (neto de la estimación)</label>
-                    <div className="sg-input bg-slate-50 font-semibold" data-testid="pago-importe-neto">{importeNeto != null ? mxn(importeNeto) : '—'}</div>
+                    <div className="sg-input bg-pagina font-semibold" data-testid="pago-importe-neto">{importeNeto != null ? mxn(importeNeto) : '—'}</div>
                     <p className="text-[11px] text-slate-500 mt-1">Derivado del servidor (neto de la estimación). No editable (art. 118 / cuadre).</p>
                   </div>
                   <div>
@@ -198,13 +198,13 @@ export default function RegistroPago() {
           )}
 
           {contratoId && (
-            <div className="bg-white border border-slate-200 rounded-md overflow-hidden">
-              <div className="px-6 py-3 border-b border-slate-200">
+            <div className="bg-white border border-borde rounded-lg overflow-hidden">
+              <div className="px-6 py-3 border-b border-borde">
                 <h2 className="text-lg font-bold text-sigecop-blue">Pagos del contrato ({pagos.length})</h2>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm" data-testid="tabla-pagos">
-                  <thead className="bg-slate-50 text-slate-700">
+                  <thead className="bg-pagina text-tinta-sec">
                     <tr>
                       <th className="text-left p-3 font-semibold">Estimación</th>
                       <th className="text-left p-3 font-semibold">Fecha pago</th>
@@ -222,7 +222,7 @@ export default function RegistroPago() {
                       <tr><td colSpan="7" className="p-8 text-center text-slate-400 italic">Este contrato aún no tiene pagos registrados.</td></tr>
                     ) : (
                       pagos.map((p) => (
-                        <tr key={p.id} className="border-t border-slate-200 hover:bg-slate-50" data-testid="fila-pago">
+                        <tr key={p.id} className="border-t border-borde hover:bg-pagina" data-testid="fila-pago">
                           <td className="p-3 font-mono text-xs">{p.estimacion_ref}</td>
                           <td className="p-3">{fmtFecha(p.fecha_pago)}</td>
                           <td className="p-3 text-right font-semibold">{mxn(p.importe)}</td>
@@ -230,7 +230,7 @@ export default function RegistroPago() {
                           <td className="p-3 font-mono text-xs">{p.factura_cfdi}</td>
                           <td className="p-3">{p.registrado_por_nombre || '—'}</td>
                           <td className="p-3">
-                            <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold ${p.plazo_cumplido ? 'bg-green-100 text-sigecop-green-validation' : 'bg-amber-100 text-amber-800'}`} data-testid={`plazo-${p.id}`}>
+                            <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold ${p.plazo_cumplido ? 'bg-exito-bg text-exito' : 'bg-aviso-bg text-aviso'}`} data-testid={`plazo-${p.id}`}>
                               {p.plazo_cumplido ? `✓ dentro del plazo de 20 días (${p.dias_transcurridos} d)` : `⚠ excedió 20 días (${p.dias_transcurridos} d)`}
                             </span>
                             {p.base_provisional && <div className="text-[10px] text-slate-500 mt-1">provisional — falta la fecha de autorización (HU-20)</div>}

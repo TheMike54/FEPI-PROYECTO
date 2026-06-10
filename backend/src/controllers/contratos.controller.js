@@ -180,6 +180,16 @@ async function crearContrato(req, res) {
     if (gm > Number(monto)) {
       return res.status(400).json({ error: `Garantía #${i + 1}: el monto (${gm}) no puede exceder el monto del contrato (${monto})` });
     }
+    // O1-P5b (revisión profe 09-jun, bug confirmado en vivo): una póliza con vigencia ya VENCIDA
+    // no garantiza nada al formalizar — se rechaza (vigencia >= hoy). La vista bloquea con el
+    // "hoy" LOCAL del usuario; esta barrera usa hoy UTC − 1 día para no rechazar por el desfase
+    // de zona horaria (México = UTC−6: de noche, "hoy UTC" ya es mañana local).
+    if (g.vigencia) {
+      const ayerUTC = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      if (String(g.vigencia).slice(0, 10) < ayerUTC) {
+        return res.status(400).json({ error: `Garantía #${i + 1}: la vigencia (${String(g.vigencia).slice(0, 10)}) ya está vencida; debe ser hoy o posterior` });
+      }
+    }
   }
 
   // --- A2: ciclo de estimación + programa de obra (matriz concepto × periodo) ------

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Tabs from '../components/ui/Tab.jsx';
+import Modal from '../components/ui/Modal.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
@@ -94,6 +95,14 @@ const polizaCompleta = (g) =>
   String(g.poliza || '').trim() !== '' &&
   Number(g.monto) > 0 &&
   String(g.vigencia || '').trim() !== '';
+
+// O1 (revisión profe 09-jun): fecha local de HOY en ISO corto, para validar que la vigencia de
+// una póliza no esté ya vencida al capturarla (P5b — bug confirmado en vivo: se aceptó una
+// garantía con vigencia de ayer). Comparación de strings ISO, sin corrimiento de zona horaria.
+const hoyISOAlta = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
 const ERR0 = { campos: {}, conceptoIdx: null, programaError: false, garantiaIdx: null, catalogoMonto: false, pdfFirmadoFalta: false, anticipoPdfFalta: false, garantiasFaltan: false };
 
@@ -205,10 +214,10 @@ function TabDatosGenerales({ datos, set, err, equipo, montoDerivado }) {
         </Field>
       </div>
 
-      <div className="mt-4 bg-blue-50 border-l-4 border-blue-500 px-4 py-3 text-sm text-blue-900 grid grid-cols-1 md:grid-cols-3 gap-2">
-        <div><span className="text-xs text-blue-700">Subtotal (sin IVA)</span><div className="font-semibold">{formatoMXN.format(montoNum)}</div></div>
-        <div><span className="text-xs text-blue-700">IVA (16%) — derivado</span><div className="font-semibold">{formatoMXN.format(montoNum * IVA_RATE)}</div></div>
-        <div><span className="text-xs text-blue-700">Total con IVA — derivado</span><div className="font-semibold" data-testid="total-con-iva">{formatoMXN.format(montoNum * (1 + IVA_RATE))}</div></div>
+      <div className="mt-4 bg-guinda-soft border-l-4 border-guinda px-4 py-3 text-sm text-tinta grid grid-cols-1 md:grid-cols-3 gap-2">
+        <div><span className="text-xs text-guinda">Subtotal (sin IVA)</span><div className="font-semibold">{formatoMXN.format(montoNum)}</div></div>
+        <div><span className="text-xs text-guinda">IVA (16%) — derivado</span><div className="font-semibold">{formatoMXN.format(montoNum * IVA_RATE)}</div></div>
+        <div><span className="text-xs text-guinda">Total con IVA — derivado</span><div className="font-semibold" data-testid="total-con-iva">{formatoMXN.format(montoNum * (1 + IVA_RATE))}</div></div>
       </div>
 
       <div className="mt-3 bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 text-sm text-slate-800">
@@ -399,7 +408,7 @@ function TabProgramaMatriz({ conceptos, periodos, ciclo, setCiclo, celdas, setCe
                 {periodos.map((p) => (
                   <th key={p.numero} className="text-right px-2 py-2 w-24" title={`${fmtFechaES(p.inicio)} – ${fmtFechaES(p.fin)}`}>
                     P{p.numero}
-                    <div className="text-[10px] font-normal text-blue-700">{fmtFechaES(p.inicio).slice(0, 5)}</div>
+                    <div className="text-[10px] font-normal text-guinda">{fmtFechaES(p.inicio).slice(0, 5)}</div>
                   </th>
                 ))}
                 <th className="text-right px-2 py-2 w-24">Σ planeado</th>
@@ -463,7 +472,7 @@ function TabJuridicos({ datos, set, err = {} }) {
         <Field label="No. de poder notarial" hint="Opcional"><input className="sg-input" value={datos.poderNotarial} onChange={set('poderNotarial')} data-testid="jur-poder" /></Field>
         <Field label="Notaría" hint="Opcional"><input className="sg-input" value={datos.notaria} onChange={set('notaria')} data-testid="jur-notaria" /></Field>
       </div>
-      <div className="mt-4 bg-blue-50 border-l-4 border-blue-500 px-4 py-3 text-sm text-blue-900">
+      <div className="mt-4 bg-guinda-soft border-l-4 border-guinda px-4 py-3 text-sm text-tinta">
         <strong>Obligatorio para formalizar.</strong> El firmante de la dependencia y su cargo (art. 46 fr. I LOPSRM) y el representante legal del contratista (art. 46 fr. IV LOPSRM; RLOPSRM art. 61 fr. VI-b/VII) son mínimos de formalización. La cédula profesional se exige por decisión de la Fundación <span className="text-slate-500">[validar con el profe]</span>. Poder notarial y notaría son opcionales. Se guarda como un solo registro (<code>datos_juridicos</code>).
       </div>
     </div>
@@ -512,7 +521,7 @@ function AnticipoAutorizacionPDF({ contratoId, soloLectura, pendingFile, onPickF
   return (
     <div className="mt-2" data-testid="anticipo-pdf-uploader">
       {/* alta-v4: el PDF de autorización es OBLIGATORIO sobre el umbral (bloquea avance y guardado). */}
-      <p className="text-sm font-semibold text-blue-900 mb-1">Adjunta la autorización escrita (PDF) <span className="text-red-600">*</span>:</p>
+      <p className="text-sm font-semibold text-tinta mb-1">Adjunta la autorización escrita (PDF) <span className="text-red-600">*</span>:</p>
       {pendingFile && !contratoId ? (
         <p className="text-sm text-green-800" data-testid="anticipo-pdf-pendiente-file">📎 {pendingFile.name} — se adjuntará al guardar el contrato.{' '}
           <button type="button" className="text-red-600 hover:underline" onClick={() => onPickFile(null)} disabled={soloLectura}>quitar</button>
@@ -541,8 +550,8 @@ function TabGarantias({ rows, onCell, onPatch, onAdd, onRemove, anticipoPct, set
           <input type="number" min="0" max="100" step="0.01" className={inputCls(errAnticipo)} value={anticipoPct} onChange={(e) => setAnticipoPct(e.target.value)} disabled={soloLectura} data-testid="anticipo-input" />
         </Field>
         {ap > ANTICIPO_UMBRAL_PDF && (
-          <div className="mt-3 bg-blue-50 border-l-4 border-blue-500 px-4 py-3 text-sm text-blue-900 space-y-2" data-testid="avisos-anticipo">
-            <div className="text-xs font-bold uppercase tracking-wider text-blue-700">Autorización requerida</div>
+          <div className="mt-3 bg-guinda-soft border-l-4 border-guinda px-4 py-3 text-sm text-tinta space-y-2" data-testid="avisos-anticipo">
+            <div className="text-xs font-bold uppercase tracking-wider text-guinda">Autorización requerida</div>
             <p>Conforme al <strong>art. 50 fr. IV de la LOPSRM</strong>, un anticipo mayor al {ANTICIPO_UMBRAL_PDF}% requiere <strong>autorización escrita del titular</strong> de la dependencia o entidad. <strong>Adjunta el PDF de la autorización</strong> (el sistema lo guarda ligado al contrato; no valida su contenido — es responsabilidad del residente).</p>
             {ap > 50 && <p>Además, conforme al <strong>art. 139 del RLOPSRM</strong>, un anticipo mayor al 50% debe informarse a la Secretaría (SFP) antes de su entrega.</p>}
             {ap >= 100 && <p>El 100% solo procede en contrato plurianual que inicia en el último trimestre (art. 50 fr. V LOPSRM).</p>}
@@ -630,7 +639,7 @@ function TabGarantias({ rows, onCell, onPatch, onAdd, onRemove, anticipoPct, set
       <div className="bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 text-sm text-slate-800 mb-3">
         <strong>Penalizaciones — Art. 46 Bis LOPSRM:</strong> se aplicarán deductivas por atraso conforme al programa de obra. El 5 al millar (art. 191 LFD) se carga automáticamente sobre cada estimación.
       </div>
-      <div className="bg-blue-50 border-l-4 border-blue-500 px-4 py-3 text-sm text-blue-900">
+      <div className="bg-guinda-soft border-l-4 border-guinda px-4 py-3 text-sm text-tinta">
         <strong>Plan de amortización del anticipo — Art. 50 LOPSRM:</strong> el anticipo otorgado deberá amortizarse proporcionalmente al avance en cada estimación, conforme a la fórmula que prevé el art. 50 de la LOPSRM.
       </div>
     </div>
@@ -847,12 +856,12 @@ function ModalDetalleContrato({ contratoId, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto" onClick={onClose} data-testid="modal-detalle">
       <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full my-8" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 sticky top-0 bg-white rounded-t-lg z-10">
+        <div className="flex items-center justify-between border-b border-borde px-6 py-4 sticky top-0 bg-white rounded-t-lg z-10">
           <h3 className="text-lg font-bold text-sigecop-blue">Información del contrato{data?.folio ? ` · ${data.folio}` : ''}</h3>
           <button type="button" onClick={onClose} className="text-slate-500 hover:text-slate-900 text-xl font-bold leading-none" aria-label="Cerrar" data-testid="modal-detalle-cerrar">✕</button>
         </div>
         <div className="px-6 py-5 space-y-6 text-sm">
-          <div className="bg-slate-50 border border-slate-200 rounded px-3 py-2 text-xs text-slate-600">Vista de <strong>solo lectura</strong> — refleja lo capturado al dar de alta el contrato. No es editable.</div>
+          <div className="bg-pagina border border-borde rounded px-3 py-2 text-xs text-slate-600">Vista de <strong>solo lectura</strong> — refleja lo capturado al dar de alta el contrato. No es editable.</div>
           {cargando && <p className="text-slate-500">Cargando…</p>}
           {error && <p className="text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</p>}
           {data && (
@@ -888,8 +897,8 @@ function ModalDetalleContrato({ contratoId, onClose }) {
                       <Link to={`/seguimiento/alertas?contrato=${contratoId}`} className="text-sm font-semibold text-sigecop-accent hover:underline whitespace-nowrap" data-testid="detalle-link-alertas">Ver alertas del contrato →</Link>
                     </div>
                   ) : (
-                    <div className="flex flex-wrap items-center justify-between gap-3 bg-green-50 border-l-4 border-green-500 px-4 py-3 rounded" data-testid="detalle-alertas-ok">
-                      <span className="text-sm text-green-800">✓ Sin conceptos en atraso{totalAlertas > 0 ? ` · ${totalAlertas} alerta${totalAlertas === 1 ? '' : 's'} configurada${totalAlertas === 1 ? '' : 's'}` : ' · sin alertas configuradas'}</span>
+                    <div className="flex flex-wrap items-center justify-between gap-3 bg-exito-bg border-l-4 border-exito px-4 py-3 rounded" data-testid="detalle-alertas-ok">
+                      <span className="text-sm text-exito">✓ Sin conceptos en atraso{totalAlertas > 0 ? ` · ${totalAlertas} alerta${totalAlertas === 1 ? '' : 's'} configurada${totalAlertas === 1 ? '' : 's'}` : ' · sin alertas configuradas'}</span>
                       <Link to={`/seguimiento/alertas?contrato=${contratoId}`} className="text-sm font-semibold text-sigecop-accent hover:underline whitespace-nowrap" data-testid="detalle-link-alertas">Ver alertas del contrato →</Link>
                     </div>
                   )}
@@ -899,7 +908,7 @@ function ModalDetalleContrato({ contratoId, onClose }) {
               {Array.isArray(data.conceptos) && data.conceptos.length > 0 && (
                 <section>
                   <h4 className="font-bold text-sigecop-blue mb-3">Catálogo de conceptos</h4>
-                  <div className="overflow-x-auto border border-slate-200 rounded">
+                  <div className="overflow-x-auto border border-borde rounded">
                     <table className="w-full text-sm">
                       <thead className="bg-sigecop-blue-light text-sigecop-blue"><tr>
                         <th className="text-left px-3 py-2">Clave</th><th className="text-left px-3 py-2">Concepto</th>
@@ -908,7 +917,7 @@ function ModalDetalleContrato({ contratoId, onClose }) {
                       </tr></thead>
                       <tbody>
                         {data.conceptos.map((c) => (
-                          <tr key={c.id} className="border-t border-slate-200">
+                          <tr key={c.id} className="border-t border-borde">
                             <td className="px-3 py-1 font-mono text-xs">{c.clave || '—'}</td>
                             <td className="px-3 py-1">{c.concepto}</td>
                             <td className="px-3 py-1">{c.unidad}</td>
@@ -938,7 +947,7 @@ function ModalDetalleContrato({ contratoId, onClose }) {
               {Array.isArray(data.garantias) && data.garantias.length > 0 && (
                 <section>
                   <h4 className="font-bold text-sigecop-blue mb-3">Garantías</h4>
-                  <div className="overflow-x-auto border border-slate-200 rounded">
+                  <div className="overflow-x-auto border border-borde rounded">
                     <table className="w-full text-sm">
                       <thead className="bg-sigecop-blue-light text-sigecop-blue"><tr>
                         <th className="text-left px-3 py-2">Tipo</th><th className="text-left px-3 py-2">Afianzadora</th>
@@ -946,7 +955,7 @@ function ModalDetalleContrato({ contratoId, onClose }) {
                       </tr></thead>
                       <tbody>
                         {data.garantias.map((g) => (
-                          <tr key={g.id} className="border-t border-slate-200">
+                          <tr key={g.id} className="border-t border-borde">
                             <td className="px-3 py-1">{g.tipo}</td>
                             <td className="px-3 py-1">{g.afianzadora || '—'}</td>
                             <td className="px-3 py-1 font-mono text-xs">{g.poliza || '—'}</td>
@@ -1024,7 +1033,7 @@ function TabRegistrados({ contratos, loading, errorMsg, sinSesion, onRecargar, s
     return (
       <div>
         <h3 className="text-lg font-bold text-sigecop-blue mb-4">Contratos registrados</h3>
-        <p className="text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-md px-4 py-6 text-center">
+        <p className="text-sm text-slate-600 bg-pagina border border-borde rounded-md px-4 py-6 text-center">
           Inicia sesión para ver los contratos guardados.
         </p>
       </div>
@@ -1041,7 +1050,7 @@ function TabRegistrados({ contratos, loading, errorMsg, sinSesion, onRecargar, s
       {!loading && errorMsg && <p className="text-sm text-slate-700 bg-red-50 border border-red-200 rounded-md px-4 py-3">{errorMsg}</p>}
       {!loading && !errorMsg && contratos.length === 0 && <p className="text-sm text-slate-500">No hay contratos registrados todavía.</p>}
       {!loading && !errorMsg && contratos.length > 0 && (
-        <div className="overflow-x-auto border border-slate-200 rounded-md">
+        <div className="overflow-x-auto border border-borde rounded-md">
           <table className="w-full text-sm">
             <thead className="bg-sigecop-blue-light text-sigecop-blue">
               <tr>
@@ -1057,7 +1066,7 @@ function TabRegistrados({ contratos, loading, errorMsg, sinSesion, onRecargar, s
             </thead>
             <tbody>
               {contratos.map((c) => (
-                <tr key={c.id} className="border-t border-slate-200 hover:bg-slate-50">
+                <tr key={c.id} className="border-t border-borde hover:bg-pagina">
                   <td className="px-3 py-2 font-mono text-xs">{c.folio}</td>
                   <td className="px-3 py-2">{c.objeto}</td>
                   <td className="px-3 py-2">{c.contratista}</td>
@@ -1169,6 +1178,12 @@ export default function AltaContrato() {
   // ocurre al guardar, pero el usuario puede adjuntar sin haber guardado primero).
   const [pdfFirmadoFile, setPdfFirmadoFile] = useState(null);
   const [pdfAnticipoFile, setPdfAnticipoFile] = useState(null);
+  // O1-P5a (revisión profe 09-jun): modal de AVISO cuando una garantía excede el % esperado
+  // ("me tendrás que decir: estás poniendo más del 30%"). Avisa, NO bloquea: el usuario confirma
+  // y continúa. La confirmación se recuerda por snapshot (tipo+monto+esperado); si después cambia
+  // un monto o el % de anticipo, el snapshot ya no coincide y el aviso se vuelve a mostrar.
+  const [modalExceso, setModalExceso] = useState(null); // { excesos, snap, onContinuar }
+  const excesoConfirmadoRef = useRef('');
 
   const setDatosGen = (k) => (e) => setDatosGenerales((prev) => ({ ...prev, [k]: e.target.value }));
   const setDatosJur = (k) => (e) => setDatosJuridicos((prev) => ({ ...prev, [k]: e.target.value }));
@@ -1194,6 +1209,27 @@ export default function AltaContrato() {
     return { ...r, pu: String(pu), importe: importeDe(r.cantidad, pu) }; // snapea al importe real resultante
   }));
   const montoDerivado = round2(conceptos.reduce((s, c) => s + (Number(importeDe(c.cantidad, c.pu)) || 0), 0));
+
+  // O1-P5a: excesos actuales de garantías vs el % esperado del monto del contrato.
+  //  · Cumplimiento: 10% del monto (lo que pidió el profe en P5a; [validar el tope exacto]).
+  //  · Anticipo: %anticipo × monto (art. 48 fr. I LOPSRM: garantiza la totalidad del anticipo).
+  //    Su monto es derivado/read-only, así que normalmente NO excede; se revisa por defensa.
+  // Solo pólizas completas (las incompletas las detiene validarPaso(4) antes).
+  const excesosGarantias = () => {
+    if (!(montoDerivado > 0)) return [];
+    const out = [];
+    garantias.forEach((g) => {
+      if (!polizaCompleta(g)) return;
+      let pct = null;
+      if (g.tipo === TIPO_CUMPLIMIENTO) pct = 10;
+      else if (g.tipo === TIPO_ANTICIPO) pct = Number(anticipoPct) || 0;
+      if (pct == null || pct <= 0) return;
+      const esperado = round2(montoDerivado * pct / 100);
+      if (Number(g.monto) > esperado) out.push({ tipo: g.tipo, monto: Number(g.monto), esperado, pct });
+    });
+    return out;
+  };
+  const snapExcesos = (exc) => JSON.stringify(exc.map((x) => [x.tipo, x.monto, x.esperado]));
 
   // Plan2 Pase3: la fianza de ANTICIPO se DERIVA = (% de anticipo) × (monto del contrato), read-only.
   // Mantiene sincronizado el monto de las pólizas tipo Anticipo cuando cambia el % o el monto del
@@ -1364,6 +1400,11 @@ export default function AltaContrato() {
         if (!String(g.poliza).trim()) return { ok: false, msg: `Garantía #${i + 1} (${g.tipo}): el número de póliza es obligatorio.`, errores: { ...ERR0, garantiaIdx: i } };
         if (!(Number(g.monto) > 0)) return { ok: false, msg: `Garantía #${i + 1} (${g.tipo}): indica un monto mayor a 0.`, errores: { ...ERR0, garantiaIdx: i } };
         if (!String(g.vigencia).trim()) return { ok: false, msg: `Garantía #${i + 1} (${g.tipo}): la vigencia es obligatoria.`, errores: { ...ERR0, garantiaIdx: i } };
+        // O1-P5b (revisión profe 09-jun): una póliza con vigencia ya VENCIDA no garantiza nada al
+        // formalizar — se RECHAZA al capturar (vigencia >= hoy). El backend la revalida.
+        if (String(g.vigencia).slice(0, 10) < hoyISOAlta()) {
+          return { ok: false, msg: `Garantía #${i + 1} (${g.tipo}): la vigencia (${fmtFechaES(g.vigencia)}) ya está vencida; captura una vigencia de hoy o posterior.`, errores: { ...ERR0, garantiaIdx: i } };
+        }
         // alta-v2 (1.4): una garantía no puede exceder el monto del contrato (la vista la marca
         // EN VIVO; aquí se bloquea el avance; el backend la revalida).
         if (Number(g.monto) > montoDerivado) return { ok: false, msg: `Garantía #${i + 1}: el monto (${formatoMXN.format(Number(g.monto))}) no puede exceder el monto del contrato (${formatoMXN.format(montoDerivado)}).`, errores: { ...ERR0, garantiaIdx: i } };
@@ -1430,6 +1471,17 @@ export default function AltaContrato() {
       const v = validarPaso(p);
       if (!v.ok) { setErrores(v.errores); setTabActivo(p); setErrorWizard(v.msg); return; }
     }
+    // O1-P5a: al SALIR del paso de garantías (4) con montos por encima del % esperado, AVISAR con
+    // el modal y esperar confirmación (no bloquea). Tras confirmar se reentra con el snapshot ya
+    // aceptado y el avance procede. El gating lineal NO cambia (esto corre DESPUÉS de validar).
+    if (tabActivo === 4 && destino > 4) {
+      const exc = excesosGarantias();
+      const snap = snapExcesos(exc);
+      if (exc.length > 0 && excesoConfirmadoRef.current !== snap) {
+        setModalExceso({ excesos: exc, snap, onContinuar: () => { excesoConfirmadoRef.current = snap; setModalExceso(null); irAPaso(target); } });
+        return;
+      }
+    }
     setErrores(ERR0);
     setErrorWizard(null);
     setTabActivo(destino);
@@ -1440,6 +1492,14 @@ export default function AltaContrato() {
     if (guardando || soloLectura) return;
     const v = validar();
     if (v) { setErrores(v.errores); setTabActivo(v.tab); setErrorWizard(v.msg); return; }
+    // O1-P5a: mismo aviso de exceso al GUARDAR — cubre la edición tardía (con captura completa se
+    // navega por nombre sin re-pasar por «Siguiente» del paso 4). Tras confirmar, reentra aquí.
+    const excG = excesosGarantias();
+    const snapG = snapExcesos(excG);
+    if (excG.length > 0 && excesoConfirmadoRef.current !== snapG) {
+      setModalExceso({ excesos: excG, snap: snapG, onContinuar: () => { excesoConfirmadoRef.current = snapG; setModalExceso(null); handleGuardar(); } });
+      return;
+    }
     // 4.1: confirmación explícita antes de guardar (último paso del wizard).
     if (!window.confirm('¿Seguro de guardar el contrato?')) return;
     setErrores(ERR0);
@@ -1693,6 +1753,35 @@ export default function AltaContrato() {
           )}
         </div>
       </div>
+
+      {/* O1-P5a: modal de AVISO (no bloqueo) de garantía por encima del % esperado.
+          UI-1: usa el Modal compartido (components/ui/Modal.jsx, extraído de este patrón);
+          textos y data-testid idénticos. */}
+      {modalExceso && (
+        <Modal
+          titulo="Garantía por encima de lo esperado"
+          testid="modal-exceso-garantia"
+          pie={
+            <>
+              <button type="button" className="px-4 py-2 text-slate-600 hover:text-slate-900" onClick={() => setModalExceso(null)} data-testid="btn-exceso-revisar">Revisar montos</button>
+              <button type="button" className="sg-btn-primary" onClick={modalExceso.onContinuar} data-testid="btn-exceso-continuar">Continuar de todos modos</button>
+            </>
+          }
+        >
+          <ul className="text-sm text-slate-700 space-y-2 mb-3 list-disc pl-5">
+            {modalExceso.excesos.map((x, i) => (
+              <li key={i} data-testid={`exceso-detalle-${i}`}>
+                La póliza de <strong>{x.tipo}</strong> es de <strong>{formatoMXN.format(x.monto)}</strong>: está poniendo
+                más del <strong>{x.pct}%</strong> esperado del monto del contrato ({formatoMXN.format(x.esperado)}).
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-slate-500">
+            Es un aviso, no un bloqueo: puedes continuar si el monto es intencional.
+            <span className="text-slate-400"> [validar con el profe el % esperado de cumplimiento]</span>
+          </p>
+        </Modal>
+      )}
 
       <SeccionCriterios
         huId="HU-01"
