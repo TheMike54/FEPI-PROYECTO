@@ -1459,3 +1459,24 @@ CREATE INDEX IF NOT EXISTS idx_garantia_endosos_convenio ON garantia_endosos(con
 -- 'pagada' los enforza el controller (pagos.controller.js).
 -- =====================================================================
 CREATE UNIQUE INDEX IF NOT EXISTS uq_pagos_estimacion ON pagos(estimacion_id) WHERE estimacion_id IS NOT NULL;
+
+-- =====================================================================
+-- OLEADA O2 (10-jun-2026) — PLAN DE AMORTIZACIÓN DEL ANTICIPO (criterio de HU-01,
+-- pedido del profe en la revisión del 8-9 jun). El anticipo se amortiza con cargo a las
+-- estimaciones (art. 143 fr. I RLOPSRM, que indica "proporcionalmente"); el profe pidió un
+-- plan EDITABLE por periodo: "no hay límites — puede amortizar todo en el primer pago o
+-- repartido". FASE A: el plan se CAPTURA en el alta (default proporcional) y se CONSULTA
+-- en el expediente. La carátula (G2, estimaciones.controller) NO cambia: sigue amortizando
+-- proporcional. [Fase B pendiente de validar con el profe]: que G2 use plan[periodo].
+-- Invariante (la enforza crearContrato, transaccional): Σ monto = anticipo del contrato
+-- (ROUND(monto × anticipo_pct/100, 2)) al CENTAVO. ADITIVO/IDEMPOTENTE.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS plan_amortizacion (
+  id SERIAL PRIMARY KEY,
+  contrato_id INTEGER NOT NULL REFERENCES contratos(id) ON DELETE CASCADE,
+  periodo_numero INTEGER NOT NULL CHECK (periodo_numero > 0),
+  monto NUMERIC(18,2) NOT NULL CHECK (monto >= 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (contrato_id, periodo_numero)
+);
+CREATE INDEX IF NOT EXISTS idx_plan_amortizacion_contrato ON plan_amortizacion(contrato_id);

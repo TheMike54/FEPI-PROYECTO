@@ -39,6 +39,8 @@ export const api = {
   // solo el residente asignado (lo valida el backend).
   leerProgramaObra: (contratoId) => request(`/contratos/${contratoId}/programa`),
   guardarProgramaObra: (contratoId, payload) => request(`/contratos/${contratoId}/programa`, { method: 'PUT', body: JSON.stringify(payload) }),
+  // O2: plan de amortización del anticipo (Fase A, lectura por participación).
+  planAmortizacion: (contratoId) => request(`/contratos/${contratoId}/plan-amortizacion`),
   // PDF firmado del contrato (HU-01). La subida es multipart y la descarga binaria,
   // asi que NO pasan por request() (que asume JSON).
   // 4.4: `tipo` opcional ('contrato' por defecto | 'anticipo_autorizacion'). Sin tipo se

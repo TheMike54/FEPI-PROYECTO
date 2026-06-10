@@ -135,6 +135,10 @@ test.describe('alta-v5 — navegación lineal + garantías/jurídicos obligatori
     await expect(page.getByTestId('garantia-monto-1')).toHaveValue('1000');
     await page.getByTestId('garantia-vigencia-1').fill('2027-06-01');
     await expect(page.getByTestId('garantias-ok')).toBeVisible();
+    // O2: con anticipo > 0 aparece el paso "Plan de amortización" (default proporcional que ya
+    // cuadra) entre garantías y el PDF firmado; un Siguiente más llega al PDF.
+    await page.getByTestId('btn-siguiente').click();
+    await expect(page.getByTestId('plan-cuadra')).toBeVisible();
     await page.getByTestId('btn-siguiente').click();
     await expect(page.getByTestId('pdf-firmado-precaptura')).toBeVisible();
   });

@@ -126,4 +126,46 @@ async function reemplazarPrograma(req, res) {
   }
 }
 
-module.exports = { leerPrograma, reemplazarPrograma };
+// =====================================================================
+// O2 (10-jun) — PLAN DE AMORTIZACIÓN del anticipo (Fase A, solo lectura).
+// GET /api/contratos/:id/plan-amortizacion — filas {periodo_numero, monto} capturadas en el
+// alta (o derivadas proporcionales por el backend). Acotado por participación, igual que el
+// programa. La carátula (G2) NO usa este plan: [Fase B pendiente de validar con el profe]
+// (art. 143 fr. I RLOPSRM dice "proporcionalmente"; el profe decide si la carátula obedece
+// al plan capturado).
+// =====================================================================
+async function leerPlanAmortizacion(req, res) {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(404).json({ error: 'Contrato no encontrado' });
+
+    const cres = await pool.query(
+      `SELECT id, anticipo_pct, monto, created_by, residente_id, superintendente_id, supervision_id
+         FROM contratos WHERE id = $1`,
+      [id]
+    );
+    if (cres.rowCount === 0) return res.status(404).json({ error: 'Contrato no encontrado' });
+    if (!esParteOSupervision(req.user, cres.rows[0])) return res.status(403).json({ error: 'No tienes acceso a este contrato' });
+
+    const filas = await pool.query(
+      `SELECT pa.periodo_numero, pa.monto, cp.inicio, cp.fin
+         FROM plan_amortizacion pa
+         LEFT JOIN contrato_periodos cp ON cp.contrato_id = pa.contrato_id AND cp.numero = pa.periodo_numero
+        WHERE pa.contrato_id = $1
+        ORDER BY pa.periodo_numero`,
+      [id]
+    );
+
+    return res.status(200).json({
+      contrato_id: id,
+      anticipo_pct: cres.rows[0].anticipo_pct,
+      monto_contrato: cres.rows[0].monto,
+      plan: filas.rows
+    });
+  } catch (err) {
+    console.error('[leerPlanAmortizacion]', err);
+    return res.status(500).json({ error: 'Error interno' });
+  }
+}
+
+module.exports = { leerPrograma, reemplazarPrograma, leerPlanAmortizacion };
