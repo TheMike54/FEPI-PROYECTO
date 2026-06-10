@@ -1480,3 +1480,53 @@ CREATE TABLE IF NOT EXISTS plan_amortizacion (
   UNIQUE (contrato_id, periodo_numero)
 );
 CREATE INDEX IF NOT EXISTS idx_plan_amortizacion_contrato ON plan_amortizacion(contrato_id);
+
+-- =====================================================================
+-- OLEADA O3 (10-jun-2026) — CATÁLOGO DE EMPRESAS (pedido fuerte del profe, P1 de la revisión
+-- 8-9 jun): "tú primero das de alta la empresa y luego vinculas… catálogos: es lo de ley". Sin
+-- catálogo cada quien teclea "patito"/"PAT"/"patito SASB" → 3 empresas distintas. Mecánica del
+-- profe: al registrar a una persona se captura su empresa; si no existe, se da de alta AUTOMÁTICA;
+-- el siguiente registro la ELIGE del catálogo. ADITIVO/IDEMPOTENTE. empresa_id viaja en los SELECT
+-- (NO en el JWT). Retrocompatible: empresa_id NULL no rompe nada.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS empresas (
+  id SERIAL PRIMARY KEY,
+  nombre VARCHAR(200) NOT NULL,
+  creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+-- UNIQUE NORMALIZADO (case-insensitive + espacios colapsados): "Patito", "PATITO " y "patito  sa"
+-- colisionan por su forma normalizada → mata los duplicados que mencionó el profe. El backend
+-- normaliza con la MISMA expresión (lower(btrim(regexp_replace(...)))) al resolver/crear.
+-- lower/btrim/regexp_replace son IMMUTABLE → válidas en índice funcional.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_empresas_nombre_norm
+  ON empresas (lower(btrim(regexp_replace(nombre, '\s+', ' ', 'g'))));
+
+-- usuarios.empresa_id: a qué empresa pertenece la persona (NULL = sin empresa; retrocompat).
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS empresa_id INTEGER REFERENCES empresas(id);
+CREATE INDEX IF NOT EXISTS idx_usuarios_empresa ON usuarios(empresa_id);
+
+-- SEED de 3 empresas demo. Idempotente vía WHERE NOT EXISTS sobre la forma NORMALIZADA (el
+-- índice es funcional, así que ON CONFLICT requeriría nombrar la expresión; este patrón es más claro).
+INSERT INTO empresas (nombre)
+SELECT v.nombre FROM (VALUES
+  ('Dependencia Demo'),
+  ('Constructora Demo'),
+  ('Supervisión Externa Demo')
+) AS v(nombre)
+WHERE NOT EXISTS (
+  SELECT 1 FROM empresas e
+  WHERE lower(btrim(regexp_replace(e.nombre, '\s+', ' ', 'g')))
+      = lower(btrim(regexp_replace(v.nombre, '\s+', ' ', 'g')))
+);
+
+-- BACKFILL idempotente de las cuentas demo (solo si empresa_id IS NULL → no pisa cambios). El lado
+-- CONTRATANTE (dependencia/residente/finanzas/profe) → Dependencia Demo; el contratista →
+-- Constructora Demo; la supervisión → Supervisión Externa Demo. Así, en el contrato demo, contratista
+-- y supervisión son empresas DISTINTAS (la supervisión es un tercero) → el aviso de "misma empresa"
+-- NO se dispara en el demo. Match por forma NORMALIZADA (robusto ante variantes).
+UPDATE usuarios SET empresa_id = (SELECT id FROM empresas WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g'))) = 'dependencia demo' LIMIT 1)
+  WHERE email IN ('residente@sigecop.test','dependencia@sigecop.test','finanzas@sigecop.test','csilvasa@ipn.mx') AND empresa_id IS NULL;
+UPDATE usuarios SET empresa_id = (SELECT id FROM empresas WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g'))) = 'constructora demo' LIMIT 1)
+  WHERE email = 'contratista@sigecop.test' AND empresa_id IS NULL;
+UPDATE usuarios SET empresa_id = (SELECT id FROM empresas WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g'))) = 'supervisión externa demo' LIMIT 1)
+  WHERE email = 'supervision@sigecop.test' AND empresa_id IS NULL;

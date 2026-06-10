@@ -27,6 +27,8 @@ export const api = {
   health: () => request('/health'),
   login: (credenciales) => request('/auth/login', { method: 'POST', body: JSON.stringify(credenciales) }),
   register: (payload) => request('/auth/register', { method: 'POST', body: JSON.stringify(payload) }),
+  // O3: catálogo PÚBLICO de empresas para el autocomplete del registro (no requiere token).
+  listarEmpresas: () => request('/auth/empresas'),
   listarUsuarios: (estado) => request(`/usuarios${estado ? `?estado=${encodeURIComponent(estado)}` : ''}`),
   // Cuentas aprobadas asignables al equipo del contrato (rol: contratista|supervision).
   listarAsignables: (rol) => request(`/usuarios/asignables?rol=${encodeURIComponent(rol)}`),

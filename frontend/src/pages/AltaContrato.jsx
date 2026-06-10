@@ -270,6 +270,19 @@ function TabDatosGenerales({ datos, set, err, equipo, montoDerivado }) {
         {(eq.asignablesContratista || []).length === 0 && (
           <p className="text-xs text-amber-700 mt-2">No hay cuentas de contratista aprobadas; la dependencia debe aprobar al menos una para poder asignar superintendente.</p>
         )}
+        {/* O3 — AVISO (no bloqueo) si el superintendente y la supervisión son de la MISMA empresa.
+            El profe: "la supervisión es un tercero". Solo presentación: se deriva del empresa_id que
+            ahora traen los asignables (catálogo). [validar profe] si debe ser bloqueo. */}
+        {(() => {
+          const sup = (eq.asignablesContratista || []).find((u) => String(u.id) === String(eq.superintendenteId));
+          const sv = (eq.asignablesSupervision || []).find((u) => String(u.id) === String(eq.supervisionId));
+          if (!sup || !sv || !sup.empresa_id || sup.empresa_id !== sv.empresa_id) return null;
+          return (
+            <div className="mt-3 bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 text-sm text-slate-800 rounded-r-md" data-testid="aviso-misma-empresa">
+              ⚠️ El superintendente y la supervisión pertenecen a la misma empresa (<strong>{sup.empresa}</strong>). La supervisión debe ser un <strong>tercero independiente</strong> del contratista. <span className="text-slate-500">Puedes continuar; es un aviso. [validar con el profe]</span>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

@@ -41,9 +41,13 @@ async function listarAsignables(req, res) {
     if (!ROLES_ASIGNABLES.includes(rol)) {
       return res.status(400).json({ error: 'rol debe ser contratista, supervision o dependencia' });
     }
+    // O3: + empresa de la persona (catálogo) para el aviso de "misma empresa" del alta
+    // (contratista vs supervisión). Aditivo: empresa_id/empresa pueden venir NULL.
     const result = await query(
-      `SELECT id, nombre, email, rol
-         FROM usuarios WHERE rol = $1 AND estado = 'activo' ORDER BY nombre ASC`,
+      `SELECT u.id, u.nombre, u.email, u.rol, u.empresa_id, e.nombre AS empresa
+         FROM usuarios u
+         LEFT JOIN empresas e ON e.id = u.empresa_id
+        WHERE u.rol = $1 AND u.estado = 'activo' ORDER BY u.nombre ASC`,
       [rol]
     );
     return res.status(200).json(result.rows);

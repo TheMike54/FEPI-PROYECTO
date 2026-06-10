@@ -495,15 +495,23 @@ async function detalleContrato(req, res) {
       return res.status(404).json({ error: 'Contrato no encontrado' });
     }
 
+    // O3: + empresa de cada persona del equipo (catálogo) para mostrarla en el expediente.
+    // Aditivo (los *_empresa pueden venir NULL); no altera c.* ni el acceso.
     const result = await pool.query(
       `SELECT c.*,
               ru.nombre AS residente_nombre,
               su.nombre AS superintendente_nombre,
-              sv.nombre AS supervision_nombre
+              sv.nombre AS supervision_nombre,
+              re.nombre AS residente_empresa,
+              se.nombre AS superintendente_empresa,
+              ve.nombre AS supervision_empresa
          FROM contratos c
          LEFT JOIN usuarios ru ON ru.id = c.residente_id
          LEFT JOIN usuarios su ON su.id = c.superintendente_id
          LEFT JOIN usuarios sv ON sv.id = c.supervision_id
+         LEFT JOIN empresas re ON re.id = ru.empresa_id
+         LEFT JOIN empresas se ON se.id = su.empresa_id
+         LEFT JOIN empresas ve ON ve.id = sv.empresa_id
         WHERE c.id = $1`,
       [id]
     );

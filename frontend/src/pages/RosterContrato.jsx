@@ -149,6 +149,8 @@ export default function RosterContrato() {
                           <div className="text-base font-bold text-sigecop-blue" data-testid={`vigente-${rol}`}>
                             {v ? (v.nombre || `Usuario #${v.usuario_id}`) : '— sin asignar —'}
                           </div>
+                          {/* O3: empresa del vigente (catálogo del profe). */}
+                          {v && v.empresa && <div className="text-xs text-slate-500" data-testid={`vigente-empresa-${rol}`}>{v.empresa}</div>}
                           {v && <div className="text-xs text-slate-500">Vigente desde {fmtFecha(v.desde)}{!v.versionado && ' · (sin versionar aún)'}</div>}
                         </div>
                       </div>

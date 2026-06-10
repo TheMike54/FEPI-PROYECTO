@@ -16,6 +16,7 @@ import MatrizProgramaLectura, { periodoQueContiene } from '../components/program
 const CAMPOS_BUSQUEDA = [
   { id: 'folio',       label: 'Folio' },
   { id: 'contratista', label: 'Contratista' },
+  { id: 'empresa',     label: 'Empresa' }, // O3: búsqueda por empresa (catálogo del profe)
   { id: 'objeto',      label: 'Objeto' },
   { id: 'periodo',     label: 'Periodo' },
   { id: 'documento',   label: 'Tipo de documento' }
@@ -337,10 +338,11 @@ function BloqueJuridicos({ juridicos, equipo, folio }) {
       </div>
       <div>
         <div className="text-xs uppercase font-semibold text-slate-500 mb-1">Equipo del contrato</div>
+        {/* O3: empresa de cada persona junto a su nombre (catálogo del profe). */}
         <ul className="list-disc list-inside text-slate-700 space-y-0.5">
-          <li>Residente: {equipo.residente || '—'}</li>
-          <li>Superintendente (contratista): {equipo.superintendente || '—'}</li>
-          <li>Supervisión: {equipo.supervision || '— (no aplica)'}</li>
+          <li>Residente: {equipo.residente || '—'}{equipo.residenteEmpresa ? <span className="text-slate-500"> · {equipo.residenteEmpresa}</span> : ''}</li>
+          <li>Superintendente (contratista): {equipo.superintendente || '—'}{equipo.superintendenteEmpresa ? <span className="text-slate-500"> · {equipo.superintendenteEmpresa}</span> : ''}</li>
+          <li>Supervisión: {equipo.supervision || '— (no aplica)'}{equipo.supervisionEmpresa ? <span className="text-slate-500"> · {equipo.supervisionEmpresa}</span> : ''}</li>
         </ul>
       </div>
       <div className="border-t border-slate-200 pt-3">
@@ -462,7 +464,11 @@ function BloqueRoster({ roster }) {
                   data-testid={`roster-fila-${h.id}`}
                 >
                   <td className="px-3 py-2">{ROL_LABEL_ROSTER[h.rol] || h.rol}</td>
-                  <td className="px-3 py-2 font-medium">{h.usuario_nombre || `Usuario #${h.usuario_id}`}</td>
+                  <td className="px-3 py-2 font-medium">
+                    {h.usuario_nombre || `Usuario #${h.usuario_id}`}
+                    {/* O3: empresa de la persona (catálogo) bajo el nombre. */}
+                    {h.usuario_empresa && <span className="block text-xs font-normal text-slate-500" data-testid={`roster-exp-empresa-${h.id}`}>{h.usuario_empresa}</span>}
+                  </td>
                   <td className="px-3 py-2">{soloFecha(h.vigencia_desde)}</td>
                   <td className="px-3 py-2">
                     {vigente
@@ -560,7 +566,11 @@ export default function ConsultaExpediente() {
     const equipo = {
       residente: c.residente_nombre,
       superintendente: c.superintendente_nombre,
-      supervision: c.supervision_nombre
+      supervision: c.supervision_nombre,
+      // O3: empresa de cada persona (catálogo) — viene de detalleContrato (LEFT JOIN empresas).
+      residenteEmpresa: c.residente_empresa,
+      superintendenteEmpresa: c.superintendente_empresa,
+      supervisionEmpresa: c.supervision_empresa
     };
     return [
       {
@@ -635,7 +645,10 @@ export default function ConsultaExpediente() {
         icono: '⚖️',
         haceMatch: (q, campo) => {
           if (campo === 'documento') return 'jurídicos cláusulas representación firmante'.includes(q);
-          const blob = `${jur ? `${jur.firmanteDependencia || ''} ${jur.cargoFirmante || ''} ${jur.representanteLegal || ''} ${jur.cedulaProfesional || ''} ${jur.poderNotarial || ''} ${jur.notaria || ''}` : ''} ${equipo.residente || ''} ${equipo.superintendente || ''} ${equipo.supervision || ''}`.toLowerCase();
+          // O3: búsqueda por EMPRESA del equipo (catálogo del profe).
+          const empresasBlob = `${equipo.residenteEmpresa || ''} ${equipo.superintendenteEmpresa || ''} ${equipo.supervisionEmpresa || ''}`.toLowerCase();
+          if (campo === 'empresa') return empresasBlob.includes(q);
+          const blob = `${jur ? `${jur.firmanteDependencia || ''} ${jur.cargoFirmante || ''} ${jur.representanteLegal || ''} ${jur.cedulaProfesional || ''} ${jur.poderNotarial || ''} ${jur.notaria || ''}` : ''} ${equipo.residente || ''} ${equipo.superintendente || ''} ${equipo.supervision || ''} ${empresasBlob}`.toLowerCase();
           return blob.includes(q);
         },
         body: <BloqueJuridicos juridicos={jur} equipo={equipo} folio={c.folio} />
@@ -646,7 +659,10 @@ export default function ConsultaExpediente() {
         icono: '👥',
         haceMatch: (q, campo) => {
           if (campo === 'documento') return 'roster sustitución personas equipo'.includes(q);
-          const blob = (roster?.historial || []).map((h) => `${h.usuario_nombre || ''} ${h.rol} ${h.motivo || ''}`).join(' ').toLowerCase();
+          // O3: la empresa de cada persona del roster también es buscable (campo empresa o general).
+          const empresasRoster = (roster?.historial || []).map((h) => h.usuario_empresa || '').join(' ').toLowerCase();
+          if (campo === 'empresa') return empresasRoster.includes(q);
+          const blob = (roster?.historial || []).map((h) => `${h.usuario_nombre || ''} ${h.rol} ${h.motivo || ''} ${h.usuario_empresa || ''}`).join(' ').toLowerCase();
           return blob.includes(q);
         },
         body: <BloqueRoster roster={roster} />
