@@ -362,6 +362,58 @@ function BloqueJuridicos({ juridicos, equipo, folio }) {
   );
 }
 
+// O2 (10-jun) — PLAN DE AMORTIZACIÓN del anticipo (Fase A, lectura). Capturado en el alta
+// (default proporcional, editable; art. 143 fr. I RLOPSRM) o derivado proporcional por el
+// backend en contratos creados por API. La carátula (G2) NO usa este plan todavía:
+// [Fase B pendiente de validar con el profe].
+function BloquePlanAmortizacion({ data }) {
+  const filas = Array.isArray(data?.plan) ? data.plan : [];
+  if (filas.length === 0) {
+    return <p className="text-sm text-slate-400 italic">Este contrato no tiene plan de amortización (sin anticipo o sin periodos).</p>;
+  }
+  const total = filas.reduce((s, f) => s + (Number(f.monto) || 0), 0);
+  return (
+    <div data-testid="plan-amortizacion-expediente">
+      <p className="text-xs text-slate-500 mb-3">
+        Anticipo del {Number(data.anticipo_pct) || 0}% — se amortiza con cargo a las estimaciones
+        (art. 143 fr. I RLOPSRM). Plan capturado en el alta (editable, default proporcional).
+      </p>
+      <div className="overflow-x-auto border border-borde rounded-lg max-w-2xl">
+        <table className="w-full text-sm">
+          <thead className="bg-pagina text-tinta-sec">
+            <tr>
+              <th className="text-left px-3 py-2 w-24">Periodo</th>
+              <th className="text-left px-3 py-2">Del — al</th>
+              <th className="text-right px-3 py-2 w-44">Monto a amortizar</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filas.map((f) => (
+              <tr key={f.periodo_numero} className="border-t border-borde">
+                <td className="px-3 py-2 font-medium">#{f.periodo_numero}</td>
+                <td className="px-3 py-2 text-slate-600 text-xs">{soloFecha(f.inicio)} — {soloFecha(f.fin)}</td>
+                <td className="px-3 py-2 text-right font-mono" data-testid={`plan-exp-monto-${f.periodo_numero}`}>
+                  ${Number(f.monto).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+                </td>
+              </tr>
+            ))}
+            <tr className="border-t border-borde-fuerte bg-pagina font-semibold">
+              <td className="px-3 py-2" colSpan={2}>Total (= anticipo)</td>
+              <td className="px-3 py-2 text-right font-mono" data-testid="plan-exp-total">
+                ${total.toLocaleString('en-US', { minimumFractionDigits: 2 })}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-slate-500 mt-2">
+        <strong>Fase A:</strong> la carátula de la estimación sigue amortizando <strong>proporcional</strong>.
+        <span className="text-slate-400"> [Fase B pendiente de validar con el profe: que la carátula obedezca este plan.]</span>
+      </p>
+    </div>
+  );
+}
+
 // Pase 2.3 — Roster histórico / sustituciones de personas (art. 125 RLOPSRM). Lee el endpoint
 // propio GET /api/roster/contrato/:id (NO detalleContrato, que es zona congelada). El histórico es
 // append-only por (contrato, rol): la fila con vigencia_hasta NULL es la VIGENTE; las cerradas son
@@ -448,6 +500,7 @@ export default function ConsultaExpediente() {
   const [expediente, setExpediente] = useState(null);
   const [programa, setPrograma] = useState(null); // Pase 1: matriz A2 (leerProgramaObra)
   const [roster, setRoster] = useState(null);     // Pase 2.3: roster histórico / sustituciones
+  const [planAmort, setPlanAmort] = useState(null); // O2: plan de amortización (Fase A, lectura)
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
@@ -466,6 +519,7 @@ export default function ConsultaExpediente() {
     setExpediente(null);
     setPrograma(null);
     setRoster(null);
+    setPlanAmort(null);
     setError('');
     setQuery('');
     if (!id) return;
@@ -479,6 +533,8 @@ export default function ConsultaExpediente() {
       // Pase 2.3: el roster histórico/sustituciones sale de su PROPIO endpoint (no de detalleContrato,
       // que es zona congelada). Acotado por participación server-side; 403/404 → null.
       try { setRoster(await api.rosterContrato(id)); } catch (_) { setRoster(null); }
+      // O2: plan de amortización (endpoint propio, mismo patrón). Sin plan/403 → null.
+      try { setPlanAmort(await api.planAmortizacion(id)); } catch (_) { setPlanAmort(null); }
     } catch (e) {
       // El acotamiento es server-side: 403 = sin acceso a este contrato.
       setError(
@@ -562,6 +618,18 @@ export default function ConsultaExpediente() {
         body: <BloqueFianzas garantias={garantias} folio={c.folio} />
       },
       {
+        // O2: plan de amortización del anticipo (Fase A, lectura). P6/P12a de la revisión del profe.
+        id: 'amortizacion',
+        titulo: 'Plan de amortización del anticipo',
+        icono: '💰',
+        haceMatch: (q, campo) => {
+          if (campo === 'documento') return 'plan amortización anticipo'.includes(q);
+          const blob = ('plan amortización anticipo ' + (planAmort?.plan || []).map((f) => `${soloFecha(f.inicio)} ${soloFecha(f.fin)} ${f.monto}`).join(' ')).toLowerCase();
+          return blob.includes(q);
+        },
+        body: <BloquePlanAmortizacion data={planAmort} />
+      },
+      {
         id: 'juridicos',
         titulo: 'Documentos jurídicos',
         icono: '⚖️',
@@ -584,7 +652,7 @@ export default function ConsultaExpediente() {
         body: <BloqueRoster roster={roster} />
       }
     ];
-  }, [expediente, programa, roster]);
+  }, [expediente, programa, roster, planAmort]);
 
   // Buscador con semántica AND: un bloque coincide si TODOS los términos de la
   // búsqueda hacen match sobre el campo seleccionado (criterio 2, art. lógica Y).

@@ -49,6 +49,10 @@ test.describe('alta-v4 — anticipo obligatorio sobre umbral + gating secuencial
     // Adjuntar la autorización + las fianzas obligatorias habilita el avance al paso final.
     await altaAdjuntarPdfAnticipo(page);
     await altaLlenarGarantias(page, { conAnticipo: true });         // alta-v5: cumplimiento + anticipo
+    // O2: con anticipo > 0 el siguiente paso es el PLAN DE AMORTIZACIÓN (default proporcional
+    // que ya cuadra); un Siguiente más llega al PDF firmado.
+    await page.getByTestId('btn-siguiente').click();
+    await expect(page.getByTestId('plan-cuadra')).toBeVisible();
     await page.getByTestId('btn-siguiente').click();
     await expect(page.getByTestId('pdf-firmado-precaptura')).toBeVisible();
   });
@@ -59,7 +63,9 @@ test.describe('alta-v4 — anticipo obligatorio sobre umbral + gating secuencial
     await irAGarantias(page, { anticipo: 60, folio });
     await altaAdjuntarPdfAnticipo(page);                       // autorización (obligatoria > umbral)
     await altaLlenarGarantias(page, { conAnticipo: true });    // alta-v5: cumplimiento + anticipo
-    await page.getByTestId('btn-siguiente').click();           // → PDF firmado (5)
+    await page.getByTestId('btn-siguiente').click();           // → O2: plan de amortización (5)
+    await expect(page.getByTestId('plan-cuadra')).toBeVisible(); // default proporcional ya cuadra
+    await page.getByTestId('btn-siguiente').click();           // → PDF firmado (6)
     await expect(page.getByTestId('btn-guardar')).toBeDisabled();   // aún falta el firmado
     await altaAdjuntarPdfFirmado(page);
     await expect(page.getByTestId('btn-guardar')).toBeEnabled();

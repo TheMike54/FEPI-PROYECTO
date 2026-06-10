@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Tabs from '../components/ui/Tab.jsx';
 import Modal from '../components/ui/Modal.jsx';
+import Tabla, { thClass } from '../components/ui/Tabla.jsx';
+import Boton from '../components/ui/Boton.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
@@ -104,7 +106,24 @@ const hoyISOAlta = () => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 };
 
-const ERR0 = { campos: {}, conceptoIdx: null, programaError: false, garantiaIdx: null, catalogoMonto: false, pdfFirmadoFalta: false, anticipoPdfFalta: false, garantiasFaltan: false };
+const ERR0 = { campos: {}, conceptoIdx: null, programaError: false, garantiaIdx: null, catalogoMonto: false, pdfFirmadoFalta: false, anticipoPdfFalta: false, garantiasFaltan: false, planAmortError: false };
+
+// O2: default PROPORCIONAL del plan de amortización al centavo — n−1 cuotas iguales (ROUND a 2)
+// y la última absorbe el ajuste de redondeo, para que Σ = monto del anticipo EXACTO. Devuelve
+// { [periodoNumero]: 'monto' } (strings: son inputs controlados). Espejo del default del backend.
+const planProporcional = (montoAnticipo, numeros) => {
+  const plan = {};
+  const n = numeros.length;
+  if (!(montoAnticipo > 0) || n === 0) return plan;
+  const cuota = round2(montoAnticipo / n);
+  let acum = 0;
+  numeros.forEach((num, i) => {
+    const m = i < n - 1 ? cuota : round2(montoAnticipo - acum);
+    acum = round2(acum + m);
+    plan[num] = String(m);
+  });
+  return plan;
+};
 
 // alta-v2 (4.2): valores iniciales VACÍOS (también usados por "Cancelar"). El contrato nuevo
 // arranca en blanco; el `tipo` mantiene la primera opción del select (campo obligatorio que
@@ -646,6 +665,82 @@ function TabGarantias({ rows, onCell, onPatch, onAdd, onRemove, anticipoPct, set
   );
 }
 
+// O2 (10-jun) — Paso 5: PLAN DE AMORTIZACIÓN del anticipo (criterio de HU-01; el profe lo
+// definió en la revisión del 8-9 jun: "es en qué mes voy a devolver el dinero… muy parecido al
+// programa de obra: por estimación, qué cantidad va a amortizar. No hay límites"). Matriz por
+// periodo (patrón del programa): default PROPORCIONAL precargado, editable libre; el gate duro
+// (Σ = monto del anticipo al CENTAVO, art. 143 fr. I RLOPSRM) vive en validarPaso(5) y el
+// backend lo revalida. La carátula (G2) sigue amortizando proporcional:
+// [Fase B pendiente de validar con el profe].
+function TabPlanAmortizacion({ periodos, plan, onMonto, montoAnticipo, anticipoPct, sumaPlan, soloLectura, onRestablecer }) {
+  const cuadra = sumaPlan === montoAnticipo;
+  const dif = round2(montoAnticipo - sumaPlan);
+  return (
+    <div>
+      <h3 className="text-lg font-bold text-sigecop-blue mb-1">Plan de amortización del anticipo</h3>
+      <p className="text-sm text-slate-600 mb-4 max-w-3xl">
+        Define en qué periodos se devuelve el anticipo de <strong>{formatoMXN.format(montoAnticipo)}</strong>{' '}
+        ({anticipoPct}% del monto del contrato). Viene precargado <strong>proporcional</strong> entre los
+        periodos y es editable libremente; la suma debe ser <strong>exacta al centavo</strong> (art. 143 RLOPSRM).
+      </p>
+      <Tabla className="mb-4 max-w-2xl" testid="plan-amortizacion-tabla">
+        <thead>
+          <tr>
+            <th className={thClass}>Periodo</th>
+            <th className={thClass}>Del — al</th>
+            <th className={`${thClass} text-right`}>Monto a amortizar</th>
+            <th className={`${thClass} text-right`}>% del anticipo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {periodos.map((p) => {
+            const m = Number(plan[p.numero]) || 0;
+            return (
+              <tr key={p.numero} className="border-t border-borde">
+                <td className="px-3 py-2 font-medium">#{p.numero}</td>
+                <td className="px-3 py-2 text-slate-600 text-xs whitespace-nowrap">{fmtFechaES(p.inicio)} — {fmtFechaES(p.fin)}</td>
+                <td className="px-3 py-2 text-right">
+                  <input
+                    type="number" min="0" step="0.01"
+                    className="sg-input text-right w-40 inline-block"
+                    value={plan[p.numero] ?? ''}
+                    onChange={(e) => onMonto(p.numero, e.target.value)}
+                    disabled={soloLectura}
+                    data-testid={`plan-monto-${p.numero}`}
+                  />
+                </td>
+                <td className="px-3 py-2 text-right text-slate-500 text-xs">
+                  {montoAnticipo > 0 ? `${round2((m / montoAnticipo) * 100).toFixed(2)}%` : '—'}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+        <tfoot>
+          <tr className="border-t border-borde-fuerte bg-pagina font-semibold">
+            <td className="px-3 py-2" colSpan={2}>Suma del plan</td>
+            <td className="px-3 py-2 text-right font-mono" data-testid="plan-suma">{formatoMXN.format(sumaPlan)}</td>
+            <td className="px-3 py-2" />
+          </tr>
+        </tfoot>
+      </Tabla>
+      <div className="mb-4 text-sm max-w-2xl">
+        {cuadra
+          ? <span className="block text-exito bg-exito-bg border border-exito/30 rounded px-3 py-2" data-testid="plan-cuadra">✓ El plan suma exactamente el anticipo ({formatoMXN.format(montoAnticipo)}).</span>
+          : <span className="block text-peligro bg-peligro-bg border border-peligro/30 rounded px-3 py-2" data-testid="plan-descuadre">El plan debe sumar {formatoMXN.format(montoAnticipo)}: lleva {formatoMXN.format(sumaPlan)} ({dif > 0 ? `faltan ${formatoMXN.format(dif)}` : `sobran ${formatoMXN.format(-dif)}`}).</span>}
+      </div>
+      <Boton variante="secundario" onClick={onRestablecer} disabled={soloLectura} data-testid="plan-restablecer">
+        Restablecer proporcional
+      </Boton>
+      <div className="mt-4 bg-guinda-soft border-l-4 border-guinda px-4 py-3 text-sm text-tinta max-w-3xl">
+        <strong>Fase A:</strong> el plan se captura aquí y se consulta en el expediente. La carátula de la
+        estimación sigue amortizando <strong>proporcional</strong> (art. 143 fr. I RLOPSRM).{' '}
+        <span className="text-slate-500">[Fase B pendiente de validar con el profe: que la carátula obedezca este plan.]</span>
+      </div>
+    </div>
+  );
+}
+
 // 1.5: PDF firmado del contrato. Con el contrato ya guardado, sube/consulta directo (BYTEA,
 // append-only). DURANTE la captura (sin contrato aún) retiene el File en el padre
 // (pendingFile/onPickFile) y se sube al guardar — el usuario puede adjuntarlo sin guardar antes.
@@ -1105,12 +1200,14 @@ function TabRegistrados({ contratos, loading, errorMsg, sinSesion, onRecargar, s
 // Corrección profe (04-jun): contratista/dependencia ya no se validan como texto aquí (son cuentas:
 // superintendenteId y dependenciaId, validados aparte en validarPaso(0)).
 const REQ_GENERALES = ['folio', 'tipo', 'objeto', 'plazoDias', 'fechaInicio'];
-// 4.1 + alta-v3 (PDF firmado OBLIGATORIO): pasos del WIZARD de creación (captura). El PDF
-// firmado (5) es ahora el ÚLTIMO paso del wizard: el botón "Guardar contrato" vive ahí y queda
-// GATEADO (deshabilitado hasta adjuntar el PDF firmado; validarPaso(5)). Solo "Registrados" (6)
-// queda como pestaña auxiliar de consulta, fuera de la progresión obligatoria.
-const PASOS_WIZARD = [0, 1, 2, 3, 4, 5];
-const ULTIMO_PASO_WIZARD = 5;
+// 4.1 + alta-v3 (PDF firmado OBLIGATORIO): pasos del WIZARD de creación (captura). O2 (10-jun)
+// inserta el paso 5 "Plan de amortización" (criterio de HU-01, art. 143 fr. I RLOPSRM): solo
+// existe con anticipo > 0 (sin anticipo se OMITE: la pestaña se oculta y la navegación lo salta,
+// el gating se EXTIENDE sin relajarse). El PDF firmado pasa a ser el paso 6 (último: ahí vive
+// "Guardar contrato", gateado por validarPaso(6)). "Registrados" (7) sigue como pestaña auxiliar.
+const PASO_PLAN_AMORT = 5;
+const PASOS_WIZARD = [0, 1, 2, 3, 4, 5, 6];
+const ULTIMO_PASO_WIZARD = 6;
 // alta-v5.1: índice de la pestaña auxiliar "Registrados" (lista de contratos guardados, SOLO
 // LECTURA). Va justo DESPUÉS del último paso del wizard y queda FUERA del gating lineal de la
 // captura: es navegable SIEMPRE (captura vacía, a medias o completa), sin permitir saltarse pasos.
@@ -1209,6 +1306,22 @@ export default function AltaContrato() {
     return { ...r, pu: String(pu), importe: importeDe(r.cantidad, pu) }; // snapea al importe real resultante
   }));
   const montoDerivado = round2(conceptos.reduce((s, c) => s + (Number(importeDe(c.cantidad, c.pu)) || 0), 0));
+
+  // --- O2: PLAN DE AMORTIZACIÓN del anticipo (paso 5, art. 143 fr. I RLOPSRM) ---
+  // montoAnticipo = ROUND(monto derivado × %anticipo, 2). El plan vive como { numero: 'monto' }
+  // y se PRECARGA PROPORCIONAL (editable libre por periodo, "no hay límites" — profe) cada vez
+  // que cambian el anticipo, el monto del contrato o los periodos: el plan DERIVA de esos tres
+  // (ediciones previas dejan de cuadrar y se reponen al default, predecible y siempre válido).
+  const montoAnticipo = round2(montoDerivado * ((Number(anticipoPct) || 0) / 100));
+  const [planAmort, setPlanAmort] = useState({});
+  useEffect(() => {
+    setPlanAmort(planProporcional(montoAnticipo, periodos.map((p) => p.numero)));
+  }, [montoAnticipo, periodos]);
+  const setPlanMonto = (numero, value) => setPlanAmort((prev) => ({ ...prev, [numero]: value }));
+  // Σ actual del plan (round2 incremental, espejo del backend) — para el resumen y validarPaso(5).
+  const sumaPlan = round2(periodos.reduce((s, p) => round2(s + (Number(planAmort[p.numero]) || 0)), 0));
+  // El paso 5 se OMITE sin anticipo (pestaña oculta + salto en irAPaso).
+  const planOmitido = !((Number(anticipoPct) || 0) > 0) || montoAnticipo <= 0;
 
   // O1-P5a: excesos actuales de garantías vs el % esperado del monto del contrato.
   //  · Cumplimiento: 10% del monto (lo que pidió el profe en P5a; [validar el tope exacto]).
@@ -1425,12 +1538,36 @@ export default function AltaContrato() {
       }
       return { ok: true };
     }
-    if (idx === 5) {
+    if (idx === PASO_PLAN_AMORT) {
+      // O2 (10-jun): PLAN DE AMORTIZACIÓN del anticipo (criterio de HU-01; art. 143 fr. I
+      // RLOPSRM — la ley dice "proporcionalmente", el profe pidió plan EDITABLE; la carátula
+      // G2 sigue proporcional: [Fase B pendiente de validar con el profe]). Sin anticipo el
+      // paso SE OMITE (auto-válido; la pestaña ni se muestra). Con anticipo: cada periodo con
+      // monto válido ≥ 0 y Σ EXACTA al centavo = monto del anticipo (el backend revalida).
+      if (planOmitido) return { ok: true };
+      if (periodos.length === 0) {
+        return { ok: false, msg: 'Define la fecha de inicio, el plazo y el ciclo: el plan de amortización se captura por periodo.', errores: { ...ERR0, planAmortError: true } };
+      }
+      for (const p of periodos) {
+        const v = planAmort[p.numero];
+        if (v === '' || v == null || !(Number(v) >= 0)) {
+          return { ok: false, msg: `Plan de amortización: captura un monto válido (≥ 0) para el periodo ${p.numero}.`, errores: { ...ERR0, planAmortError: true } };
+        }
+      }
+      if (sumaPlan !== montoAnticipo) {
+        const dif = round2(montoAnticipo - sumaPlan);
+        const detalle = dif > 0 ? `faltan ${formatoMXN.format(dif)}` : `sobran ${formatoMXN.format(-dif)}`;
+        return { ok: false, msg: `El plan de amortización debe sumar exactamente el anticipo (${formatoMXN.format(montoAnticipo)}): lleva ${formatoMXN.format(sumaPlan)}, ${detalle} (art. 143 RLOPSRM).`, errores: { ...ERR0, planAmortError: true } };
+      }
+      return { ok: true };
+    }
+    if (idx === 6) {
       // alta-v3: el PDF firmado es OBLIGATORIO para registrar el contrato. Debe estar
       // adjuntado (retenido durante la captura, 1.5) ANTES de guardar; el botón "Guardar"
       // también queda deshabilitado sin él (doble gateo: vista + validación). [validar] — el
       // fundamento (el contrato se formaliza/existe una vez firmado) lo CONFIRMA el profe;
       // NO se asume número de artículo. `contratoGuardadoId` cubre el caso ya-guardado.
+      // (O2: era el paso 5; el plan de amortización lo recorrió al 6.)
       if (!pdfFirmadoFile && !contratoGuardadoId) {
         return { ok: false, msg: 'El PDF firmado del contrato es obligatorio: adjúntalo en el último paso para poder guardar.', errores: { ...ERR0, pdfFirmadoFalta: true } };
       }
@@ -1458,7 +1595,8 @@ export default function AltaContrato() {
   //    abren el resto en cascada. Los errores van al banner PERSISTENTE (1.3).
   const irAPaso = (target) => {
     if (target > ULTIMO_PASO_WIZARD) { setTabActivo(target); return; } // auxiliar (Registrados)
-    if (target <= tabActivo) { setTabActivo(target); return; }          // atrás libre
+    // O2: «Atrás» también SALTA el paso omitido (sin anticipo, del PDF se regresa a garantías).
+    if (target <= tabActivo) { setTabActivo(target === PASO_PLAN_AMORT && planOmitido ? Math.max(0, target - 1) : target); return; } // atrás libre
     // DEFENSA EXPLÍCITA (fix de raíz): NUNCA avanzar si el paso ACTUAL no es válido. El loop de
     // prefijo de abajo ya lo hacía cuando `pasoMaxAlcanzado >= tabActivo`; pero si por algún flujo
     // queda `tabActivo > pasoMaxAlcanzado` (p.ej. tras guardar, que hace setTabActivo(Registrados)
@@ -1466,11 +1604,15 @@ export default function AltaContrato() {
     // sin validar. Validar el paso actual de entrada cierra ese hueco sin importar el estado.
     const vActual = validarPaso(tabActivo);
     if (!vActual.ok) { setErrores(vActual.errores); setTabActivo(tabActivo); setErrorWizard(vActual.msg); return; }
-    const destino = Math.min(target, pasoMaxAlcanzado + 1);             // solo un paso nuevo
+    let destino = Math.min(target, pasoMaxAlcanzado + 1);               // solo un paso nuevo
     for (let p = tabActivo; p < destino; p++) {
       const v = validarPaso(p);
       if (!v.ok) { setErrores(v.errores); setTabActivo(p); setErrorWizard(v.msg); return; }
     }
+    // O2: si el destino cae en el paso OMITIDO (plan sin anticipo), se salta UN paso más.
+    // El paso omitido es auto-válido (validarPaso lo aprueba), así que el gating no se relaja:
+    // simplemente no existe para esta captura. pasoMaxAlcanzado absorbe el salto (abajo).
+    if (destino === PASO_PLAN_AMORT && planOmitido) destino = Math.min(destino + 1, ULTIMO_PASO_WIZARD);
     // O1-P5a: al SALIR del paso de garantías (4) con montos por encima del % esperado, AVISAR con
     // el modal y esperar confirmación (no bloquea). Tras confirmar se reentra con el snapshot ya
     // aceptado y el avance procede. El gating lineal NO cambia (esto corre DESPUÉS de validar).
@@ -1536,7 +1678,10 @@ export default function AltaContrato() {
         // alta-v5: defensa-en-profundidad: solo se persisten pólizas COMPLETAS (polizaCompleta). El
         // guardado ya pasó por validar() (todos los pasos), que exige cumplimiento/anticipo completos;
         // este filtro hace explícito en el borde de persistencia que nunca se manda una póliza a medias.
-        garantias: garantias.filter((g) => polizaCompleta(g)).map((g) => ({ tipo: g.tipo, afianzadora: g.afianzadora, poliza: g.poliza, monto: g.monto, vigencia: g.vigencia }))
+        garantias: garantias.filter((g) => polizaCompleta(g)).map((g) => ({ tipo: g.tipo, afianzadora: g.afianzadora, poliza: g.poliza, monto: g.monto, vigencia: g.vigencia })),
+        // O2: plan de amortización del anticipo (validar() ya exigió Σ = anticipo al centavo;
+        // el backend lo revalida y, si faltara, derivaría el proporcional). Sin anticipo: vacío.
+        planAmortizacion: planOmitido ? [] : periodos.map((p) => ({ periodoNumero: p.numero, monto: Number(planAmort[p.numero]) || 0 }))
       };
       const creado = await api.crearContrato(payload);
       const nuevoId = creado && creado.id ? creado.id : null;
@@ -1612,7 +1757,8 @@ export default function AltaContrato() {
     if (errores.programaError) s.add(2);
     if (REQ_JURIDICOS.some((k) => c[k])) s.add(3); // alta-v5: jurídicos obligatorios
     if (c.anticipoPct || errores.garantiaIdx != null || errores.anticipoPdfFalta || errores.garantiasFaltan) s.add(4); // alta-v4: +PDF anticipo; alta-v5: +fianzas obligatorias
-    if (errores.pdfFirmadoFalta) s.add(5); // alta-v3: PDF firmado obligatorio (último paso)
+    if (errores.planAmortError) s.add(PASO_PLAN_AMORT); // O2: plan de amortización (Σ = anticipo)
+    if (errores.pdfFirmadoFalta) s.add(6); // alta-v3: PDF firmado obligatorio (último paso; O2 lo recorrió al 6)
     return s;
   }, [errores]);
 
@@ -1659,6 +1805,7 @@ export default function AltaContrato() {
       return;
     }
     if (!capturaCompleta) return; // pasos de captura: gating lineal (solo Siguiente/Atrás)
+    if (target === PASO_PLAN_AMORT && planOmitido) return; // O2: el paso omitido no existe (pestaña oculta)
     setErrores(ERR0);
     setErrorWizard(null);
     setTabActivo(target);
@@ -1687,6 +1834,13 @@ export default function AltaContrato() {
     { label: 'Datos jurídicos', content: wrapTab(<TabJuridicos datos={datosJuridicos} set={setDatosJur} err={errores.campos} />) },
     { label: 'Garantías, penalizaciones y amortización', content: wrapTab(
       <TabGarantias rows={garantias} onCell={mkCell(setGarantias)} onPatch={mkPatch(setGarantias)} onAdd={mkAdd(setGarantias, { tipo: '', afianzadora: '', poliza: '', monto: '', vigencia: '' })} onRemove={mkRemove(setGarantias)} anticipoPct={anticipoPct} setAnticipoPct={setAnticipoPct} soloLectura={soloLectura} errIdx={errores.garantiaIdx} errAnticipo={errores.campos.anticipoPct} contratoId={contratoGuardadoId} montoContrato={montoDerivado} pdfAnticipoFile={pdfAnticipoFile} setPdfAnticipoFile={setPdfAnticipoFile} />
+    ) },
+    // O2: paso 5 — plan de amortización. `oculta` (sin anticipo) lo esconde del wizard y la
+    // navegación lo salta (irAPaso); el orden de índices NO cambia (gating intacto).
+    { label: 'Plan de amortización', oculta: planOmitido, content: wrapTab(
+      <TabPlanAmortizacion periodos={periodos} plan={planAmort} onMonto={setPlanMonto} montoAnticipo={montoAnticipo}
+        anticipoPct={Number(anticipoPct) || 0} sumaPlan={sumaPlan} soloLectura={soloLectura}
+        onRestablecer={() => setPlanAmort(planProporcional(montoAnticipo, periodos.map((p) => p.numero)))} />
     ) },
     { label: 'PDF firmado', content: wrapTab(<TabPdfFirmado contratoId={contratoGuardadoId} soloLectura={soloLectura} pendingFile={pdfFirmadoFile} onPickFile={setPdfFirmadoFile} />) },
     { label: 'Registrados', content: (
