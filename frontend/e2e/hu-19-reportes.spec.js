@@ -30,6 +30,43 @@ const VIEW_PATH = '/reportes';
 const TITULO = 'Exportación de reportes';
 const SPRINT = 'Sprint 9';
 
+// HU-19 quedó CABLEADA a datos reales: los reportes se exportan sobre el contrato SELECCIONADO.
+// Creamos uno por API (residente = creador → lo ve) con su equipo y un concepto. Mismo patrón
+// que HU-05/HU-07: solo se toca el .spec.
+const API = 'http://localhost:4000/api';
+const PASS = 'Sigecop2026!';
+async function loginApi(request, email) {
+  return (await request.post(`${API}/auth/login`, { data: { email, password: PASS } })).json();
+}
+async function crearContratoConConceptos(request) {
+  const [R, S, V, D] = await Promise.all([
+    loginApi(request, 'residente@sigecop.test'),
+    loginApi(request, 'contratista@sigecop.test'),
+    loginApi(request, 'supervision@sigecop.test'),
+    loginApi(request, 'dependencia@sigecop.test')
+  ]);
+  const folio = `E2E-HU19-${Date.now()}`;
+  const r = await request.post(`${API}/contratos`, {
+    headers: { Authorization: `Bearer ${R.token}` },
+    data: {
+      folio, tipo: 'Obra pública sobre la base de precios unitarios', objeto: 'Reportes e2e',
+      plazoDias: 60, fechaInicio: '2026-06-01',
+      superintendenteId: S.user.id, supervisionId: V.user.id, dependenciaId: D.user.id,
+      anticipoPct: null, juridicos: {},
+      conceptos: [{ clave: 'A1', concepto: 'Concepto e2e', unidad: 'm³', cantidad: 100, pu: 50 }],
+      ciclo: 'mensual', programa: [{ clave: 'A1', periodoNumero: 1, cantidad: 100 }], garantias: []
+    }
+  });
+  expect(r.status(), 'crear contrato con conceptos').toBe(201);
+  return folio;
+}
+async function seleccionarContratoPorFolio(page, folio) {
+  const sel = page.getByTestId('select-contrato-reporte');
+  await expect(sel).toBeVisible();
+  const val = await sel.locator('option', { hasText: folio }).first().getAttribute('value');
+  await sel.selectOption(val);
+}
+
 // id -> { formato -> patron suggestedFilename }
 const REPORTES = [
   { id: 1, slug: 'avance-fisico',     formatos: ['pdf', 'xlsx'] },
@@ -62,12 +99,26 @@ test.describe('HU-19 — modo aplicacion (Residente: ejecuta)', () => {
     });
   });
 
-  test('residente puede exportar el reporte 1 en PDF', async ({ page }) => {
+  test('residente puede exportar el reporte 1 en PDF (tras elegir contrato)', async ({ page, request }) => {
+    const folio = await crearContratoConConceptos(request); // residente = creador → lo ve
     await goToViaSidebar(page, VIEW_PATH);
+    // Sin contrato seleccionado, los botones están deshabilitados (no hay datos que exportar).
+    await expect(page.getByTestId('btn-exportar-1-pdf')).toBeDisabled();
+    await seleccionarContratoPorFolio(page, folio);
+    await expect(page.getByTestId('btn-exportar-1-pdf')).toBeEnabled();
+
     const dl = page.waitForEvent('download');
     await page.getByTestId('btn-exportar-1-pdf').click();
     const file = await dl;
     expect(file.suggestedFilename()).toMatch(/reporte_1_avance-fisico_.*\.pdf$/);
+  });
+
+  test('el reporte 4 (observaciones) queda deshabilitado: sin fuente (HU-15)', async ({ page, request }) => {
+    const folio = await crearContratoConConceptos(request);
+    await goToViaSidebar(page, VIEW_PATH);
+    await seleccionarContratoPorFolio(page, folio);
+    // Aun con contrato cargado, R4 no tiene fuente → permanece deshabilitado (no se inventa dummy).
+    await expect(page.getByTestId('btn-exportar-4-excel')).toBeDisabled();
   });
 });
 
