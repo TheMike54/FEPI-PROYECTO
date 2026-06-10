@@ -1,47 +1,86 @@
-// HU-07: configuración de alertas de atraso por concepto del catálogo + evaluación
-// de disparo por avance físico. Alcance Etapa 1:
-// - El actor (creada_por) SIEMPRE sale del JWT, nunca del body.
-// - canal SOLO 'sistema' (in-app); 'correo' depende de notificaciones (Etapa 2).
-// - alerta_atraso NO tiene contrato_id: el contrato se resuelve por
-//   contrato_concepto_id → contrato_conceptos.contrato_id → contratos, y se acota
-//   con esParteOSupervision (igual que pagos.controller).
+// HU-07 v2 (O5, 10-jun) — ATRASO POR CONCEPTO, automático y en UNIDADES (rediseño del profe, P15).
+// El panel ya NO se configura: para el contrato seleccionado se listan TODOS los conceptos con
+// DÉFICIT = programado_acumulado(al periodo VIGENTE, programa_obra) − ejecutado_acumulado, en las
+// UNIDADES del concepto, solo las filas con déficit > 0. Sin umbral, sin % y sin cron: se recalcula
+// al consultar. Reglas:
+// - "periodo actual" = el último periodo del contrato cuyo `inicio` ya pasó (inicio <= CURRENT_DATE);
+//   si ninguno arrancó, no hay programado acumulado → no hay déficit.
+// - programado_acumulado = Σ programa_obra del concepto en periodos con numero <= periodo actual (el
+//   programa VIGENTE: los convenios lo reescriben en vivo vía guardarMatriz, igual que en O4/HU-06).
+// - ejecutado_acumulado = Σ concepto_avance del concepto (TOTAL). Tomar el total (no acotado al periodo)
+//   hace que "ir adelantado" NUNCA produzca un falso atraso y sobrevive a avances sin periodo (la matriz
+//   se regenera con SET NULL); el déficit solo aparece cuando lo hecho va por debajo de lo que tocaba.
+// - Acotamiento por participación (esParteOSupervision, igual que pagos/HU-06). HU-07 lo ven residente
+//   (E) y supervisión (C); el badge del login y el "Asentar" los gatea el frontend por ese acceso.
+// - "Asentar en bitácora" (residente, write) genera una nota de atraso (tag='atraso', tipo 'otro') usando
+//   el folio atómico del controller de bitácora; EXIGE bitácora abierta (un atraso es derivado en vivo, no
+//   un hecho persistido como sustitución/avance, así que no se difiere — se asienta un snapshot del momento).
+// - La config previa (umbral/canal) queda RETIRADA: la tabla alerta_atraso se conserva pero ya no se usa.
 const { pool } = require('../db/pool');
 const { esParteOSupervision } = require('../lib/acceso');
-
-const CANAL_PERMITIDO = 'sistema';
+// O5: la nota de atraso reutiliza el folio atómico + la redacción del controller de bitácora (no se
+// duplica la lógica de inmutabilidad; la nota es append-only como todas).
+const { insertarNotaAtomica, textoNotaAtraso } = require('./bitacora.controller');
 
 // Columnas mínimas del contrato para esParteOSupervision (lib/acceso).
 const COLS_ACCESO = 'created_by, residente_id, superintendente_id, supervision_id';
+// Tolerancia de redondeo (misma EPS que trabajos/estimaciones): un déficit por debajo de esto es 0.
+const EPS_CANT = 1e-6;
+// Cuantiza a 3 decimales = escala de las cantidades (NUMERIC(14,3)) para no mostrar ruido de float.
+function q3(n) { return Math.round((Number(n) + Number.EPSILON) * 1e3) / 1e3; }
 
-// Resuelve el contrato (para acotamiento) a partir de un contrato_concepto_id.
-// Devuelve { contrato } o null si el concepto no existe.
-async function contratoPorConcepto(conceptoId) {
-  const r = await pool.query(
-    `SELECT c.id AS contrato_id, ${COLS_ACCESO}
+// El "periodo actual" del contrato: el de mayor número cuyo inicio ya ocurrió. null si ninguno arrancó.
+// `db` = pool o client (ambos exponen .query).
+async function periodoActualDe(db, contratoId) {
+  const r = await db.query(
+    `SELECT id, numero, inicio, fin
+       FROM contrato_periodos
+      WHERE contrato_id = $1 AND inicio <= CURRENT_DATE
+      ORDER BY numero DESC
+      LIMIT 1`,
+    [contratoId]
+  );
+  return r.rowCount ? r.rows[0] : null;
+}
+
+// Déficit por concepto del contrato al periodo `paNum` (0 = ningún periodo arrancó). Devuelve TODAS
+// las filas (con programado_acum, ejecutado_acum, deficit ya cuantizado); el llamador filtra > 0.
+async function deficitsDeContrato(db, contratoId, paNum) {
+  const r = await db.query(
+    `SELECT cc.id AS contrato_concepto_id, cc.clave, cc.concepto, cc.unidad,
+            cc.cantidad AS cantidad_contratada,
+            COALESCE((SELECT SUM(po.cantidad)
+                        FROM programa_obra po
+                        JOIN contrato_periodos cp ON cp.id = po.contrato_periodo_id
+                       WHERE po.contrato_concepto_id = cc.id AND cp.numero <= $2), 0) AS programado_acum,
+            COALESCE((SELECT SUM(ca.cantidad)
+                        FROM concepto_avance ca
+                       WHERE ca.contrato_concepto_id = cc.id), 0) AS ejecutado_acum
        FROM contrato_conceptos cc
-       JOIN contratos c ON c.id = cc.contrato_id
-      WHERE cc.id = $1`,
-    [conceptoId]
+      WHERE cc.contrato_id = $1
+      ORDER BY cc.orden`,
+    [contratoId, paNum]
   );
-  return r.rowCount === 0 ? null : r.rows[0];
+  return r.rows.map((row) => {
+    const programado = q3(row.programado_acum);
+    const ejecutado = q3(row.ejecutado_acum);
+    const deficit = q3(programado - ejecutado);
+    return {
+      contrato_concepto_id: row.contrato_concepto_id,
+      clave: row.clave,
+      concepto: row.concepto,
+      unidad: row.unidad,
+      concepto_label: row.clave ? `${row.clave} · ${row.concepto}` : row.concepto,
+      cantidad_contratada: q3(row.cantidad_contratada),
+      programado_acumulado: programado,
+      ejecutado_acumulado: ejecutado,
+      deficit
+    };
+  });
 }
 
-// Resuelve el contrato a partir de un id de alerta (vía su concepto).
-// Devuelve { contrato } o null si la alerta no existe.
-async function contratoPorAlerta(alertaId) {
-  const r = await pool.query(
-    `SELECT c.id AS contrato_id, ${COLS_ACCESO}
-       FROM alerta_atraso a
-       JOIN contrato_conceptos cc ON cc.id = a.contrato_concepto_id
-       JOIN contratos c ON c.id = cc.contrato_id
-      WHERE a.id = $1`,
-    [alertaId]
-  );
-  return r.rowCount === 0 ? null : r.rows[0];
-}
-
-// GET /api/alertas/contrato/:contratoId — alertas del contrato + evaluación de
-// disparo. Lectura acotada por participación (reusa acceso.js).
+// GET /api/alertas/contrato/:contratoId — panel AUTOMÁTICO de atraso por concepto del contrato.
+// Lectura acotada por participación. Solo conceptos con déficit > 0, en unidades, al periodo vigente.
 async function alertasDeContrato(req, res) {
   try {
     const contratoId = Number(req.params.contratoId);
@@ -52,152 +91,156 @@ async function alertasDeContrato(req, res) {
     const c = await pool.query(`SELECT id, ${COLS_ACCESO} FROM contratos WHERE id = $1`, [contratoId]);
     if (c.rowCount === 0) return res.status(404).json({ error: 'El contrato indicado no existe' });
     if (!esParteOSupervision(req.user, c.rows[0])) {
-      return res.status(403).json({ error: 'No tienes acceso a las alertas de este contrato' });
+      return res.status(403).json({ error: 'No tienes acceso al atraso de este contrato' });
     }
 
-    // Una alerta por concepto del catálogo. El avance físico ejecutado se agrega
-    // de concepto_avance (HU-06); LEFT JOIN para distinguir "sin avance" (NULL)
-    // de "0 ejecutado". cc.cantidad es la cantidad contratada (denominador).
-    const r = await pool.query(
-      `SELECT a.id, a.contrato_concepto_id, a.umbral_pct, a.canal, a.activa, a.created_at,
-              cc.clave, cc.concepto, cc.cantidad,
-              av.ejecutado
-         FROM alerta_atraso a
-         JOIN contrato_conceptos cc ON cc.id = a.contrato_concepto_id
-         LEFT JOIN (
-           SELECT ca.contrato_concepto_id, SUM(ca.cantidad) AS ejecutado
-             FROM concepto_avance ca
-            GROUP BY ca.contrato_concepto_id
-         ) av ON av.contrato_concepto_id = a.contrato_concepto_id
-        WHERE cc.contrato_id = $1
-        ORDER BY a.created_at DESC, a.id DESC`,
-      [contratoId]
-    );
+    const periodo = await periodoActualDe(pool, contratoId);
+    const paNum = periodo ? periodo.numero : 0;
+    const todos = await deficitsDeContrato(pool, contratoId, paNum);
+    const atrasos = todos.filter((f) => f.deficit > EPS_CANT);
 
-    const alertas = r.rows.map((row) => {
-      const umbral = Number(row.umbral_pct);
-      const cantidad = Number(row.cantidad);
-      // "Sin avance registrado": el concepto no tiene filas en concepto_avance
-      // (av.ejecutado IS NULL). NO se trata como 0% para evitar falsos disparos.
-      const avanceRegistrado = row.ejecutado !== null && row.ejecutado !== undefined;
-      let avancePct = null;
-      if (avanceRegistrado && cantidad > 0) {
-        avancePct = Math.round((Number(row.ejecutado) / cantidad) * 100 * 100) / 100;
-      }
-      const disparada = avanceRegistrado && row.activa && avancePct !== null && avancePct < umbral;
-      return {
-        id: row.id,
-        contrato_concepto_id: row.contrato_concepto_id,
-        concepto_label: row.clave ? `${row.clave} · ${row.concepto}` : row.concepto,
-        umbral_pct: umbral,
-        canal: row.canal,
-        activa: row.activa,
-        avance_pct: avancePct,
-        avance_registrado: avanceRegistrado,
-        disparada
-      };
+    return res.status(200).json({
+      contrato_id: contratoId,
+      periodo_actual: periodo ? { numero: periodo.numero, inicio: periodo.inicio, fin: periodo.fin } : null,
+      total_conceptos: todos.length,
+      total_atrasos: atrasos.length,
+      atrasos
     });
-
-    return res.status(200).json(alertas);
   } catch (err) {
     console.error('[alertasDeContrato]', err);
     return res.status(500).json({ error: 'Error interno' });
   }
 }
 
-// POST /api/alertas — crea {contrato_concepto_id, umbral_pct, canal:'sistema'}.
-// Gate de rol en la ruta (residente); aquí se valida participación ANTES de insertar.
-async function crearAlerta(req, res) {
+// GET /api/alertas/resumen — AVISO al iniciar sesión: cuántos conceptos con déficit y en cuántos
+// contratos, ACOTADO por participación (el frontend solo muestra el badge a residente/supervisión).
+// Una sola consulta: por contrato accesible, su periodo vigente (max numero con inicio <= hoy) y, por
+// concepto, programado_acum(≤ ese periodo) − ejecutado_acum(total) > 0.
+async function resumenAtrasos(req, res) {
   try {
-    const body = req.body || {};
-    const conceptoId = Number(body.contrato_concepto_id);
-    const umbral = Number(body.umbral_pct);
-    // canal opcional: default 'sistema'. 'correo' se rechaza explícito en Etapa 1.
-    const canal = body.canal === undefined || body.canal === null || body.canal === ''
-      ? CANAL_PERMITIDO
-      : String(body.canal);
-
-    if (!Number.isInteger(conceptoId) || conceptoId <= 0) {
-      return res.status(400).json({ error: 'El concepto (contrato_concepto_id) es requerido' });
-    }
-    if (!Number.isFinite(umbral) || umbral < 0 || umbral > 100) {
-      return res.status(400).json({ error: 'El umbral (umbral_pct) debe ser un número entre 0 y 100' });
-    }
-    if (canal === 'correo') {
-      return res.status(400).json({ error: "El canal 'correo' no está disponible en Etapa 1" });
-    }
-    if (canal !== CANAL_PERMITIDO) {
-      return res.status(400).json({ error: "El canal debe ser 'sistema'" });
-    }
-
-    const contrato = await contratoPorConcepto(conceptoId);
-    if (!contrato) return res.status(404).json({ error: 'El concepto indicado no existe' });
-    if (!esParteOSupervision(req.user, contrato)) {
-      return res.status(403).json({ error: 'No tienes acceso a este contrato' });
-    }
-
-    const ins = await pool.query(
-      `INSERT INTO alerta_atraso (contrato_concepto_id, umbral_pct, canal, creada_por)
-       VALUES ($1, $2, $3, $4)
-       RETURNING id, contrato_concepto_id, umbral_pct, canal, activa, creada_por, created_at`,
-      [conceptoId, umbral, canal, req.user.id]
+    const uid = req.user.id;
+    const venTodo = req.user.rol === 'dependencia' || req.user.rol === 'finanzas';
+    const r = await pool.query(
+      `WITH contratos_acc AS (
+         SELECT id FROM contratos
+          WHERE $2::boolean
+             OR created_by = $1 OR residente_id = $1 OR superintendente_id = $1 OR supervision_id = $1
+       ),
+       pa AS (
+         SELECT contrato_id, MAX(numero) AS pa_num
+           FROM contrato_periodos
+          WHERE inicio <= CURRENT_DATE
+          GROUP BY contrato_id
+       ),
+       defic AS (
+         SELECT cc.contrato_id,
+                COALESCE((SELECT SUM(po.cantidad)
+                            FROM programa_obra po
+                            JOIN contrato_periodos cp ON cp.id = po.contrato_periodo_id
+                           WHERE po.contrato_concepto_id = cc.id
+                             AND cp.numero <= COALESCE(pa.pa_num, 0)), 0)
+              - COALESCE((SELECT SUM(ca.cantidad)
+                            FROM concepto_avance ca
+                           WHERE ca.contrato_concepto_id = cc.id), 0) AS deficit
+           FROM contrato_conceptos cc
+           JOIN contratos_acc ON contratos_acc.id = cc.contrato_id
+           LEFT JOIN pa ON pa.contrato_id = cc.contrato_id
+       )
+       SELECT COUNT(*)                    FILTER (WHERE deficit > $3) AS conceptos,
+              COUNT(DISTINCT contrato_id) FILTER (WHERE deficit > $3) AS contratos
+         FROM defic`,
+      [uid, venTodo, EPS_CANT]
     );
-    return res.status(201).json(ins.rows[0]);
+    const row = r.rows[0] || {};
+    return res.status(200).json({
+      conceptos: Number(row.conceptos || 0),
+      contratos: Number(row.contratos || 0)
+    });
   } catch (err) {
-    if (err.code === '23503') return res.status(404).json({ error: 'El concepto indicado no existe' }); // FK violada
-    if (err.code === '23514') return res.status(400).json({ error: 'Hay valores fuera de rango (umbral 0–100 o canal inválido)' });
-    console.error('[crearAlerta]', err);
+    console.error('[resumenAtrasos]', err);
     return res.status(500).json({ error: 'Error interno' });
   }
 }
 
-// PATCH /api/alertas/:id — pausar/reanudar (vía el booleano activa).
-async function actualizarAlerta(req, res) {
+// POST /api/alertas/contrato/:contratoId/asentar — body { contrato_concepto_id }. Genera la nota de
+// ATRASO del concepto en la bitácora (residente; participación además en el controller). Es un snapshot
+// EN VIVO: exige bitácora abierta (no se difiere) y solo procede si el concepto tiene déficit > 0 ahora.
+async function asentarAtraso(req, res) {
+  const contratoId = Number(req.params.contratoId);
+  if (!Number.isInteger(contratoId) || contratoId <= 0) return res.status(400).json({ error: 'contratoId inválido' });
+  const conceptoId = Number((req.body || {}).contrato_concepto_id);
+  if (!Number.isInteger(conceptoId) || conceptoId <= 0) {
+    return res.status(400).json({ error: 'contrato_concepto_id es requerido' });
+  }
+
+  let client;
   try {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'id inválido' });
-    const { activa } = req.body || {};
-    if (typeof activa !== 'boolean') {
-      return res.status(400).json({ error: 'El campo "activa" (booleano) es requerido' });
-    }
+    client = await pool.connect();
+    try {
+      await client.query('BEGIN');
 
-    const contrato = await contratoPorAlerta(id);
-    if (!contrato) return res.status(404).json({ error: 'La alerta indicada no existe' });
-    if (!esParteOSupervision(req.user, contrato)) {
-      return res.status(403).json({ error: 'No tienes acceso a esta alerta' });
-    }
+      const c = await client.query(`SELECT id, ${COLS_ACCESO} FROM contratos WHERE id = $1`, [contratoId]);
+      if (c.rowCount === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'El contrato indicado no existe' }); }
+      if (!esParteOSupervision(req.user, c.rows[0])) {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ error: 'No tienes acceso al atraso de este contrato' });
+      }
 
-    const upd = await pool.query(
-      `UPDATE alerta_atraso SET activa = $2
-        WHERE id = $1
-        RETURNING id, contrato_concepto_id, umbral_pct, canal, activa, creada_por, created_at`,
-      [id, activa]
-    );
-    return res.status(200).json(upd.rows[0]);
+      // El concepto debe pertenecer al contrato (no se asienta el atraso de un concepto ajeno).
+      const cc = await client.query(
+        'SELECT id, clave, concepto, unidad FROM contrato_conceptos WHERE id = $1 AND contrato_id = $2',
+        [conceptoId, contratoId]
+      );
+      if (cc.rowCount === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'El concepto no pertenece a este contrato' }); }
+      const concepto = cc.rows[0];
+
+      // Déficit ACTUAL del concepto (mismo cálculo que el panel). Sin atraso → nada que asentar.
+      const periodo = await periodoActualDe(client, contratoId);
+      const paNum = periodo ? periodo.numero : 0;
+      const filas = await deficitsDeContrato(client, contratoId, paNum);
+      const fila = filas.find((f) => f.contrato_concepto_id === conceptoId);
+      if (!fila || fila.deficit <= EPS_CANT) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: `El concepto "${concepto.concepto}" no tiene atraso al periodo actual; nada que asentar.` });
+      }
+
+      // Snapshot en vivo: exige bitácora abierta (Q1 — un atraso es derivado, no se difiere).
+      const bit = await client.query('SELECT id FROM bitacora_aperturas WHERE contrato_id = $1', [contratoId]);
+      if (bit.rowCount === 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'El contrato no tiene bitácora abierta; ábrela para asentar el atraso en la bitácora (art. 123 RLOPSRM).' });
+      }
+
+      const { asunto, contenido } = textoNotaAtraso({
+        concepto: concepto.concepto, unidad: concepto.unidad,
+        cantidad: fila.deficit, periodoNumero: periodo ? periodo.numero : null
+      });
+      // emisor = quien asienta (residente del JWT). [validar profe] si el emisor formal debe forzarse.
+      const nota = await insertarNotaAtomica(client, {
+        bitacoraId: bit.rows[0].id, tipo: 'otro', asunto, contenido, emisorId: req.user.id, tag: 'atraso'
+      });
+
+      await client.query('COMMIT');
+      return res.status(201).json({
+        ok: true,
+        contrato_id: contratoId,
+        contrato_concepto_id: conceptoId,
+        deficit: fila.deficit,
+        unidad: concepto.unidad,
+        periodo: periodo ? periodo.numero : null,
+        nota: { id: nota.id, numero: nota.numero, tipo: nota.tipo, tag: nota.tag }
+      });
+    } catch (e) {
+      try { await client.query('ROLLBACK'); } catch (_) { /* el client pudo morir */ }
+      throw e;
+    } finally {
+      client.release();
+    }
   } catch (err) {
-    console.error('[actualizarAlerta]', err);
+    if (err.code === '23505') return res.status(409).json({ error: 'Folio de nota duplicado; reintenta' });
+    console.error('[asentarAtraso]', err);
     return res.status(500).json({ error: 'Error interno' });
   }
 }
 
-// DELETE /api/alertas/:id — elimina la configuración de la alerta.
-async function eliminarAlerta(req, res) {
-  try {
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'id inválido' });
-
-    const contrato = await contratoPorAlerta(id);
-    if (!contrato) return res.status(404).json({ error: 'La alerta indicada no existe' });
-    if (!esParteOSupervision(req.user, contrato)) {
-      return res.status(403).json({ error: 'No tienes acceso a esta alerta' });
-    }
-
-    await pool.query('DELETE FROM alerta_atraso WHERE id = $1', [id]);
-    return res.status(200).json({ id });
-  } catch (err) {
-    console.error('[eliminarAlerta]', err);
-    return res.status(500).json({ error: 'Error interno' });
-  }
-}
-
-module.exports = { alertasDeContrato, crearAlerta, actualizarAlerta, eliminarAlerta };
+module.exports = { alertasDeContrato, resumenAtrasos, asentarAtraso };

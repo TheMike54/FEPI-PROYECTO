@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useSesion } from '../../context/SesionContext.jsx';
+import { useSesion, useVistaHU } from '../../context/SesionContext.jsx';
 import { ROLES } from '../../data/permisos.js';
+import { api } from '../../services/api.js';
 import Sidebar from '../layout/Sidebar.jsx';
 
 // UI-1 (reskin "institucional moderno", 10-jun): shell de la app autenticada.
@@ -23,8 +25,21 @@ function iniciales(nombre) {
 }
 
 export default function AppShell({ children }) {
-  const { rol, usuario, logout } = useSesion();
+  const { rol, usuario, token, logout } = useSesion();
   const rolActivo = ROLES.find((r) => r.id === rol);
+
+  // O5 (HU-07 v2): badge de la campana = conceptos con déficit (acotado por participación). Solo para
+  // los roles con acceso a HU-07 (residente/supervisión); las demás cuentas no lo consultan ni lo ven.
+  const { sinAcceso: sinAccesoAtraso } = useVistaHU('HU-07');
+  const [atrasos, setAtrasos] = useState(0);
+  useEffect(() => {
+    if (!token || sinAccesoAtraso) { setAtrasos(0); return; }
+    let vivo = true;
+    api.resumenAtrasos()
+      .then((r) => { if (vivo) setAtrasos(Number(r?.conceptos || 0)); })
+      .catch(() => { if (vivo) setAtrasos(0); });
+    return () => { vivo = false; };
+  }, [token, sinAccesoAtraso]);
 
   return (
     <div className="h-screen flex flex-col bg-pagina">
@@ -53,15 +68,35 @@ export default function AppShell({ children }) {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3 ml-auto flex-shrink-0">
-            {/* Campana de notificaciones (presentacional en UI-1). */}
-            <button
-              type="button"
-              aria-label="Notificaciones"
-              title="Notificaciones"
-              className="w-9 h-9 rounded-md hover:bg-white/10 transition-colors text-base leading-none"
-            >
-              🔔
-            </button>
+            {/* Campana de notificaciones. O5: para los roles con acceso a HU-07 enlaza al panel de
+                atraso y muestra el conteo de conceptos con déficit; para el resto sigue presentacional. */}
+            {sinAccesoAtraso ? (
+              <button
+                type="button"
+                aria-label="Notificaciones"
+                title="Notificaciones"
+                className="w-9 h-9 rounded-md hover:bg-white/10 transition-colors text-base leading-none"
+              >
+                🔔
+              </button>
+            ) : (
+              <Link
+                to="/seguimiento/alertas"
+                aria-label={atrasos > 0 ? `Notificaciones: ${atrasos} conceptos con déficit` : 'Notificaciones'}
+                title={atrasos > 0 ? `${atrasos} conceptos con déficit` : 'Notificaciones'}
+                className="relative w-9 h-9 rounded-md hover:bg-white/10 transition-colors text-base leading-none flex items-center justify-center"
+              >
+                🔔
+                {atrasos > 0 && (
+                  <span
+                    className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-dorado text-guinda-dark text-[10px] font-bold flex items-center justify-center"
+                    data-testid="campana-atrasos"
+                  >
+                    {atrasos > 99 ? '99+' : atrasos}
+                  </span>
+                )}
+              </Link>
+            )}
             {rolActivo && (
               <span className="hidden sm:inline-flex items-center px-2.5 py-1 rounded-full bg-white/10 border border-white/30 text-xs font-medium whitespace-nowrap">
                 {rolActivo.nombre}

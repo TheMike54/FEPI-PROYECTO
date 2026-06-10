@@ -114,17 +114,23 @@ export const api = {
   // participación; sustituir = dependencia o residente asignado (lo valida el backend).
   rosterContrato: (contratoId) => request(`/roster/contrato/${contratoId}`),
   sustituirPersona: (contratoId, payload) => request(`/roster/contrato/${contratoId}/sustituir`, { method: 'POST', body: JSON.stringify(payload) }),
-  // HU-07: alertas de atraso por concepto del catálogo (config + evaluación de disparo).
+  // HU-07 v2 (O5): ATRASO POR CONCEPTO automático, en UNIDADES (sin umbral/config). El backend
+  // devuelve { periodo_actual, total_atrasos, atrasos:[{concepto_label, unidad, programado_acumulado,
+  // ejecutado_acumulado, deficit}] } con solo los conceptos cuyo déficit (programado al periodo
+  // vigente − ejecutado) > 0. Acotado por participación.
   alertasDeContrato: (contratoId) => request(`/alertas/contrato/${contratoId}`),
-  crearAlerta: (payload) => request('/alertas', { method: 'POST', body: JSON.stringify(payload) }),
-  toggleAlerta: (id, payload) => request(`/alertas/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
-  eliminarAlerta: (id) => request(`/alertas/${id}`, { method: 'DELETE' }),
+  // Badge del login: { conceptos, contratos } con déficit, acotado por participación.
+  resumenAtrasos: () => request('/alertas/resumen'),
+  // Asentar el atraso de un concepto en la bitácora (residente; exige bitácora abierta).
+  asentarAtraso: (contratoId, payload) => request(`/alertas/contrato/${contratoId}/asentar`, { method: 'POST', body: JSON.stringify(payload) }),
   // HU-14 (Equipo 3): historial del ciclo de cobro (cada estimación con su estado y transiciones,
   // orden cronológico). Acotado por participación en el backend.
   historialEstimaciones: (contratoId) => request(`/estimaciones-ciclo/contrato/${contratoId}/historial`),
-  // HU-06: trabajos terminados (avance ejecutado por concepto). Lectura por participación;
-  // escritura solo contratista (lo valida el backend). art. 118 bloquea (409); la nota tipo
-  // `avance` es requerida si cantidad > 0; el periodo se deriva de la fecha.
+  // HU-06 v2 (O4): trabajos terminados (avance ejecutado por concepto). Lectura por participación;
+  // escritura solo contratista (lo valida el backend). El periodo se SELECCIONA (payload.periodo_numero);
+  // el backend BLOQUEA si excede lo programado del periodo (programa vigente, art. 59) o art. 118; y
+  // GENERA la nota de bitácora tipo `avance` (diferida si no hay bitácora). payload: {contrato_concepto_id,
+  // periodo_numero, cantidad, observaciones}.
   trabajosDeContrato: (contratoId) => request(`/trabajos/contrato/${contratoId}`),
   registrarAvance: (payload) => request('/trabajos', { method: 'POST', body: JSON.stringify(payload) }),
   actualizarAvance: (id, payload) => request(`/trabajos/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),

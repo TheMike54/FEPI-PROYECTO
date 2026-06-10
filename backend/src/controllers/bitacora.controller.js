@@ -195,6 +195,32 @@ async function abrirBitacora(req, res) {
         await client.query('UPDATE contrato_roster SET nota_id = $1 WHERE id = $2', [nota.id, s.id]);
       }
 
+      // O4 (HU-06 v2, 10-jun) — Asiento DIFERIDO de AVANCES registrados ANTES de abrir la bitácora
+      // (concepto_avance con cantidad>0 y sin nota). Mismo patrón que la sustitución: el registro
+      // de avance genera su nota de bitácora (art. 125 fr. II); si no había bitácora, se difiere y se
+      // asienta aquí, numerada TRAS la #1 de apertura. Reusa textoNotaAvance (consistente con el
+      // asiento en vivo de trabajos.controller). Emisor = quien apertura (residente). [validar profe].
+      const pendientesAvance = await client.query(
+        `SELECT ca.id, ca.cantidad, cc.concepto, cc.unidad, cp.numero AS periodo_numero
+           FROM concepto_avance ca
+           JOIN contrato_conceptos cc ON cc.id = ca.contrato_concepto_id
+           LEFT JOIN contrato_periodos cp ON cp.id = ca.contrato_periodo_id
+          WHERE cc.contrato_id = $1 AND ca.nota_id IS NULL AND ca.cantidad > 0
+          ORDER BY ca.fecha, ca.id`,
+        [contratoId]
+      );
+      for (const a of pendientesAvance.rows) {
+        const { asunto, contenido } = textoNotaAvance({
+          concepto: a.concepto, unidad: a.unidad, cantidad: a.cantidad,
+          periodoNumero: a.periodo_numero, diferida: true
+        });
+        const nota = await insertarNotaAtomica(client, {
+          bitacoraId: bitacora.id, tipo: 'avance', asunto, contenido,
+          emisorId: req.user.id, tag: 'avance'
+        });
+        await client.query('UPDATE concepto_avance SET nota_id = $1 WHERE id = $2', [nota.id, a.id]);
+      }
+
       await client.query('COMMIT');
       return res.status(201).json(bitacora);
     } catch (e) {
@@ -391,6 +417,41 @@ function textoNotaSustitucion({ rol, anteriorNombre, anteriorId, nuevoNombre, nu
     `Se sustituye a ${ant} como ${rl} del contrato. Motivo del cambio: ${motivo || '—'}. ` +
     `Entra ${nue} a partir del ${f}.${cola} ` +
     `(art. 125 fr. I inciso g RLOPSRM; asiento automático del sistema.)`;
+  return { asunto, contenido };
+}
+
+// O4 (HU-06 v2, 10-jun) — Redacta el asunto/contenido de la nota AUTOMÁTICA de AVANCE de trabajos
+// (art. 125 fr. II RLOPSRM: la entrega de obra se avisa por nota de bitácora; el profe, P14: "el
+// aviso es a través de una nota"). Compartida por trabajos.controller (al registrar, en vivo) y por
+// abrirBitacora (al asentar los avances previos DIFERIDOS). `diferida` añade la aclaración temporal.
+// Formato de cantidad es-MX hasta 3 decimales (escala de concepto_avance.cantidad NUMERIC(14,3)).
+function textoNotaAvance({ concepto, unidad, cantidad, periodoNumero, diferida }) {
+  const cant = Number(cantidad).toLocaleString('es-MX', { maximumFractionDigits: 3 });
+  const p = periodoNumero != null ? periodoNumero : '—';
+  const asunto = `Avance de trabajos — ${concepto}`.slice(0, 200);
+  const cola = diferida ? ' Registrado antes de abrir la bitácora; asentado al abrirla.' : '';
+  const contenido =
+    `Avance de trabajos — ${concepto}: se ejecutaron ${cant} ${unidad || ''} en el periodo ${p}, ` +
+    `conforme al programa de obra.${cola} (art. 125 fr. II RLOPSRM; asiento automático del sistema.)`;
+  return { asunto, contenido };
+}
+
+// O5 (HU-07 v2, 10-jun) — Redacta el asunto/contenido de la nota de ATRASO de un concepto respecto
+// del programa VIGENTE medido al periodo actual (P15 del profe: el atraso se reporta en UNIDADES del
+// concepto, sin umbral ni %). La asienta alertas.controller (acción "Asentar en bitácora", solo si hay
+// bitácora abierta). Va con tag='atraso' y tipo 'otro' para SEPARARLO de las notas de 'avance' (el profe
+// insistió en no mezclar atraso con avance). Fundamento: el programa de obra es la base para medir el
+// avance (LOPSRM art. 52; RLOPSRM art. 45 ap. A fr. X) y el residente lleva en la bitácora los hechos
+// relevantes (art. 123 RLOPSRM). Formato de cantidad es-MX hasta 3 decimales (escala NUMERIC(14,3)).
+function textoNotaAtraso({ concepto, unidad, cantidad, periodoNumero }) {
+  const cant = Number(cantidad).toLocaleString('es-MX', { maximumFractionDigits: 3 });
+  const u = unidad || '';
+  const p = periodoNumero != null ? periodoNumero : '—';
+  const asunto = `Atraso de obra — ${concepto}`.slice(0, 200);
+  const contenido =
+    `Atraso registrado — ${concepto}: déficit de ${cant} ${u} respecto del programa al periodo ${p}. ` +
+    `El déficit es lo programado acumulado al periodo vigente menos lo ejecutado acumulado, en unidades ` +
+    `del concepto (LOPSRM art. 52; RLOPSRM art. 45 ap. A fr. X). Asiento del sistema (art. 123 RLOPSRM).`;
   return { asunto, contenido };
 }
 
@@ -789,5 +850,9 @@ module.exports = {
   firmarNota,
   // Pase 2.3 — reutilizados por roster.controller para la nota automática de sustitución.
   insertarNotaAtomica,
-  textoNotaSustitucion
+  textoNotaSustitucion,
+  // O4 — reutilizado por trabajos.controller para la nota automática de avance.
+  textoNotaAvance,
+  // O5 — reutilizado por alertas.controller para la nota de atraso (acción "Asentar en bitácora").
+  textoNotaAtraso
 };

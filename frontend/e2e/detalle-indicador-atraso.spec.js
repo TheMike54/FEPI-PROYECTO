@@ -1,16 +1,17 @@
 // @ts-check
-// Plan2 Pase 4 — visibilidad de alertas de atraso: el detalle del contrato (modal en Registrados)
-// muestra un indicador "N conceptos en atraso" + acceso directo a la lista de alertas, para que
-// residente y supervisión las vean sin entrar a buscarlas. Una cuenta SIN acceso (HU-07) no lo ve.
-// Solo presentación/lectura: NO cambia la lógica de evaluación (server) ni los permisos.
+// Plan2 Pase 4 → O5 — visibilidad del atraso en el detalle del contrato: el modal en "Registrados"
+// muestra un indicador "N conceptos en atraso" + acceso directo al panel de atraso, para que residente
+// y supervisión lo vean sin entrar a buscarlo. Una cuenta SIN acceso (HU-07) no lo ve. Solo
+// presentación/lectura: NO cambia el cálculo (server) ni los permisos.
 //
-// La alerta "disparada" exige avance físico (concepto_avance), que HOY no tiene endpoint (HU-06);
-// se siembra por SQL (docker exec psql), como hu-14. LOGIN REAL + Docker. No corre en CI.
+// O5: el indicador ya NO depende de alertas configuradas; cuenta los conceptos con DÉFICIT
+// (programado al periodo vigente − ejecutado) > 0. El avance se siembra por SQL (docker exec psql),
+// como hu-14. LOGIN REAL + Docker. No corre en CI.
 import { test, expect } from '@playwright/test';
 import { execSync } from 'node:child_process';
 import { freshHome, enterAppMode, goToViaSidebar } from './_helpers.js';
 
-test.skip(!!process.env.CI, 'Plan2 Pase4: login real + docker psql; se corre en local');
+test.skip(!!process.env.CI, 'Plan2 Pase4/O5: login real + docker psql; se corre en local');
 
 const API = 'http://localhost:4000/api';
 const PASS = 'Sigecop2026!';
@@ -24,20 +25,20 @@ function sqlExec(sql) {
   });
 }
 
-// Crea un contrato con equipo completo + 1 alerta de atraso DISPARADA (avance 10% < umbral 80%).
-// Devuelve { cid, folio, ccid }. El avance físico se siembra por SQL (HU-06 no tiene endpoint).
-async function crearContratoConAlertaDisparada(request) {
+// Crea un contrato con equipo completo y 1 concepto EN ATRASO (programado P1 = 100, ejecutado 10 →
+// déficit 90). Devuelve { cid, folio, ccid }. El avance físico se siembra por SQL.
+async function crearContratoConDeficit(request) {
   const [R, S, V, D] = await Promise.all([
     loginApi(request, 'residente@sigecop.test'),
     loginApi(request, 'contratista@sigecop.test'),
     loginApi(request, 'supervision@sigecop.test'),
     loginApi(request, 'dependencia@sigecop.test'),
   ]);
-  const folio = `E2E-ALERTA-${Date.now()}-${Math.round(Math.random() * 1e6)}`;
+  const folio = `E2E-ATRASO-${Date.now()}-${Math.round(Math.random() * 1e6)}`;
   const cr = await request.post(`${API}/contratos`, {
     headers: auth(R.token),
     data: {
-      folio, tipo: 'Obra pública sobre la base de precios unitarios', objeto: 'Alerta atraso e2e',
+      folio, tipo: 'Obra pública sobre la base de precios unitarios', objeto: 'Atraso por concepto e2e',
       plazoDias: 60, fechaInicio: '2026-06-01',
       superintendenteId: S.user.id, supervisionId: V.user.id, dependenciaId: D.user.id,
       anticipoPct: 0, juridicos: {},
@@ -52,14 +53,7 @@ async function crearContratoConAlertaDisparada(request) {
   const av = await request.get(`${API}/estimaciones/contrato/${cid}/avance`, { headers: auth(S.token) });
   const ccid = (await av.json())[0].contrato_concepto_id;
 
-  // Alerta de atraso (umbral 80%) creada por el residente (HU-07 = E).
-  const al = await request.post(`${API}/alertas`, {
-    headers: auth(R.token),
-    data: { contrato_concepto_id: ccid, umbral_pct: 80, canal: 'sistema' },
-  });
-  expect(al.status(), 'crear alerta').toBe(201);
-
-  // Avance físico 10 de 100 = 10% < 80% → la alerta DISPARA. Sin endpoint HU-06: INSERT por SQL.
+  // Ejecutado 10 de 100 programado en P1 → déficit 90 > 0 → "1 concepto en atraso". INSERT por SQL.
   sqlExec(`INSERT INTO concepto_avance (contrato_concepto_id, cantidad) VALUES (${ccid}, 10);`);
   ccidsSembrados.push(ccid);
   return { cid, folio, ccid };
@@ -79,9 +73,9 @@ async function abrirDetalle(page, rolId, cid) {
   await expect(page.getByTestId('modal-detalle')).toBeVisible();
 }
 
-test.describe('Plan2 Pase4 — indicador de alertas de atraso en el detalle del contrato', () => {
-  test('residente (con acceso) ve "1 concepto en atraso" + link a las alertas', async ({ page, request }) => {
-    const { cid } = await crearContratoConAlertaDisparada(request);
+test.describe('Plan2 Pase4 / O5 — indicador de atraso en el detalle del contrato', () => {
+  test('residente (con acceso) ve "1 concepto en atraso" + link al panel de atraso', async ({ page, request }) => {
+    const { cid } = await crearContratoConDeficit(request);
     await abrirDetalle(page, 'residente', cid);
     await expect(page.getByTestId('detalle-alertas')).toBeVisible();
     await expect(page.getByTestId('detalle-alertas-atraso')).toContainText('1 concepto en atraso');
@@ -91,25 +85,26 @@ test.describe('Plan2 Pase4 — indicador de alertas de atraso en el detalle del 
   });
 
   test('supervisión (con acceso) también ve el indicador de atraso', async ({ page, request }) => {
-    const { cid } = await crearContratoConAlertaDisparada(request);
+    const { cid } = await crearContratoConDeficit(request);
     await abrirDetalle(page, 'supervision', cid);
     await expect(page.getByTestId('detalle-alertas-atraso')).toContainText('en atraso');
   });
 
   test('contratista (sin acceso a HU-07) abre el detalle pero NO ve el indicador', async ({ page, request }) => {
-    const { cid } = await crearContratoConAlertaDisparada(request);
+    const { cid } = await crearContratoConDeficit(request);
     await abrirDetalle(page, 'contratista', cid);
     await expect(page.getByTestId('modal-detalle')).toBeVisible();        // sí puede ver el contrato (HU-01 C)
-    await expect(page.getByTestId('detalle-alertas')).toHaveCount(0);     // pero NO el indicador de alertas (HU-07 sin acceso)
+    await expect(page.getByTestId('detalle-alertas')).toHaveCount(0);     // pero NO el indicador de atraso (HU-07 sin acceso)
     await expect(page.getByTestId('detalle-link-alertas')).toHaveCount(0);
   });
 
-  test('acceso directo: el link preselecciona el contrato en la vista de alertas', async ({ page, request }) => {
-    const { cid } = await crearContratoConAlertaDisparada(request);
+  test('acceso directo: el link preselecciona el contrato en el panel de atraso', async ({ page, request }) => {
+    const { cid, ccid } = await crearContratoConDeficit(request);
     await abrirDetalle(page, 'residente', cid);
     await page.getByTestId('detalle-link-alertas').click();
-    // La vista HU-07 carga con el contrato YA seleccionado y su alerta disparada visible.
+    // El panel HU-07 carga con el contrato YA seleccionado y su fila de atraso visible.
     await expect(page.getByTestId('select-contrato')).toHaveValue(String(cid));
-    await expect(page.getByTestId('lista-disparadas')).toBeVisible();
+    await expect(page.getByTestId('tabla-atrasos')).toBeVisible();
+    await expect(page.getByTestId(`fila-atraso-${ccid}`)).toBeVisible();
   });
 });

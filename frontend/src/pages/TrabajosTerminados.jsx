@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Link } from 'react-router-dom';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import EncabezadoContrato from '../components/ui/EncabezadoContrato.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
@@ -8,31 +7,23 @@ import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
 
-// HU-06 Fase 4 — cableado al backend real (/api/trabajos). Cada captura es una cantidad
-// EJECUTADA imputada a un concepto del catálogo, a un periodo del programa (derivado de la
-// fecha) y respaldada por una nota de bitácora tipo `avance`. La verdad la calcula el
-// backend; la validación del cliente es solo guía:
-//  · art. 118 RLOPSRM (BLOQUEO): Σ ejecutado por concepto ≤ contratado → el backend devuelve 409.
-//  · nota `avance` REQUERIDA si cantidad > 0 → 400.
-//  · exceso vs programa por periodo → ALERTA (no bloquea), la devuelve el POST/PATCH.
-//  · captura EDITABLE (POST/PATCH/DELETE), no append-only.
+// HU-06 v2 (O4, 10-jun) — registro de avance POR PERIODO + NOTA automática + validación contra el
+// programa VIGENTE (P14 del profe). Cada captura imputa una cantidad ejecutada a un concepto del
+// catálogo y a un PERIODO del programa (SELECTOR, ya no fecha libre). El backend es la verdad:
+//  · art. 118 RLOPSRM (BLOQUEO): Σ ejecutado por concepto ≤ contratado → 409.
+//  · programa vigente por periodo (BLOQUEO): ejecutado_acum + nuevo ≤ programado_acum al periodo;
+//    si el concepto no está programado en el periodo, o se excede → 409 (requiere convenio, art. 59).
+//  · NOTA automática de bitácora tipo `avance` (se genera sola; diferida si no hay bitácora abierta).
+//  · captura EDITABLE (PATCH/DELETE): no append-only.
 
 const EPS = 1e-6;
 const num = (n) => (Number(n) || 0).toLocaleString('es-MX', { maximumFractionDigits: 3 });
-// dd/mm/aaaa sin corrimiento de zona horaria (parte de fecha de un ISO/Date).
 const fechaMX = (iso) => {
   const p = (iso || '').slice(0, 10).split('-');
   return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : '—';
 };
-// Periodo cuyo [inicio, fin] contiene la fecha (mosaico contiguo sin solapes → a lo sumo
-// uno). Espeja derivarPeriodo del backend; null si ninguno aplica o la fecha es inválida.
-function derivarPeriodo(periodos, fecha) {
-  const f = (fecha || '').slice(0, 10);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(f)) return null;
-  return periodos.find((p) => p.inicio.slice(0, 10) <= f && p.fin.slice(0, 10) >= f) || null;
-}
 
-const FORM_VACIO = { conceptoId: '', cantidad: '', fecha: '', notaId: '', observaciones: '' };
+const FORM_VACIO = { conceptoId: '', periodoNumero: '', cantidad: '', observaciones: '' };
 
 export default function TrabajosTerminados() {
   const { token } = useSesion();
@@ -47,14 +38,12 @@ export default function TrabajosTerminados() {
   const [avances, setAvances] = useState([]);
   const [periodos, setPeriodos] = useState([]);
   const [programa, setPrograma] = useState([]);
-  const [notas, setNotas] = useState([]);
   const [cargando, setCargando] = useState(false);
 
   const [form, setForm] = useState(FORM_VACIO);
   const [guardando, setGuardando] = useState(false);
-  const [alertasPost, setAlertasPost] = useState([]);
 
-  // Edición inline de una entrada: { id, cantidad, notaId, observaciones } o null.
+  // Edición inline de una entrada: { id, cantidad, observaciones } o null.
   const [edicion, setEdicion] = useState(null);
 
   const selected = useMemo(
@@ -66,16 +55,17 @@ export default function TrabajosTerminados() {
     for (const c of conceptos) m.set(c.contrato_concepto_id, c);
     return m;
   }, [conceptos]);
-  const notaById = useMemo(() => {
-    const m = new Map();
-    for (const n of notas) m.set(n.id, n);
-    return m;
-  }, [notas]);
   const periodoById = useMemo(() => {
     const m = new Map();
     for (const p of periodos) m.set(p.id, p);
     return m;
   }, [periodos]);
+  // numero del periodo a partir de su id (los avances guardan contrato_periodo_id).
+  const numeroDePeriodoId = useCallback((pid) => {
+    const p = pid != null ? periodoById.get(pid) : null;
+    return p ? p.numero : null;
+  }, [periodoById]);
+  const tienePrograma = programa.length > 0;
 
   // Carga inicial: contratos del usuario.
   useEffect(() => {
@@ -89,13 +79,12 @@ export default function TrabajosTerminados() {
     setAvances(Array.isArray(data?.avances) ? data.avances : []);
     setPeriodos(Array.isArray(data?.periodos) ? data.periodos : []);
     setPrograma(Array.isArray(data?.programa) ? data.programa : []);
-    setNotas(Array.isArray(data?.notas) ? data.notas : []);
   }, []);
 
   const seleccionarContrato = useCallback(async (id) => {
     setContratoId(id);
-    setConceptos([]); setAvances([]); setPeriodos([]); setPrograma([]); setNotas([]);
-    setForm(FORM_VACIO); setAlertasPost([]); setEdicion(null);
+    setConceptos([]); setAvances([]); setPeriodos([]); setPrograma([]);
+    setForm(FORM_VACIO); setEdicion(null);
     if (!id) return;
     setCargando(true);
     try {
@@ -109,94 +98,92 @@ export default function TrabajosTerminados() {
 
   const setCampo = (campo, valor) => setForm((prev) => ({ ...prev, [campo]: valor }));
 
-  // ---- Validación en vivo del NUEVO avance (guía; el backend es la verdad) ----
+  // ---- Renglón del programa para el concepto + periodo seleccionados (referencia P14) ----
   const conceptoSel = form.conceptoId ? conceptoById.get(Number(form.conceptoId)) : null;
+  const periodoSel = form.periodoNumero ? periodos.find((p) => String(p.numero) === String(form.periodoNumero)) || null : null;
   const cantNueva = Number(form.cantidad) || 0;
-  const periodoDerivado = useMemo(() => derivarPeriodo(periodos, form.fecha), [periodos, form.fecha]);
 
+  // Programado del periodo, programado acumulado (≤ periodo sel) y ejecutado acumulado (≤ periodo sel),
+  // todo sobre el concepto seleccionado. Espeja el cálculo del backend (programa_obra por periodo).
+  const refPrograma = useMemo(() => {
+    if (!conceptoSel || !periodoSel) return null;
+    const cid = conceptoSel.contrato_concepto_id;
+    const celdas = programa.filter((p) => p.contrato_concepto_id === cid);
+    const programadoPeriodo = celdas.reduce((s, p) => {
+      const per = periodoById.get(p.contrato_periodo_id);
+      return per && per.numero === periodoSel.numero ? s + Number(p.cantidad) : s;
+    }, 0);
+    const programadoAcum = celdas.reduce((s, p) => {
+      const per = periodoById.get(p.contrato_periodo_id);
+      return per && per.numero <= periodoSel.numero ? s + Number(p.cantidad) : s;
+    }, 0);
+    const ejecutadoAcum = avances.reduce((s, a) => {
+      if (a.contrato_concepto_id !== cid || !a.contrato_periodo_id) return s;
+      const n = numeroDePeriodoId(a.contrato_periodo_id);
+      return n != null && n <= periodoSel.numero ? s + Number(a.cantidad) : s;
+    }, 0);
+    const disponible = Math.max(0, programadoAcum - ejecutadoAcum);
+    const conceptoTieneCeldas = celdas.length > 0;
+    return { programadoPeriodo, programadoAcum, ejecutadoAcum, disponible, conceptoTieneCeldas };
+  }, [conceptoSel, periodoSel, programa, periodoById, avances, numeroDePeriodoId]);
+
+  // Validación en vivo (guía; el backend es la verdad):
   const validacion = useMemo(() => {
-    if (!conceptoSel) return { excede: false, requiereNota: false, acumNuevo: 0, alertaPeriodo: null };
+    if (!conceptoSel) return {};
     const contratada = Number(conceptoSel.cantidad_contratada);
     const acumNuevo = Number(conceptoSel.acumulado_ejecutado) + cantNueva;
-    const excede = acumNuevo > contratada + EPS;
-    const requiereNota = cantNueva > 0 && !form.notaId;
-
-    // Alerta por periodo (NO bloquea): Σ ejecutado hasta el periodo derivado + esta cantidad
-    // vs Σ planeado (programa_obra) hasta cp.fin. Solo si hay periodo y el concepto tiene programa.
-    let alertaPeriodo = null;
-    if (periodoDerivado) {
-      const cid = Number(form.conceptoId);
-      const celdas = programa.filter((p) => p.contrato_concepto_id === cid);
-      if (celdas.length > 0) {
-        const finCorte = periodoDerivado.fin.slice(0, 10);
-        const planeado = celdas.reduce((s, p) => {
-          const per = periodoById.get(p.contrato_periodo_id);
-          return per && per.fin.slice(0, 10) <= finCorte ? s + Number(p.cantidad) : s;
-        }, 0);
-        const ejec = avances.reduce((s, a) => {
-          if (a.contrato_concepto_id !== cid || !a.contrato_periodo_id) return s;
-          const per = periodoById.get(a.contrato_periodo_id);
-          return per && per.fin.slice(0, 10) <= finCorte ? s + Number(a.cantidad) : s;
-        }, 0);
-        const ejecutado = ejec + cantNueva;
-        if (ejecutado > planeado + EPS) alertaPeriodo = { ejecutado, planeado, periodo_numero: periodoDerivado.numero };
-      }
+    const excede118 = acumNuevo > contratada + EPS;
+    let noProgramado = false, excedePeriodo = false;
+    if (tienePrograma && refPrograma && periodoSel && cantNueva > 0) {
+      if (refPrograma.programadoAcum <= EPS) noProgramado = true;
+      else if (refPrograma.ejecutadoAcum + cantNueva > refPrograma.programadoAcum + EPS) excedePeriodo = true;
     }
-    return { excede, requiereNota, acumNuevo, alertaPeriodo };
-  }, [conceptoSel, cantNueva, form.notaId, form.conceptoId, periodoDerivado, programa, avances, periodoById]);
+    return { acumNuevo, excede118, noProgramado, excedePeriodo };
+  }, [conceptoSel, cantNueva, tienePrograma, refPrograma, periodoSel]);
 
-  const fechaOk = /^\d{4}-\d{2}-\d{2}$/.test(form.fecha);
-  const puedeGuardar = !soloLectura && !guardando && !!conceptoSel && cantNueva > 0
-    && fechaOk && !validacion.excede && !validacion.requiereNota;
+  const puedeGuardar = !soloLectura && !guardando && !!conceptoSel && !!periodoSel && cantNueva > 0
+    && !validacion.excede118 && !validacion.noProgramado && !validacion.excedePeriodo;
+
+  // Toggle "Ejecuté todo lo programado del periodo" → autollena la cantidad con lo disponible.
+  const autollenarTodo = () => {
+    if (!refPrograma) return;
+    setCampo('cantidad', String(refPrograma.disponible));
+  };
 
   const registrar = async () => {
     if (!puedeGuardar) return;
-    setGuardando(true); setAlertasPost([]);
+    setGuardando(true);
     try {
       const r = await api.registrarAvance({
         contrato_concepto_id: Number(form.conceptoId),
+        periodo_numero: Number(form.periodoNumero),
         cantidad: cantNueva,
-        fecha: form.fecha,
-        nota_id: form.notaId ? Number(form.notaId) : null,
         observaciones: form.observaciones || null
       });
-      showToast('Avance registrado');
-      setAlertasPost(Array.isArray(r?.alertas) ? r.alertas : []);
+      showToast(r?.nota_diferida ? 'Avance registrado. La nota de bitácora se asentará al abrir la bitácora.' : 'Avance registrado y nota de bitácora asentada.');
       setForm(FORM_VACIO);
       await recargar(contratoId);
     } catch (e) {
-      // Errores localizados del backend tal cual (409 art.118; 400 nota/forma; 403 no parte).
+      // 409 art.118 / programa por periodo; 400 forma; 403 no parte — mensaje del backend tal cual.
       showToast(e.payload?.error || e.message || 'No se pudo registrar el avance');
     } finally {
       setGuardando(false);
     }
   };
 
-  // ---- Edición de una entrada existente ----
-  const abrirEdicion = (a) => setEdicion({
-    id: a.id,
-    cantidad: String(a.cantidad),
-    notaId: a.nota_id ? String(a.nota_id) : '',
-    observaciones: a.observaciones || ''
-  });
+  // ---- Edición de una entrada existente (cantidad / observaciones; la nota es de sistema) ----
+  const abrirEdicion = (a) => setEdicion({ id: a.id, cantidad: String(a.cantidad), observaciones: a.observaciones || '' });
   const setEdicionCampo = (campo, valor) => setEdicion((prev) => ({ ...prev, [campo]: valor }));
 
   const guardarEdicion = async () => {
     if (!edicion) return;
-    const cant = Number(edicion.cantidad) || 0;
-    if (cant > 0 && !edicion.notaId) {
-      showToast('Se requiere una nota tipo `avance` cuando la cantidad es mayor a 0 (art. 125 fr. II)');
-      return;
-    }
-    setGuardando(true); setAlertasPost([]);
+    setGuardando(true);
     try {
-      const r = await api.actualizarAvance(edicion.id, {
-        cantidad: cant,
-        nota_id: edicion.notaId ? Number(edicion.notaId) : null,
+      await api.actualizarAvance(edicion.id, {
+        cantidad: Number(edicion.cantidad) || 0,
         observaciones: edicion.observaciones || null
       });
       showToast('Avance actualizado');
-      setAlertasPost(Array.isArray(r?.alertas) ? r.alertas : []);
       setEdicion(null);
       await recargar(contratoId);
     } catch (e) {
@@ -207,7 +194,7 @@ export default function TrabajosTerminados() {
   };
 
   const eliminar = async (id) => {
-    setGuardando(true); setAlertasPost([]);
+    setGuardando(true);
     try {
       await api.eliminarAvance(id);
       showToast('Avance eliminado');
@@ -255,7 +242,7 @@ export default function TrabajosTerminados() {
       </div>
 
       {!sinSesion && !contratoId && (
-        <p className="text-sm text-slate-500 mb-4">Selecciona un contrato para registrar el avance ejecutado por concepto.</p>
+        <p className="text-sm text-slate-500 mb-4">Selecciona un contrato para registrar el avance ejecutado por concepto y periodo.</p>
       )}
       {cargando && <p className="text-sm text-slate-500 mb-4">Cargando trabajos del contrato…</p>}
 
@@ -269,15 +256,6 @@ export default function TrabajosTerminados() {
               { label: 'Conceptos:', value: String(conceptos.length), resaltado: true }
             ]}
           />
-
-          {alertasPost.length > 0 && (
-            <div className="bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 mb-4 text-sm text-slate-800 rounded-r-md" data-testid="alertas-periodo">
-              <div className="font-semibold text-amber-800 mb-1">⚠️ Avance por encima de lo planeado en el programa (no bloquea)</div>
-              <ul className="list-disc pl-5 space-y-1">
-                {alertasPost.map((a, i) => <li key={i}>{a.mensaje}</li>)}
-              </ul>
-            </div>
-          )}
 
           {/* --- Resumen ejecutado por concepto (lectura) --- */}
           <div className="bg-white border border-borde rounded-lg overflow-hidden mb-6">
@@ -323,24 +301,20 @@ export default function TrabajosTerminados() {
             </div>
           </div>
 
-          {/* --- Captura de un nuevo avance --- */}
+          {/* --- Captura de un nuevo avance (por PERIODO) --- */}
           {!soloLectura && (
             <RegionEditable disabled={soloLectura}>
               <div className="bg-white border border-borde rounded-lg p-4 mb-6">
                 <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
                   Registrar avance ejecutado
                 </h2>
-
-                {notas.length === 0 && (
-                  <div className="bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 mb-4 text-sm text-slate-800 rounded-r-md">
-                    ⚠️ No hay notas de bitácora tipo «avance» en este contrato —{' '}
-                    <Link to="/bitacora/notas" className="text-sigecop-blue underline">emite una en HU-09 primero</Link>.
-                    Sin ella no podrás registrar cantidades mayores a 0 (art. 125 fr. II).
-                  </div>
-                )}
+                <p className="text-xs text-slate-500 mb-4">
+                  Selecciona el concepto y el <strong>periodo</strong> del programa. La nota de bitácora del avance se
+                  genera automáticamente (art. 125 fr. II). El registro se valida contra lo programado del periodo.
+                </p>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="sm:col-span-2">
+                  <div>
                     <label className="sg-label">Concepto del catálogo</label>
                     <select
                       className="sg-input"
@@ -357,55 +331,68 @@ export default function TrabajosTerminados() {
                     </select>
                   </div>
                   <div>
+                    <label className="sg-label">Periodo del programa</label>
+                    <select
+                      className="sg-input"
+                      value={form.periodoNumero}
+                      onChange={(e) => setCampo('periodoNumero', e.target.value)}
+                      data-testid="cap-periodo"
+                      disabled={periodos.length === 0}
+                    >
+                      <option value="">— Selecciona un periodo —</option>
+                      {periodos.map((p) => (
+                        <option key={p.id} value={p.numero}>Periodo {p.numero} ({fechaMX(p.inicio)} – {fechaMX(p.fin)})</option>
+                      ))}
+                    </select>
+                    {periodos.length === 0 && (
+                      <p className="text-xs text-amber-700 mt-1">Este contrato no tiene programa por periodos; no se puede registrar avance por periodo.</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Renglón del programa del concepto seleccionado para el periodo (referencia P14). */}
+                {conceptoSel && periodoSel && refPrograma && (
+                  <div className="mt-4 bg-guinda-soft border border-guinda/20 rounded-lg p-4" data-testid="ref-programa">
+                    <div className="text-xs font-semibold uppercase tracking-wider text-guinda mb-2">Programa del concepto en el periodo {periodoSel.numero}</div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                      <div><span className="block text-xs text-slate-500">Programado del periodo</span><span className="font-mono font-semibold" data-testid="ref-programado-periodo">{num(refPrograma.programadoPeriodo)}</span></div>
+                      <div><span className="block text-xs text-slate-500">Programado acum.</span><span className="font-mono font-semibold" data-testid="ref-programado-acum">{num(refPrograma.programadoAcum)}</span></div>
+                      <div><span className="block text-xs text-slate-500">Ejecutado acum.</span><span className="font-mono font-semibold" data-testid="ref-ejecutado-acum">{num(refPrograma.ejecutadoAcum)}</span></div>
+                      <div><span className="block text-xs text-slate-500">Disponible</span><span className="font-mono font-semibold text-guinda" data-testid="ref-disponible">{num(refPrograma.disponible)}</span></div>
+                    </div>
+                    <label className="mt-3 flex items-center gap-2 text-sm cursor-pointer">
+                      <input
+                        type="checkbox"
+                        className="rounded border-borde-fuerte text-guinda"
+                        checked={cantNueva > 0 && Math.abs(cantNueva - refPrograma.disponible) < EPS}
+                        onChange={(e) => { if (e.target.checked) autollenarTodo(); else setCampo('cantidad', ''); }}
+                        data-testid="toggle-todo-periodo"
+                        disabled={refPrograma.disponible <= 0}
+                      />
+                      Ejecuté todo lo programado del periodo ({num(refPrograma.disponible)})
+                    </label>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                  <div>
                     <label className="sg-label">Cantidad ejecutada</label>
                     <input
                       type="number"
                       min="0"
                       step="any"
-                      className={`sg-input text-right font-mono ${validacion.excede ? 'border-red-500 ring-2 ring-red-200' : ''}`}
+                      className={`sg-input text-right font-mono ${(validacion.excede118 || validacion.noProgramado || validacion.excedePeriodo) ? 'border-red-500 ring-2 ring-red-200' : ''}`}
                       value={form.cantidad}
                       onChange={(e) => setCampo('cantidad', e.target.value)}
                       data-testid="cap-cantidad"
                     />
                     {conceptoSel && (
                       <p className="text-xs text-slate-500 mt-1">
-                        Acum. nuevo: <span className={`font-mono ${validacion.excede ? 'text-red-700 font-bold' : ''}`}>{num(validacion.acumNuevo)}</span> / {num(conceptoSel.cantidad_contratada)} contratada
+                        Acum. total: <span className={`font-mono ${validacion.excede118 ? 'text-red-700 font-bold' : ''}`}>{num(validacion.acumNuevo)}</span> / {num(conceptoSel.cantidad_contratada)} contratada
                       </p>
                     )}
                   </div>
                   <div>
-                    <label className="sg-label">Fecha de ejecución</label>
-                    <input
-                      type="date"
-                      className="sg-input"
-                      value={form.fecha}
-                      onChange={(e) => setCampo('fecha', e.target.value)}
-                      data-testid="cap-fecha"
-                    />
-                    {fechaOk && (
-                      <p className="text-xs text-slate-500 mt-1">
-                        {periodoDerivado
-                          ? <>Periodo: <strong>#{periodoDerivado.numero}</strong> ({fechaMX(periodoDerivado.inicio)} – {fechaMX(periodoDerivado.fin)})</>
-                          : 'La fecha no cae en ningún periodo del programa (se guarda sin periodo).'}
-                      </p>
-                    )}
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="sg-label">Nota de bitácora (tipo avance){cantNueva > 0 ? ' *' : ''}</label>
-                    <select
-                      className={`sg-input ${validacion.requiereNota ? 'border-amber-400' : ''}`}
-                      value={form.notaId}
-                      onChange={(e) => setCampo('notaId', e.target.value)}
-                      disabled={notas.length === 0}
-                      data-testid="cap-nota"
-                    >
-                      <option value="">— Selecciona nota —</option>
-                      {notas.map((n) => (
-                        <option key={n.id} value={n.id}>#{n.numero} · {n.asunto || 'Avance'} · {fechaMX(n.fecha)}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="sm:col-span-2">
                     <label className="sg-label">Observaciones (opcional)</label>
                     <input
                       type="text"
@@ -417,23 +404,19 @@ export default function TrabajosTerminados() {
                   </div>
                 </div>
 
-                {validacion.excede && (
+                {validacion.excede118 && (
                   <div className="mt-4 bg-red-50 border-l-4 border-red-500 px-4 py-3 text-sm text-red-800 rounded-r-md" data-testid="aviso-exceso">
-                    ⛔ <strong>La cantidad acumulada excede lo contratado</strong> en este concepto. El sistema no permite
-                    registrar cantidades por encima del catálogo (art. 118 RLOPSRM); ajusta la cantidad o tramita un convenio
-                    modificatorio (HU-03).
+                    ⛔ <strong>La cantidad acumulada excede lo contratado</strong> en este concepto (art. 118 RLOPSRM). Ajusta la cantidad o tramita un convenio modificatorio (HU-03).
                   </div>
                 )}
-                {!validacion.excede && validacion.requiereNota && (
-                  <div className="mt-4 bg-yellow-50 border-l-4 border-yellow-500 px-4 py-3 text-sm text-slate-800 rounded-r-md" data-testid="aviso-requiere-nota">
-                    ⚠️ Selecciona una nota de bitácora tipo «avance» para registrar una cantidad mayor a 0 (art. 125 fr. II).
+                {!validacion.excede118 && validacion.noProgramado && (
+                  <div className="mt-4 bg-red-50 border-l-4 border-red-500 px-4 py-3 text-sm text-red-800 rounded-r-md" data-testid="aviso-no-programado">
+                    ⛔ El concepto <strong>no está programado en el periodo {periodoSel?.numero}</strong> (ni antes). Para ejecutarlo aquí se requiere un convenio modificatorio (art. 59 LOPSRM).
                   </div>
                 )}
-                {!validacion.excede && validacion.alertaPeriodo && (
-                  <div className="mt-4 bg-amber-50 border-l-4 border-amber-400 px-4 py-3 text-sm text-amber-800 rounded-r-md" data-testid="aviso-periodo">
-                    ⚠️ El avance acumulado hasta el periodo #{validacion.alertaPeriodo.periodo_numero} ({num(validacion.alertaPeriodo.ejecutado)}) supera lo
-                    PLANEADO en el programa ({num(validacion.alertaPeriodo.planeado)}). Es una <strong>alerta</strong>, no un bloqueo
-                    (art. 45 ap. A fr. X RLOPSRM + art. 52 LOPSRM).
+                {!validacion.excede118 && !validacion.noProgramado && validacion.excedePeriodo && (
+                  <div className="mt-4 bg-red-50 border-l-4 border-red-500 px-4 py-3 text-sm text-red-800 rounded-r-md" data-testid="aviso-excede-periodo">
+                    ⛔ <strong>Excede lo programado del periodo {periodoSel?.numero}</strong>: ejecutado acumulado {num(refPrograma?.ejecutadoAcum)} + {num(cantNueva)} supera lo programado {num(refPrograma?.programadoAcum)}. Para adelantar volumen se requiere un convenio modificatorio (art. 59 LOPSRM).
                   </div>
                 )}
 
@@ -465,16 +448,15 @@ export default function TrabajosTerminados() {
                   <tr>
                     <th className="text-left p-3 font-semibold">Concepto</th>
                     <th className="text-right p-3 font-semibold">Cantidad</th>
-                    <th className="text-left p-3 font-semibold">Fecha</th>
                     <th className="text-left p-3 font-semibold">Periodo</th>
-                    <th className="text-left p-3 font-semibold">Nota</th>
+                    <th className="text-left p-3 font-semibold">Nota (bitácora)</th>
                     <th className="text-left p-3 font-semibold">Observaciones</th>
                     {!soloLectura && <th className="text-center p-3 font-semibold w-40">Acciones</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {avances.length === 0 ? (
-                    <tr><td colSpan={soloLectura ? 6 : 7} className="p-6 text-center text-slate-400 italic">Sin avances registrados.</td></tr>
+                    <tr><td colSpan={soloLectura ? 5 : 6} className="p-6 text-center text-slate-400 italic">Sin avances registrados.</td></tr>
                   ) : (
                     avances.map((a) => {
                       const c = conceptoById.get(a.contrato_concepto_id);
@@ -494,21 +476,13 @@ export default function TrabajosTerminados() {
                               />
                             ) : num(a.cantidad)}
                           </td>
-                          <td className="p-3">{fechaMX(a.fecha)}</td>
-                          <td className="p-3">{per ? `#${per.numero}` : <span className="text-slate-400">—</span>}</td>
+                          <td className="p-3">{per ? `Periodo ${per.numero}` : <span className="text-slate-400">—</span>}</td>
                           <td className="p-3">
-                            {editando ? (
-                              <select
-                                className="sg-input"
-                                value={edicion.notaId}
-                                onChange={(e) => setEdicionCampo('notaId', e.target.value)}
-                                disabled={notas.length === 0}
-                                data-testid={`edit-nota-${a.id}`}
-                              >
-                                <option value="">— Sin nota —</option>
-                                {notas.map((n) => <option key={n.id} value={n.id}>#{n.numero} · {fechaMX(n.fecha)}</option>)}
-                              </select>
-                            ) : (a.nota_id ? `#${a.nota_numero ?? a.nota_id}` : <span className="text-slate-400">—</span>)}
+                            {a.nota_id
+                              ? `#${a.nota_numero ?? a.nota_id}`
+                              : (Number(a.cantidad) > 0
+                                  ? <span className="text-amber-700 text-xs" data-testid={`nota-pendiente-${a.id}`}>pendiente (al abrir bitácora)</span>
+                                  : <span className="text-slate-400">—</span>)}
                           </td>
                           <td className="p-3 text-slate-700">
                             {editando ? (
@@ -550,14 +524,14 @@ export default function TrabajosTerminados() {
       <SeccionCriterios
         huId="HU-06"
         criterios={[
-          { numero: 1, texto: 'Cada cantidad capturada queda ligada al concepto del catálogo correspondiente y a una nota de bitácora del periodo (tipo entrega de obra o avance).' },
-          { numero: 2, texto: 'El sistema acumula el avance ejecutado por concepto y muestra el porcentaje de avance contra lo contratado en vivo, periodo a periodo.' },
+          { numero: 1, texto: 'Cada cantidad capturada queda ligada al concepto del catálogo y al PERIODO del programa, y genera una nota de bitácora del avance (art. 125 fr. II).' },
+          { numero: 2, texto: 'El sistema valida el avance contra lo programado del periodo (programa vigente) y bloquea si lo excede o el concepto no está programado (requiere convenio, art. 59).' },
           { numero: 3, texto: 'El sistema bloquea el registro cuando la cantidad acumulada excede la contratada (art. 118 RLOPSRM).' }
         ]}
       />
 
       <p className="mt-4 text-xs text-slate-500 italic text-center">
-        Fundamento: art. 118 RLOPSRM (cantidad sobre contratada sin orden no es pagable).
+        Fundamento: art. 118 RLOPSRM (cantidad sobre contratada sin orden no es pagable) + art. 45-A-X RLOPSRM / art. 52 LOPSRM (programa por periodo).
       </p>
     </div>
   );
