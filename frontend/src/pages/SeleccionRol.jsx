@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import Header from '../components/layout/Header.jsx';
 import { ROLES } from '../data/permisos.js';
 import { useSesion } from '../context/SesionContext.jsx';
 import { api } from '../services/api.js';
@@ -44,7 +43,7 @@ function FormLogin({ onIrRegistro, mensaje, setMensaje }) {
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-md p-8 mb-8">
+    <div className="bg-white rounded-lg border border-borde shadow-sm p-8 mb-8">
       <h2 className="text-lg font-semibold text-slate-800 mb-4 text-center">
         Iniciar sesión
       </h2>
@@ -161,7 +160,7 @@ function FormRegistro({ onIrLogin, setMensaje }) {
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-md p-8 mb-8">
+    <div className="bg-white rounded-lg border border-borde shadow-sm p-8 mb-8">
       <h2 className="text-lg font-semibold text-slate-800 mb-1 text-center">
         Crear cuenta
       </h2>
@@ -279,22 +278,26 @@ function FormRegistro({ onIrLogin, setMensaje }) {
   );
 }
 
+// UI-1 (10-jun): pantalla PREVIA al shell — limpia, sin barra de navegación, identidad
+// guinda institucional (franja superior guinda con filo dorado). Los formularios (ids,
+// data-testid y textos asercionados por la suite) quedan INTACTOS.
 export default function SeleccionRol() {
   const [vista, setVista] = useState('login'); // 'login' | 'registro'
   const [mensaje, setMensaje] = useState(null);
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50">
-      <Header />
+    <div className="min-h-screen flex flex-col bg-pagina">
+      {/* Franja de identidad: guinda con filo dorado (mismo sello que la barra del shell). */}
+      <div className="h-2 bg-guinda border-b-[3px] border-dorado flex-shrink-0" />
       <main className="flex-1 overflow-y-auto">
-        <div className="max-w-2xl mx-auto px-6 py-10">
+        <div className="max-w-md mx-auto px-6 py-12">
           {/* Logo + nombre del sistema */}
           <div className="text-center mb-8">
-            <div className="w-16 h-16 rounded-xl bg-sigecop-blue text-white flex items-center justify-center font-extrabold text-3xl mx-auto mb-3 shadow-md">
+            <div className="w-14 h-14 rounded-lg bg-guinda text-white flex items-center justify-center font-extrabold text-2xl mx-auto mb-4">
               S
             </div>
-            <h1 className="font-serif text-3xl font-bold text-sigecop-blue">SIGECOP</h1>
-            <p className="text-xs text-slate-500 mt-1 leading-tight">
+            <h1 className="text-2xl font-semibold text-guinda tracking-wide">SIGECOP</h1>
+            <p className="text-xs text-tinta-sec mt-1 leading-tight">
               Sistema de Gestión Técnico-Administrativa<br />de Contratos de Obra Pública
             </p>
           </div>

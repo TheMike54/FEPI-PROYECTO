@@ -88,6 +88,14 @@ export default function RosterContrato() {
 
   const histDeRol = (rol) => (data?.historial || []).filter((h) => h.rol === rol);
 
+  // O1-W2 (testing del equipo, 09-jun): "Asignación inicial (alta del contrato)" NO es un motivo;
+  // se separa en columna EVENTO (Alta del contrato | Sustitución) y el MOTIVO queda solo para los
+  // cambios reales. Derivado en frontend (sin DDL): la fila inicial es la que no sustituye a nadie
+  // (sustituye_a == null); su motivo en BD es el texto fijo del alta y aquí se oculta.
+  const MOTIVO_ALTA = 'Asignación inicial (alta del contrato)';
+  const eventoDe = (h) => (h.sustituye_a != null ? 'Sustitución' : (h.motivo === MOTIVO_ALTA ? 'Alta del contrato' : 'Alta del rol'));
+  const motivoDe = (h) => (h.sustituye_a == null && h.motivo === MOTIVO_ALTA ? '' : (h.motivo || ''));
+
   return (
     <div>
       <Breadcrumb items={[{ label: 'Inicio', href: '/' }, { label: 'Roster del contrato' }]} />
@@ -100,7 +108,7 @@ export default function RosterContrato() {
       </p>
 
       {sinToken ? (
-        <div data-testid="roster-sin-sesion" className="rounded-md border border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm text-slate-600">
+        <div data-testid="roster-sin-sesion" className="rounded-md border border-borde bg-pagina px-4 py-8 text-center text-sm text-slate-600">
           Inicia sesión (no en modo demostración) como Dependencia o Residente para gestionar el roster.
         </div>
       ) : (
@@ -134,7 +142,7 @@ export default function RosterContrato() {
                   const v = data.vigente?.[rol];
                   const hist = histDeRol(rol);
                   return (
-                    <div key={rol} className="bg-white border border-slate-200 rounded-md p-4" data-testid={`roster-rol-${rol}`}>
+                    <div key={rol} className="bg-white border border-borde rounded-lg p-4" data-testid={`roster-rol-${rol}`}>
                       <div className="flex items-center justify-between flex-wrap gap-2">
                         <div>
                           <div className="text-xs uppercase tracking-wider text-slate-500 font-semibold">{ROL_LABEL[rol]}</div>
@@ -146,16 +154,17 @@ export default function RosterContrato() {
                       </div>
                       {hist.length > 0 && (
                         <table className="w-full text-xs mt-3 border-t border-slate-100">
-                          <thead className="text-slate-500">
-                            <tr><th className="text-left py-1">Persona</th><th className="text-left">Desde</th><th className="text-left">Hasta</th><th className="text-left">Motivo</th></tr>
+                          <thead className="text-tinta-sec">
+                            <tr><th className="text-left py-1">Persona</th><th className="text-left">Desde</th><th className="text-left">Hasta</th><th className="text-left">Evento</th><th className="text-left">Motivo</th></tr>
                           </thead>
                           <tbody>
                             {hist.map((h) => (
                               <tr key={h.id} className={`border-t border-slate-50 ${h.vigencia_hasta ? 'text-slate-500' : 'text-slate-800 font-medium'}`}>
                                 <td className="py-1">{h.usuario_nombre || `#${h.usuario_id}`}</td>
                                 <td>{fmtFecha(h.vigencia_desde)}</td>
-                                <td>{h.vigencia_hasta ? fmtFecha(h.vigencia_hasta) : <span className="text-green-700 font-semibold">vigente</span>}</td>
-                                <td className="truncate max-w-[12rem]" title={h.motivo || ''}>{h.motivo || '—'}</td>
+                                <td>{h.vigencia_hasta ? fmtFecha(h.vigencia_hasta) : <span className="text-exito font-semibold">vigente</span>}</td>
+                                <td data-testid={`roster-evento-${h.id}`}>{eventoDe(h)}</td>
+                                <td className="truncate max-w-[12rem]" title={motivoDe(h)}>{motivoDe(h) || '—'}</td>
                               </tr>
                             ))}
                           </tbody>
@@ -167,7 +176,7 @@ export default function RosterContrato() {
               </div>
 
               {/* Formulario de sustitución */}
-              <div className="bg-white border border-slate-200 rounded-md p-4 h-fit" data-testid="roster-form-sustituir">
+              <div className="bg-white border border-borde rounded-lg p-4 h-fit" data-testid="roster-form-sustituir">
                 <h2 className="text-sm font-bold text-sigecop-blue mb-3">Registrar una sustitución</h2>
                 <label className="block text-xs font-medium text-slate-600 mb-1">Rol a sustituir</label>
                 <select data-testid="sust-rol" className="sg-input mb-3" value={rolSust} onChange={(e) => setRolSust(e.target.value)}>
@@ -187,7 +196,7 @@ export default function RosterContrato() {
                     {elegibles.map((u) => <option key={u.id} value={u.id}>{u.nombre} ({u.email})</option>)}
                   </select>
                 ) : (
-                  <div data-testid="sust-sin-elegibles" className="mb-3 bg-amber-50 border-l-4 border-amber-400 px-3 py-2 text-sm text-amber-800 rounded-r-md">
+                  <div data-testid="sust-sin-elegibles" className="mb-3 bg-aviso-bg border-l-4 border-aviso px-3 py-2 text-sm text-aviso rounded-r-md">
                     {rolSust
                       ? 'No hay cuentas disponibles para este rol. Debe registrarse y aprobarse una cuenta con el rol correcto antes de poder sustituir.'
                       : 'Elige primero el rol a sustituir para ver las cuentas disponibles.'}

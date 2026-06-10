@@ -39,7 +39,7 @@ export default function EditorProgramaConvenio({
           El <strong>monto se DERIVA</strong> = Σ ROUND(cantidad × P.U., 2), al centavo (art. 45 fr. IX RLOPSRM).
           Los conceptos existentes no se borran (catálogo completo); puedes ajustar cantidad/P.U. y agregar nuevos.
         </p>
-        <div className="overflow-x-auto border border-slate-200 rounded-md">
+        <div className="overflow-x-auto border border-borde rounded-md">
           <table className="w-full text-sm">
             <thead className="bg-sigecop-blue-light text-sigecop-blue">
               <tr>
@@ -56,7 +56,7 @@ export default function EditorProgramaConvenio({
               {conceptos.map((c, i) => {
                 const importe = round2((Number(c.cantidad) || 0) * (Number(c.pu) || 0));
                 return (
-                  <tr key={c.rid} className="border-t border-slate-200">
+                  <tr key={c.rid} className="border-t border-borde">
                     <td className="px-2 py-1 align-top">
                       <input
                         className="sg-input font-mono text-xs"
@@ -96,7 +96,7 @@ export default function EditorProgramaConvenio({
             </tbody>
             {conceptos.length > 0 && (
               <tfoot>
-                <tr className="border-t-2 border-slate-300 bg-slate-50">
+                <tr className="border-t-2 border-borde-fuerte bg-pagina">
                   <td colSpan={5} className="px-3 py-2 text-right font-semibold text-slate-700">Monto nuevo (Σ importes)</td>
                   <td className="px-3 py-2 text-right font-bold text-sigecop-blue whitespace-nowrap" data-testid="cm-monto-nuevo">{fmtMXN.format(Number(montoNuevo) || 0)}</td>
                   <td></td>
@@ -125,7 +125,7 @@ export default function EditorProgramaConvenio({
             Este contrato no tiene periodos en su programa de obra; no se puede capturar una matriz por convenio en Etapa 1.
           </div>
         ) : (
-          <div className="overflow-x-auto border border-slate-200 rounded-md">
+          <div className="overflow-x-auto border border-borde rounded-md">
             <table className="text-sm">
               <thead className="bg-sigecop-blue-light text-sigecop-blue">
                 <tr>
@@ -134,7 +134,7 @@ export default function EditorProgramaConvenio({
                   {periodos.map((p) => (
                     <th key={p.numero} className="text-right px-2 py-2 w-24" title={`${fechaCorta(p.inicio)} – ${fechaCorta(p.fin)}`}>
                       P{p.numero}
-                      <div className="text-[10px] font-normal text-blue-700">{fechaCorta(p.inicio)}</div>
+                      <div className="text-[10px] font-normal text-sigecop-accent">{fechaCorta(p.inicio)}</div>
                     </th>
                   ))}
                   <th className="text-right px-2 py-2 w-24">Σ planeado</th>
@@ -148,7 +148,7 @@ export default function EditorProgramaConvenio({
                   const ok = Math.abs(r.restante) <= TOL;
                   const restCls = ok ? 'text-green-700 font-semibold' : r.restante < 0 ? 'text-red-700 font-bold' : 'text-amber-700';
                   return (
-                    <tr key={c.rid} className={`border-t border-slate-200 ${!ok ? (r.restante < 0 ? 'bg-red-50' : 'bg-amber-50') : ''}`}>
+                    <tr key={c.rid} className={`border-t border-borde ${!ok ? (r.restante < 0 ? 'bg-red-50' : 'bg-amber-50') : ''}`}>
                       <td className="px-3 py-1 font-mono text-xs sticky left-0 bg-white">{c.clave || '—'}</td>
                       <td className="px-3 py-1 truncate max-w-[12rem]" title={c.concepto}>{c.concepto || '—'}</td>
                       {periodos.map((p) => (

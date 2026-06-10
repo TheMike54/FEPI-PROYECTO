@@ -1,6 +1,7 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
-import BannerContexto from '../components/vista/BannerContexto.jsx';
+import EncabezadoContrato from '../components/ui/EncabezadoContrato.jsx';
+import Kpi from '../components/ui/Kpi.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import { useSesion } from '../context/SesionContext.jsx';
 import { api } from '../services/api.js';
@@ -26,10 +27,10 @@ const FASE_IDX = new Map(FASES.map((f, i) => [f.estado, i]));
 // Colores del badge por ESTADO real — paleta de las demás vistas.
 const COLOR_ESTADO = {
   integrada:  'bg-slate-200 text-slate-700',
-  enviada:    'bg-amber-100 text-sigecop-amber-attention',
+  enviada:    'bg-aviso-bg text-aviso',
   autorizada: 'bg-sigecop-blue-light text-sigecop-blue',
-  pagada:     'bg-green-100 text-sigecop-green-validation',
-  rechazada:  'bg-red-100 text-red-700',
+  pagada:     'bg-exito-bg text-exito',
+  rechazada:  'bg-peligro-bg text-peligro',
 };
 
 const NOMBRE_ROL = {
@@ -63,8 +64,8 @@ function MiniStepper({ estado }) {
         let dotCls = 'w-2.5 h-2.5 rounded-full border-2 ';
         if (actual) dotCls += 'bg-sigecop-accent border-sigecop-accent';
         else if (completado) dotCls += 'bg-sigecop-blue border-sigecop-blue';
-        else dotCls += 'bg-white border-slate-300';
-        const lineCls = 'flex-1 h-0.5 ' + (i < idx ? 'bg-sigecop-blue' : 'bg-slate-200');
+        else dotCls += 'bg-white border-borde-fuerte';
+        const lineCls = 'flex-1 h-0.5 ' + (i < idx ? 'bg-sigecop-blue' : 'bg-borde');
         return (
           <div key={fase.estado} className="flex items-center flex-1 last:flex-none">
             <div className={dotCls} title={fase.label} />
@@ -78,36 +79,24 @@ function MiniStepper({ estado }) {
 
 function IndicadoresAgregados({ totales, porEstado }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-md p-5 mb-6" data-testid="indicadores-agregados">
+    <div className="bg-white border border-borde rounded-lg p-5 mb-6" data-testid="indicadores-agregados">
       <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
         Indicadores agregados de la cartera
       </h2>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-        <div className="bg-slate-50 border border-slate-200 rounded-md p-3" data-testid="kpi-contratos">
-          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Contratos</div>
-          <div className="text-2xl font-bold text-sigecop-blue mt-1">{totales.contratos}</div>
-        </div>
-        <div className="bg-slate-50 border border-slate-200 rounded-md p-3" data-testid="kpi-monto-estimado">
-          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Monto total estimado</div>
-          <div className="text-lg font-bold text-sigecop-blue mt-1 font-mono">{moneda(totales.monto_estimado)}</div>
-        </div>
-        <div className="bg-slate-50 border border-slate-200 rounded-md p-3" data-testid="kpi-monto-pagado">
-          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Monto pagado</div>
-          <div className="text-lg font-bold text-sigecop-green-validation mt-1 font-mono">{moneda(totales.monto_pagado)}</div>
-        </div>
-        <div className="bg-slate-50 border border-slate-200 rounded-md p-3" data-testid="kpi-monto-pendiente">
-          <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">Monto pendiente</div>
-          <div className="text-lg font-bold text-sigecop-amber-attention mt-1 font-mono">{moneda(totales.monto_pendiente)}</div>
-        </div>
+        <Kpi label="Contratos" valor={totales.contratos} tono="guinda" testid="kpi-contratos" />
+        <Kpi label="Monto total estimado" valor={moneda(totales.monto_estimado)} tono="guinda" testid="kpi-monto-estimado" />
+        <Kpi label="Monto pagado" valor={moneda(totales.monto_pagado)} tono="exito" testid="kpi-monto-pagado" />
+        <Kpi label="Monto pendiente" valor={moneda(totales.monto_pendiente)} tono="aviso" testid="kpi-monto-pendiente" />
       </div>
 
-      <div className="border-t border-slate-200 pt-3" data-testid="antiguedad-estado">
+      <div className="border-t border-borde pt-3" data-testid="antiguedad-estado">
         <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-2">
           Antigüedad promedio por estado (días)
         </div>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
           {porEstado.map((e) => (
-            <div key={e.estado} className="text-center bg-slate-50 border border-slate-200 rounded p-2">
+            <div key={e.estado} className="text-center bg-pagina border border-borde rounded p-2">
               <div className="text-[10px] uppercase tracking-wider text-slate-500">{e.etiqueta}</div>
               <div className="text-sm font-bold text-sigecop-blue">
                 {e.antiguedad_prom_dias != null ? `${e.antiguedad_prom_dias} d` : '—'}
@@ -126,7 +115,7 @@ function ContadoresEstado({ porEstado }) {
       {porEstado.map((e) => (
         <div
           key={e.estado}
-          className="bg-white border border-slate-200 rounded-md p-3 text-center"
+          className="bg-white border border-borde rounded-lg p-3 text-center"
           data-testid={`contador-estado-${e.estado}`}
         >
           <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">{e.etiqueta}</div>
@@ -141,7 +130,7 @@ function ContadoresEstado({ porEstado }) {
 function TarjetaEstimacion({ est }) {
   return (
     <div
-      className="bg-white border border-slate-200 rounded-md p-4 hover:shadow-sm transition-shadow"
+      className="bg-white border border-borde rounded-lg p-4 hover:shadow-sm transition-shadow"
       data-testid={`tarjeta-est-${est.folio}-${est.numero}`}
     >
       <div className="flex items-start justify-between gap-3 mb-2">
@@ -235,15 +224,15 @@ export default function TableroEstimaciones() {
         ]}
       />
 
-      <BannerContexto
-        variant="slate"
+      {/* UI-1: EncabezadoContrato (sistema de diseño guinda); mismo contenido. */}
+      <EncabezadoContrato
+        titulo="Cartera"
         folio={`${totales.contratos} contrato(s)`}
-        folioLabel="Cartera"
-        extra={[{ value: `${data?.estimaciones?.length ?? 0} estimación(es) en proceso` }]}
+        items={[{ value: `${data?.estimaciones?.length ?? 0} estimación(es) en proceso` }]}
       />
 
       {cargando ? (
-        <div className="bg-white border border-slate-200 rounded-md p-8 text-center text-slate-400 italic" data-testid="tablero-cargando">
+        <div className="bg-white border border-borde rounded-lg p-8 text-center text-slate-400 italic" data-testid="tablero-cargando">
           Cargando tablero…
         </div>
       ) : error ? (
@@ -258,7 +247,7 @@ export default function TableroEstimaciones() {
           <ContadoresEstado porEstado={porEstado} />
 
           {/* Filtros del tablero — consultativos, fuera de RegionEditable. */}
-          <div className="bg-white border border-slate-200 rounded-md p-5 mb-6" data-testid="filtros-tablero">
+          <div className="bg-white border border-borde rounded-lg p-5 mb-6" data-testid="filtros-tablero">
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">Filtros</h2>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
@@ -286,7 +275,7 @@ export default function TableroEstimaciones() {
             </div>
           </div>
 
-          <div className="bg-white border border-slate-200 rounded-md p-5 mb-6">
+          <div className="bg-white border border-borde rounded-lg p-5 mb-6">
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-1">
               Estimaciones aceptadas y en proceso ({filtradas.length})
             </h2>
@@ -306,7 +295,7 @@ export default function TableroEstimaciones() {
             )}
           </div>
 
-          <div className="bg-white border border-slate-200 rounded-md p-5 mb-6">
+          <div className="bg-white border border-borde rounded-lg p-5 mb-6">
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-1">Mis pendientes</h2>
             <p className="text-xs text-slate-500 mb-3">
               Pendientes para tu rol{rol ? ` (${NOMBRE_ROL[rol] ?? rol})` : ''}, según el estado de cada estimación.

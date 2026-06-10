@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Tabs from '../components/ui/Tab.jsx';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
-import BannerContexto from '../components/vista/BannerContexto.jsx';
+import EncabezadoContrato from '../components/ui/EncabezadoContrato.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import RegionEditable from '../components/vista/RegionEditable.jsx';
 import BuscadorNotas, { useFiltrosNotas } from '../components/notas/BuscadorNotas.jsx';
@@ -324,7 +324,7 @@ function TabGeneradores({ filas, onCantidad, tienePlan }) {
   );
 }
 
-function TabCaratula({ caratula, anticipoPct, deductivas, onDeductivas, acumulados }) {
+function TabCaratula({ caratula, anticipoPct, deductivas, onDeductivas, acumulados, numeroEstimacion, periodoNumero, periodoInicio, periodoFin }) {
   const renglones = [
     { label: 'Importe bruto del periodo', importe: caratula.subtotal, formula: 'Σ ROUND(volumen ejecutado × PU, 2) de los generadores con avance' },
     { label: `(−) Amortización de anticipo (${anticipoPct}%)`, importe: -caratula.amortizacion, formula: `subtotal × ${anticipoPct}/100 — art. 143 fr. I RLOPSRM`, art: 'art. 143 RLOPSRM' },
@@ -333,6 +333,21 @@ function TabCaratula({ caratula, anticipoPct, deductivas, onDeductivas, acumulad
   return (
     <div>
       <h3 className="text-lg font-bold text-sigecop-blue mb-1">2 · Carátula del periodo (viva)</h3>
+      {/* O1-P17 (revisión profe, 09-jun): "¿cuál estoy presentando? Tiene que ser número… la 8
+          corresponde a tal mes, porque está relacionado con el programa de obra". El número es el
+          PRÓXIMO correlativo del contrato (el backend lo materializa con MAX+1 al integrar) y el
+          periodo se deriva del programa (periodo cuyo cierre coincide con el periodo-fin capturado). */}
+      {numeroEstimacion != null && (
+        <div className="mb-3">
+          <span className="inline-block text-base font-bold text-sigecop-blue bg-sigecop-blue-light border border-slate-200 rounded px-3 py-1" data-testid="caratula-numero-estimacion">
+            Estimación No. {numeroEstimacion}
+            {periodoNumero != null && ` — Periodo ${periodoNumero}`}
+            {(periodoInicio || periodoFin) && (
+              <span className="font-normal text-sm text-slate-600"> ({fechaMX(periodoInicio) || '…'} – {fechaMX(periodoFin) || '…'})</span>
+            )}
+          </span>
+        </div>
+      )}
       <p className="text-xs text-amber-700 mb-3 italic">
         Vista previa que recalcula al teclear. El neto OFICIAL lo materializa el backend al integrar
         (fuente única de verdad, sin IVA — art. 2 fr. XIX RLOPSRM).
@@ -344,7 +359,7 @@ function TabCaratula({ caratula, anticipoPct, deductivas, onDeductivas, acumulad
               <tr key={i} className="border-t border-slate-200" title={r.formula}>
                 <td className="px-4 py-3 text-slate-800">
                   {r.label}
-                  {r.art && <span className="ml-2 inline-block text-[10px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded px-1.5 py-0.5 cursor-help align-middle" title={r.formula} data-testid={`caratula-art-${i}`}>ⓘ {r.art}</span>}
+                  {r.art && <span className="ml-2 inline-block text-[10px] font-semibold text-guinda bg-guinda-soft border border-guinda/20 rounded px-1.5 py-0.5 cursor-help align-middle" title={r.formula} data-testid={`caratula-art-${i}`}>ⓘ {r.art}</span>}
                 </td>
                 <td className="px-4 py-3 text-right font-mono text-slate-800">{moneda(r.importe)}</td>
               </tr>
@@ -400,7 +415,7 @@ function TabCaratula({ caratula, anticipoPct, deductivas, onDeductivas, acumulad
           </table>
         </div>
       )}
-      <div className="bg-blue-50 border-l-4 border-blue-500 px-4 py-3 text-sm text-blue-900 rounded-r-md max-w-2xl">
+      <div className="bg-guinda-soft border-l-4 border-guinda px-4 py-3 text-sm text-tinta rounded-r-md max-w-2xl">
         Amortización del anticipo conforme al <strong>art. 143 fr. I RLOPSRM</strong> y retención del{' '}
         <strong>5 al millar (art. 191 LFD)</strong>. La estimación se calcula <strong>sin IVA</strong>.
       </div>
@@ -604,6 +619,14 @@ export default function IntegracionEstimacion() {
   const hayExcesoPlan = filas.some((f) => f.excedePlan);  // plan del periodo (semáforo)
   const hayLineas = filas.some((f) => f.periodo > 0);
 
+  // O1-P17 (revisión profe, 09-jun): número de la estimación EN FORMACIÓN = MAX(numero)+1 del
+  // historial del contrato (informativo; el correlativo OFICIAL lo materializa el backend con el
+  // mismo MAX+1 al integrar). Se muestra prominente en la carátula, ligado al periodo del programa.
+  const proximoNumeroEstimacion = useMemo(
+    () => historial.reduce((m, e) => Math.max(m, Number(e.numero) || 0), 0) + 1,
+    [historial]
+  );
+
   // Carátula VIVA con el MISMO redondeo del backend (r2). Renglón "retención por atraso" PREVISTO
   // pero en $0 (Etapa C: falta el % del profe — art. 138/139 RLOPSRM [validar]); no se calcula aquí.
   // Etapa C: datos para la retención por atraso (del prep, solo lectura): % de pena pactado y los
@@ -737,11 +760,11 @@ export default function IntegracionEstimacion() {
 
       {selected && (
         <>
-          <BannerContexto
-            variant="slate"
+          {/* UI-1: EncabezadoContrato (sistema de diseño guinda); mismo contenido. */}
+          <EncabezadoContrato
+            titulo="Contrato"
             folio={selected.folio}
-            folioLabel="Contrato"
-            extra={[
+            items={[
               { label: 'Contratista:', value: selected.contratista || '—' },
               { label: 'Anticipo:', value: `${anticipoPct}%`, resaltado: true },
               { label: 'Estimaciones:', value: String(historial.length), resaltado: true }
@@ -820,7 +843,8 @@ export default function IntegracionEstimacion() {
               </details>
             )}
 
-            {wrapTab(<TabCaratula caratula={caratula} anticipoPct={anticipoPct} deductivas={deductivas} onDeductivas={setDeductivas} acumulados={acumulados} />)}
+            {wrapTab(<TabCaratula caratula={caratula} anticipoPct={anticipoPct} deductivas={deductivas} onDeductivas={setDeductivas} acumulados={acumulados}
+              numeroEstimacion={proximoNumeroEstimacion} periodoNumero={periodoResaltadoEstim} periodoInicio={periodoInicio} periodoFin={periodoFin} />)}
 
             {wrapTab(
               <TabNotasVinculadas vinculadas={notasVinculadas} onAbrir={() => setModalAbierto(true)} onQuitar={quitarNota} soloLectura={soloLectura} />

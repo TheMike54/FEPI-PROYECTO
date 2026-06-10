@@ -32,11 +32,14 @@ export default function BannerContexto({
   extra = [],
   variant = 'slate',
   titulo,
-  margenAbajo = 'mb-6'
+  margenAbajo = 'mb-6',
+  testid // opcional: ancla para los specs (O1, 09-jun)
 }) {
+  // UI-1: paleta institucional — 'blue' (énfasis) pasa a guinda-soft; 'slate' a tarjeta blanca
+  // con acento guinda. Solo clases; estructura y props intactas (lo usan ~10 vistas).
   const styles = variant === 'blue'
-    ? { bg: 'bg-blue-50',   border: 'border-sigecop-blue', label: 'text-sigecop-blue' }
-    : { bg: 'bg-slate-100', border: 'border-slate-400',    label: 'text-slate-600' };
+    ? { bg: 'bg-guinda-soft', border: 'border-guinda', label: 'text-guinda' }
+    : { bg: 'bg-white border border-borde', border: 'border-l-guinda', label: 'text-tinta-sec' };
 
   const tituloFinal = titulo ?? (variant === 'blue' ? 'Contrato' : 'Contexto');
 
@@ -77,7 +80,7 @@ export default function BannerContexto({
   }
 
   return (
-    <div className={`${styles.bg} border-l-4 ${styles.border} px-4 py-3 ${margenAbajo} rounded-r-md`}>
+    <div className={`${styles.bg} border-l-4 ${styles.border} px-4 py-3 ${margenAbajo} rounded-r-md`} data-testid={testid}>
       <div className={`text-xs font-semibold uppercase ${styles.label}`}>
         {tituloFinal}
       </div>

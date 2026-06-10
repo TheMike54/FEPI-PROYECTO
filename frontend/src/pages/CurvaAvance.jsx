@@ -1,7 +1,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
-import BannerContexto from '../components/vista/BannerContexto.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
+import EncabezadoContrato from '../components/ui/EncabezadoContrato.jsx';
+import Kpi from '../components/ui/Kpi.jsx';
 import { useSesion } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
@@ -40,18 +41,16 @@ const COLOR_CELDA = {
   vacio:     'bg-slate-200'
 };
 
-const TONO_KPI = {
-  base:   'text-sigecop-blue',
-  ok:     'text-sigecop-green-validation',
-  alerta: 'text-sigecop-amber-attention'
-};
-
 // Curva S en SVG inline — sin dependencias. Series con valores null se cortan (la curva
 // ejecutada/financiera se detiene en hoy). `hoyIndex` dibuja el marcador vertical "hoy".
+// O1-P16b (revisión profe, 09-jun): tooltip interactivo — "el graficador te debe dar el valor
+// cuando pongas el mouse". Círculo de hit invisible (r=10) por punto; el tooltip se dibuja
+// DENTRO del SVG (escala con el viewBox, sin matemática de DOM) + <title> nativo de respaldo.
 function CurvaSVG({ datos, hoyIndex }) {
   const w = 720, h = 320, padL = 44, padR = 16, padT = 16, padB = 36;
   const innerW = w - padL - padR;
   const innerH = h - padT - padB;
+  const [hover, setHover] = useState(null); // { punto, serieLabel, valor, x, y }
 
   if (!datos || datos.length === 0) {
     return (
@@ -113,10 +112,35 @@ function CurvaSVG({ datos, hoyIndex }) {
           <g key={s.key}>
             <path d={linea(s.key)} fill="none" stroke={s.color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
             {datos.map((d, i) => (d[s.key] == null ? null : (
-              <circle key={i} cx={xFor(i)} cy={yFor(d[s.key])} r="3.5" fill={s.color} />
+              <g key={i}>
+                <circle cx={xFor(i)} cy={yFor(d[s.key])} r="3.5" fill={s.color} />
+                {/* P16b: área de hit más grande que el punto, con tooltip nativo de respaldo. */}
+                <circle
+                  cx={xFor(i)} cy={yFor(d[s.key])} r="10" fill="transparent" style={{ cursor: 'pointer' }}
+                  onMouseEnter={() => setHover({ punto: d, serieLabel: s.label, valor: d[s.key], x: xFor(i), y: yFor(d[s.key]) })}
+                  onMouseLeave={() => setHover(null)}
+                  data-testid={`curva-pt-${s.key}-${i}`}
+                >
+                  <title>{`${d.esOrigen ? 'Inicio' : `Periodo ${d.numero} (${d.label})`} · ${s.label}: ${Number(d[s.key]).toFixed(1)}%`}</title>
+                </circle>
+              </g>
             )))}
           </g>
         ))}
+
+        {/* P16b: tooltip dibujado en coordenadas del SVG (escala con el viewBox). */}
+        {hover && (() => {
+          const texto = `${hover.punto.esOrigen ? 'Inicio' : `P${hover.punto.numero} · ${hover.punto.label}`} — ${hover.serieLabel}: ${Number(hover.valor).toFixed(1)}%`;
+          const tw = texto.length * 6.4 + 14;
+          const tx = Math.max(padL, Math.min(w - padR - tw, hover.x - tw / 2));
+          const ty = hover.y - 34 < 2 ? hover.y + 14 : hover.y - 34;
+          return (
+            <g data-testid="curva-tooltip" pointerEvents="none">
+              <rect x={tx} y={ty} width={tw} height={22} rx="4" fill="#0f172a" opacity="0.92" />
+              <text x={tx + tw / 2} y={ty + 15} fontSize="11" fill="#ffffff" textAnchor="middle">{texto}</text>
+            </g>
+          );
+        })()}
       </svg>
 
       <div className="flex flex-wrap gap-4 justify-center mt-2 text-xs">
@@ -127,16 +151,6 @@ function CurvaSVG({ datos, hoyIndex }) {
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-function KPI({ label, valor, tono, sub }) {
-  return (
-    <div className="bg-white border border-slate-200 rounded-md p-4">
-      <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold">{label}</div>
-      <div className={`text-3xl font-bold mt-1 ${TONO_KPI[tono] || TONO_KPI.base}`}>{valor}</div>
-      {sub && <div className="text-xs text-slate-500 mt-1">{sub}</div>}
     </div>
   );
 }
@@ -286,9 +300,14 @@ export default function CurvaAvance() {
   );
 
   // Series por periodo VISIBLE (acumulado hasta numero ≤ p.numero).
+  // O1-P16a (revisión profe, 09-jun): cada periodo grafica a su CIERRE (label = mes de p.fin; el
+  // acumulado del periodo se alcanza al terminar el periodo, no al empezarlo) y las 3 series
+  // INICIAN EN 0 en el inicio del contrato ("no has hecho nada; el programado va en cero; en el
+  // primer periodo es el primer avance"): se antepone el punto (inicio, 0%) cuando la ventana
+  // visible arranca en el primer periodo (en ventanas recortadas el origen no aplica).
   const datosCurva = useMemo(() => {
     const idsFiltro = new Set(conceptosFiltrados.map((c) => c.id));
-    return periodosVisibles.map((p) => {
+    const puntos = periodosVisibles.map((p) => {
       let prog = 0, ejec = 0;
       for (const cid of idsFiltro) {
         for (const q of periodosAll) {
@@ -303,14 +322,26 @@ export default function CurvaAvance() {
       const ejecutado = (denom > 0 && muestraEjec) ? (ejec / denom) * 100 : null;
       // FINANCIERO (nivel contrato): solo periodos con dato (inicio ≤ hoy) en financieroMap.
       const financiero = financieroMap[p.numero] != null ? financieroMap[p.numero] : null;
-      return { label: mesCorto(p.inicio), numero: p.numero, programado, ejecutado, financiero };
+      return { label: mesCorto(p.fin), numero: p.numero, programado, ejecutado, financiero };
     });
-  }, [periodosVisibles, periodosAll, conceptosFiltrados, planeadoMap, ejecCeldaMap, denom, periodoActualNum, financieroMap]);
+    const primero = periodosAll[0];
+    if (puntos.length > 0 && primero && periodosVisibles[0].numero === primero.numero) {
+      const iniciado = dISO(primero.inicio) <= hoy; // contrato ya iniciado → ejecutado/financiero parten de 0
+      puntos.unshift({
+        label: 'Inicio', numero: 0, esOrigen: true,
+        programado: denom > 0 ? 0 : null,
+        ejecutado: denom > 0 && iniciado ? 0 : null,
+        financiero: iniciado && Number(selected?.monto) > 0 ? 0 : null
+      });
+    }
+    return puntos;
+  }, [periodosVisibles, periodosAll, conceptosFiltrados, planeadoMap, ejecCeldaMap, denom, periodoActualNum, financieroMap, hoy, selected]);
 
+  // El índice de "hoy" se busca sobre datosCurva (que puede traer el punto de origen antepuesto).
   const hoyIndex = useMemo(() => {
-    const i = periodosVisibles.findIndex((p) => p.numero === periodoActualNum);
+    const i = datosCurva.findIndex((d) => !d.esOrigen && d.numero === periodoActualNum);
     return i >= 0 ? i : null;
-  }, [periodosVisibles, periodoActualNum]);
+  }, [datosCurva, periodoActualNum]);
 
   // KPIs en hoy (o último punto visible si hoy no cae en la ventana).
   const kpis = useMemo(() => {
@@ -355,12 +386,12 @@ export default function CurvaAvance() {
       />
 
       {sinSesion && (
-        <div className="bg-slate-50 border border-slate-200 rounded-md px-4 py-3 mb-4 text-sm text-slate-600">
+        <div className="bg-pagina border border-borde rounded-md px-4 py-3 mb-4 text-sm text-slate-600">
           Inicia sesión en modo aplicación para consultar el programa y la curva de avance.
         </div>
       )}
 
-      <div className="bg-white border border-slate-200 rounded-md p-4 mb-6 max-w-2xl">
+      <div className="bg-white border border-borde rounded-lg p-4 mb-6 max-w-2xl">
         <label className="sg-label">Contrato</label>
         <select
           className="sg-input"
@@ -386,11 +417,11 @@ export default function CurvaAvance() {
 
       {selected && !cargando && !error && (
         <>
-          <BannerContexto
-            variant="slate"
+          {/* UI-1: EncabezadoContrato (sistema de diseño guinda); mismo contenido. */}
+          <EncabezadoContrato
+            titulo="Contrato"
             folio={selected.folio}
-            folioLabel="Contrato"
-            extra={[
+            items={[
               { value: selected.contratista || '—' },
               { label: 'Avance físico global:', value: fmtPct(avanceGlobal), resaltado: true }
             ]}
@@ -404,7 +435,7 @@ export default function CurvaAvance() {
           )}
 
           {/* Filtros (criterio 2). */}
-          <div className="bg-white border border-slate-200 rounded-md p-5 mb-6">
+          <div className="bg-white border border-borde rounded-lg p-5 mb-6">
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">Filtros</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -428,11 +459,11 @@ export default function CurvaAvance() {
           </div>
 
           {/* Catálogo de conceptos + % de avance por concepto (criterio 3). */}
-          <div className="bg-white border border-slate-200 rounded-md p-5 mb-6">
+          <div className="bg-white border border-borde rounded-lg p-5 mb-6">
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">Catálogo de conceptos</h2>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-slate-600 uppercase tracking-wider text-xs">
+                <thead className="bg-pagina text-tinta-sec uppercase tracking-wider text-xs">
                   <tr>
                     <th className="px-3 py-2 text-left">Clave</th>
                     <th className="px-3 py-2 text-left">Concepto</th>
@@ -466,24 +497,26 @@ export default function CurvaAvance() {
 
           {/* KPIs (en hoy). */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-            <KPI label="Programado (acum. a hoy)" valor={fmtPct(kpis.programado)} tono="base" />
-            <KPI label="Ejecutado (acum. a hoy)"  valor={fmtPct(kpis.ejecutado)}  tono="base" />
-            <KPI label="Financiero (acum. a hoy)" valor={fmtPct(kpis.financiero)} tono="base" />
-            <KPI
+            <Kpi label="Programado (acum. a hoy)" valor={fmtPct(kpis.programado)} tono="base" />
+            <Kpi label="Ejecutado (acum. a hoy)"  valor={fmtPct(kpis.ejecutado)}  tono="base" />
+            <Kpi label="Financiero (acum. a hoy)" valor={fmtPct(kpis.financiero)} tono="base" />
+            <Kpi
               label="Desviación (ejec. − prog.)"
               valor={desviacion == null ? '—' : `${desviacion > 0 ? '+' : ''}${desviacion.toFixed(1)}%`}
-              tono={desviacion == null ? 'base' : (desviacion < 0 ? 'alerta' : 'ok')}
+              tono={desviacion == null ? 'base' : (desviacion < 0 ? 'aviso' : 'exito')}
               sub={desviacion == null ? undefined : (desviacion < 0 ? 'Avance por debajo del programa' : 'Avance en o por encima del programa')}
             />
           </div>
 
           {/* Curva S (criterio 2). */}
-          <div className="bg-white border border-slate-200 rounded-md p-5 mb-6">
+          <div className="bg-white border border-borde rounded-lg p-5 mb-6">
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
               Curva S — programado · ejecutado · financiero
             </h2>
             <CurvaSVG datos={datosCurva} hoyIndex={hoyIndex} />
             <p className="text-xs text-slate-500 mt-3 text-center">
+              Las curvas inician en <strong>0%</strong> al inicio del contrato y cada periodo grafica a su{' '}
+              <strong>cierre</strong> (pasa el mouse sobre un punto para ver su valor).{' '}
               Programado llega al 100%; ejecutado y financiero se detienen en <strong>hoy</strong> (marcador).{' '}
               Financiero = Σ pagos hasta el periodo ÷ monto del contrato (mismo número que el{' '}
               <code>financiero_pct</code> canónico, acumulado por fecha), a nivel contrato
@@ -492,7 +525,7 @@ export default function CurvaAvance() {
           </div>
 
           {/* Matriz programa de obra (criterio 1). */}
-          <div className="bg-white border border-slate-200 rounded-md p-5 mb-6" data-testid="seccion-gantt">
+          <div className="bg-white border border-borde rounded-lg p-5 mb-6" data-testid="seccion-gantt">
             <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
               <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">Programa de obra — concepto × periodo</h2>
               <div className="text-xs text-slate-600">
@@ -507,7 +540,7 @@ export default function CurvaAvance() {
               <div className="overflow-x-auto">
                 <table className="w-full text-xs" style={{ borderSpacing: 0 }}>
                   <thead>
-                    <tr className="text-slate-600 uppercase tracking-wider">
+                    <tr className="text-tinta-sec uppercase tracking-wider">
                       <th className="px-2 py-2 text-left">Concepto</th>
                       {periodosVisibles.map((p) => (
                         <th key={p.id} className="px-2 py-2 text-center" title={`${dISO(p.inicio)} – ${dISO(p.fin)}`}>

@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
-import BannerContexto from '../components/vista/BannerContexto.jsx';
+import EncabezadoContrato from '../components/ui/EncabezadoContrato.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import RegionEditable from '../components/vista/RegionEditable.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
@@ -235,12 +235,12 @@ export default function TrabajosTerminados() {
       />
 
       {sinSesion && (
-        <div className="bg-slate-50 border border-slate-200 rounded-md px-4 py-3 mb-4 text-sm text-slate-600">
+        <div className="bg-pagina border border-borde rounded-md px-4 py-3 mb-4 text-sm text-slate-600">
           Inicia sesión en modo aplicación para cargar tus contratos y registrar avance.
         </div>
       )}
 
-      <div className="bg-white border border-slate-200 rounded-md p-4 mb-6 max-w-2xl">
+      <div className="bg-white border border-borde rounded-lg p-4 mb-6 max-w-2xl">
         <label className="sg-label">Contrato</label>
         <select
           className="sg-input"
@@ -261,11 +261,10 @@ export default function TrabajosTerminados() {
 
       {selected && !cargando && (
         <>
-          <BannerContexto
-            variant="slate"
+          <EncabezadoContrato
+            titulo="Contrato"
             folio={selected.folio}
-            folioLabel="Contrato"
-            extra={[
+            items={[
               { value: selected.contratista || '—' },
               { label: 'Conceptos:', value: String(conceptos.length), resaltado: true }
             ]}
@@ -281,15 +280,15 @@ export default function TrabajosTerminados() {
           )}
 
           {/* --- Resumen ejecutado por concepto (lectura) --- */}
-          <div className="bg-white border border-slate-200 rounded-md overflow-hidden mb-6">
-            <div className="px-6 py-3 border-b border-slate-200">
+          <div className="bg-white border border-borde rounded-lg overflow-hidden mb-6">
+            <div className="px-6 py-3 border-b border-borde">
               <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
                 Avance ejecutado acumulado por concepto del catálogo
               </h2>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm" data-testid="tabla-conceptos">
-                <thead className="bg-slate-50 text-slate-700">
+                <thead className="bg-pagina text-tinta-sec">
                   <tr>
                     <th className="text-left p-3 font-semibold">Clave</th>
                     <th className="text-left p-3 font-semibold">Concepto</th>
@@ -308,7 +307,7 @@ export default function TrabajosTerminados() {
                       const ejec = Number(c.acumulado_ejecutado);
                       const pct = contratada > 0 ? (ejec / contratada) * 100 : 0;
                       return (
-                        <tr key={c.contrato_concepto_id} className="border-t border-slate-200 hover:bg-slate-50" data-fila-id={c.contrato_concepto_id}>
+                        <tr key={c.contrato_concepto_id} className="border-t border-borde hover:bg-pagina" data-fila-id={c.contrato_concepto_id}>
                           <td className="p-3 font-mono text-xs text-slate-500">{c.clave || '—'}</td>
                           <td className="p-3 font-semibold">{c.concepto}</td>
                           <td className="p-3 text-center text-slate-500">{c.unidad}</td>
@@ -327,7 +326,7 @@ export default function TrabajosTerminados() {
           {/* --- Captura de un nuevo avance --- */}
           {!soloLectura && (
             <RegionEditable disabled={soloLectura}>
-              <div className="bg-white border border-slate-200 rounded-md p-4 mb-6">
+              <div className="bg-white border border-borde rounded-lg p-4 mb-6">
                 <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
                   Registrar avance ejecutado
                 </h2>
@@ -454,15 +453,15 @@ export default function TrabajosTerminados() {
           )}
 
           {/* --- Entradas de avance registradas --- */}
-          <div className="bg-white border border-slate-200 rounded-md overflow-hidden">
-            <div className="px-6 py-3 border-b border-slate-200">
+          <div className="bg-white border border-borde rounded-lg overflow-hidden">
+            <div className="px-6 py-3 border-b border-borde">
               <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
                 Avances registrados ({avances.length})
               </h2>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm" data-testid="tabla-avances">
-                <thead className="bg-slate-50 text-slate-700">
+                <thead className="bg-pagina text-tinta-sec">
                   <tr>
                     <th className="text-left p-3 font-semibold">Concepto</th>
                     <th className="text-right p-3 font-semibold">Cantidad</th>
@@ -482,7 +481,7 @@ export default function TrabajosTerminados() {
                       const per = a.contrato_periodo_id ? periodoById.get(a.contrato_periodo_id) : null;
                       const editando = edicion && edicion.id === a.id;
                       return (
-                        <tr key={a.id} className={`border-t border-slate-200 ${editando ? 'bg-sigecop-blue-light' : 'hover:bg-slate-50'}`} data-avance-id={a.id}>
+                        <tr key={a.id} className={`border-t border-borde ${editando ? 'bg-sigecop-blue-light' : 'hover:bg-pagina'}`} data-avance-id={a.id}>
                           <td className="p-3">{c ? c.concepto : `#${a.contrato_concepto_id}`}</td>
                           <td className="p-3 text-right font-mono">
                             {editando ? (

@@ -192,4 +192,15 @@ test('Expediente HU-04: el bloque de roster muestra la sustitución (persona nue
   await expect(bloque).toBeVisible();
   await expect(bloque).toContainText('Sustituto');   // persona nueva (superintendente sustituto)
   await expect(bloque).toContainText(motivo);
+
+  // O1-W4b (09-jun): el ENCABEZADO del expediente muestra al superintendente VIGENTE del roster
+  // (antes mostraba el snapshot de texto del alta, la persona original ya sustituida).
+  await expect(page.getByTestId('banner-expediente')).toContainText('Sustituto');
+
+  // O1-W2/W4a (09-jun): columna EVENTO separada del MOTIVO. La fila de la sustitución dice
+  // "Sustitución"; las filas del alta dicen "Alta del contrato" y su motivo va vacío (—): el
+  // texto "Asignación inicial..." ya NO se muestra como motivo.
+  await expect(bloque.locator('[data-testid^="roster-exp-evento-"]', { hasText: 'Sustitución' }).first()).toBeVisible();
+  await expect(bloque.locator('[data-testid^="roster-exp-evento-"]', { hasText: 'Alta del contrato' }).first()).toBeVisible();
+  await expect(bloque).not.toContainText('Asignación inicial');
 });

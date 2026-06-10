@@ -24,8 +24,9 @@ export default function HeaderVista({
   return (
     <>
       <Breadcrumb items={breadcrumb} />
+      {/* UI-1: título en tinta (peso 500); el guinda queda para acentos/acciones. */}
       <div className="flex items-start justify-between mb-6">
-        <h1 className="text-2xl font-bold text-sigecop-blue">{titulo}</h1>
+        <h1 className="text-2xl font-medium text-tinta">{titulo}</h1>
       </div>
       {soloLectura && <AvisoSoloLectura />}
     </>

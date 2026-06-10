@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
-import BannerContexto from '../components/vista/BannerContexto.jsx';
+import EncabezadoContrato from '../components/ui/EncabezadoContrato.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import RegionEditable from '../components/vista/RegionEditable.jsx';
 import { useSearchParams } from 'react-router-dom';
@@ -17,7 +17,7 @@ function EstadoBadge({ activa }) {
   return (
     <span
       className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${
-        activa ? 'bg-green-100 text-sigecop-green-validation' : 'bg-slate-200 text-slate-600'
+        activa ? 'bg-exito-bg text-exito' : 'bg-slate-200 text-slate-600'
       }`}
     >
       {activa ? 'Activa' : 'Pausada'}
@@ -158,12 +158,12 @@ export default function AlertasAtraso() {
       />
 
       {sinSesion && (
-        <div className="bg-slate-50 border border-slate-200 rounded-md px-4 py-3 mb-4 text-sm text-slate-600">
+        <div className="bg-pagina border border-borde rounded-md px-4 py-3 mb-4 text-sm text-slate-600">
           Inicia sesión en modo aplicación para cargar tus contratos y configurar sus alertas de atraso.
         </div>
       )}
 
-      <div className="bg-white border border-slate-200 rounded-md p-4 mb-6 max-w-2xl">
+      <div className="bg-white border border-borde rounded-lg p-4 mb-6 max-w-2xl">
         <label className="sg-label">Contrato</label>
         <select
           className="sg-input"
@@ -190,17 +190,16 @@ export default function AlertasAtraso() {
       {contratoId && !cargando && (
         <>
           {contratoSel && (
-            <BannerContexto
-              variant="slate"
+            <EncabezadoContrato
+              titulo="Contrato"
               folio={contratoSel.folio}
-              folioLabel="Contrato"
-              extra={[{ value: contratoSel.contratista }]}
+              items={[{ value: contratoSel.contratista }]}
             />
           )}
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Formulario de nueva alerta */}
-            <div className="lg:col-span-1 bg-white border border-slate-200 rounded-md p-6">
+            <div className="lg:col-span-1 bg-white border border-borde rounded-lg p-6">
               <h2 className="text-lg font-bold text-sigecop-blue mb-4">Nueva alerta</h2>
 
               <RegionEditable disabled={soloLectura}>
@@ -290,15 +289,15 @@ export default function AlertasAtraso() {
             </div>
 
             {/* Tabla de alertas configuradas */}
-            <div className="lg:col-span-2 bg-white border border-slate-200 rounded-md overflow-hidden">
-              <div className="px-6 py-3 border-b border-slate-200">
+            <div className="lg:col-span-2 bg-white border border-borde rounded-lg overflow-hidden">
+              <div className="px-6 py-3 border-b border-borde">
                 <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
                   Alertas configuradas ({alertas.length})
                 </h2>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm" data-testid="tabla-alertas">
-                  <thead className="bg-slate-50 text-slate-700">
+                  <thead className="bg-pagina text-tinta-sec">
                     <tr>
                       <th className="text-left p-3 font-semibold">Concepto</th>
                       <th className="text-center p-3 font-semibold">Umbral</th>
@@ -321,7 +320,7 @@ export default function AlertasAtraso() {
                       alertas.map((a) => (
                         <tr
                           key={a.id}
-                          className={`border-t border-slate-200 ${a.disparada ? 'bg-amber-50' : 'hover:bg-slate-50'}`}
+                          className={`border-t border-borde ${a.disparada ? 'bg-amber-50' : 'hover:bg-pagina'}`}
                           data-testid={`alerta-${a.id}`}
                         >
                           <td className="p-3 font-semibold">{a.concepto_label}</td>
@@ -374,8 +373,8 @@ export default function AlertasAtraso() {
           </div>
 
           {/* Alertas disparadas — evaluadas por el backend (avance físico). */}
-          <div className="mt-8 bg-white border border-slate-200 rounded-md overflow-hidden">
-            <div className="px-6 py-3 border-b border-slate-200">
+          <div className="mt-8 bg-white border border-borde rounded-lg overflow-hidden">
+            <div className="px-6 py-3 border-b border-borde">
               <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
                 Alertas disparadas ({disparadas.length})
               </h2>

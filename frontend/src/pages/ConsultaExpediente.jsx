@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import jsPDF from 'jspdf';
 import { descargarExcelHoja } from '../services/excelExport.js';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
-import BannerContexto from '../components/vista/BannerContexto.jsx';
+import EncabezadoContrato from '../components/ui/EncabezadoContrato.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { api } from '../services/api.js';
@@ -78,18 +78,19 @@ function BtnDescargar({ etiqueta, onClick, testid }) {
 
 function BloqueExpediente({ bloque, children, abiertoDefault = true }) {
   const [abierto, setAbierto] = useState(abiertoDefault);
+  // UI-1: tarjeta blanca con encabezado claro (solo clases; el toggle no cambia).
   return (
-    <div className="bg-white border border-slate-200 rounded-md overflow-hidden">
+    <div className="bg-white border border-borde rounded-lg overflow-hidden">
       <button
         type="button"
-        className="w-full flex items-center justify-between px-5 py-3 bg-slate-50 hover:bg-slate-100 transition-colors"
+        className="w-full flex items-center justify-between px-5 py-3 bg-pagina hover:bg-guinda-soft/60 transition-colors"
         onClick={() => setAbierto((a) => !a)}
       >
         <div className="flex items-center gap-3">
           <span className="text-lg">{bloque.icono}</span>
-          <h2 className="text-base font-bold text-sigecop-blue">{bloque.titulo}</h2>
+          <h2 className="text-base font-medium text-tinta">{bloque.titulo}</h2>
         </div>
-        <span className="text-slate-500 text-sm">{abierto ? '▾ ocultar' : '▸ ver'}</span>
+        <span className="text-tinta-sec text-sm">{abierto ? '▾ ocultar' : '▸ ver'}</span>
       </button>
       {abierto && <div className="p-5">{children}</div>}
     </div>
@@ -149,6 +150,9 @@ function BloqueCatalogo({ conceptos, folio }) {
         <table className="w-full text-sm">
           <thead className="bg-sigecop-blue-light text-sigecop-blue">
             <tr>
+              {/* O1-P12b (revisión profe, 09-jun): mostrar la CLAVE del concepto (art. 45 fr. IX
+                  RLOPSRM, la captura el usuario). Ya venía en el payload y en el Excel; faltaba en pantalla. */}
+              <th className="text-left px-3 py-2 w-28">Clave</th>
               <th className="text-left px-3 py-2">Concepto</th>
               <th className="text-left px-3 py-2 w-20">Unidad</th>
               <th className="text-right px-3 py-2 w-28">Cantidad</th>
@@ -159,6 +163,7 @@ function BloqueCatalogo({ conceptos, folio }) {
           <tbody>
             {conceptos.map((c, i) => (
               <tr key={c.id ?? i} className="border-t border-slate-200 hover:bg-slate-50">
+                <td className="px-3 py-2 font-mono text-xs text-slate-600" data-testid={`exp-concepto-clave-${i}`}>{c.clave || '—'}</td>
                 <td className="px-3 py-2">{c.concepto}</td>
                 <td className="px-3 py-2 text-slate-600">{c.unidad}</td>
                 <td className="px-3 py-2 text-right">{num(c.cantidad).toLocaleString()}</td>
@@ -363,6 +368,13 @@ function BloqueJuridicos({ juridicos, equipo, folio }) {
 // personas pasadas; cada sustitución (sustituye_a != null) asienta su nota en la bitácora.
 const ROL_LABEL_ROSTER = { residente: 'Residente', superintendente: 'Superintendente', supervision: 'Supervisión' };
 
+// O1-W2/W4a (testing del equipo, 09-jun): "Asignación inicial (alta del contrato)" NO es un motivo.
+// Columna EVENTO (Alta del contrato | Sustitución) separada del MOTIVO (solo cambios reales).
+// Derivado en frontend, sin DDL: la fila inicial es la que no sustituye a nadie (sustituye_a null).
+const MOTIVO_ALTA_ROSTER = 'Asignación inicial (alta del contrato)';
+const eventoRoster = (h) => (h.sustituye_a != null ? 'Sustitución' : (h.motivo === MOTIVO_ALTA_ROSTER ? 'Alta del contrato' : 'Alta del rol'));
+const motivoRoster = (h) => (h.sustituye_a == null && h.motivo === MOTIVO_ALTA_ROSTER ? '' : (h.motivo || ''));
+
 function BloqueRoster({ roster }) {
   const historial = Array.isArray(roster?.historial) ? roster.historial : [];
   if (historial.length === 0) {
@@ -383,6 +395,7 @@ function BloqueRoster({ roster }) {
               <th className="text-left px-3 py-2">Persona</th>
               <th className="text-left px-3 py-2 w-28">Desde</th>
               <th className="text-left px-3 py-2 w-28">Hasta</th>
+              <th className="text-left px-3 py-2 w-32">Evento</th>
               <th className="text-left px-3 py-2">Motivo</th>
               <th className="text-center px-3 py-2 w-28">Bitácora</th>
             </tr>
@@ -404,7 +417,8 @@ function BloqueRoster({ roster }) {
                       ? <span className="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-green-100 text-sigecop-green-validation">Vigente</span>
                       : soloFecha(h.vigencia_hasta)}
                   </td>
-                  <td className="px-3 py-2 text-slate-700">{h.motivo || '—'}</td>
+                  <td className="px-3 py-2 text-slate-600" data-testid={`roster-exp-evento-${h.id}`}>{eventoRoster(h)}</td>
+                  <td className="px-3 py-2 text-slate-700">{motivoRoster(h) || '—'}</td>
                   <td className="px-3 py-2 text-center text-xs">
                     {h.sustituye_a == null
                       ? <span className="text-slate-400">—</span>
@@ -626,11 +640,16 @@ export default function ConsultaExpediente() {
 
       {expediente && (
         <>
-          <BannerContexto
-            variant="slate"
+          {/* O1-W4b (testing del equipo, 09-jun): el encabezado muestra al superintendente VIGENTE
+              del roster (art. 125: se sustituye, no se borra). contratos.contratista es el snapshot
+              de TEXTO del alta y no se actualiza al sustituir; el vigente vive en api.rosterContrato.
+              Fallback al snapshot si el roster no cargó o el contrato no tiene histórico.
+              UI-1: EncabezadoContrato (sistema de diseño guinda); mismo testid y mismo contenido. */}
+          <EncabezadoContrato
             titulo="Contrato"
             folio={expediente.folio}
-            extra={[{ value: expediente.contratista }]}
+            items={[{ value: roster?.vigente?.superintendente?.nombre || expediente.contratista }]}
+            testid="banner-expediente"
           />
 
           <div className="bg-white border border-slate-200 rounded-md p-4 mb-6">
