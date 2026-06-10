@@ -6,12 +6,12 @@
 //
 // Fuentes por reporte (endpoints existentes, verificados):
 //   1 Avance físico   ← leerProgramaObra + trabajosDeContrato + listarPagos  (PDF + Excel)
-//   2 Avance financiero ← historialEstimaciones + preparacionEstimacion + listarPagos (Excel)
+//   2 Avance financiero ← historialEstimaciones + listarPagos                  (Excel)
 //   3 Estimaciones    ← historialEstimaciones                                  (Excel)
 //   4 Observaciones   ← (sin fuente: depende de HU-15)                         [DESHABILITADO]
 //   5 Bitácora        ← notasDeContrato                                        (PDF)
 //   6 Modificatorios  ← convenios                                             (Excel)
-//   7 Penalizaciones  ← historialEstimaciones (retención/deductivas de carátula) (Excel)
+//   7 Penalizaciones  ← historialEstimaciones (retención/deductivas) + preparacionEstimacion (pena %) (Excel)
 
 import jsPDF from 'jspdf';
 import { descargarExcelHoja, descargarExcelMultihoja } from './excelExport.js';
@@ -24,7 +24,12 @@ const dISO = (v) => (v == null ? '' : String(v).slice(0, 10)); // DATE/ISO -> 'A
 const mesCorto = (iso) => MESES_ABR[Number(dISO(iso).slice(5, 7)) - 1] || '';
 const stamp = () => new Date().toISOString().slice(0, 10);
 const fechaMX = () => new Date().toLocaleDateString('es-MX');
-const num2 = (n) => (Number(n) || 0).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+// 'hoy' en hora local 'AAAA-MM-DD' (mismo cálculo que CurvaAvance.hoyISO, sin desfase UTC).
+function hoyISO() {
+  const d = new Date();
+  const z = (x) => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`;
+}
 const baseName = (id, slug, periodo) => `reporte_${id}_${slug}_${periodo.toLowerCase()}_${stamp()}`;
 const rangoPeriodo = (ini, fin) => `${dISO(ini) || '—'} – ${dISO(fin) || '—'}`;
 
@@ -62,10 +67,12 @@ const periodosOrdenados = (programa) =>
 // ---------------------------------------------------------------------------
 // Derivaciones de avance (reporte 1)
 // ---------------------------------------------------------------------------
-// Curva S ACUMULADA por período. Replica el fix de HU-05 para el financiero:
-//   financiero = Σ pagos.importe con fecha_pago ≤ fin del período ÷ monto × 100
-// (misma definición que el financiero_pct canónico, acumulada por fecha; NO una copia con bug).
-export function curvaS(programa, trabajos, pagos, monto) {
+// Curva S ACUMULADA por período. REUSA la definición CORREGIDA de CurvaAvance.financieroMap (fix
+// O1): el período EN CURSO corta en hoy (no en su fin), los períodos FUTUROS no tienen punto (null)
+// y el ejecutado se detiene en el período actual. Así la curva del reporte coincide EXACTAMENTE con
+// la que ve el usuario en pantalla, no una copia vieja con el bug donde el período actual quedaba mal.
+//   financiero = Σ pagos.importe con fecha_pago ≤ corte ÷ monto × 100   (corte = min(fin, hoy))
+export function curvaS(programa, trabajos, pagos, monto, hoy = hoyISO()) {
   const periodos = periodosOrdenados(programa);
   const conceptos = programa?.conceptos || [];
   const contratado = conceptos.reduce((s, c) => s + (Number(c.cantidad) || 0), 0);
@@ -84,6 +91,18 @@ export function curvaS(programa, trabajos, pagos, monto) {
   const m = Number(monto) || 0;
   const pgs = (pagos || []).map((p) => ({ f: dISO(p.fecha_pago), imp: Number(p.importe) || 0 }));
 
+  // Período actual: el que contiene hoy; si hoy es posterior a todos, el último; si es anterior a
+  // todos, ninguno (mismo criterio que CurvaAvance.periodoActualNum).
+  let periodoActualNum = null;
+  if (periodos.length > 0) {
+    const dentro = periodos.find((p) => dISO(p.inicio) <= hoy && dISO(p.fin) >= hoy);
+    if (dentro) periodoActualNum = dentro.numero;
+    else {
+      const ultimo = periodos[periodos.length - 1];
+      if (hoy > dISO(ultimo.fin)) periodoActualNum = ultimo.numero;
+    }
+  }
+
   return periodos.map((p) => {
     let prog = 0, ej = 0;
     for (const q of periodos) {
@@ -93,15 +112,23 @@ export function curvaS(programa, trabajos, pagos, monto) {
         ej += ejec.get(`${c.id}|${q.id}`) || 0;
       }
     }
-    const acumPago = m > 0 ? pgs.reduce((s, x) => (x.f && x.f <= dISO(p.fin) ? s + x.imp : s), 0) : 0;
+    // FINANCIERO: períodos futuros sin punto (null); el período en curso corta en hoy.
+    let financiero = null;
+    if (m > 0 && dISO(p.inicio) <= hoy) {
+      const corte = dISO(p.fin) <= hoy ? dISO(p.fin) : hoy;
+      const acumPago = pgs.reduce((s, x) => (x.f && x.f <= corte ? s + x.imp : s), 0);
+      financiero = Number(((acumPago / m) * 100).toFixed(2));
+    }
+    // EJECUTADO se detiene en el período actual (futuros: null), igual que la curva en pantalla.
+    const muestraEjec = periodoActualNum != null && p.numero <= periodoActualNum;
     return {
       numero: p.numero,
       mes: mesCorto(p.inicio),
       inicio: dISO(p.inicio),
       fin: dISO(p.fin),
       programado: contratado > 0 ? Number(((prog / contratado) * 100).toFixed(2)) : null,
-      ejecutado: contratado > 0 ? Number(((ej / contratado) * 100).toFixed(2)) : null,
-      financiero: m > 0 ? Number(((acumPago / m) * 100).toFixed(2)) : null
+      ejecutado: (contratado > 0 && muestraEjec) ? Number(((ej / contratado) * 100).toFixed(2)) : null,
+      financiero
     };
   });
 }
@@ -208,12 +235,15 @@ function avanceFinancieroExcel(d, contrato, periodo) {
       Deductivas: Number(e.deductivas) || 0,
       Neto: Number(e.neto) || 0
     }));
-  const prep = d.prep || {};
+  // Pagado y % financiero DERIVADOS de los pagos reales (Σ listarPagos ÷ monto): misma definición
+  // que la curva de CurvaAvance, no una fuente paralela. Sin invención de importes.
+  const monto = Number(contrato?.monto) || 0;
+  const pagadoAcum = (d.pagos || []).reduce((s, p) => s + (Number(p.importe) || 0), 0);
   const resumen = [
-    { Concepto: 'Monto del contrato', Valor: Number(contrato?.monto) || 0 },
+    { Concepto: 'Monto del contrato', Valor: monto },
     { Concepto: 'Σ Neto autorizado (estimaciones no rechazadas)', Valor: (d.historial || []).filter((e) => e.estado !== 'rechazada').reduce((s, e) => s + (Number(e.neto) || 0), 0) },
-    { Concepto: 'Pagado acumulado', Valor: Number(prep.avance?.pagado_acumulado) || 0 },
-    { Concepto: 'Avance financiero % (pagado ÷ monto)', Valor: prep.avance?.financiero_pct ?? '' },
+    { Concepto: 'Pagado acumulado', Valor: pagadoAcum },
+    { Concepto: 'Avance financiero % (pagado ÷ monto)', Valor: monto > 0 ? Number(((pagadoAcum / monto) * 100).toFixed(2)) : '' },
     { Concepto: 'Comprometido / disponible presupuestal', Valor: 'PENDIENTE — depende de HU-20 (presupuesto_anual)' }
   ];
   return descargarExcelMultihoja(`${baseName(2, 'avance-financiero', periodo)}.xlsx`, [
