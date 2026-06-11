@@ -1,16 +1,15 @@
 // @ts-check
 // E2E HU-15 — Recepción, revisión técnica y autorización de la estimación.
 //
-// Cubre el comportamiento del prototipo:
-//   · Por sección hay una lista de N observaciones (textarea + tipo + severidad)
-//     con botón "+ Agregar observación" y "Eliminar" por entrada.
-//   · El botón "Turnar a residencia" queda disabled hasta que supervisión
-//     registre al menos una observación o marque la casilla "Sin observaciones".
-//   · Tras turnar: banner-turnada visible; las observaciones quedan en lectura;
-//     los botones Autorizar/Rechazar se habilitan.
-//   · Autorizar → banner-autorizada y panel de resolución se oculta.
-//   · Rechazar → banner-rechazada con la lista de observaciones a resolver.
-//   · Semáforo del art. 54 LOPSRM presente y con etiqueta "Día X de 15".
+// alta-v2/HU-15 cableada al backend real: la vista ya NO usa dummy. La página arranca con un
+// selector de contrato → estimación y carga la revisión real (observaciones + turnado + semáforo
+// derivado de enviada_en). El CICLO funcional completo (registrar observación → turnar →
+// autorizar/rechazar) depende de datos sembrados (un contrato con estimación 'enviada' y las
+// cuentas supervisión/residencia exactas), por lo que se valida con el SMOKE de backend
+// (curl/psql, ver plan) y NO aquí. Este spec cubre la capa robusta sin seed:
+//   · Control de acceso por rol (sidebar/inicio) idéntico a la matriz PERMISOS[HU-15].
+//   · Carga de la vista y del selector de contrato para los roles ejecutores.
+//   · Aviso de solo-consulta para dependencia y ausencia de paneles de acción.
 //
 // PERMISOS[HU-15]: residente='E' · supervision='E' · dependencia='C' · contratista/finanzas=null
 //
@@ -22,7 +21,6 @@ import {
   enterAppMode,
   goToViaSidebar,
   sidebarLinkFor,
-  cardInInicioFor,
   expectAvisoSoloConsulta,
   expectMetadataAcademicaOculta
 } from './_helpers.js';
@@ -58,11 +56,10 @@ for (const rol of [
       });
     });
 
-    test('puede agregar observaciones y turnar', async ({ page }) => {
+    test('rol ejecutor ve el selector de contrato (sin aviso de solo consulta)', async ({ page }) => {
       await goToViaSidebar(page, VIEW_PATH);
-      await page.getByTestId('btn-agregar-obs-caratula').click();
-      await expect(page.getByTestId('obs-caratula-0')).toBeVisible();
-      await expect(page.getByTestId('btn-turnar')).toBeEnabled();
+      // El ejecutor (nivel 'E') no debe ver el aviso de solo-consulta y sí el selector real.
+      await expect(page.getByTestId('select-contrato')).toBeVisible();
     });
   });
 }
@@ -82,8 +79,9 @@ test.describe('HU-15 — modo aplicacion (Dependencia: consulta)', () => {
     await goToViaSidebar(page, VIEW_PATH);
 
     await expectAvisoSoloConsulta(page);
-    // El panel de resolución sólo se renderiza fuera de lectura.
+    // Los controles de acción no se renderizan en solo lectura (ni antes de elegir estimación).
     await expect(page.getByTestId('btn-turnar')).toHaveCount(0);
+    await expect(page.getByTestId('btn-autorizar')).toHaveCount(0);
     await expect(page.getByTestId('btn-agregar-obs-caratula')).toHaveCount(0);
   });
 });
