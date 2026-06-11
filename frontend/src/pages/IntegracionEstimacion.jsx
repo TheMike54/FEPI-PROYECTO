@@ -721,7 +721,7 @@ export default function IntegracionEstimacion() {
         notas: notasVinculadas.map((n) => n.id)
       });
       setResultado(est);
-      showToast(`Estimación #${est.numero} presentada`);
+      showToast(`Estimación #${est.numero} integrada`);
       // El acumulado y el historial cambiaron: recargar y limpiar el formulario.
       await Promise.all([recargarAvance(contratoId), recargarHistorial(contratoId)]);
       setCantidades({}); setDeductivas('0'); setPeriodoInicio(''); setPeriodoFin(''); setNotasVinculadas([]);
@@ -757,10 +757,10 @@ export default function IntegracionEstimacion() {
     <div>
       <HeaderVista
         huId="HU-12"
-        titulo="Formular y presentar la estimación"
+        titulo="Apertura del periodo e integración de la estimación"
         sprint="Sprint 3"
         rolAcademico="Contratista"
-        breadcrumb={[{ label: 'Inicio', href: '/' }, { label: 'Estimaciones' }, { label: 'Formular y presentar' }]}
+        breadcrumb={[{ label: 'Inicio', href: '/' }, { label: 'Estimaciones' }, { label: 'Integración del periodo' }]}
       />
 
       {sinSesion && (
@@ -803,18 +803,18 @@ export default function IntegracionEstimacion() {
 
           {!soloLectura && !esSuperintendente && (
             <div className="bg-amber-50 border-l-4 border-amber-400 px-4 py-3 mb-4 text-sm text-amber-800 rounded-r-md">
-              Solo el <strong>superintendente asignado</strong> a este contrato puede presentar estimaciones; el servidor rechazará el intento si no lo eres.
+              Solo el <strong>superintendente asignado</strong> a este contrato puede integrar estimaciones; el servidor rechazará el intento si no lo eres.
             </div>
           )}
 
           {resultado && (
             <div className="bg-sigecop-green-bg border-l-4 border-sigecop-green-validation px-4 py-3 mb-4 rounded-r-md" data-testid="banner-integrada">
-              <div className="text-sm font-semibold text-sigecop-green-validation">✓ Estimación #{resultado.numero} presentada</div>
+              <div className="text-sm font-semibold text-sigecop-green-validation">✓ Estimación #{resultado.numero} integrada</div>
               <p className="text-sm text-slate-800 mt-1">
                 Carátula oficial del backend (fuente de verdad): subtotal {moneda(resultado.subtotal)} − amortización {moneda(resultado.amortizacion)} − retención {moneda(resultado.retencion)} − deductivas {moneda(resultado.deductivas)} = <strong>neto {moneda(resultado.neto)}</strong> (sin IVA). Estado: <BadgeEstado estado={resultado.estado} />.
               </p>
               <p className="text-xs text-slate-500 mt-1">
-                Quedó registrada como expediente del periodo (art. 132 RLOPSRM). La <strong>revisión y autorización por la residencia</strong> es la etapa siguiente (HU-13, art. 54 LOPSRM).
+                Quedó registrada como expediente del periodo (art. 132 RLOPSRM). La <strong>presentación</strong> (HU-13) y la <strong>revisión técnica/autorización</strong> (HU-15, art. 54 LOPSRM) son las etapas siguientes.
               </p>
             </div>
           )}
@@ -896,7 +896,7 @@ export default function IntegracionEstimacion() {
                 title={hayExceso ? 'Hay conceptos que exceden lo contratado' : hayExcesoPlan ? 'Hay conceptos que exceden lo planeado del periodo' : (!hayLineas ? 'Captura al menos un concepto con cantidad > 0' : '')}
                 data-testid="btn-integrar"
               >
-                {integrando ? 'Presentando…' : 'Confirmar y presentar estimación'}
+                {integrando ? 'Integrando…' : 'Confirmar e integrar estimación'}
               </button>
             </div>
           )}

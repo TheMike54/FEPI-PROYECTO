@@ -11,9 +11,10 @@ import { labelEstadoEstimacion } from '../data/estadoEstimacion.js';
 // importe = NETO de esa estimación (read-only, derivado del servidor, no se teclea); no se paga
 // dos veces; al registrar, la estimación pasa a 'pagada' (CA-1). El actor sale del JWT (CA-2).
 //
-// O7 (art. 54 LOPSRM): finanzas paga lo AUTORIZADO por la residencia (estado 'enviada' = "Autorizada").
-// Se añade 'enviada' al conjunto pagable (decisión de Maiki, no bloqueante esta fase) conservando
-// 'integrada'/'autorizada'; el candado real lo aplica el backend (pagos.controller).
+// Reconciliación O7↔HU-15 (art. 54 LOPSRM): el candado de pago queda PERMISIVO ('integrada','enviada',
+// 'autorizada'), como se decidió en O7. Con HU-15 integrado, 'autorizada' = la estimación AUTORIZADA por
+// la residencia (estado pagable natural). El endurecimiento a SOLO 'autorizada' queda [validar profe];
+// el candado real lo aplica el backend (pagos.controller).
 
 const mxn = (n) => `$ ${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmtFecha = (s) => { if (!s) return '—'; const [y, m, d] = String(s).slice(0, 10).split('-'); return (y && m && d) ? `${d}/${m}/${y}` : '—'; };
@@ -147,7 +148,7 @@ export default function RegistroPago() {
               <RegionEditable disabled={soloLectura}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="md:col-span-2">
-                    <label className="sg-label">Estimación a pagar * <span className="text-[11px] font-normal text-slate-500">(presentada/autorizada, no pagada)</span></label>
+                    <label className="sg-label">Estimación a pagar * <span className="text-[11px] font-normal text-slate-500">(integrada/presentada/autorizada, no pagada)</span></label>
                     <select className="sg-input" value={estimacionId} onChange={(e) => setEstimacionId(e.target.value)} data-testid="pago-estimacion">
                       <option value="">— Selecciona la estimación —</option>
                       {estimaciones.map((e) => (

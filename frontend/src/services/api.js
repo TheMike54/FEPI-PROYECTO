@@ -136,13 +136,13 @@ export const api = {
   registrarAvance: (payload) => request('/trabajos', { method: 'POST', body: JSON.stringify(payload) }),
   actualizarAvance: (id, payload) => request(`/trabajos/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   eliminarAvance: (id) => request(`/trabajos/${id}`, { method: 'DELETE' }),
-  // HU-13 (O7): REVISIÓN Y AUTORIZACIÓN de la estimación por la RESIDENCIA (art. 54 LOPSRM). Reusa el
-  // endpoint /enviar (path estable por compat); sella enviada_en/por como SELLO DE AUTORIZACIÓN y avanza
-  // 'integrada' (Presentada) → 'enviada' (Autorizada). Solo el RESIDENTE del contrato (lo valida el backend).
+  // HU-13: PRESENTACIÓN de la estimación por el CONTRATISTA (art. 54 LOPSRM). Reusa el endpoint /enviar
+  // (path estable por compat); sella enviada_en/por (la PRESENTACIÓN, arranca el plazo) y avanza
+  // 'integrada' (Integrada) → 'enviada' (Presentada). Solo el superintendente del contrato (lo valida el backend).
   enviarEstimacion: (id) => request(`/estimaciones-ciclo/estimacion/${id}/enviar`, { method: 'POST' }),
-  // HU-15 (Equipo 3): recepción/revisión/autorización. Lectura por participación; las acciones
-  // las gatea el backend por rol (supervisión=registra/turna, residencia=autoriza/rechaza).
-  // El semáforo del art. 54 se deriva en el frontend desde enviada_en (sello de HU-13).
+  // HU-15 (Equipo 3): recepción/revisión/autorización REAL del art. 54. Lectura por participación; las
+  // acciones las gatea el backend por rol (supervisión=registra/turna, residencia=autoriza/rechaza).
+  // El semáforo de 15 días se deriva en el frontend desde enviada_en (la PRESENTACIÓN, sello de HU-13).
   revisionEstimacion: (id) => request(`/estimaciones-ciclo/estimacion/${id}/revision`),
   crearObservacionEstimacion: (id, payload) => request(`/estimaciones-ciclo/estimacion/${id}/observaciones`, { method: 'POST', body: JSON.stringify(payload) }),
   eliminarObservacionEstimacion: (id, obsId) => request(`/estimaciones-ciclo/estimacion/${id}/observaciones/${obsId}`, { method: 'DELETE' }),

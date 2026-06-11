@@ -29,7 +29,7 @@ import {
 test.skip(!!process.env.CI, 'alta-v2: login real requiere backend+BD; se corre en local');
 
 const VIEW_PATH = '/estimaciones/integracion';
-const TITULO = 'Formular y presentar la estimación'; // O7: el contratista PRESENTA (antes "integraba")
+const TITULO = 'Apertura del periodo e integración de la estimación'; // HU-12: el contratista INTEGRA
 const SPRINT = 'Sprint 3';
 
 /** Tab del componente Tabs (botón con el label pasado como prefijo). */

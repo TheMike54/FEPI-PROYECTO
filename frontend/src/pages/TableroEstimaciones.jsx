@@ -12,13 +12,14 @@ import { api } from '../services/api.js';
 // calculada SERVER-SIDE con los montos EXACTOS que HU-12 congeló (cuadre al
 // centavo): el cliente solo da formato. Sin datos dummy.
 
-// Pipeline canónico de una estimación en proceso (O7, art. 54 LOPSRM): Presentada (integrada, el
-// contratista) → Autorizada (enviada, la residencia) → Pagada (finanzas). Sin 'rechazada' (vive en el
-// historial, HU-14) ni la 'autorizada' VESTIGIAL del esquema (sin uso en el flujo cableado). El stepper
-// marca como "completado" todo lo anterior al estado actual.
+// Pipeline canónico de una estimación en proceso (reconciliación O7↔HU-15, art. 54 LOPSRM): Integrada
+// (HU-12) → Presentada (enviada, el contratista, HU-13) → Autorizada (la residencia tras turnado de
+// supervisión, HU-15) → Pagada (finanzas, HU-21). Sin 'rechazada' (vive en el historial, HU-14). El
+// stepper marca como "completado" todo lo anterior al estado actual.
 const FASES = [
-  { estado: 'integrada',  label: 'Presentada' },
-  { estado: 'enviada',    label: 'Autorizada' },
+  { estado: 'integrada',  label: 'Integrada' },
+  { estado: 'enviada',    label: 'Presentada' },
+  { estado: 'autorizada', label: 'Autorizada' },
   { estado: 'pagada',     label: 'Pagada' },
 ];
 const FASE_IDX = new Map(FASES.map((f, i) => [f.estado, i]));

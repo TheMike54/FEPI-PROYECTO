@@ -106,21 +106,19 @@ async function historialEstimaciones(req, res) {
   }
 }
 
-// POST /api/estimaciones-ciclo/estimacion/:id/enviar — HU-13 (O7): REVISIÓN Y AUTORIZACIÓN de la
-// estimación por la RESIDENCIA (art. 54 LOPSRM; el profe CONFIRMÓ invertir el flujo: el contratista
-// PRESENTA en HU-12, la residencia AUTORIZA aquí). SIN migrar datos: el estado interno avanza
-// 'integrada' -> 'enviada' (igual que antes) y se REUTILIZAN las columnas enviada_en/enviada_por como
-// SELLO DE AUTORIZACIÓN (solo cambia la etiqueta de UI a "Autorizada", no las columnas). Escribe SOLO
-// estado + sellos: NO toca la carátula. El trigger sigecop_estimacion_inmutable congela la carátula y
-// deja LIBRE estado/enviada_*, así que este UPDATE pasa sin tocar esquema congelado. El endpoint
-// conserva el path /enviar por compatibilidad de API (no es una columna).
+// POST /api/estimaciones-ciclo/estimacion/:id/enviar — HU-13: PRESENTACIÓN de la estimación por el
+// CONTRATISTA (art. 54 LOPSRM). RECONCILIACIÓN O7↔HU-15: O7 había puesto aquí la autorización del
+// residente porque HU-15 no existía; ahora HU-15 implementa la autorización REAL (supervisión revisa →
+// turna → residencia autoriza). Por eso HU-13 REGRESA a su sentido original: el contratista (puesto =
+// superintendente) PRESENTA la estimación 'integrada' → 'enviada' (= "Presentada"). Sella enviada_en =
+// NOW() y enviada_por = req.user.id (del JWT). El trigger sigecop_estimacion_inmutable congela la
+// carátula y deja LIBRE estado/enviada_*; el endpoint conserva el path /enviar por compatibilidad.
 //
-// Acceso (O7): SOLO el RESIDENTE asignado al contrato (HU-13 nivel 'E' = residente; antes era el
-// superintendente). Acotamiento de IDENTIDAD localizado (no un rol global), espejo de integrarEstimacion.
+// Acceso: SOLO el superintendente asignado al contrato (HU-13 nivel 'E' = contratista; MISMA posición
+// que integra en HU-12, espejo de integrarEstimacion).
 //
-// Plazo art. 54 LOPSRM (referencia visual, NO bloqueante en esta fase): la autorización corre 15 días
-// naturales desde la PRESENTACIÓN (integrada_en); el pago 20 días desde la AUTORIZACIÓN (enviada_en).
-// El semáforo se DERIVA en lectura; aquí solo se sella la fecha.
+// Plazo art. 54 LOPSRM (referencia visual): la revisión/autorización corre 15 días naturales desde la
+// PRESENTACIÓN (enviada_en, sellado aquí). El semáforo se DERIVA en lectura; aquí solo se sella la fecha.
 async function enviarEstimacion(req, res) {
   try {
     const id = Number(req.params.id);
@@ -138,21 +136,21 @@ async function enviarEstimacion(req, res) {
     if (e.rowCount === 0) return res.status(404).json({ error: 'Estimación no encontrada' });
     const row = e.rows[0];
 
-    // (2) Acceso localizado (O7): solo el RESIDENTE del contrato autoriza sus estimaciones.
-    if (row.residente_id !== req.user.id) {
-      return res.status(403).json({ error: 'Solo el residente asignado a este contrato puede revisar y autorizar sus estimaciones (art. 54 LOPSRM)' });
+    // (2) Acceso localizado: solo el superintendente del contrato PRESENTA sus estimaciones.
+    if (row.superintendente_id !== req.user.id) {
+      return res.status(403).json({ error: 'Solo el superintendente asignado a este contrato puede presentar sus estimaciones' });
     }
 
-    // (3) Máquina de estados: solo se autoriza desde 'integrada' (Presentada). No reautorizar; no saltar.
+    // (3) Máquina de estados: solo se presenta desde 'integrada'. No re-presentar; no saltar/retroceder.
     if (row.estado === 'enviada') {
-      return res.status(409).json({ error: 'La estimación ya fue autorizada' });
+      return res.status(409).json({ error: 'La estimación ya fue presentada' });
     }
     if (row.estado !== 'integrada') {
-      return res.status(409).json({ error: `No se puede autorizar una estimación en estado '${row.estado}'` });
+      return res.status(409).json({ error: `No se puede presentar una estimación en estado '${row.estado}'` });
     }
 
-    // (4) Sello ATÓMICO: el WHERE estado='integrada' serializa y bloquea la doble-autorización en
-    //     carrera (si otro proceso la autorizó entre el SELECT y el UPDATE, rowCount = 0).
+    // (4) Sello ATÓMICO: el WHERE estado='integrada' serializa y bloquea la doble-presentación en
+    //     carrera (si otro proceso la presentó entre el SELECT y el UPDATE, rowCount = 0).
     const upd = await pool.query(
       `UPDATE estimaciones
           SET estado = 'enviada', enviada_en = NOW(), enviada_por = $2
@@ -161,7 +159,7 @@ async function enviarEstimacion(req, res) {
       [id, req.user.id]
     );
     if (upd.rowCount === 0) {
-      return res.status(409).json({ error: 'La estimación ya fue autorizada' });
+      return res.status(409).json({ error: 'La estimación ya fue presentada' });
     }
     return res.status(200).json(upd.rows[0]);
   } catch (err) {
@@ -364,21 +362,32 @@ async function turnarEstimacion(req, res) {
     if (est.estado !== 'enviada') {
       return res.status(409).json({ error: `No se puede turnar una estimación '${est.estado}'` });
     }
-    if (await estaTurnada(id)) {
+
+    await client.query('BEGIN');
+    // Lock de la fila de la estimación: serializa turnar/autorizar/rechazar concurrentes sobre la MISMA
+    // estimación (cierra el TOCTOU del doble-turnado). El re-chequeo de turnado y el COUNT van DENTRO de
+    // la tx con `client` (no con pool), para leer el estado ya serializado por el lock.
+    await client.query('SELECT 1 FROM estimaciones WHERE id = $1 FOR UPDATE', [id]);
+
+    const ya = await client.query(
+      `SELECT 1 FROM estimacion_observaciones WHERE estimacion_id = $1 AND turnado_a = 'residencia' LIMIT 1`,
+      [id]
+    );
+    if (ya.rowCount > 0) {
+      await client.query('ROLLBACK');
       return res.status(409).json({ error: 'La estimación ya fue turnada a residencia' });
     }
-
     // ¿Cuántas observaciones hay? Define el camino (marcar vs marcador).
-    const cnt = await pool.query(
+    const cnt = await client.query(
       'SELECT COUNT(*)::int AS n FROM estimacion_observaciones WHERE estimacion_id = $1',
       [id]
     );
     const n = cnt.rows[0].n;
     if (n === 0 && !sinObservaciones) {
+      await client.query('ROLLBACK');
       return res.status(409).json({ error: 'Registra al menos una observación o marca la estimación sin observaciones para turnar' });
     }
 
-    await client.query('BEGIN');
     if (n > 0) {
       await client.query(
         `UPDATE estimacion_observaciones SET turnado_a = 'residencia' WHERE estimacion_id = $1`,
@@ -424,15 +433,18 @@ async function autorizarEstimacion(req, res) {
       return res.status(409).json({ error: 'La estimación aún no ha sido turnada por supervisión' });
     }
 
-    // Atómico: el WHERE estado='enviada' serializa y bloquea la doble resolución en carrera.
+    // Atómico (endurecido): el WHERE serializa la doble resolución (estado='enviada') Y exige el TURNADO
+    // previo DENTRO del UPDATE (EXISTS turnado_a='residencia'), cerrando el TOCTOU entre el chequeo y el
+    // UPDATE (que la supervisión turne entre estaTurnada() y el UPDATE no falsea la precondición).
     const upd = await pool.query(
       `UPDATE estimaciones SET estado = 'autorizada'
         WHERE id = $1 AND estado = 'enviada'
+          AND EXISTS (SELECT 1 FROM estimacion_observaciones WHERE estimacion_id = $1 AND turnado_a = 'residencia')
         RETURNING id, numero, contrato_id, estado`,
       [id]
     );
     if (upd.rowCount === 0) {
-      return res.status(409).json({ error: 'La estimación ya fue resuelta' });
+      return res.status(409).json({ error: 'La estimación ya fue resuelta o no está turnada' });
     }
     return res.status(200).json(upd.rows[0]);
   } catch (err) {
@@ -469,15 +481,18 @@ async function rechazarEstimacion(req, res) {
     }
 
     await client.query('BEGIN');
+    // Atómico (endurecido): exige estado='enviada' Y el TURNADO previo DENTRO del UPDATE (cierra el
+    // TOCTOU entre estaTurnada() y el UPDATE), todo en la misma transacción del INSERT del rechazo.
     const upd = await client.query(
       `UPDATE estimaciones SET estado = 'rechazada'
         WHERE id = $1 AND estado = 'enviada'
+          AND EXISTS (SELECT 1 FROM estimacion_observaciones WHERE estimacion_id = $1 AND turnado_a = 'residencia')
         RETURNING id, numero, contrato_id, estado`,
       [id]
     );
     if (upd.rowCount === 0) {
       await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'La estimación ya fue resuelta' });
+      return res.status(409).json({ error: 'La estimación ya fue resuelta o no está turnada' });
     }
     const obs = await client.query(
       `INSERT INTO estimacion_observaciones (estimacion_id, seccion, tipo, severidad, descripcion, turnado_a, autor_id)

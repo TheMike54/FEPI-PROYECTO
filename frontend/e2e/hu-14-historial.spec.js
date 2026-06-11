@@ -145,7 +145,7 @@ test.describe('HU-14 — flujo real (Contratista consulta su contrato)', () => {
     // …y aparece la fila real de EST-001 con su estado e importe del backend.
     const fila = filaPorLabel(page, EST1_LABEL);
     await expect(fila).toHaveCount(1);
-    await expect(fila).toContainText('Presentada'); // O7: 'integrada' se etiqueta "Presentada"
+    await expect(fila).toContainText('Integrada'); // reconciliación O7↔HU-15: 'integrada' = "Integrada"
     await expect(fila).toContainText(EST1_IMPORTE);
   });
 

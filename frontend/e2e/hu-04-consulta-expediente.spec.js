@@ -258,8 +258,8 @@ test.describe('HU-04 — O9: exportar expediente como un solo PDF', () => {
     await expect(bloque).toBeVisible();
     await expect(bloque).toContainText('#1');
     await expect(bloque).toContainText('#2');
-    // Dos estados DISTINTOS, etiquetados con su nombre del ciclo (O7: 'integrada' = "Presentada").
-    await expect(bloque).toContainText('Presentada');
+    // Dos estados DISTINTOS, etiquetados con su nombre del ciclo (reconciliación O7↔HU-15: 'integrada' = "Integrada").
+    await expect(bloque).toContainText('Integrada');
     await expect(bloque).toContainText('Pagada');
     // El total es la SUMA de los netos (4,975 + 3,000 = 7,975), no el de una sola estimación.
     await expect(page.getByTestId('estimaciones-total-neto')).toContainText('7,975');

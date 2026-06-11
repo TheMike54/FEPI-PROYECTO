@@ -7,25 +7,24 @@ import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
 import { labelEstadoEstimacion } from '../data/estadoEstimacion.js';
 
-// HU-13 (O7) — REVISIÓN Y AUTORIZACIÓN de la estimación por la RESIDENCIA. El profe CONFIRMÓ invertir
-// el flujo (art. 54 LOPSRM): el CONTRATISTA PRESENTA (HU-12, estado interno 'integrada' = "Presentada");
-// la RESIDENCIA REVISA y AUTORIZA aquí (estado interno 'enviada' = "Autorizada", reusando el sello
-// enviada_en/por). SIN migrar datos: el backend conserva la transición integrada->enviada y solo cambia
-// el candado de actor (superintendente -> RESIDENTE) y las etiquetas. La verdad del dinero vive en HU-12.
+// HU-13 — PRESENTACIÓN de la estimación por el CONTRATISTA (art. 54 LOPSRM). RECONCILIACIÓN O7↔HU-15
+// (11-jun): O7 había puesto aquí la autorización del residente porque HU-15 no existía; con HU-15
+// integrado, HU-13 REGRESA a su sentido original — el contratista (superintendente) PRESENTA la
+// estimación 'integrada' (Integrada) → 'enviada' (Presentada). La revisión técnica y la autorización
+// (supervisión turna → residencia autoriza/rechaza) viven en HU-15. La verdad del dinero vive en HU-12.
 //
-// Plazos art. 54 LOPSRM como REFERENCIA VISUAL (NO bloqueantes en esta fase):
+// Plazos art. 54 LOPSRM como REFERENCIA VISUAL (NO bloqueantes):
 //   · Presentación: el contratista presenta dentro de 6 días naturales del corte del periodo (informativo).
-//   · Autorización: la residencia autoriza dentro de 15 días naturales DESDE LA PRESENTACIÓN (integrada_en).
-//   · Pago: finanzas paga dentro de 20 días naturales DESDE LA AUTORIZACIÓN (enviada_en) — informativo aquí.
+//   · Revisión/autorización: corre 15 días naturales DESDE LA PRESENTACIÓN (enviada_en) — se muestra sobre
+//     las ya presentadas (la resolución la ejecuta HU-15).
 
-const PLAZO_AUTORIZACION_DIAS = 15; // residencia autoriza (desde la presentación)
-const PLAZO_PRESENTACION_DIAS = 6;  // contratista presenta (desde el corte) — informativo
-const PLAZO_PAGO_DIAS = 20;         // finanzas paga (desde la autorización) — informativo
+const PLAZO_REVISION_DIAS = 15;     // revisión/autorización (HU-15) desde la presentación
+const PLAZO_PRESENTACION_DIAS = 6;  // el contratista presenta (desde el corte) — informativo
 
 const fmtMXN = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const moneda = (n) => fmtMXN.format(Number(n) || 0);
 
-// dd/mm/aaaa hh:mm a partir de un ISO/Date (acuse de autorización). null si no hay.
+// dd/mm/aaaa hh:mm a partir de un ISO/Date (acuse de presentación). null si no hay.
 const fechaHoraMX = (iso) => {
   if (!iso) return null;
   const d = new Date(iso);
@@ -50,7 +49,7 @@ const periodoLabel = (ini, fin) => {
 
 const ESTADO_CLASE = {
   integrada:  'bg-sigecop-blue-light text-sigecop-blue',
-  enviada:    'bg-green-100 text-sigecop-green-validation',
+  enviada:    'bg-amber-100 text-amber-800',
   autorizada: 'bg-green-100 text-sigecop-green-validation',
   pagada:     'bg-green-100 text-sigecop-green-validation',
   rechazada:  'bg-red-100 text-red-700'
@@ -103,7 +102,7 @@ export default function EnvioEstimacion() {
   const [contratoId, setContratoId] = useState('');
   const [cargando, setCargando] = useState(false);
   const [estimaciones, setEstimaciones] = useState([]);
-  const [autorizandoId, setAutorizandoId] = useState(null);
+  const [presentandoId, setPresentandoId] = useState(null);
 
   const selected = useMemo(() => contratos.find((c) => String(c.id) === String(contratoId)) || null, [contratos, contratoId]);
 
@@ -132,46 +131,46 @@ export default function EnvioEstimacion() {
     cargarEstimaciones(id);
   }, [cargarEstimaciones]);
 
-  // O7: AUTORIZAR (reusa POST /enviar; el backend sella enviada_en/por como sello de autorización).
-  const handleAutorizar = useCallback(async (est) => {
-    if (soloLectura || autorizandoId) return;
-    setAutorizandoId(est.id);
+  // PRESENTAR (POST /enviar; el backend sella enviada_en/por = la presentación, art. 54; gate superintendente).
+  const handlePresentar = useCallback(async (est) => {
+    if (soloLectura || presentandoId) return;
+    setPresentandoId(est.id);
     try {
       const res = await api.enviarEstimacion(est.id);
       setEstimaciones((prev) => prev.map((e) => (
         e.id === est.id ? { ...e, estado: res.estado, enviada_en: res.enviada_en, enviada_por: res.enviada_por } : e
       )));
-      showToast(`Estimación N.º ${est.numero} autorizada. Inicia el plazo de pago (20 días, art. 54 LOPSRM).`);
+      showToast(`Estimación N.º ${est.numero} presentada. Inicia el plazo de revisión (15 días, art. 54 LOPSRM).`);
     } catch (e) {
-      const msg = e.status === 409 ? (e.message || 'La estimación no se puede autorizar en su estado actual')
-        : e.status === 403 ? 'Solo el residente del contrato puede revisar y autorizar sus estimaciones'
-        : 'No se pudo autorizar la estimación';
+      const msg = e.status === 409 ? (e.message || 'La estimación no se puede presentar en su estado actual')
+        : e.status === 403 ? 'Solo el superintendente del contrato puede presentar sus estimaciones'
+        : 'No se pudo presentar la estimación';
       showToast(msg);
       cargarEstimaciones(contratoId);
     } finally {
-      setAutorizandoId(null);
+      setPresentandoId(null);
     }
-  }, [soloLectura, autorizandoId, showToast, cargarEstimaciones, contratoId]);
+  }, [soloLectura, presentandoId, showToast, cargarEstimaciones, contratoId]);
 
-  const autorizables = useMemo(() => estimaciones.filter((e) => e.estado === 'integrada'), [estimaciones]);
+  const presentables = useMemo(() => estimaciones.filter((e) => e.estado === 'integrada'), [estimaciones]);
 
   return (
     <div>
       <HeaderVista
         huId="HU-13"
-        titulo="Revisión y autorización de la estimación"
+        titulo="Presentación de la estimación"
         sprint="Sprint 8"
-        rolAcademico="Residente"
+        rolAcademico="Contratista"
         breadcrumb={[
           { label: 'Inicio', href: '/' },
           { label: 'Estimaciones' },
-          { label: 'Revisión y autorización' }
+          { label: 'Presentación' }
         ]}
       />
 
       {sinSesion && (
         <div className="bg-slate-50 border border-slate-200 rounded-md px-4 py-3 mb-4 text-sm text-slate-600">
-          Inicia sesión para revisar y autorizar estimaciones.
+          Inicia sesión para presentar tus estimaciones.
         </div>
       )}
 
@@ -190,7 +189,7 @@ export default function EnvioEstimacion() {
       </div>
 
       {!sinSesion && !contratoId && (
-        <p className="text-sm text-slate-500 mb-4">Selecciona un contrato para revisar las estimaciones presentadas.</p>
+        <p className="text-sm text-slate-500 mb-4">Selecciona un contrato para presentar sus estimaciones integradas.</p>
       )}
       {cargando && <p className="text-sm text-slate-500 mb-4">Cargando estimaciones…</p>}
 
@@ -207,9 +206,9 @@ export default function EnvioEstimacion() {
             <div className="px-6 py-3 border-b border-slate-200">
               <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
                 Estimaciones del contrato ({estimaciones.length})
-                {!soloLectura && autorizables.length > 0 && (
+                {!soloLectura && presentables.length > 0 && (
                   <span className="ml-2 font-normal normal-case text-slate-500">
-                    · {autorizables.length} por autorizar
+                    · {presentables.length} por presentar
                   </span>
                 )}
               </h2>
@@ -229,15 +228,14 @@ export default function EnvioEstimacion() {
                   {estimaciones.length === 0 ? (
                     <tr>
                       <td colSpan="5" className="p-8 text-center text-slate-400 italic" data-testid="envio-vacio">
-                        Este contrato no tiene estimaciones presentadas todavía.
+                        Este contrato no tiene estimaciones integradas todavía.
                       </td>
                     </tr>
                   ) : (
                     estimaciones.map((e) => {
-                      // 'integrada' (Presentada): plazo de AUTORIZACIÓN (15 días desde la presentación).
-                      const semAut = e.estado === 'integrada' ? semaforo(e.integrada_en, PLAZO_AUTORIZACION_DIAS) : null;
-                      // 'enviada' (Autorizada): plazo de PAGO (20 días desde la autorización) — informativo.
-                      const semPago = e.estado === 'enviada' ? semaforo(e.enviada_en, PLAZO_PAGO_DIAS) : null;
+                      // 'enviada' (Presentada): semáforo de revisión/autorización (15 días desde la presentación, HU-15).
+                      const semRev = e.estado === 'enviada' ? semaforo(e.enviada_en, PLAZO_REVISION_DIAS) : null;
+                      // 'integrada' (Integrada): referencia del plazo de presentación (6 días del corte).
                       const pres = e.estado === 'integrada' ? presentacion(e.periodo_fin) : null;
                       return (
                         <tr
@@ -255,41 +253,34 @@ export default function EnvioEstimacion() {
                                 {pres && (
                                   <div className={`text-xs ${pres.dentro ? 'text-slate-500' : 'text-sigecop-amber-attention'}`}>
                                     {pres.dentro
-                                      ? `Presentada dentro de los ${PLAZO_PRESENTACION_DIAS} días del corte (art. 54).`
-                                      : `Presentada fuera de los ${PLAZO_PRESENTACION_DIAS} días del corte (hace ${pres.transcurridos} días, art. 54).`}
+                                      ? `Dentro de los ${PLAZO_PRESENTACION_DIAS} días para presentar desde el corte (art. 54).`
+                                      : `Fuera de los ${PLAZO_PRESENTACION_DIAS} días para presentar desde el corte (hace ${pres.transcurridos} días, art. 54).`}
                                   </div>
-                                )}
-                                {semAut && (
-                                  <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${SEMAFORO_CLASE[semAut.nivel]}`}>
-                                    {semAut.nivel === 'vencido'
-                                      ? `Autorización: día ${semAut.transcurridos} de ${PLAZO_AUTORIZACION_DIAS} · plazo vencido`
-                                      : `Autorización: día ${semAut.transcurridos} de ${PLAZO_AUTORIZACION_DIAS} · ${semAut.restantes} días restantes`}
-                                  </span>
                                 )}
                                 {!soloLectura && (
                                   <button
                                     type="button"
                                     className="sg-btn-primary disabled:opacity-50 disabled:cursor-not-allowed block"
-                                    onClick={() => handleAutorizar(e)}
-                                    disabled={autorizandoId === e.id}
-                                    data-testid={`btn-autorizar-${e.id}`}
+                                    onClick={() => handlePresentar(e)}
+                                    disabled={presentandoId === e.id}
+                                    data-testid={`btn-presentar-${e.id}`}
                                   >
-                                    {autorizandoId === e.id ? 'Autorizando…' : 'Autorizar estimación'}
+                                    {presentandoId === e.id ? 'Presentando…' : 'Presentar estimación'}
                                   </button>
                                 )}
                               </div>
                             )}
 
                             {e.estado === 'enviada' && (
-                              <div className="space-y-1" data-testid={`sello-autorizacion-${e.id}`}>
+                              <div className="space-y-1" data-testid={`sello-presentacion-${e.id}`}>
                                 <div className="text-xs text-slate-600">
-                                  ✓ Autorizada el {fechaHoraMX(e.enviada_en) || '—'}
+                                  ✓ Presentada el {fechaHoraMX(e.enviada_en) || '—'}
                                 </div>
-                                {semPago && (
-                                  <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${SEMAFORO_CLASE[semPago.nivel]}`}>
-                                    {semPago.nivel === 'vencido'
-                                      ? `Pago: día ${semPago.transcurridos} de ${PLAZO_PAGO_DIAS} · plazo vencido`
-                                      : `Pago: día ${semPago.transcurridos} de ${PLAZO_PAGO_DIAS} · ${semPago.restantes} días restantes`}
+                                {semRev && (
+                                  <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${SEMAFORO_CLASE[semRev.nivel]}`}>
+                                    {semRev.nivel === 'vencido'
+                                      ? `Revisión (HU-15): día ${semRev.transcurridos} de ${PLAZO_REVISION_DIAS} · plazo vencido`
+                                      : `Revisión (HU-15): día ${semRev.transcurridos} de ${PLAZO_REVISION_DIAS} · ${semRev.restantes} días restantes`}
                                   </span>
                                 )}
                               </div>
@@ -309,9 +300,9 @@ export default function EnvioEstimacion() {
           </div>
 
           <p className="text-xs text-slate-500 mb-2">
-            Al autorizar, el sistema sella la fecha y hora exacta del acto (art. 54 LOPSRM) y la estimación
-            queda <strong>autorizada</strong> y disponible para pago (finanzas, HU-21). El plazo de pago de 20
-            días naturales se cuenta desde esta fecha de autorización.
+            Al presentar, el sistema sella la fecha y hora exacta del acto (art. 54 LOPSRM) y la estimación
+            queda <strong>presentada</strong>; arranca el plazo de revisión de 15 días naturales para que la
+            supervisión y la residencia la revisen y autoricen (HU-15).
           </p>
         </>
       )}
@@ -319,14 +310,14 @@ export default function EnvioEstimacion() {
       <SeccionCriterios
         huId="HU-13"
         criterios={[
-          { numero: 1, texto: 'La residencia revisa la estimación presentada por el contratista y la autoriza; quedan registradas la fecha y hora exacta de la autorización (art. 54 LOPSRM).' },
-          { numero: 2, texto: 'Solo se puede autorizar una estimación en estado presentada; una vez autorizada no se vuelve a autorizar (folio inmutable).' },
-          { numero: 3, texto: 'Al autorizarse, inicia el plazo de pago de 20 días naturales (finanzas, art. 54 LOPSRM), mostrado como semáforo derivado de la fecha de autorización.' }
+          { numero: 1, texto: 'El contratista presenta la estimación integrada; quedan registradas la fecha y hora exacta de la presentación (art. 54 LOPSRM).' },
+          { numero: 2, texto: 'Solo se puede presentar una estimación en estado integrada; una vez presentada no se vuelve a presentar (folio inmutable).' },
+          { numero: 3, texto: 'Al presentarse, inicia el plazo de revisión/autorización de 15 días naturales (supervisión + residencia, HU-15), mostrado como semáforo derivado de la fecha de presentación.' }
         ]}
       />
 
       <p className="mt-4 text-xs text-slate-500 italic text-center">
-        Fundamento: art. 54 LOPSRM (6 días presentación + 15 días autorización por la residencia + 20 días pago).
+        Fundamento: art. 54 LOPSRM (6 días para presentar + 15 días de revisión/autorización + pago).
       </p>
     </div>
   );

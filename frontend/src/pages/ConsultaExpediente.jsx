@@ -427,7 +427,8 @@ function BloqueConvenios({ data, contratoId }) {
 }
 
 // O9 — Resumen de estimaciones (ciclo de cobro). Números y estados; el detalle vive en sus HU (12–21).
-// O7: las etiquetas del ciclo salen del util compartido (integrada→"Presentada", enviada→"Autorizada").
+// Las etiquetas del ciclo salen del util compartido estadoEstimacion.js (reconciliación O7↔HU-15:
+// integrada→"Integrada", enviada→"Presentada", autorizada→"Autorizada").
 function BloqueEstimaciones({ estimaciones }) {
   const filas = Array.isArray(estimaciones) ? estimaciones : [];
   if (filas.length === 0) {

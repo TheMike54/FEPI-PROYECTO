@@ -1,13 +1,14 @@
 // @ts-check
-// E2E O7 — FLUJO LEGAL invertido de la estimación (art. 54 LOPSRM, confirmado por el profe): el
-// CONTRATISTA PRESENTA (HU-12, 'integrada' = "Presentada"); la RESIDENCIA REVISA y AUTORIZA (HU-13,
-// 'enviada' = "Autorizada", actor superintendente→RESIDENTE); finanzas PAGA lo autorizado (HU-21).
-// Cubre el ciclo completo con los roles NUEVOS + los candados (el superintendente ya no autoriza).
-// LOGIN REAL (backend+BD). No corre en CI.
+// E2E — FLUJO RECONCILIADO de la estimación (art. 54 LOPSRM). RECONCILIACIÓN O7↔HU-15 (11-jun): con HU-15
+// integrado, el ciclo REAL es: el CONTRATISTA INTEGRA (HU-12, 'integrada'="Integrada") y PRESENTA (HU-13,
+// 'enviada'="Presentada"); SUPERVISIÓN revisa/turna y la RESIDENCIA autoriza/rechaza (HU-15,
+// 'autorizada'="Autorizada" / 'rechazada'); finanzas PAGA (HU-21). (O7 había puesto la autorización del
+// residente en HU-13 como solución temporal sin HU-15; aquí se reconcilia al flujo definitivo.)
+// Cubre el ciclo completo + los candados de cada actor. LOGIN REAL (backend+BD). No corre en CI.
 import { test, expect } from '@playwright/test';
 import { freshHome, enterAppMode, goToViaSidebar } from './_helpers.js';
 
-test.skip(!!process.env.CI, 'O7: login real requiere backend+BD; se corre en local');
+test.skip(!!process.env.CI, 'login real requiere backend+BD; se corre en local');
 
 const API = 'http://localhost:4000/api';
 const PASS = 'Sigecop2026!';
@@ -15,9 +16,9 @@ const PDF = Buffer.from('%PDF-1.4\n%E2E\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n
 const loginApi = async (request, email) => (await request.post(`${API}/auth/login`, { data: { email, password: PASS } })).json();
 const auth = (t) => ({ Authorization: `Bearer ${t}` });
 
-// Crea contrato (R residente/creador, S superintendente, D dependencia) + PDF firmado y PRESENTA una
-// estimación COMO EL CONTRATISTA (S, superintendente). Devuelve { cid, est, R, S, F }.
-async function presentarEstimacion(request) {
+// Crea contrato (R residente/creador, S superintendente, V supervisión, D dependencia) + PDF firmado e
+// INTEGRA una estimación (HU-12, como el contratista). Devuelve { cid, est ('integrada'), R, S, V, F }.
+async function crearEstimacionIntegrada(request) {
   const [R, S, V, D, F] = await Promise.all([
     loginApi(request, 'residente@sigecop.test'),
     loginApi(request, 'contratista@sigecop.test'),
@@ -25,11 +26,11 @@ async function presentarEstimacion(request) {
     loginApi(request, 'dependencia@sigecop.test'),
     loginApi(request, 'finanzas@sigecop.test'),
   ]);
-  const folio = `E2E-O7-${Date.now()}-${Math.round(Math.random() * 1e6)}`;
+  const folio = `E2E-RECON-${Date.now()}-${Math.round(Math.random() * 1e6)}`;
   const cr = await request.post(`${API}/contratos`, {
     headers: auth(R.token),
     data: {
-      folio, tipo: 'Obra pública sobre la base de precios unitarios', objeto: 'Flujo O7', plazoDias: 60,
+      folio, tipo: 'Obra pública sobre la base de precios unitarios', objeto: 'Flujo reconciliado', plazoDias: 60,
       fechaInicio: '2026-06-01', superintendenteId: S.user.id, supervisionId: V.user.id, dependenciaId: D.user.id,
       anticipoPct: 0, juridicos: {},
       conceptos: [{ clave: 'C-001', concepto: 'Excavación', unidad: 'm³', cantidad: 1000, pu: 200 }],
@@ -38,84 +39,103 @@ async function presentarEstimacion(request) {
   });
   expect(cr.status(), 'crear contrato').toBe(201);
   const cid = (await cr.json()).id;
-  // PDF firmado ligado: requisito de la integración (formalización HU-01).
   const up = await request.post(`${API}/contratos/${cid}/documento`, {
     headers: auth(R.token), multipart: { documento: { name: 'firmado.pdf', mimeType: 'application/pdf', buffer: PDF } },
   });
   expect(up.status(), 'subir PDF firmado').toBe(201);
   const av = await request.get(`${API}/estimaciones/contrato/${cid}/avance`, { headers: auth(S.token) });
   const ccid = (await av.json())[0].contrato_concepto_id;
-  // El CONTRATISTA (superintendente) PRESENTA la estimación.
+  // El CONTRATISTA INTEGRA la estimación (HU-12).
   const er = await request.post(`${API}/estimaciones`, {
     headers: auth(S.token),
     data: { contrato_id: cid, periodo_inicio: '2026-06-01', periodo_fin: '2026-06-30', generadores: [{ contrato_concepto_id: ccid, cantidad_periodo: 400 }], notas: [] },
   });
-  expect(er.status(), 'contratista presenta').toBe(201);
+  expect(er.status(), 'contratista integra').toBe(201);
   const est = await er.json();
   expect(est.estado, 'estado interno integrada').toBe('integrada');
-  return { cid, est, R, S, F };
+  return { cid, est, R, S, V, F };
 }
 
-const autorizar = (request, token, id) => request.post(`${API}/estimaciones-ciclo/estimacion/${id}/enviar`, { headers: auth(token) });
+const C = (id) => `${API}/estimaciones-ciclo/estimacion/${id}`;
+const presentar = (request, token, id) => request.post(`${C(id)}/enviar`, { headers: auth(token) });        // HU-13
+const observar  = (request, token, id) => request.post(`${C(id)}/observaciones`, { headers: auth(token), data: { seccion: 'caratula', tipo: 'aclaracion', severidad: 'menor', descripcion: 'Revisar acumulado' } });
+const turnar    = (request, token, id, body) => request.post(`${C(id)}/turnar`, { headers: auth(token), data: body || {} });
+const autorizar = (request, token, id) => request.post(`${C(id)}/autorizar`, { headers: auth(token) });     // HU-15
+const rechazar  = (request, token, id, body) => request.post(`${C(id)}/rechazar`, { headers: auth(token), data: body });
 const pagar = (request, token, cid, estId) => request.post(`${API}/pagos`, {
   headers: auth(token),
-  data: { contrato_id: cid, estimacion_id: estId, fecha_pago: '2026-06-30', referencia: 'SPEI-O7', factura_cfdi: 'CFDI-O7', fecha_factura: '2026-06-30' },
+  data: { contrato_id: cid, estimacion_id: estId, fecha_pago: '2026-06-30', referencia: 'SPEI-R', factura_cfdi: 'CFDI-R', fecha_factura: '2026-06-30' },
 });
 
-test.describe('O7 — flujo legal invertido de la estimación (art. 54)', () => {
-  test('API: el superintendente NO autoriza; la RESIDENCIA autoriza; finanzas paga lo autorizado', async ({ request }) => {
-    const { cid, est, R, S, F } = await presentarEstimacion(request);
+test.describe('Flujo reconciliado de la estimación (O7↔HU-15, art. 54)', () => {
+  test('API: contratista presenta (residente NO); supervisión turna; residencia autoriza (superintendente NO); finanzas paga', async ({ request }) => {
+    const { cid, est, R, S, V, F } = await crearEstimacionIntegrada(request);
 
-    // El superintendente (antes autorizaba) ya NO: el candado pasó a la residencia.
-    const noSup = await autorizar(request, S.token, est.id);
-    expect(noSup.status(), 'el superintendente NO autoriza').toBe(403);
+    // HU-13: el residente NO presenta (candado = superintendente).
+    expect((await presentar(request, R.token, est.id)).status(), 'residente NO presenta').toBe(403);
+    // HU-13: el superintendente PRESENTA → 'enviada' (Presentada).
+    const pres = await presentar(request, S.token, est.id);
+    expect(pres.status(), 'contratista presenta').toBe(200);
+    expect((await pres.json()).estado, "avanza a 'enviada' (= Presentada)").toBe('enviada');
+    expect((await presentar(request, S.token, est.id)).status(), 're-presentar 409').toBe(409);
 
-    // La RESIDENCIA revisa y autoriza → 'enviada' (Autorizada) + sello de autorización.
+    // HU-15: autorizar ANTES de turnar → 409.
+    expect((await autorizar(request, R.token, est.id)).status(), 'autorizar sin turnar 409').toBe(409);
+    // HU-15: supervisión observa y turna (la residencia/superintendente NO observan).
+    expect((await observar(request, V.token, est.id)).status(), 'supervisión observa').toBe(201);
+    expect((await observar(request, R.token, est.id)).status(), 'residente NO observa').toBe(403);
+    expect((await turnar(request, V.token, est.id)).status(), 'supervisión turna').toBe(200);
+
+    // HU-15: el superintendente NO autoriza; la RESIDENCIA autoriza → 'autorizada' (Autorizada).
+    expect((await autorizar(request, S.token, est.id)).status(), 'superintendente NO autoriza').toBe(403);
     const aut = await autorizar(request, R.token, est.id);
-    expect(aut.status(), 'la residencia autoriza').toBe(200);
-    const aj = await aut.json();
-    expect(aj.estado, "avanza a 'enviada' (= Autorizada)").toBe('enviada');
-    expect(aj.enviada_en, 'sella la fecha de autorización').toBeTruthy();
+    expect(aut.status(), 'residencia autoriza').toBe(200);
+    expect((await aut.json()).estado, "avanza a 'autorizada'").toBe('autorizada');
 
-    // No se reautoriza.
-    expect((await autorizar(request, R.token, est.id)).status(), 'reautorizar 409').toBe(409);
-
-    // Finanzas paga la estimación AUTORIZADA ('enviada') → 201 (Opción A: 'enviada' es pagable).
-    const pago = await pagar(request, F.token, cid, est.id);
-    expect(pago.status(), 'finanzas paga lo autorizado').toBe(201);
+    // HU-21: finanzas paga la AUTORIZADA → 201.
+    expect((await pagar(request, F.token, cid, est.id)).status(), 'finanzas paga la autorizada').toBe(201);
   });
 
-  test('Opción A (no bloqueante esta fase): pagar una PRESENTADA (sin autorizar) AÚN se permite (201)', async ({ request }) => {
-    // Decisión de Maiki: el candado de pago conserva 'integrada' (permisivo) mientras los plazos del
-    // art. 54 son referencia visual. Este test DOCUMENTA y BLINDA esa decisión: si alguien endurece el
-    // candado a solo-autorizado (quita 'integrada'), este test fallará y forzará una decisión consciente.
-    const { cid, est, F } = await presentarEstimacion(request); // estimación en 'integrada' (Presentada)
-    const pago = await pagar(request, F.token, cid, est.id);
-    expect(pago.status(), "Opción A: pagar la 'Presentada' (integrada) sigue permitido").toBe(201);
+  test('API: la residencia puede RECHAZAR la presentada (tras turnado) → rechazada + observación', async ({ request }) => {
+    const { est, R, S, V } = await crearEstimacionIntegrada(request);
+    expect((await presentar(request, S.token, est.id)).status()).toBe(200);
+    expect((await turnar(request, V.token, est.id, { sin_observaciones: true })).status(), 'turna sin observaciones').toBe(200);
+    const rech = await rechazar(request, R.token, est.id, { motivo: 'Carátula con error en amortización', seccion: 'caratula', severidad: 'mayor' });
+    expect(rech.status(), 'residencia rechaza').toBe(200);
+    const rj = await rech.json();
+    expect(rj.estimacion.estado, "avanza a 'rechazada'").toBe('rechazada');
+    expect(rj.observacion.tipo, 'registra la observación del rechazo').toBe('rechazo');
   });
 
-  test('UI: la residencia ve "Presentada", autoriza, y la fila pasa a "Autorizada"', async ({ page, request }) => {
-    const { cid, est } = await presentarEstimacion(request);
+  test('Opción A (no bloqueante esta fase): pagar una INTEGRADA (sin presentar/autorizar) AÚN se permite (201)', async ({ request }) => {
+    // El candado de pago queda PERMISIVO (['integrada','enviada','autorizada']) como se decidió en O7. Este
+    // test BLINDA esa decisión: si se endurece a solo 'autorizada', fallará y forzará una decisión consciente.
+    const { cid, est, F } = await crearEstimacionIntegrada(request);
+    expect((await pagar(request, F.token, cid, est.id)).status(), "Opción A: pagar la 'Integrada' sigue permitido").toBe(201);
+  });
+
+  test('UI: el contratista ve "Integrada", presenta, y la fila pasa a "Presentada"', async ({ page, request }) => {
+    const { cid, est } = await crearEstimacionIntegrada(request);
 
     await freshHome(page);
-    await enterAppMode(page, 'residente');
+    await enterAppMode(page, 'contratista');
     await goToViaSidebar(page, '/estimaciones/envio');
     await page.getByTestId('select-contrato').selectOption(String(cid));
 
     const fila = page.getByTestId(`fila-envio-${est.id}`);
+    await expect(fila).toContainText('Integrada');
+    await fila.getByRole('button', { name: 'Presentar estimación' }).click();
     await expect(fila).toContainText('Presentada');
-    await fila.getByRole('button', { name: 'Autorizar estimación' }).click();
-    await expect(fila).toContainText('Autorizada');
-    const sello = fila.locator('[data-testid^="sello-autorizacion-"]');
-    await expect(sello).toContainText('Autorizada el');
-    // Tras autorizar, aparece el semáforo del plazo de PAGO (20 días, art. 54) — referencia visual.
-    await expect(sello).toContainText('Pago: día');
+    const sello = fila.locator('[data-testid^="sello-presentacion-"]');
+    await expect(sello).toContainText('Presentada el');
+    // Tras presentar, aparece el semáforo del plazo de revisión (HU-15, 15 días, art. 54).
+    await expect(sello).toContainText('Revisión (HU-15): día');
   });
 
-  test('UI: HU-12 quedó reetiquetada para "Formular y presentar" (contratista)', async ({ page }) => {
+  test('UI: HU-12 conserva su etiqueta de INTEGRACIÓN (contratista integra)', async ({ page }) => {
     await freshHome(page);
     await enterAppMode(page, 'contratista');
     await goToViaSidebar(page, '/estimaciones/integracion');
-    await expect(page.getByRole('heading', { name: 'Formular y presentar la estimación' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Apertura del periodo e integración de la estimación' })).toBeVisible();
   });
 });
