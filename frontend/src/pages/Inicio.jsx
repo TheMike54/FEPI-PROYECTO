@@ -1,11 +1,27 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { historiasUsuario } from '../data/dummy.js';
 import { ROLES, nivelDe } from '../data/permisos.js';
-import { useSesion } from '../context/SesionContext.jsx';
+import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
+import { api } from '../services/api.js';
 
 export default function Inicio() {
-  const { rol } = useSesion();
+  const { rol, token } = useSesion();
   const rolActivo = ROLES.find((r) => r.id === rol);
+
+  // O5 (HU-07 v2): AVISO al iniciar sesión — "Tienes N conceptos con déficit en M contratos", acotado
+  // por participación en el backend. Solo para los roles con acceso a HU-07 (residente/supervisión).
+  const { sinAcceso: sinAccesoAtraso } = useVistaHU('HU-07');
+  const [resumenAtraso, setResumenAtraso] = useState(null);
+  useEffect(() => {
+    if (!token || sinAccesoAtraso) { setResumenAtraso(null); return; }
+    let vivo = true;
+    api.resumenAtrasos()
+      .then((r) => { if (vivo) setResumenAtraso(r && typeof r === 'object' ? r : null); })
+      .catch(() => { if (vivo) setResumenAtraso(null); });
+    return () => { vivo = false; };
+  }, [token, sinAccesoAtraso]);
+  const hayAtrasos = resumenAtraso && Number(resumenAtraso.conceptos) > 0;
 
   // Control por rol: el dashboard solo muestra las HU accesibles para el rol
   // (consistente con el Sidebar y con la guarda de ruta).
@@ -26,6 +42,20 @@ export default function Inicio() {
           </div>
         )}
       </div>
+
+      {hayAtrasos && (
+        <Link
+          to="/seguimiento/alertas"
+          className="flex flex-wrap items-center justify-between gap-3 bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 rounded mb-6 hover:shadow-md transition-all"
+          data-testid="banner-atrasos"
+        >
+          <span className="text-sm font-semibold text-slate-800">
+            ⚠ Tienes {resumenAtraso.conceptos} {resumenAtraso.conceptos === 1 ? 'concepto' : 'conceptos'} con déficit
+            {' '}en {resumenAtraso.contratos} {resumenAtraso.contratos === 1 ? 'contrato' : 'contratos'}.
+          </span>
+          <span className="text-sm font-semibold text-sigecop-accent whitespace-nowrap">Ver atraso por concepto →</span>
+        </Link>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {tarjetas.map((hu) => (

@@ -18,11 +18,18 @@ export default function Tabs({ tabs, initial = 0, active: activeProp, onTabChang
   };
   const ActiveContent = tabs[active]?.content;
 
+  // UI-1 (10-jun): SOLO clases (paleta guinda institucional). Los nombres de pestaña, el
+  // numerado, disabled, title y data-bloqueado son contrato de la suite y no cambian.
+  // O2 (10-jun): `t.oculta` (opcional) ESCONDE la pestaña sin mover los índices de las demás
+  // (el alta omite "Plan de amortización" sin anticipo y su gating usa índices fijos). El
+  // numerado visible se calcula sobre las pestañas NO ocultas para que no salte (1, 2, … n).
   return (
     <div>
-      <div className="border-b border-slate-200 overflow-x-auto bg-slate-50 rounded-t-md">
+      <div className="border-b border-borde overflow-x-auto bg-pagina rounded-t-lg border-x border-t">
         <div className="flex min-w-max">
           {tabs.map((t, i) => {
+            if (t.oculta) return null;
+            const numeroVisible = tabs.slice(0, i + 1).filter((x) => !x.oculta).length;
             const conError = tabsConError && tabsConError.has(i);
             const bloqueado = !!(tabsBloqueados && tabsBloqueados.has(i) && i !== active);
             return (
@@ -35,22 +42,22 @@ export default function Tabs({ tabs, initial = 0, active: activeProp, onTabChang
                 data-bloqueado={bloqueado ? 'true' : undefined}
                 className={`px-4 py-3 text-sm whitespace-nowrap border-b-2 transition-colors ${
                   active === i
-                    ? 'border-sigecop-accent text-sigecop-blue bg-white font-semibold'
+                    ? 'border-guinda text-guinda bg-white font-medium'
                     : bloqueado
-                      ? 'border-transparent text-slate-300 cursor-not-allowed'
-                      : 'border-transparent text-slate-500 hover:text-sigecop-blue'
+                      ? 'border-transparent text-tinta-ter cursor-not-allowed'
+                      : 'border-transparent text-tinta-sec hover:text-guinda'
                 }`}
               >
-                <span className="text-xs text-slate-400 mr-2">{i + 1}.</span>
+                <span className="text-xs text-tinta-ter mr-2">{numeroVisible}.</span>
                 {t.label}
                 {bloqueado && <span className="ml-2 align-middle" title="Bloqueada">🔒</span>}
-                {conError && <span className="ml-2 inline-block w-2 h-2 rounded-full bg-red-500 align-middle" title="Hay un error en esta pestaña" />}
+                {conError && <span className="ml-2 inline-block w-2 h-2 rounded-full bg-peligro align-middle" title="Hay un error en esta pestaña" />}
               </button>
             );
           })}
         </div>
       </div>
-      <div className="p-6 bg-white rounded-b-md border-x border-b border-slate-200">
+      <div className="p-6 bg-white rounded-b-lg border-x border-b border-borde">
         {ActiveContent}
       </div>
     </div>

@@ -43,11 +43,13 @@ async function leerRoster(req, res) {
 
     const hist = await pool.query(
       `SELECT r.id, r.rol, r.usuario_id, u.nombre AS usuario_nombre, u.email AS usuario_email,
+              ue.nombre AS usuario_empresa,
               r.vigencia_desde, r.vigencia_hasta, r.motivo, r.sustituye_a,
               r.registrado_por, ru.nombre AS registrado_por_nombre, r.nota_id, r.created_at
          FROM contrato_roster r
          LEFT JOIN usuarios u  ON u.id  = r.usuario_id
          LEFT JOIN usuarios ru ON ru.id = r.registrado_por
+         LEFT JOIN empresas ue ON ue.id = u.empresa_id
         WHERE r.contrato_id = $1
         ORDER BY r.rol, r.vigencia_desde, r.id`,
       [contratoId]
@@ -60,7 +62,7 @@ async function leerRoster(req, res) {
     for (const rol of ROLES_ROSTER) {
       const activa = hist.rows.find((r) => r.rol === rol && r.vigencia_hasta === null);
       if (activa) {
-        vigente[rol] = { usuario_id: activa.usuario_id, nombre: activa.usuario_nombre, desde: activa.vigencia_desde, roster_id: activa.id, versionado: true };
+        vigente[rol] = { usuario_id: activa.usuario_id, nombre: activa.usuario_nombre, empresa: activa.usuario_empresa, desde: activa.vigencia_desde, roster_id: activa.id, versionado: true };
       } else if (ct[COL_CACHE[rol]]) {
         vigente[rol] = { usuario_id: ct[COL_CACHE[rol]], nombre: null, desde: null, roster_id: null, versionado: false };
       } else {

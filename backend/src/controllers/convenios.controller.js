@@ -15,6 +15,9 @@
 const { pool } = require('../db/pool');
 const { esParteOSupervision } = require('../lib/acceso');
 const { guardarMatriz } = require('../lib/programa');
+// O6: el convenio asienta su nota en la bitácora (art. 123 fr. III RLOPSRM). Reutiliza el folio atómico
+// + la redacción del controller de bitácora (no se duplica la lógica de inmutabilidad de notas).
+const { insertarNotaAtomica, textoNotaConvenio } = require('./bitacora.controller');
 
 // Guardrail de variación PARAMETRIZABLE (NO es tope legal; el art. 59 vigente no tiene tope numérico).
 // Default 25 (= umbral de revisión del art. 102 RLOPSRM, reutilizado como guardrail). <=0 = sin tope.
@@ -223,14 +226,35 @@ async function crearConvenio(req, res) {
 
       // (E) Registrar el convenio (INMUTABLE) con el monto/delta CANÓNICOS.
       const numeroConv = Number((await client.query('SELECT COALESCE(MAX(numero),0)+1 AS n FROM convenios_modificatorios WHERE contrato_id = $1', [contratoId])).rows[0].n);
+      const folioFinal = folio || `CM-${String(numeroConv).padStart(3, '0')}`;
+
+      // O6 — NOTA AUTOMÁTICA de bitácora del convenio (art. 123 fr. III / 125 fr. I RLOPSRM). Si HAY
+      // bitácora abierta se asienta EN VIVO (folio atómico) y se LIGA en el INSERT (nota_id) — se crea
+      // ANTES del INSERT para NO necesitar un UPDATE (el trigger de inmutabilidad solo permite ligar la
+      // nota una vez). Si NO hay bitácora, se DIFIERE (nota_id NULL) y se asentará al abrir la bitácora
+      // (abrirBitacora). Emisor = quien registra el convenio (del JWT) [validar profe]. Todo en la MISMA
+      // transacción: si el re-cuadre (F) falla, también revierte la nota.
+      const bit = await client.query('SELECT id FROM bitacora_aperturas WHERE contrato_id = $1', [contratoId]);
+      let notaConv = null;
+      if (bit.rowCount > 0) {
+        const { asunto, contenido } = textoNotaConvenio({
+          folio: folioFinal, tipo, deltaMontoPct, deltaPlazoPct, motivo, diferida: false
+        });
+        notaConv = await insertarNotaAtomica(client, {
+          bitacoraId: bit.rows[0].id, tipo: 'res_convenios', asunto, contenido,
+          emisorId: req.user.id, tag: 'convenio'
+        });
+      }
+
       const conv = await client.query(
         `INSERT INTO convenios_modificatorios
            (contrato_id, numero, folio, tipo, fundamento, motivo, monto_anterior, monto_nuevo,
             plazo_anterior_dias, plazo_nuevo_dias, delta_monto_pct, delta_plazo_pct,
-            requiere_revision_sfp, requiere_ajuste_costos, autorizado_por)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING id`,
-        [contratoId, numeroConv, folio || `CM-${String(numeroConv).padStart(3, '0')}`, tipo, fundamento, motivo,
-         montoAnterior, montoNuevo, plazoAnterior, plazoNuevoFinal, deltaMontoPct, deltaPlazoPct, reqSfp, reqAjuste, req.user.id]
+            requiere_revision_sfp, requiere_ajuste_costos, autorizado_por, nota_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`,
+        [contratoId, numeroConv, folioFinal, tipo, fundamento, motivo,
+         montoAnterior, montoNuevo, plazoAnterior, plazoNuevoFinal, deltaMontoPct, deltaPlazoPct, reqSfp, reqAjuste, req.user.id,
+         notaConv ? notaConv.id : null]
       );
       const convenioId = conv.rows[0].id;
 
@@ -253,11 +277,16 @@ async function crearConvenio(req, res) {
       }
 
       await client.query('COMMIT');
+      // nota_diferida: el convenio quedó registrado pero aún no hay bitácora → su nota se asienta al abrir.
+      const notaDiferida = bit.rowCount === 0;
       return res.status(201).json({
-        ok: true, contrato_id: contratoId, convenio_id: convenioId, numero: numeroConv, tipo, fundamento,
+        ok: true, contrato_id: contratoId, convenio_id: convenioId, numero: numeroConv, tipo, fundamento, folio: folioFinal,
         monto_anterior: montoAnterior, monto_nuevo: montoNuevo, plazo_anterior_dias: plazoAnterior, plazo_nuevo_dias: plazoNuevoFinal,
         delta_monto_pct: deltaMontoPct != null ? Number(deltaMontoPct) : null, delta_plazo_pct: deltaPlazoPct != null ? Number(deltaPlazoPct) : null,
-        requiere_revision_sfp: reqSfp, requiere_ajuste_costos: reqAjuste, programa_version_id: nuevaVerId
+        requiere_revision_sfp: reqSfp, requiere_ajuste_costos: reqAjuste, programa_version_id: nuevaVerId,
+        nota: notaConv ? { id: notaConv.id, numero: notaConv.numero, tipo: notaConv.tipo, tag: notaConv.tag } : null,
+        nota_diferida: notaDiferida,
+        aviso: notaDiferida ? 'El convenio quedó registrado; su nota de bitácora se asentará automáticamente al abrir la bitácora.' : null
       });
     } catch (e) {
       try { await client.query('ROLLBACK'); } catch (_) { /* el client pudo morir */ }

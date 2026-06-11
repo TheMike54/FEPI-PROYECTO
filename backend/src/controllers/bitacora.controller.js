@@ -195,6 +195,57 @@ async function abrirBitacora(req, res) {
         await client.query('UPDATE contrato_roster SET nota_id = $1 WHERE id = $2', [nota.id, s.id]);
       }
 
+      // O4 (HU-06 v2, 10-jun) — Asiento DIFERIDO de AVANCES registrados ANTES de abrir la bitácora
+      // (concepto_avance con cantidad>0 y sin nota). Mismo patrón que la sustitución: el registro
+      // de avance genera su nota de bitácora (art. 125 fr. II); si no había bitácora, se difiere y se
+      // asienta aquí, numerada TRAS la #1 de apertura. Reusa textoNotaAvance (consistente con el
+      // asiento en vivo de trabajos.controller). Emisor = quien apertura (residente). [validar profe].
+      const pendientesAvance = await client.query(
+        `SELECT ca.id, ca.cantidad, cc.concepto, cc.unidad, cp.numero AS periodo_numero
+           FROM concepto_avance ca
+           JOIN contrato_conceptos cc ON cc.id = ca.contrato_concepto_id
+           LEFT JOIN contrato_periodos cp ON cp.id = ca.contrato_periodo_id
+          WHERE cc.contrato_id = $1 AND ca.nota_id IS NULL AND ca.cantidad > 0
+          ORDER BY ca.fecha, ca.id`,
+        [contratoId]
+      );
+      for (const a of pendientesAvance.rows) {
+        const { asunto, contenido } = textoNotaAvance({
+          concepto: a.concepto, unidad: a.unidad, cantidad: a.cantidad,
+          periodoNumero: a.periodo_numero, diferida: true
+        });
+        const nota = await insertarNotaAtomica(client, {
+          bitacoraId: bitacora.id, tipo: 'avance', asunto, contenido,
+          emisorId: req.user.id, tag: 'avance'
+        });
+        await client.query('UPDATE concepto_avance SET nota_id = $1 WHERE id = $2', [nota.id, a.id]);
+      }
+
+      // O6 (10-jun) — Asiento DIFERIDO de CONVENIOS registrados ANTES de abrir la bitácora (nota_id
+      // NULL). Mismo patrón que la sustitución/avance: el registro del convenio genera su nota; si no
+      // había bitácora, se difiere y se asienta aquí, numerada TRAS la #1 de apertura. El UPDATE de
+      // nota_id es la ÚNICA transición que el trigger de inmutabilidad del convenio permite (NULL→valor).
+      // Emisor = quien apertura (residente). [validar profe].
+      const pendientesConvenio = await client.query(
+        `SELECT id, numero, folio, tipo, delta_monto_pct, delta_plazo_pct, motivo
+           FROM convenios_modificatorios
+          WHERE contrato_id = $1 AND nota_id IS NULL
+          ORDER BY numero`,
+        [contratoId]
+      );
+      for (const cv of pendientesConvenio.rows) {
+        const folioCv = cv.folio || `CM-${String(cv.numero).padStart(3, '0')}`;
+        const { asunto, contenido } = textoNotaConvenio({
+          folio: folioCv, tipo: cv.tipo, deltaMontoPct: cv.delta_monto_pct,
+          deltaPlazoPct: cv.delta_plazo_pct, motivo: cv.motivo, diferida: true
+        });
+        const nota = await insertarNotaAtomica(client, {
+          bitacoraId: bitacora.id, tipo: 'res_convenios', asunto, contenido,
+          emisorId: req.user.id, tag: 'convenio'
+        });
+        await client.query('UPDATE convenios_modificatorios SET nota_id = $1 WHERE id = $2', [nota.id, cv.id]);
+      }
+
       await client.query('COMMIT');
       return res.status(201).json(bitacora);
     } catch (e) {
@@ -365,19 +416,88 @@ async function insertarNotaAtomica(client, { bitacoraId, tipo, asunto, contenido
 // abrirBitacora (al asentar las sustituciones previas DIFERIDAS). `diferida` añade la aclaración
 // temporal cuando la nota se asienta al abrir la bitácora (el hecho ocurrió antes que el folio).
 const ROL_LABEL_SUST = { residente: 'residente de obra', superintendente: 'superintendente', supervision: 'supervisión' };
+// O1-W3c (testing del equipo, 09-jun): la fecha del acto va en ESPAÑOL ("6 de junio de 2026").
+// Antes: String(fecha).slice(0,10) sobre el Date que entrega pg para DATE → "Sat Jun 06" (los
+// 10 primeros chars del toString en inglés). Acepta Date o string ISO; el día se interpreta en
+// UTC (pg entrega DATE a medianoche UTC) para no correrse un día.
+function fechaLargaES(fecha) {
+  if (!fecha) return '—';
+  const d = fecha instanceof Date ? fecha : new Date(`${String(fecha).slice(0, 10)}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return String(fecha).slice(0, 10);
+  return d.toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+}
 function textoNotaSustitucion({ rol, anteriorNombre, anteriorId, nuevoNombre, nuevoId, motivo, fecha, diferida }) {
   const rl = ROL_LABEL_SUST[rol] || rol;
   const ant = anteriorNombre || (anteriorId ? `Usuario #${anteriorId}` : '— sin titular previo —');
   const nue = nuevoNombre || (nuevoId ? `Usuario #${nuevoId}` : '—');
-  const f = String(fecha || '').slice(0, 10);
-  const asunto = `Sustitución de ${rl}`;
+  const f = fechaLargaES(fecha);
+  // O1-W3a: el TÍTULO dice QUIÉN se sustituyó (antes era genérico). Clamp al VARCHAR(200) de asunto.
+  const asunto = `Sustitución de ${rl}: ${ant} → ${nue}`.slice(0, 200);
   const cola = diferida
     ? ` Sustitución ocurrida el ${f}; asentada al abrir la bitácora.`
     : '';
+  // O1-W3b: redacción NARRATIVA; el motivo es del CAMBIO de la persona anterior (no un atributo
+  // de la persona nueva, como leía antes).
   const contenido =
-    `Sustitución de personas (art. 125 fr. I inciso g RLOPSRM). Rol: ${rl}. ` +
-    `Persona anterior: ${ant}. Persona nueva: ${nue}. Motivo: ${motivo || '—'}. ` +
-    `Fecha del acto: ${f}.${cola} Asiento automático del sistema.`;
+    `Se sustituye a ${ant} como ${rl} del contrato. Motivo del cambio: ${motivo || '—'}. ` +
+    `Entra ${nue} a partir del ${f}.${cola} ` +
+    `(art. 125 fr. I inciso g RLOPSRM; asiento automático del sistema.)`;
+  return { asunto, contenido };
+}
+
+// O4 (HU-06 v2, 10-jun) — Redacta el asunto/contenido de la nota AUTOMÁTICA de AVANCE de trabajos
+// (art. 125 fr. II RLOPSRM: la entrega de obra se avisa por nota de bitácora; el profe, P14: "el
+// aviso es a través de una nota"). Compartida por trabajos.controller (al registrar, en vivo) y por
+// abrirBitacora (al asentar los avances previos DIFERIDOS). `diferida` añade la aclaración temporal.
+// Formato de cantidad es-MX hasta 3 decimales (escala de concepto_avance.cantidad NUMERIC(14,3)).
+function textoNotaAvance({ concepto, unidad, cantidad, periodoNumero, diferida }) {
+  const cant = Number(cantidad).toLocaleString('es-MX', { maximumFractionDigits: 3 });
+  const p = periodoNumero != null ? periodoNumero : '—';
+  const asunto = `Avance de trabajos — ${concepto}`.slice(0, 200);
+  const cola = diferida ? ' Registrado antes de abrir la bitácora; asentado al abrirla.' : '';
+  const contenido =
+    `Avance de trabajos — ${concepto}: se ejecutaron ${cant} ${unidad || ''} en el periodo ${p}, ` +
+    `conforme al programa de obra.${cola} (art. 125 fr. II RLOPSRM; asiento automático del sistema.)`;
+  return { asunto, contenido };
+}
+
+// O5 (HU-07 v2, 10-jun) — Redacta el asunto/contenido de la nota de ATRASO de un concepto respecto
+// del programa VIGENTE medido al periodo actual (P15 del profe: el atraso se reporta en UNIDADES del
+// concepto, sin umbral ni %). La asienta alertas.controller (acción "Asentar en bitácora", solo si hay
+// bitácora abierta). Va con tag='atraso' y tipo 'otro' para SEPARARLO de las notas de 'avance' (el profe
+// insistió en no mezclar atraso con avance). Fundamento: el programa de obra es la base para medir el
+// avance (LOPSRM art. 52; RLOPSRM art. 45 ap. A fr. X) y el residente lleva en la bitácora los hechos
+// relevantes (art. 123 RLOPSRM). Formato de cantidad es-MX hasta 3 decimales (escala NUMERIC(14,3)).
+function textoNotaAtraso({ concepto, unidad, cantidad, periodoNumero }) {
+  const cant = Number(cantidad).toLocaleString('es-MX', { maximumFractionDigits: 3 });
+  const u = unidad || '';
+  const p = periodoNumero != null ? periodoNumero : '—';
+  const asunto = `Atraso de obra — ${concepto}`.slice(0, 200);
+  const contenido =
+    `Atraso registrado — ${concepto}: déficit de ${cant} ${u} respecto del programa al periodo ${p}. ` +
+    `El déficit es lo programado acumulado al periodo vigente menos lo ejecutado acumulado, en unidades ` +
+    `del concepto (LOPSRM art. 52; RLOPSRM art. 45 ap. A fr. X). Asiento del sistema (art. 123 RLOPSRM).`;
+  return { asunto, contenido };
+}
+
+// O6 (10-jun) — Redacta el asunto/contenido de la nota AUTOMÁTICA de un CONVENIO MODIFICATORIO
+// (art. 59 LOPSRM; el convenio es un hecho relevante que se asienta en la bitácora, art. 123 fr. III /
+// 125 fr. I RLOPSRM). Compartida por convenios.controller (al registrar, en vivo) y por abrirBitacora
+// (al asentar los convenios previos DIFERIDOS). La variación se reporta según el `tipo`: monto/programa/
+// mixto incluyen monto; plazo/mixto incluyen plazo. `diferida` añade la aclaración temporal.
+function textoNotaConvenio({ folio, tipo, deltaMontoPct, deltaPlazoPct, motivo, diferida }) {
+  const incMonto = ['monto', 'programa', 'mixto'].includes(tipo);
+  const incPlazo = ['plazo', 'mixto'].includes(tipo);
+  const fmtPct = (n) => (n == null ? '—' : String(n));   // delta_*_pct ya viene redondeado a 2 dec (NUMERIC)
+  const partes = [];
+  if (incMonto) partes.push(`${fmtPct(deltaMontoPct)}% sobre monto`);
+  if (incPlazo) partes.push(`${fmtPct(deltaPlazoPct)}% sobre plazo`);
+  const variacion = partes.length ? partes.join(' y ') : 'sin variación de monto ni plazo';
+  const asunto = `Convenio modificatorio ${folio} (${tipo})`.slice(0, 200);
+  const cola = diferida ? ' Registrado antes de abrir la bitácora; asentado al abrirla.' : '';
+  const contenido =
+    `Convenio modificatorio ${folio}: ${tipo}; variación ${variacion}. Motivo: ${motivo || '—'}.${cola} ` +
+    `(art. 59 LOPSRM / art. 99, 123 fr. III RLOPSRM; asiento automático del sistema.)`;
   return { asunto, contenido };
 }
 
@@ -776,5 +896,11 @@ module.exports = {
   firmarNota,
   // Pase 2.3 — reutilizados por roster.controller para la nota automática de sustitución.
   insertarNotaAtomica,
-  textoNotaSustitucion
+  textoNotaSustitucion,
+  // O4 — reutilizado por trabajos.controller para la nota automática de avance.
+  textoNotaAvance,
+  // O5 — reutilizado por alertas.controller para la nota de atraso (acción "Asentar en bitácora").
+  textoNotaAtraso,
+  // O6 — reutilizado por convenios.controller para la nota automática del convenio modificatorio.
+  textoNotaConvenio
 };

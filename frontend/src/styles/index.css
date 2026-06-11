@@ -7,24 +7,43 @@
     height: 100%;
   }
   body {
-    @apply bg-slate-50 text-slate-900 font-sans antialiased;
+    /* UI-1: página #FAFAF8, texto #2C2C2A, Inter/system (pesos 400/500). */
+    @apply bg-pagina text-tinta font-sans antialiased;
   }
 }
 
 @layer components {
+  /* UI-1: primario guinda / hover guinda-dark (antes azul). Mismo nombre de clase:
+     todas las vistas que ya usan sg-btn-* se re-skinean sin tocarlas. */
   .sg-btn-primary {
-    @apply inline-flex items-center justify-center px-4 py-2 rounded-md bg-sigecop-blue text-white font-medium hover:bg-sigecop-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-md bg-guinda text-white font-medium hover:bg-guinda-dark transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
   }
   .sg-btn-secondary {
-    @apply inline-flex items-center justify-center px-4 py-2 rounded-md border border-sigecop-blue text-sigecop-blue font-medium hover:bg-sigecop-blue-light transition-colors;
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-md border border-guinda text-guinda font-medium hover:bg-guinda-soft transition-colors;
   }
   .sg-input {
-    @apply w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-sigecop-accent focus:border-transparent;
+    @apply w-full px-3 py-2 border border-borde-fuerte rounded-md bg-white focus:outline-none focus:ring-2 focus:ring-sigecop-accent focus:border-transparent;
   }
   .sg-label {
-    @apply block text-xs font-semibold text-slate-700 uppercase tracking-wide mb-1;
+    @apply block text-xs font-semibold text-tinta-sec uppercase tracking-wide mb-1;
   }
   .sg-card {
-    @apply bg-white rounded-lg shadow-sm border border-slate-200 p-6;
+    @apply bg-white rounded-lg shadow-sm border border-borde p-6;
   }
+}
+
+/* O9 (HU-04) — Impresión consolidada del expediente como un solo PDF (window.print). Oculta el chrome
+   del AppShell (topbar <header> + sidebar <aside>) y suelta el layout de altura fija/scroll a flujo
+   normal; los bloques del expediente fuerzan su cuerpo abierto vía `print:block` en el componente.
+   Es global (la impresión solo se ofrece desde el expediente). Marca `print:hidden` lo que no debe ir
+   al PDF (selector, búsqueda, botón, criterios). */
+@media print {
+  header, aside { display: none !important; }
+  .h-screen { height: auto !important; }
+  .overflow-hidden { overflow: visible !important; }
+  main { overflow: visible !important; }
+  main > div { max-width: none !important; padding: 0 !important; }
+  body { background: #fff !important; }
+  table { page-break-inside: auto; }
+  tr { page-break-inside: avoid; }
 }

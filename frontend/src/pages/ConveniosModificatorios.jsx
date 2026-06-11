@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
-import BannerContexto from '../components/vista/BannerContexto.jsx';
+import EncabezadoContrato from '../components/ui/EncabezadoContrato.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import RegionEditable from '../components/vista/RegionEditable.jsx';
 import MatrizProgramaLectura from '../components/programa/MatrizProgramaLectura.jsx';
@@ -155,6 +156,17 @@ export default function ConveniosModificatorios() {
     precargaToken.current++; // invalida cualquier precarga del contrato anterior aún en vuelo
     cargarContrato(id);
   }, [cargarContrato]);
+
+  // O6: acceso directo desde el expediente (HU-04) vía ?contrato=ID — preselecciona en cuanto la lista
+  // esté cargada y mientras el usuario no haya elegido otro a mano (mismo patrón que AlertasAtraso).
+  const [searchParams] = useSearchParams();
+  const contratoQuery = searchParams.get('contrato');
+  useEffect(() => {
+    if (sinSesion || !contratoQuery || contratoId) return;
+    if (contratos.some((c) => String(c.id) === String(contratoQuery))) {
+      seleccionarContrato(String(contratoQuery));
+    }
+  }, [sinSesion, contratoQuery, contratoId, contratos, seleccionarContrato]);
 
   // Precarga el editor con el programa VIGENTE: catálogo con P.U. (detalleContrato) + periodos y
   // celdas (leerProgramaObra). Las celdas del vigente se reindexan por rid sintético + periodo.
@@ -315,7 +327,11 @@ export default function ConveniosModificatorios() {
       const cambios = [];
       if (res.plazo_anterior_dias !== res.plazo_nuevo_dias) cambios.push(`plazo ${res.plazo_anterior_dias}→${res.plazo_nuevo_dias} días`);
       if (String(res.monto_anterior) !== String(res.monto_nuevo)) cambios.push(`monto ${moneda(res.monto_anterior)}→${moneda(res.monto_nuevo)}`);
-      showToast(`Convenio ${ref} registrado${cambios.length ? ' (' + cambios.join(' · ') + ')' : ''}${avisos.length ? ' · ' + avisos.join(' · ') : ''}.`);
+      // O6: el convenio asentó su nota en la bitácora (en vivo) o quedó diferida si aún no hay bitácora.
+      const notaMsg = res.nota_diferida
+        ? ' · su nota de bitácora se asentará al abrir la bitácora'
+        : (res.nota ? ` · nota de bitácora #${res.nota.numero} asentada` : '');
+      showToast(`Convenio ${ref} registrado${cambios.length ? ' (' + cambios.join(' · ') + ')' : ''}${avisos.length ? ' · ' + avisos.join(' · ') : ''}${notaMsg}.`);
       setPlazoNuevo(''); setMotivo(''); setFolio('');
       setCmConceptos([]); setCmCeldas({}); setCmPeriodos([]);
       await cargarContrato(contratoId); // recarga vigente + historial; la precarga del editor se redispara
@@ -361,12 +377,12 @@ export default function ConveniosModificatorios() {
       />
 
       {sinSesion && (
-        <div className="bg-slate-50 border border-slate-200 rounded-md px-4 py-3 mb-4 text-sm text-slate-600">
+        <div className="bg-pagina border border-borde rounded-md px-4 py-3 mb-4 text-sm text-slate-600">
           Inicia sesión para consultar o registrar convenios modificatorios.
         </div>
       )}
 
-      <div className="bg-white border border-slate-200 rounded-md p-4 mb-6 max-w-2xl">
+      <div className="bg-white border border-borde rounded-lg p-4 mb-6 max-w-2xl">
         <label className="sg-label">Contrato</label>
         <select
           className="sg-input"
@@ -387,11 +403,10 @@ export default function ConveniosModificatorios() {
 
       {selected && !cargando && (
         <>
-          <BannerContexto
-            variant="slate"
+          <EncabezadoContrato
             titulo="Contrato"
             folio={selected.folio}
-            extra={[
+            items={[
               { value: selected.contratista || detalle?.contratista || '—' },
               { label: 'Monto vigente:', value: moneda(montoVigente), resaltado: true },
               { label: 'Plazo vigente:', value: plazoVigente != null ? `${plazoVigente} días` : '—', resaltado: true }
@@ -400,7 +415,7 @@ export default function ConveniosModificatorios() {
 
           {/* Formulario de creación — SOLO dependencia (nivel 'E'); el resto ve solo-consulta. */}
           {!soloLectura && (
-            <div className="bg-white border border-slate-200 rounded-md p-6 mb-6">
+            <div className="bg-white border border-borde rounded-lg p-6 mb-6">
               <h2 className="text-lg font-bold text-sigecop-blue mb-1">Nuevo convenio modificatorio</h2>
               <p className="text-xs text-slate-500 mb-4">
                 Art. 59 LOPSRM. Convenios de <strong>plazo</strong>, <strong>monto</strong>, <strong>programa</strong> o
@@ -431,7 +446,7 @@ export default function ConveniosModificatorios() {
                       <div>
                         <label className="sg-label">Plazo vigente</label>
                         <input
-                          className="sg-input bg-slate-50"
+                          className="sg-input bg-pagina"
                           value={plazoVigente != null ? `${plazoVigente} días` : '—'}
                           readOnly
                           disabled
@@ -464,7 +479,7 @@ export default function ConveniosModificatorios() {
                     <div>
                       {cargandoEditor && <p className="text-sm text-slate-500">Cargando programa vigente…</p>}
                       {editorError && (
-                        <div className="bg-red-50 border-l-4 border-red-500 px-4 py-3 text-sm text-red-800 rounded-r-md" data-testid="cm-editor-error">
+                        <div className="bg-peligro-bg border-l-4 border-peligro px-4 py-3 text-sm text-peligro rounded-r-md" data-testid="cm-editor-error">
                           {editorError}
                         </div>
                       )}
@@ -489,10 +504,10 @@ export default function ConveniosModificatorios() {
                             </p>
                           )}
                           {!cmSinDup && (
-                            <p className="text-xs text-red-700 mt-1" data-testid="cm-claves-dup">Hay claves de concepto repetidas; corrige antes de registrar.</p>
+                            <p className="text-xs text-peligro mt-1" data-testid="cm-claves-dup">Hay claves de concepto repetidas; corrige antes de registrar.</p>
                           )}
                           {cmSinDup && !cmCamposOk && cmConceptos.length > 0 && (
-                            <p className="text-xs text-red-700 mt-1" data-testid="cm-campos-incompletos">Cada concepto requiere clave, cantidad &gt; 0 y P.U. &gt; 0 (un concepto existente no se pone en cero).</p>
+                            <p className="text-xs text-peligro mt-1" data-testid="cm-campos-incompletos">Cada concepto requiere clave, cantidad &gt; 0 y P.U. &gt; 0 (un concepto existente no se pone en cero).</p>
                           )}
                         </>
                       )}
@@ -536,7 +551,7 @@ export default function ConveniosModificatorios() {
                   )}
                   {superaAjuste && (
                     <div
-                      className="bg-amber-50 border-l-4 border-sigecop-amber-attention px-4 py-3 text-sm text-slate-800 rounded-r-md"
+                      className="bg-aviso-bg border-l-4 border-sigecop-amber-attention px-4 py-3 text-sm text-slate-800 rounded-r-md"
                       data-testid="aviso-ajuste"
                     >
                       ⚠️ Supera el 50%: el contratista puede solicitar <strong>ajuste de costos</strong>
@@ -561,15 +576,15 @@ export default function ConveniosModificatorios() {
           )}
 
           {/* Historial INMUTABLE de convenios (sin editar/anular: corregir = convenio nuevo). */}
-          <div className="bg-white border border-slate-200 rounded-md overflow-hidden mb-6">
-            <div className="px-6 py-3 border-b border-slate-200">
+          <div className="bg-white border border-borde rounded-lg overflow-hidden mb-6">
+            <div className="px-6 py-3 border-b border-borde">
               <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
                 Convenios del contrato ({convenios.length})
               </h2>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm" data-testid="tabla-convenios">
-                <thead className="bg-slate-50 text-slate-700">
+                <thead className="bg-pagina text-tinta-sec">
                   <tr>
                     <th className="text-left p-3 font-semibold">N.º / folio</th>
                     <th className="text-left p-3 font-semibold">Tipo</th>
@@ -589,7 +604,7 @@ export default function ConveniosModificatorios() {
                     </tr>
                   ) : (
                     convenios.map((c) => (
-                      <tr key={c.id} className="border-t border-slate-200 align-top" data-testid={`fila-convenio-${c.id}`}>
+                      <tr key={c.id} className="border-t border-borde align-top" data-testid={`fila-convenio-${c.id}`}>
                         <td className="p-3">
                           <div className="font-mono text-xs">{c.folio || `CM-${String(c.numero).padStart(3, '0')}`}</div>
                           <div className="text-[11px] text-slate-400">{fechaMX(c.fecha)}</div>
@@ -608,12 +623,12 @@ export default function ConveniosModificatorios() {
                         <td className="p-3">
                           <div className="flex flex-col gap-1">
                             {c.requiere_revision_sfp && (
-                              <span className="inline-block px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-100 text-sigecop-amber-attention border border-amber-300" data-testid={`badge-sfp-${c.id}`}>
+                              <span className="inline-block px-2 py-0.5 rounded text-[11px] font-semibold bg-aviso-bg text-aviso border border-aviso/30" data-testid={`badge-sfp-${c.id}`}>
                                 Revisión SFP (art. 102)
                               </span>
                             )}
                             {c.requiere_ajuste_costos && (
-                              <span className="inline-block px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-100 text-sigecop-amber-attention border border-amber-300">
+                              <span className="inline-block px-2 py-0.5 rounded text-[11px] font-semibold bg-aviso-bg text-aviso border border-aviso/30">
                                 Ajuste de costos (art. 59 Bis)
                               </span>
                             )}
@@ -629,21 +644,21 @@ export default function ConveniosModificatorios() {
                 </tbody>
               </table>
             </div>
-            <p className="px-6 py-2 text-[11px] text-slate-400 border-t border-slate-100">
+            <p className="px-6 py-2 text-[11px] text-slate-400 border-t border-borde">
               Un convenio registrado es inalterable (art. 59 LOPSRM / art. 99 RLOPSRM): no se edita ni se anula; corregir = convenio nuevo.
             </p>
           </div>
 
           {/* Versiones del programa de obra (snapshots inmutables). Lectura. */}
-          <div className="bg-white border border-slate-200 rounded-md overflow-hidden mb-6">
-            <div className="px-6 py-3 border-b border-slate-200">
+          <div className="bg-white border border-borde rounded-lg overflow-hidden mb-6">
+            <div className="px-6 py-3 border-b border-borde">
               <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
                 Versiones del programa de obra ({versiones.length})
               </h2>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm" data-testid="tabla-versiones">
-                <thead className="bg-slate-50 text-slate-700">
+                <thead className="bg-pagina text-tinta-sec">
                   <tr>
                     <th className="text-left p-3 font-semibold">Versión</th>
                     <th className="text-center p-3 font-semibold">Estado</th>
@@ -662,13 +677,13 @@ export default function ConveniosModificatorios() {
                     </tr>
                   ) : (
                     versiones.map((v) => (
-                      <tr key={v.id} className="border-t border-slate-200" data-testid={`fila-version-${v.id}`}>
+                      <tr key={v.id} className="border-t border-borde" data-testid={`fila-version-${v.id}`}>
                         <td className="p-3 font-semibold">
                           v{v.numero}{v.convenio_id == null ? <span className="ml-1 text-[11px] font-normal text-slate-400">(original)</span> : null}
                         </td>
                         <td className="p-3 text-center">
                           {v.vigente
-                            ? <span className="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-green-100 text-sigecop-green-validation">Vigente</span>
+                            ? <span className="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-exito-bg text-exito">Vigente</span>
                             : <span className="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-slate-200 text-slate-600">Superseded</span>}
                         </td>
                         <td className="p-3 text-right">{moneda(v.monto)}</td>
@@ -692,7 +707,7 @@ export default function ConveniosModificatorios() {
             </div>
 
             {verVersionId != null && (
-              <div className="px-6 py-4 border-t border-slate-200 bg-slate-50" data-testid="detalle-version">
+              <div className="px-6 py-4 border-t border-borde bg-pagina" data-testid="detalle-version">
                 {cargandoVersion && <p className="text-sm text-slate-500">Cargando snapshot del programa…</p>}
                 {!cargandoVersion && detalleVersion && (
                   <MatrizProgramaLectura programa={snapshotAMatriz(detalleVersion)} />

@@ -180,6 +180,16 @@ async function crearContrato(req, res) {
     if (gm > Number(monto)) {
       return res.status(400).json({ error: `Garantía #${i + 1}: el monto (${gm}) no puede exceder el monto del contrato (${monto})` });
     }
+    // O1-P5b (revisión profe 09-jun, bug confirmado en vivo): una póliza con vigencia ya VENCIDA
+    // no garantiza nada al formalizar — se rechaza (vigencia >= hoy). La vista bloquea con el
+    // "hoy" LOCAL del usuario; esta barrera usa hoy UTC − 1 día para no rechazar por el desfase
+    // de zona horaria (México = UTC−6: de noche, "hoy UTC" ya es mañana local).
+    if (g.vigencia) {
+      const ayerUTC = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      if (String(g.vigencia).slice(0, 10) < ayerUTC) {
+        return res.status(400).json({ error: `Garantía #${i + 1}: la vigencia (${String(g.vigencia).slice(0, 10)}) ya está vencida; debe ser hoy o posterior` });
+      }
+    }
   }
 
   // --- A2: ciclo de estimación + programa de obra (matriz concepto × periodo) ------
@@ -214,6 +224,48 @@ async function crearContrato(req, res) {
     // se podrá llenar luego con PUT /:id/programa).
     try { periodos = generarPeriodos(body.fechaInicio, plazoDias, ciclo); }
     catch (e) { return res.status(400).json({ error: 'No se pudieron generar los periodos del ciclo: ' + e.message }); }
+  }
+
+  // --- O2: PLAN DE AMORTIZACIÓN del anticipo (art. 143 fr. I RLOPSRM; plan EDITABLE pedido
+  // por el profe, revisión 09-jun). Solo aplica con anticipo > 0 Y periodos generados (el plan
+  // es por periodo del ciclo). Si el cliente NO manda plan (p. ej. contratos creados por API),
+  // se DERIVA el default PROPORCIONAL (mismo default que precarga el alta) — retrocompatible.
+  // Invariante: Σ montos = ROUND(monto × anticipoPct/100, 2) al CENTAVO. La carátula (G2) NO
+  // usa este plan todavía: [Fase B pendiente de validar con el profe].
+  const r2plan = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+  const montoAnticipoPlan = anticipoPct !== null && anticipoPct > 0 ? r2plan(Number(monto) * anticipoPct / 100) : 0;
+  const planRaw = Array.isArray(body.planAmortizacion) ? body.planAmortizacion : null;
+  const planFilas = [];
+  if (montoAnticipoPlan > 0 && periodos.length > 0) {
+    if (planRaw && planRaw.length > 0) {
+      const vistos = new Set();
+      let suma = 0;
+      for (const [i, fila] of planRaw.entries()) {
+        const pnum = Number(fila.periodoNumero);
+        const m = numOrNull(fila.monto);
+        if (!Number.isInteger(pnum) || pnum < 1 || pnum > periodos.length) {
+          return res.status(400).json({ error: `Plan de amortización #${i + 1}: periodo ${fila.periodoNumero} fuera de rango (1..${periodos.length})` });
+        }
+        if (vistos.has(pnum)) return res.status(400).json({ error: `Plan de amortización: el periodo ${pnum} está repetido` });
+        vistos.add(pnum);
+        if (m === null || m < 0) return res.status(400).json({ error: `Plan de amortización #${i + 1}: el monto no puede ser negativo` });
+        suma = r2plan(suma + m);
+        planFilas.push({ periodoNumero: pnum, monto: m });
+      }
+      if (suma !== montoAnticipoPlan) {
+        return res.status(400).json({ error: `El plan de amortización debe sumar exactamente el anticipo ($${montoAnticipoPlan.toFixed(2)}); suma $${suma.toFixed(2)} (art. 143 RLOPSRM)` });
+      }
+    } else {
+      // Default PROPORCIONAL al centavo: n−1 cuotas iguales + ajuste de redondeo en la última.
+      const n = periodos.length;
+      const cuota = r2plan(montoAnticipoPlan / n);
+      let acum = 0;
+      for (let k = 1; k <= n; k++) {
+        const m = k < n ? cuota : r2plan(montoAnticipoPlan - acum);
+        acum = r2plan(acum + m);
+        planFilas.push({ periodoNumero: k, monto: m });
+      }
+    }
   }
 
   // Personas del contrato, ligadas a CUENTAS (corrección profe 04-jun: nada de texto libre):
@@ -353,6 +405,15 @@ async function crearContrato(req, res) {
         await guardarMatriz(client, contratoId, celdas);
       }
 
+      // O2: plan de amortización del anticipo (Fase A: solo captura/lectura; la carátula G2
+      // sigue amortizando PROPORCIONAL — [Fase B pendiente de validar con el profe]).
+      for (const f of planFilas) {
+        await client.query(
+          'INSERT INTO plan_amortizacion (contrato_id, periodo_numero, monto) VALUES ($1,$2,$3)',
+          [contratoId, f.periodoNumero, f.monto]
+        );
+      }
+
       await client.query('COMMIT');
       return res.status(201).json({ id: contratoId, folio });
     } catch (e) {
@@ -434,15 +495,23 @@ async function detalleContrato(req, res) {
       return res.status(404).json({ error: 'Contrato no encontrado' });
     }
 
+    // O3: + empresa de cada persona del equipo (catálogo) para mostrarla en el expediente.
+    // Aditivo (los *_empresa pueden venir NULL); no altera c.* ni el acceso.
     const result = await pool.query(
       `SELECT c.*,
               ru.nombre AS residente_nombre,
               su.nombre AS superintendente_nombre,
-              sv.nombre AS supervision_nombre
+              sv.nombre AS supervision_nombre,
+              re.nombre AS residente_empresa,
+              se.nombre AS superintendente_empresa,
+              ve.nombre AS supervision_empresa
          FROM contratos c
          LEFT JOIN usuarios ru ON ru.id = c.residente_id
          LEFT JOIN usuarios su ON su.id = c.superintendente_id
          LEFT JOIN usuarios sv ON sv.id = c.supervision_id
+         LEFT JOIN empresas re ON re.id = ru.empresa_id
+         LEFT JOIN empresas se ON se.id = su.empresa_id
+         LEFT JOIN empresas ve ON ve.id = sv.empresa_id
         WHERE c.id = $1`,
       [id]
     );

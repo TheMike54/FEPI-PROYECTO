@@ -1,5 +1,4 @@
-import { useState } from 'react';
-import Header from '../components/layout/Header.jsx';
+import { useState, useEffect } from 'react';
 import { ROLES } from '../data/permisos.js';
 import { useSesion } from '../context/SesionContext.jsx';
 import { api } from '../services/api.js';
@@ -44,7 +43,7 @@ function FormLogin({ onIrRegistro, mensaje, setMensaje }) {
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-md p-8 mb-8">
+    <div className="bg-white rounded-lg border border-borde shadow-sm p-8 mb-8">
       <h2 className="text-lg font-semibold text-slate-800 mb-4 text-center">
         Iniciar sesión
       </h2>
@@ -99,6 +98,10 @@ function FormLogin({ onIrRegistro, mensaje, setMensaje }) {
 // (art. 123 RLOPSRM); se exige ≥2 palabras. Espejo de la validación del backend (auth.controller).
 const esNombreCompleto = (n) => (String(n || '').trim().match(/\p{L}{2,}/gu) || []).length >= 2;
 
+// O3: normalización de nombre de empresa, ESPEJO del backend (lower + trim + colapsa espacios).
+// Sirve para saber si lo tecleado YA está en el catálogo (y decidir si confirmar alta nueva).
+const normEmpresa = (s) => String(s || '').trim().replace(/\s+/g, ' ').toLowerCase();
+
 function FormRegistro({ onIrLogin, setMensaje }) {
   // Plan2 Pase3: el nombre se captura en DOS campos OBLIGATORIOS (nombre[s] + apellido[s]) y se
   // CONCATENAN al enviar; la columna `nombre` (fuente única) y todos los lugares que la muestran
@@ -109,8 +112,17 @@ function FormRegistro({ onIrLogin, setMensaje }) {
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
   const [rolSolicitado, setRolSolicitado] = useState(ROLES[0].id);
+  // O3: empresa de la persona (catálogo del profe). `empresas` = catálogo para el autocomplete.
+  const [empresa, setEmpresa] = useState('');
+  const [empresas, setEmpresas] = useState([]);
   const [loading, setLoading] = useState(false);
   const [errorLocal, setErrorLocal] = useState(null);
+
+  // Carga el catálogo de empresas (público) para el datalist. Falla en silencio (sin catálogo
+  // se puede teclear igual: el backend la da de alta).
+  useEffect(() => {
+    api.listarEmpresas().then((l) => setEmpresas(Array.isArray(l) ? l : [])).catch(() => setEmpresas([]));
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -143,10 +155,19 @@ function FormRegistro({ onIrLogin, setMensaje }) {
       setErrorLocal('Las contraseñas no coinciden.');
       return;
     }
+    // O3: si tecleó una empresa que NO está en el catálogo, confirmar el alta automática
+    // (principio del profe: "el primero la registra, el siguiente la elige"). Vacío = sin empresa.
+    const empresaTrim = empresa.trim().replace(/\s+/g, ' ');
+    if (empresaTrim) {
+      const existe = empresas.some((e) => normEmpresa(e.nombre) === normEmpresa(empresaTrim));
+      if (!existe && !window.confirm(`"${empresaTrim}" no está en el catálogo. ¿Registrarla como nueva empresa?`)) {
+        return;
+      }
+    }
 
     setLoading(true);
     try {
-      await api.register({ nombre, email: email.trim(), password, rolSolicitado });
+      await api.register({ nombre, email: email.trim(), password, rolSolicitado, empresa: empresaTrim });
       // Vuelve al login mostrando el mensaje de cuenta pendiente.
       setMensaje({
         tipo: 'exito',
@@ -161,7 +182,7 @@ function FormRegistro({ onIrLogin, setMensaje }) {
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-md p-8 mb-8">
+    <div className="bg-white rounded-lg border border-borde shadow-sm p-8 mb-8">
       <h2 className="text-lg font-semibold text-slate-800 mb-1 text-center">
         Crear cuenta
       </h2>
@@ -232,6 +253,28 @@ function FormRegistro({ onIrLogin, setMensaje }) {
             Informativo: la dependencia confirma el rol definitivo al aprobar.
           </p>
         </div>
+        {/* O3: empresa de la persona (catálogo del profe). Autocomplete con <datalist>: si la
+            empresa ya existe se ELIGE; si es nueva, el backend la da de alta (se confirma al enviar). */}
+        <div>
+          <label className="sg-label" htmlFor="reg-empresa">Empresa (opcional)</label>
+          <input
+            id="reg-empresa"
+            data-testid="reg-empresa"
+            type="text"
+            list="reg-empresas-lista"
+            className="sg-input"
+            placeholder="Escribe o elige tu empresa"
+            value={empresa}
+            onChange={(e) => setEmpresa(e.target.value)}
+            disabled={loading}
+          />
+          <datalist id="reg-empresas-lista">
+            {empresas.map((e) => <option key={e.id} value={e.nombre} />)}
+          </datalist>
+          <p className="text-xs text-slate-500 mt-1">
+            Si no está en la lista, se registra como empresa nueva (catálogo: la primera vez se da de alta).
+          </p>
+        </div>
         <div>
           <label className="sg-label" htmlFor="reg-password">Contraseña (mín. 8 caracteres)</label>
           <input
@@ -279,22 +322,26 @@ function FormRegistro({ onIrLogin, setMensaje }) {
   );
 }
 
+// UI-1 (10-jun): pantalla PREVIA al shell — limpia, sin barra de navegación, identidad
+// guinda institucional (franja superior guinda con filo dorado). Los formularios (ids,
+// data-testid y textos asercionados por la suite) quedan INTACTOS.
 export default function SeleccionRol() {
   const [vista, setVista] = useState('login'); // 'login' | 'registro'
   const [mensaje, setMensaje] = useState(null);
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50">
-      <Header />
+    <div className="min-h-screen flex flex-col bg-pagina">
+      {/* Franja de identidad: guinda con filo dorado (mismo sello que la barra del shell). */}
+      <div className="h-2 bg-guinda border-b-[3px] border-dorado flex-shrink-0" />
       <main className="flex-1 overflow-y-auto">
-        <div className="max-w-2xl mx-auto px-6 py-10">
+        <div className="max-w-md mx-auto px-6 py-12">
           {/* Logo + nombre del sistema */}
           <div className="text-center mb-8">
-            <div className="w-16 h-16 rounded-xl bg-sigecop-blue text-white flex items-center justify-center font-extrabold text-3xl mx-auto mb-3 shadow-md">
+            <div className="w-14 h-14 rounded-lg bg-guinda text-white flex items-center justify-center font-extrabold text-2xl mx-auto mb-4">
               S
             </div>
-            <h1 className="font-serif text-3xl font-bold text-sigecop-blue">SIGECOP</h1>
-            <p className="text-xs text-slate-500 mt-1 leading-tight">
+            <h1 className="text-2xl font-semibold text-guinda tracking-wide">SIGECOP</h1>
+            <p className="text-xs text-tinta-sec mt-1 leading-tight">
               Sistema de Gestión Técnico-Administrativa<br />de Contratos de Obra Pública
             </p>
           </div>

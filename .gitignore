@@ -75,6 +75,8 @@ Cuentas_Prueba_SIGECOP.md
 
 # Respaldos locales de base de datos
 render_backup_*.sql
+backend/backups/
+*.dump
 
 # Respaldos de las Historias de Usuario
 *_BACKUP_*.xlsx

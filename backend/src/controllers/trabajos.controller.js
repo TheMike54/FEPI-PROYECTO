@@ -1,30 +1,29 @@
-// HU-06 (Equipo 2): registro de TRABAJOS TERMINADOS (avance ejecutado por concepto).
-// Cada captura es una cantidad EJECUTADA imputada a un concepto del catálogo, a un
-// periodo del programa (derivado de la fecha) y respaldada por una nota de bitácora
-// tipo `avance`. Alimenta la curva ejecutada (HU-05).
+// HU-06 (Equipo 2 → O4 v2, 10-jun): registro de TRABAJOS TERMINADOS (avance ejecutado por concepto).
+// Cada captura es una cantidad EJECUTADA imputada a un PERIODO del programa (SELECTOR, ya no la
+// fecha libre — P14 del profe) y respaldada por una NOTA AUTOMÁTICA de bitácora tipo `avance`.
+// Alimenta la curva ejecutada (HU-05).
 //
-// Reglas de dominio:
-// - art. 118 RLOPSRM (BLOQUEO DURO, 409): por concepto, Σ cantidad ejecutada ≤ lo
-//   contratado (contrato_conceptos.cantidad). Es CRUCE DE FILAS → se valida aquí, igual
-//   que HU-12 valida el exceso de la estimación.
-// - Exceso vs programa de obra por periodo (art. 45 ap. A fr. X RLOPSRM + art. 52
-//   LOPSRM): NO bloquea, se devuelve como ALERTA en la respuesta (decisión Etapa 1).
-// - Nota REQUERIDA cuando cantidad > 0: debe ser una bitacora_notas que cuelgue de la
-//   bitácora de ESTE contrato y de tipo `avance` (art. 125 fr. II). Si falta o no cumple
-//   → 400.
-// - Captura EDITABLE (POST/PATCH/DELETE): no append-only; cada escritura revalida art. 118.
+// Reglas de dominio (O4):
+// - art. 118 RLOPSRM (BLOQUEO DURO, 409): por concepto, Σ cantidad ejecutada ≤ lo contratado
+//   (contrato_conceptos.cantidad). CRUCE DE FILAS. NO se toca: es el candado total.
+// - Programa VIGENTE por periodo (P14, art. 45-A-X RLOPSRM + art. 52 LOPSRM) — AHORA BLOQUEA (antes
+//   alertaba): ejecutado_acumulado(≤ periodo sel) + nuevo ≤ programado_acumulado(≤ periodo sel),
+//   computado sobre programa_obra (= el programa VIGENTE: los convenios lo reescriben en vivo vía
+//   guardarMatriz, así que un convenio que adelantó volumen lo permite solo). Mensajes: "concepto
+//   no programado en el periodo" / "excede lo programado del periodo — requiere convenio (art. 59)".
+//   Solo aplica si el contrato TIENE programa (matriz); sin programa, solo rige art. 118.
+//   [validar profe] si prefiere AVISO en vez de bloqueo.
+// - NOTA AUTOMÁTICA (P14: "el aviso es a través de una nota"): el registro GENERA su nota de bitácora
+//   tipo `avance` (insertarNotaAtomica, folio atómico) y la liga (nota_id). DIFERIDO si no hay bitácora
+//   abierta (se asienta sola al abrirla — abrirBitacora). Emisor = quien registra (contratista) [validar].
+// - Captura EDITABLE (POST/PATCH/DELETE): no append-only; cada escritura revalida art. 118 + periodo.
 // - registrado_por SIEMPRE sale del JWT (req.user.id), nunca del body.
-// - Acotamiento: el contrato llega vía el concepto; acceso por participación
-//   (esParteOSupervision). El rol contratista (escritura) lo exige el router.
+// - Acotamiento: el contrato llega vía el concepto; acceso por participación (esParteOSupervision).
+//   El rol contratista (escritura) lo exige el router.
 const { pool } = require('../db/pool');
 const { esParteOSupervision } = require('../lib/acceso');
-
-const PATRON_FECHA = /^\d{4}-\d{2}-\d{2}$/;
-function fechaValida(s) {
-  if (typeof s !== 'string' || !PATRON_FECHA.test(s)) return false;
-  const d = new Date(s + 'T00:00:00Z');
-  return !Number.isNaN(d.getTime());
-}
+// O4: nota automática de avance (folio atómico + texto), reutilizada del controller de bitácora.
+const { insertarNotaAtomica, textoNotaAvance } = require('./bitacora.controller');
 // Cuantiza a 3 decimales = escala REAL de concepto_avance.cantidad (NUMERIC(14,3)) y del
 // catálogo (contrato_conceptos.cantidad). Validar/insertar sobre EXACTAMENTE el valor que
 // se persiste evita que >3 decimales descuadren el art. 118.
@@ -34,11 +33,12 @@ function q3(n) { return Math.round((Number(n) + Number.EPSILON) * 1e3) / 1e3; }
 // que estimaciones.controller.
 const EPS_CANT = 1e-6;
 
-// Carga concepto + el equipo del contrato (para auth) desde un contrato_concepto_id.
+// Carga concepto (+ unidad) + el equipo del contrato (para auth) desde un contrato_concepto_id.
 // null si el concepto no existe.
 async function cargarConceptoContrato(client, conceptoId) {
   const r = await client.query(
-    `SELECT cc.id AS concepto_id, cc.contrato_id, cc.concepto, cc.cantidad AS cantidad_contratada,
+    `SELECT cc.id AS concepto_id, cc.contrato_id, cc.concepto, cc.unidad,
+            cc.cantidad AS cantidad_contratada,
             c.created_by, c.residente_id, c.superintendente_id, c.supervision_id
        FROM contrato_conceptos cc
        JOIN contratos c ON c.id = cc.contrato_id
@@ -48,33 +48,18 @@ async function cargarConceptoContrato(client, conceptoId) {
   return r.rowCount ? r.rows[0] : null;
 }
 
-// El periodo del programa cuyo [inicio, fin] contiene la fecha (art. 54: mosaico contiguo
-// sin solapes → a lo sumo uno). Devuelve la fila {id, numero, fin} o null si ninguno aplica.
-async function derivarPeriodo(client, contratoId, fecha) {
+// O4: el periodo del programa por NÚMERO (el SELECTOR, ya no la fecha). Devuelve {id, numero,
+// inicio, fin} o null si el contrato no tiene ese periodo.
+async function cargarPeriodoPorNumero(client, contratoId, numero) {
   const r = await client.query(
-    `SELECT id, numero, fin FROM contrato_periodos
-      WHERE contrato_id = $1 AND inicio <= $2::date AND fin >= $2::date
-      ORDER BY numero LIMIT 1`,
-    [contratoId, fecha]
+    'SELECT id, numero, inicio, fin FROM contrato_periodos WHERE contrato_id = $1 AND numero = $2',
+    [contratoId, numero]
   );
   return r.rowCount ? r.rows[0] : null;
 }
 
-// Valida que nota_id sea una nota de la bitácora del contrato y de tipo `avance` (no
-// anulada). Devuelve true/false. (La nota de tipo `avance` es la EXISTENTE del catálogo
-// art. 125; no se crea ningún tipo nuevo.)
-async function notaAvanceValida(client, contratoId, notaId) {
-  const r = await client.query(
-    `SELECT 1 FROM bitacora_notas bn
-       JOIN bitacora_aperturas ba ON ba.id = bn.bitacora_id
-      WHERE ba.contrato_id = $1 AND bn.id = $2 AND bn.tipo = 'avance' AND bn.estado <> 'anulada'`,
-    [contratoId, notaId]
-  );
-  return r.rowCount > 0;
-}
-
-// Σ cantidad ejecutada por concepto, EXCLUYENDO opcionalmente una entrada (su id) — para
-// que el PATCH no se cuente a sí mismo en la revalidación del art. 118.
+// Σ cantidad ejecutada por concepto (TOTAL, todos los periodos), EXCLUYENDO opcionalmente una
+// entrada (su id) — para el candado del art. 118 (que el PATCH no se cuente a sí mismo).
 async function acumuladoEjecutado(client, conceptoId, excluirId) {
   const r = await client.query(
     `SELECT COALESCE(SUM(cantidad), 0) AS acum
@@ -85,50 +70,54 @@ async function acumuladoEjecutado(client, conceptoId, excluirId) {
   return Number(r.rows[0].acum);
 }
 
-// Alerta A2 (NO bloquea): Σ ejecutado hasta el periodo derivado > Σ planeado (programa_obra)
-// hasta cp.fin. Solo aplica si hay periodo derivado y el contrato tiene programa. Devuelve
-// el objeto de alerta o null. `nuevaCantidad` es la cantidad de ESTA captura; `excluirId`
-// excluye la entrada en edición del acumulado ejecutado previo.
-async function alertaProgramaPeriodo(client, concepto, periodo, nuevaCantidad, excluirId) {
-  if (!periodo) return null;
+// ¿El contrato tiene programa (matriz)? Si no, la validación por periodo no aplica (solo art. 118).
+async function contratoTienePrograma(client, contratoId) {
+  const r = await client.query(
+    `SELECT 1 FROM programa_obra po JOIN contrato_conceptos cc ON cc.id = po.contrato_concepto_id
+      WHERE cc.contrato_id = $1 LIMIT 1`,
+    [contratoId]
+  );
+  return r.rowCount > 0;
+}
+
+// O4 — VALIDACIÓN BLOQUEANTE contra el programa VIGENTE (programa_obra) hasta el periodo
+// seleccionado (P14). programado_acumulado = Σ programa_obra del concepto hasta cp.numero <=
+// periodo.numero (el programa vigente: los convenios lo reescriben en vivo). ejecutado_acumulado
+// = Σ concepto_avance del concepto imputado a periodos hasta el seleccionado (excluyendo `excluirId`).
+// Devuelve { error } (string) si bloquea, o { programadoAcum, ejecutadoAcum } si pasa. NO se llama
+// si el contrato no tiene programa (solo rige art. 118).
+async function validarProgramaPeriodo(client, concepto, periodo, nuevaCantidad, excluirId) {
   const plan = await client.query(
     `SELECT COALESCE(SUM(po.cantidad), 0) AS planeado
        FROM programa_obra po
        JOIN contrato_periodos cp ON cp.id = po.contrato_periodo_id
-      WHERE po.contrato_concepto_id = $1 AND cp.fin <= $2::date`,
-    [concepto.concepto_id, periodo.fin]
+      WHERE po.contrato_concepto_id = $1 AND cp.numero <= $2`,
+    [concepto.concepto_id, periodo.numero]
   );
-  // Sin programa para este concepto → no hay curva planeada que comparar.
-  if (Number(plan.rows[0].planeado) === 0) {
-    const existe = await client.query(
-      'SELECT 1 FROM programa_obra WHERE contrato_concepto_id = $1 LIMIT 1',
-      [concepto.concepto_id]
-    );
-    if (existe.rowCount === 0) return null;
+  const programadoAcum = Number(plan.rows[0].planeado);
+  // "concepto no programado en este periodo": no hay volumen autorizado del concepto hasta aquí.
+  if (programadoAcum <= EPS_CANT) {
+    return { error: `El concepto "${concepto.concepto}" no está programado en el periodo ${periodo.numero} (ni antes). Para ejecutarlo aquí se requiere un convenio modificatorio (art. 59 LOPSRM).` };
   }
-  const planeado = Number(plan.rows[0].planeado);
-  // Σ ejecutado de las OTRAS entradas imputadas a periodos hasta cp.fin + esta captura.
   const ejec = await client.query(
     `SELECT COALESCE(SUM(ca.cantidad), 0) AS ejecutado
        FROM concepto_avance ca
        JOIN contrato_periodos cp ON cp.id = ca.contrato_periodo_id
-      WHERE ca.contrato_concepto_id = $1 AND cp.fin <= $2::date
+      WHERE ca.contrato_concepto_id = $1 AND cp.numero <= $2
         AND ($3::int IS NULL OR ca.id <> $3::int)`,
-    [concepto.concepto_id, periodo.fin, excluirId ?? null]
+    [concepto.concepto_id, periodo.numero, excluirId ?? null]
   );
-  const ejecutado = Number(ejec.rows[0].ejecutado) + Number(nuevaCantidad);
-  if (ejecutado > planeado + EPS_CANT) {
-    return {
-      tipo: 'periodo_excede_programa',
-      contrato_concepto_id: concepto.concepto_id,
-      concepto: concepto.concepto,
-      periodo_numero: periodo.numero,
-      ejecutado,
-      planeado,
-      mensaje: `El avance acumulado hasta el periodo ${periodo.numero} (${ejecutado}) supera lo PLANEADO en el programa (${planeado}) para "${concepto.concepto}" — revisar curva S (art. 45 ap. A fr. X RLOPSRM + art. 52 LOPSRM).`
-    };
+  const ejecutadoAcum = Number(ejec.rows[0].ejecutado);
+  if (ejecutadoAcum + Number(nuevaCantidad) > programadoAcum + EPS_CANT) {
+    return { error: `Excede lo programado del periodo ${periodo.numero} para "${concepto.concepto}": ejecutado acumulado ${ejecutadoAcum} + ${nuevaCantidad} supera lo programado ${programadoAcum}. Para adelantar volumen se requiere un convenio modificatorio (art. 59 LOPSRM).` };
   }
-  return null;
+  return { programadoAcum, ejecutadoAcum };
+}
+
+// O4 — id de la bitácora ABIERTA del contrato (o null si aún no se apertura).
+async function bitacoraAbiertaId(client, contratoId) {
+  const r = await client.query('SELECT id FROM bitacora_aperturas WHERE contrato_id = $1', [contratoId]);
+  return r.rowCount ? r.rows[0].id : null;
 }
 
 // GET /api/trabajos/contrato/:contratoId — por concepto: contratada + acumulado ejecutado;
@@ -229,13 +218,10 @@ async function registrarAvance(req, res) {
     return res.status(400).json({ error: 'cantidad debe ser un número mayor o igual a 0' });
   }
   const cantidad = q3(cantRaw);
-  if (!fechaValida(body.fecha)) {
-    return res.status(400).json({ error: 'fecha es requerida (AAAA-MM-DD)' });
-  }
-  const notaId = (body.nota_id === undefined || body.nota_id === null || body.nota_id === '')
-    ? null : Number(body.nota_id);
-  if (notaId !== null && (!Number.isInteger(notaId) || notaId <= 0)) {
-    return res.status(400).json({ error: 'nota_id inválido' });
+  // O4: el periodo se SELECCIONA (ya no se deriva de una fecha libre). periodo_numero requerido.
+  const periodoNumero = Number(body.periodo_numero);
+  if (!Number.isInteger(periodoNumero) || periodoNumero <= 0) {
+    return res.status(400).json({ error: 'periodo_numero es requerido (selecciona el periodo del programa)' });
   }
   const observaciones = typeof body.observaciones === 'string' ? body.observaciones.trim() || null : null;
 
@@ -257,40 +243,65 @@ async function registrarAvance(req, res) {
         return res.status(403).json({ error: 'No tienes acceso a este contrato' });
       }
 
-      // Nota REQUERIDA si cantidad > 0: debe colgar de la bitácora del contrato y ser tipo `avance`.
-      if (cantidad > 0) {
-        if (notaId === null) {
-          await client.query('ROLLBACK');
-          return res.status(400).json({ error: 'Se requiere una nota de bitácora tipo `avance` cuando la cantidad es mayor a 0 (art. 125 fr. II)' });
-        }
-        if (!(await notaAvanceValida(client, concepto.contrato_id, notaId))) {
-          await client.query('ROLLBACK');
-          return res.status(400).json({ error: 'La nota debe ser una nota de la bitácora de este contrato y de tipo `avance` (art. 125 fr. II)' });
-        }
+      // O4: el periodo viene del SELECTOR; debe existir en el programa del contrato.
+      const periodo = await cargarPeriodoPorNumero(client, concepto.contrato_id, periodoNumero);
+      if (!periodo) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: `El periodo ${periodoNumero} no existe en el programa de este contrato` });
       }
 
-      // art. 118 (BLOQUEO): Σ ejecutado por concepto + esta cantidad ≤ contratado.
+      // O4 — VALIDACIÓN BLOQUEANTE contra el programa VIGENTE por periodo (P14). Solo si el contrato
+      // tiene programa (matriz); sin programa, solo rige art. 118 (abajo). Mensajes: no programado /
+      // excede lo programado del periodo (art. 59). Es ADEMÁS del art. 118.
+      if (cantidad > 0 && await contratoTienePrograma(client, concepto.contrato_id)) {
+        const vp = await validarProgramaPeriodo(client, concepto, periodo, cantidad, null);
+        if (vp.error) { await client.query('ROLLBACK'); return res.status(409).json({ error: vp.error }); }
+      }
+
+      // art. 118 (BLOQUEO, NO se toca): Σ ejecutado TOTAL por concepto + esta cantidad ≤ contratado.
       const acum = await acumuladoEjecutado(client, conceptoId, null);
       if (acum + cantidad > Number(concepto.cantidad_contratada) + EPS_CANT) {
         await client.query('ROLLBACK');
         return res.status(409).json({ error: `Excede lo contratado (art. 118 RLOPSRM) en: ${concepto.concepto}` });
       }
 
-      // Periodo derivado de la fecha (null si ninguno la contiene).
-      const periodo = await derivarPeriodo(client, concepto.contrato_id, body.fecha);
-      // Alerta A2 por periodo (NO bloquea).
-      const alerta = await alertaProgramaPeriodo(client, concepto, periodo, cantidad, null);
+      // O4 — NOTA AUTOMÁTICA de avance (folio atómico). Si hay bitácora abierta y cantidad>0, se
+      // asienta aquí (mismo BEGIN/COMMIT); si NO hay bitácora, se DIFIERE (nota_id NULL) y se asentará
+      // sola al abrir la bitácora (abrirBitacora). Emisor = quien registra (contratista) [validar].
+      // La fecha del avance se fija al CIERRE del periodo (la curva HU-05 usa fecha + contrato_periodo_id).
+      let notaId = null;
+      let notaCreada = null;
+      if (cantidad > 0) {
+        const bitId = await bitacoraAbiertaId(client, concepto.contrato_id);
+        if (bitId) {
+          const { asunto, contenido } = textoNotaAvance({
+            concepto: concepto.concepto, unidad: concepto.unidad, cantidad,
+            periodoNumero: periodo.numero, diferida: false
+          });
+          notaCreada = await insertarNotaAtomica(client, {
+            bitacoraId: bitId, tipo: 'avance', asunto, contenido, emisorId: req.user.id, tag: 'avance'
+          });
+          notaId = notaCreada.id;
+        }
+      }
 
       const ins = await client.query(
         `INSERT INTO concepto_avance
            (contrato_concepto_id, contrato_periodo_id, nota_id, cantidad, fecha, observaciones, registrado_por)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          RETURNING id, contrato_concepto_id, contrato_periodo_id, nota_id, cantidad, fecha, observaciones, registrado_por`,
-        [conceptoId, periodo ? periodo.id : null, notaId, cantidad, body.fecha, observaciones, req.user.id]
+        [conceptoId, periodo.id, notaId, cantidad, periodo.fin, observaciones, req.user.id]
       );
 
       await client.query('COMMIT');
-      return res.status(201).json({ avance: ins.rows[0], alertas: alerta ? [alerta] : [] });
+      // nota_diferida: hubo avance real pero aún no hay bitácora → la nota se asienta al abrir.
+      const notaDiferida = cantidad > 0 && notaId === null;
+      return res.status(201).json({
+        avance: ins.rows[0],
+        nota: notaCreada ? { id: notaCreada.id, numero: notaCreada.numero, tipo: notaCreada.tipo } : null,
+        nota_diferida: notaDiferida,
+        aviso: notaDiferida ? 'El avance quedó registrado; su nota de bitácora se asentará automáticamente al abrir la bitácora.' : null
+      });
     } catch (e) {
       try { await client.query('ROLLBACK'); } catch (_) { /* el client pudo morir */ }
       throw e;
@@ -303,9 +314,10 @@ async function registrarAvance(req, res) {
   }
 }
 
-// PATCH /api/trabajos/:id — edita cantidad / nota / observaciones de una entrada.
-// Revalida art. 118 (excluyéndose a sí misma) y recalcula la alerta A2. La fecha (y por
-// tanto el periodo) NO cambia.
+// PATCH /api/trabajos/:id — edita cantidad / observaciones de una entrada. Revalida art. 118
+// (excluyéndose) y la validación de periodo (bloqueante, como el POST). El PERIODO no cambia.
+// O4: la nota es AUTOMÁTICA y de sistema (no se edita aquí); la nota original queda como el
+// asiento del registro inicial (editar la cantidad no la regenera — limitación documentada).
 async function actualizarAvance(req, res) {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'id inválido' });
@@ -348,58 +360,37 @@ async function actualizarAvance(req, res) {
         cantidad = q3(cantRaw);
       }
 
-      // nota_id final (la nueva si la clave viene en el body; si no, la actual).
-      let notaId = actual.nota_id;
-      if ('nota_id' in body) {
-        notaId = (body.nota_id === null || body.nota_id === '') ? null : Number(body.nota_id);
-        if (notaId !== null && (!Number.isInteger(notaId) || notaId <= 0)) {
-          await client.query('ROLLBACK');
-          return res.status(400).json({ error: 'nota_id inválido' });
-        }
-      }
-
       // observaciones final.
       let observaciones = actual.observaciones;
       if ('observaciones' in body) {
         observaciones = typeof body.observaciones === 'string' ? body.observaciones.trim() || null : null;
       }
 
-      // Nota REQUERIDA si la cantidad final > 0: debe ser válida (bitácora del contrato, tipo `avance`).
-      if (cantidad > 0) {
-        if (notaId === null) {
-          await client.query('ROLLBACK');
-          return res.status(400).json({ error: 'Se requiere una nota de bitácora tipo `avance` cuando la cantidad es mayor a 0 (art. 125 fr. II)' });
-        }
-        if (!(await notaAvanceValida(client, concepto.contrato_id, notaId))) {
-          await client.query('ROLLBACK');
-          return res.status(400).json({ error: 'La nota debe ser una nota de la bitácora de este contrato y de tipo `avance` (art. 125 fr. II)' });
+      // O4: validación de periodo BLOQUEANTE (periodo intacto, el guardado), igual que el POST.
+      if (cantidad > 0 && actual.contrato_periodo_id && await contratoTienePrograma(client, concepto.contrato_id)) {
+        const pr = await client.query('SELECT id, numero, inicio, fin FROM contrato_periodos WHERE id = $1', [actual.contrato_periodo_id]);
+        if (pr.rowCount) {
+          const vp = await validarProgramaPeriodo(client, concepto, pr.rows[0], cantidad, id);
+          if (vp.error) { await client.query('ROLLBACK'); return res.status(409).json({ error: vp.error }); }
         }
       }
 
-      // art. 118 (BLOQUEO): Σ ejecutado por concepto (excluyéndose) + cantidad final ≤ contratado.
+      // art. 118 (BLOQUEO, NO se toca): Σ ejecutado por concepto (excluyéndose) + cantidad ≤ contratado.
       const acum = await acumuladoEjecutado(client, actual.contrato_concepto_id, id);
       if (acum + cantidad > Number(concepto.cantidad_contratada) + EPS_CANT) {
         await client.query('ROLLBACK');
         return res.status(409).json({ error: `Excede lo contratado (art. 118 RLOPSRM) en: ${concepto.concepto}` });
       }
 
-      // Alerta A2 por periodo (periodo intacto: el guardado). NO bloquea.
-      let periodo = null;
-      if (actual.contrato_periodo_id) {
-        const pr = await client.query('SELECT id, numero, fin FROM contrato_periodos WHERE id = $1', [actual.contrato_periodo_id]);
-        periodo = pr.rowCount ? pr.rows[0] : null;
-      }
-      const alerta = await alertaProgramaPeriodo(client, concepto, periodo, cantidad, id);
-
       const upd = await client.query(
-        `UPDATE concepto_avance SET cantidad = $2, nota_id = $3, observaciones = $4
+        `UPDATE concepto_avance SET cantidad = $2, observaciones = $3
           WHERE id = $1
          RETURNING id, contrato_concepto_id, contrato_periodo_id, nota_id, cantidad, fecha, observaciones, registrado_por`,
-        [id, cantidad, notaId, observaciones]
+        [id, cantidad, observaciones]
       );
 
       await client.query('COMMIT');
-      return res.status(200).json({ avance: upd.rows[0], alertas: alerta ? [alerta] : [] });
+      return res.status(200).json({ avance: upd.rows[0] });
     } catch (e) {
       try { await client.query('ROLLBACK'); } catch (_) { /* el client pudo morir */ }
       throw e;

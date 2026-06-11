@@ -1353,10 +1353,43 @@ CREATE TABLE IF NOT EXISTS convenios_modificatorios (
 );
 CREATE INDEX IF NOT EXISTS idx_convenios_contrato ON convenios_modificatorios(contrato_id);
 
--- Inmutabilidad: un convenio registrado es un evento formal append-only (como notas/pagos).
+-- O6 (10-jun): NOTA de bitácora del convenio (asiento automático, art. 123 fr. III / 125 fr. I
+-- RLOPSRM: el convenio modificatorio es un hecho relevante que se asienta en la bitácora). Aditivo e
+-- idempotente. ON DELETE NO ACTION (la nota es inmutable; mismo idioma que concepto_avance.nota_id):
+-- la nota solo muere por la cascada del contrato. Se LIGA en el INSERT (nota en vivo, sin UPDATE) o,
+-- si no había bitácora al registrar, se DIFIERE (nota_id NULL) y se liga al abrir la bitácora — esa
+-- es la ÚNICA transición que el trigger de inmutabilidad permite (abajo).
+ALTER TABLE convenios_modificatorios ADD COLUMN IF NOT EXISTS nota_id INTEGER REFERENCES bitacora_notas(id) ON DELETE NO ACTION;
+CREATE INDEX IF NOT EXISTS idx_convenios_nota ON convenios_modificatorios(nota_id);
+
+-- Inmutabilidad: un convenio registrado es un evento formal append-only (como notas/pagos). O6:
+-- identidad CONGELADA; SOLO se permite LIGAR la nota de bitácora una vez (nota_id NULL→valor), el
+-- asiento DIFERIDO al abrir la bitácora (mismo idioma de transición controlada que programa_version).
 CREATE OR REPLACE FUNCTION sigecop_convenio_inmutable() RETURNS trigger AS $func$
 BEGIN
-  RAISE EXCEPTION 'Un convenio modificatorio registrado es inalterable (art. 59 LOPSRM / art. 99 RLOPSRM)';
+  IF NEW.contrato_id            IS DISTINCT FROM OLD.contrato_id
+     OR NEW.numero              IS DISTINCT FROM OLD.numero
+     OR NEW.folio               IS DISTINCT FROM OLD.folio
+     OR NEW.tipo                IS DISTINCT FROM OLD.tipo
+     OR NEW.fundamento          IS DISTINCT FROM OLD.fundamento
+     OR NEW.motivo              IS DISTINCT FROM OLD.motivo
+     OR NEW.fecha               IS DISTINCT FROM OLD.fecha
+     OR NEW.monto_anterior      IS DISTINCT FROM OLD.monto_anterior
+     OR NEW.monto_nuevo         IS DISTINCT FROM OLD.monto_nuevo
+     OR NEW.plazo_anterior_dias IS DISTINCT FROM OLD.plazo_anterior_dias
+     OR NEW.plazo_nuevo_dias    IS DISTINCT FROM OLD.plazo_nuevo_dias
+     OR NEW.delta_monto_pct     IS DISTINCT FROM OLD.delta_monto_pct
+     OR NEW.delta_plazo_pct     IS DISTINCT FROM OLD.delta_plazo_pct
+     OR NEW.requiere_revision_sfp  IS DISTINCT FROM OLD.requiere_revision_sfp
+     OR NEW.requiere_ajuste_costos IS DISTINCT FROM OLD.requiere_ajuste_costos
+     OR NEW.autorizado_por      IS DISTINCT FROM OLD.autorizado_por
+     OR NEW.created_at          IS DISTINCT FROM OLD.created_at THEN
+    RAISE EXCEPTION 'Un convenio modificatorio registrado es inalterable (art. 59 LOPSRM / art. 99 RLOPSRM)';
+  END IF;
+  IF OLD.nota_id IS NOT NULL THEN
+    RAISE EXCEPTION 'El convenio ya tiene su nota de bitácora ligada; el vínculo es inmutable';
+  END IF;
+  RETURN NEW;  -- permite SOLO nota_id NULL→valor (asiento diferido al abrir la bitácora)
 END;
 $func$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS trg_convenio_inmutable ON convenios_modificatorios;
@@ -1459,3 +1492,74 @@ CREATE INDEX IF NOT EXISTS idx_garantia_endosos_convenio ON garantia_endosos(con
 -- 'pagada' los enforza el controller (pagos.controller.js).
 -- =====================================================================
 CREATE UNIQUE INDEX IF NOT EXISTS uq_pagos_estimacion ON pagos(estimacion_id) WHERE estimacion_id IS NOT NULL;
+
+-- =====================================================================
+-- OLEADA O2 (10-jun-2026) — PLAN DE AMORTIZACIÓN DEL ANTICIPO (criterio de HU-01,
+-- pedido del profe en la revisión del 8-9 jun). El anticipo se amortiza con cargo a las
+-- estimaciones (art. 143 fr. I RLOPSRM, que indica "proporcionalmente"); el profe pidió un
+-- plan EDITABLE por periodo: "no hay límites — puede amortizar todo en el primer pago o
+-- repartido". FASE A: el plan se CAPTURA en el alta (default proporcional) y se CONSULTA
+-- en el expediente. La carátula (G2, estimaciones.controller) NO cambia: sigue amortizando
+-- proporcional. [Fase B pendiente de validar con el profe]: que G2 use plan[periodo].
+-- Invariante (la enforza crearContrato, transaccional): Σ monto = anticipo del contrato
+-- (ROUND(monto × anticipo_pct/100, 2)) al CENTAVO. ADITIVO/IDEMPOTENTE.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS plan_amortizacion (
+  id SERIAL PRIMARY KEY,
+  contrato_id INTEGER NOT NULL REFERENCES contratos(id) ON DELETE CASCADE,
+  periodo_numero INTEGER NOT NULL CHECK (periodo_numero > 0),
+  monto NUMERIC(18,2) NOT NULL CHECK (monto >= 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (contrato_id, periodo_numero)
+);
+CREATE INDEX IF NOT EXISTS idx_plan_amortizacion_contrato ON plan_amortizacion(contrato_id);
+
+-- =====================================================================
+-- OLEADA O3 (10-jun-2026) — CATÁLOGO DE EMPRESAS (pedido fuerte del profe, P1 de la revisión
+-- 8-9 jun): "tú primero das de alta la empresa y luego vinculas… catálogos: es lo de ley". Sin
+-- catálogo cada quien teclea "patito"/"PAT"/"patito SASB" → 3 empresas distintas. Mecánica del
+-- profe: al registrar a una persona se captura su empresa; si no existe, se da de alta AUTOMÁTICA;
+-- el siguiente registro la ELIGE del catálogo. ADITIVO/IDEMPOTENTE. empresa_id viaja en los SELECT
+-- (NO en el JWT). Retrocompatible: empresa_id NULL no rompe nada.
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS empresas (
+  id SERIAL PRIMARY KEY,
+  nombre VARCHAR(200) NOT NULL,
+  creado_en TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+-- UNIQUE NORMALIZADO (case-insensitive + espacios colapsados): "Patito", "PATITO " y "patito  sa"
+-- colisionan por su forma normalizada → mata los duplicados que mencionó el profe. El backend
+-- normaliza con la MISMA expresión (lower(btrim(regexp_replace(...)))) al resolver/crear.
+-- lower/btrim/regexp_replace son IMMUTABLE → válidas en índice funcional.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_empresas_nombre_norm
+  ON empresas (lower(btrim(regexp_replace(nombre, '\s+', ' ', 'g'))));
+
+-- usuarios.empresa_id: a qué empresa pertenece la persona (NULL = sin empresa; retrocompat).
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS empresa_id INTEGER REFERENCES empresas(id);
+CREATE INDEX IF NOT EXISTS idx_usuarios_empresa ON usuarios(empresa_id);
+
+-- SEED de 3 empresas demo. Idempotente vía WHERE NOT EXISTS sobre la forma NORMALIZADA (el
+-- índice es funcional, así que ON CONFLICT requeriría nombrar la expresión; este patrón es más claro).
+INSERT INTO empresas (nombre)
+SELECT v.nombre FROM (VALUES
+  ('Dependencia Demo'),
+  ('Constructora Demo'),
+  ('Supervisión Externa Demo')
+) AS v(nombre)
+WHERE NOT EXISTS (
+  SELECT 1 FROM empresas e
+  WHERE lower(btrim(regexp_replace(e.nombre, '\s+', ' ', 'g')))
+      = lower(btrim(regexp_replace(v.nombre, '\s+', ' ', 'g')))
+);
+
+-- BACKFILL idempotente de las cuentas demo (solo si empresa_id IS NULL → no pisa cambios). El lado
+-- CONTRATANTE (dependencia/residente/finanzas/profe) → Dependencia Demo; el contratista →
+-- Constructora Demo; la supervisión → Supervisión Externa Demo. Así, en el contrato demo, contratista
+-- y supervisión son empresas DISTINTAS (la supervisión es un tercero) → el aviso de "misma empresa"
+-- NO se dispara en el demo. Match por forma NORMALIZADA (robusto ante variantes).
+UPDATE usuarios SET empresa_id = (SELECT id FROM empresas WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g'))) = 'dependencia demo' LIMIT 1)
+  WHERE email IN ('residente@sigecop.test','dependencia@sigecop.test','finanzas@sigecop.test','csilvasa@ipn.mx') AND empresa_id IS NULL;
+UPDATE usuarios SET empresa_id = (SELECT id FROM empresas WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g'))) = 'constructora demo' LIMIT 1)
+  WHERE email = 'contratista@sigecop.test' AND empresa_id IS NULL;
+UPDATE usuarios SET empresa_id = (SELECT id FROM empresas WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g'))) = 'supervisión externa demo' LIMIT 1)
+  WHERE email = 'supervision@sigecop.test' AND empresa_id IS NULL;

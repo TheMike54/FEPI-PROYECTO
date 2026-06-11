@@ -1,6 +1,8 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { query } = require('../db/pool');
+// O3: resolver-o-crear empresa para vincular la persona en el registro (catálogo del profe).
+const { resolverOCrearEmpresa } = require('./empresas.controller');
 
 const ROLES_VALIDOS = ['residente', 'contratista', 'supervision', 'dependencia', 'finanzas'];
 
@@ -65,7 +67,10 @@ async function login(req, res) {
 // es solo el "rol solicitado" (informativo); la dependencia fija el definitivo al aprobar.
 async function register(req, res) {
   try {
-    const { nombre, email, password, rolSolicitado } = req.body || {};
+    // O3: `empresa` (nombre de texto) es OPCIONAL y aditivo — el resto del flujo (login/JWT) no
+    // cambia. Si viene, se resuelve-o-crea en el catálogo y se vincula (empresa_id en el SELECT,
+    // nunca en el token). Si no viene, empresa_id queda NULL (retrocompatible).
+    const { nombre, email, password, rolSolicitado, empresa } = req.body || {};
 
     if (!nombre || !email || !password) {
       return res.status(400).json({ error: 'nombre, email y password son requeridos' });
@@ -85,11 +90,19 @@ async function register(req, res) {
 
     const hash = await bcrypt.hash(password, 10);
 
+    // O3: empresa de la persona (catálogo). Resolver-o-crear ANTES del INSERT del usuario; una
+    // empresa sin usuarios aún es válida, así que no hace falta transacción (si el INSERT del
+    // usuario fallara por email duplicado, la empresa queda disponible para el siguiente registro).
+    let empresaId = null;
+    if (typeof empresa === 'string' && empresa.trim()) {
+      empresaId = await resolverOCrearEmpresa(query, empresa);
+    }
+
     const result = await query(
-      `INSERT INTO usuarios (nombre, email, password_hash, rol, rol_solicitado, estado)
-       VALUES ($1, $2, $3, NULL, $4, 'pendiente')
-       RETURNING id, nombre, email, rol, rol_solicitado, estado, created_at`,
-      [String(nombre).trim(), emailNorm, hash, rolSol]
+      `INSERT INTO usuarios (nombre, email, password_hash, rol, rol_solicitado, estado, empresa_id)
+       VALUES ($1, $2, $3, NULL, $4, 'pendiente', $5)
+       RETURNING id, nombre, email, rol, rol_solicitado, estado, empresa_id, created_at`,
+      [String(nombre).trim(), emailNorm, hash, rolSol, empresaId]
     );
 
     return res.status(201).json({

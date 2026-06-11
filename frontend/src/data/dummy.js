@@ -322,8 +322,8 @@ export const historiasUsuario = [
   },
   {
     codigo: 'HU-07',
-    titulo: 'Configuración de alertas de atraso',
-    descripcion: 'Definir umbrales por concepto del programa y canal de notificación. Las alertas se disparan cuando el avance real cae bajo el umbral.',
+    titulo: 'Atraso por concepto',
+    descripcion: 'Tabla automática de los conceptos con déficit (programado − ejecutado) en unidades, medido al periodo vigente. Sin umbrales; distinto del avance ponderado.',
     sprint: 'Sprint 6',
     icono: '🔔',
     ruta: '/seguimiento/alertas'

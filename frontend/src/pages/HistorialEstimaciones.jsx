@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { descargarExcelHoja } from '../services/excelExport.js';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
-import BannerContexto from '../components/vista/BannerContexto.jsx';
+import EncabezadoContrato from '../components/ui/EncabezadoContrato.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import { useSesion } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
@@ -31,10 +31,10 @@ const periodoLabel = (iso) => {
 // Estados reales del ciclo (schema: integrada→enviada→autorizada→pagada|rechazada).
 const ESTADO_CLASE = {
   integrada:  'bg-sigecop-blue-light text-sigecop-blue',
-  enviada:    'bg-amber-100 text-sigecop-amber-attention',
-  autorizada: 'bg-green-100 text-sigecop-green-validation',
-  pagada:     'bg-green-100 text-sigecop-green-validation',
-  rechazada:  'bg-red-100 text-red-700'
+  enviada:    'bg-aviso-bg text-aviso',
+  autorizada: 'bg-exito-bg text-exito',
+  pagada:     'bg-exito-bg text-exito',
+  rechazada:  'bg-peligro-bg text-peligro'
 };
 const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 
@@ -68,7 +68,7 @@ function PanelDetalle({ estimacion, onCerrar }) {
         data-testid="panel-detalle-backdrop"
       />
       <div className="relative ml-auto w-full max-w-md h-full bg-white shadow-xl overflow-y-auto">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-borde">
           <div>
             <div className="text-xs uppercase tracking-wider text-slate-500 font-semibold">
               Expediente
@@ -231,12 +231,12 @@ export default function HistorialEstimaciones() {
       />
 
       {sinSesion && (
-        <div className="bg-slate-50 border border-slate-200 rounded-md px-4 py-3 mb-4 text-sm text-slate-600">
+        <div className="bg-pagina border border-borde rounded-md px-4 py-3 mb-4 text-sm text-slate-600">
           Inicia sesión en modo aplicación para consultar el historial de estimaciones.
         </div>
       )}
 
-      <div className="bg-white border border-slate-200 rounded-md p-4 mb-6 max-w-2xl">
+      <div className="bg-white border border-borde rounded-lg p-4 mb-6 max-w-2xl">
         <label className="sg-label">Contrato</label>
         <select
           className="sg-input"
@@ -257,14 +257,13 @@ export default function HistorialEstimaciones() {
 
       {selected && (
         <>
-          <BannerContexto
-            variant="slate"
+          <EncabezadoContrato
             titulo="Contrato"
             folio={selected.folio}
-            extra={[{ value: selected.contratista || '—' }]}
+            items={[{ value: selected.contratista || '—' }]}
           />
 
-          <div className="bg-white border border-slate-200 rounded-md p-5 mb-6">
+          <div className="bg-white border border-borde rounded-lg p-5 mb-6">
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">Filtros</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
@@ -292,8 +291,8 @@ export default function HistorialEstimaciones() {
             </div>
           </div>
 
-          <div className="bg-white border border-slate-200 rounded-md overflow-hidden">
-            <div className="px-6 py-3 border-b border-slate-200 flex items-center justify-between">
+          <div className="bg-white border border-borde rounded-lg overflow-hidden">
+            <div className="px-6 py-3 border-b border-borde flex items-center justify-between">
               <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">
                 Resultados ({filas.length})
               </h2>
@@ -308,7 +307,7 @@ export default function HistorialEstimaciones() {
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm" data-testid="tabla-historial">
-                <thead className="bg-slate-50 text-slate-700">
+                <thead className="bg-pagina text-tinta-sec">
                   <tr>
                     <th className="text-left p-3 font-semibold">Estimación</th>
                     <th className="text-left p-3 font-semibold">Periodo</th>
@@ -329,7 +328,7 @@ export default function HistorialEstimaciones() {
                     filas.map((h) => (
                       <tr
                         key={h.id}
-                        className="border-t border-slate-200 hover:bg-sigecop-blue-light cursor-pointer"
+                        className="border-t border-borde hover:bg-sigecop-blue-light cursor-pointer"
                         data-testid={`fila-historial-${h.id}`}
                         onClick={() => setSeleccionada(h)}
                       >

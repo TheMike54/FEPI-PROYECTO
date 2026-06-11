@@ -1,5 +1,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Tabs from '../components/ui/Tab.jsx';
+import Modal from '../components/ui/Modal.jsx';
+import Tabla, { thClass } from '../components/ui/Tabla.jsx';
+import Boton from '../components/ui/Boton.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
@@ -95,7 +98,32 @@ const polizaCompleta = (g) =>
   Number(g.monto) > 0 &&
   String(g.vigencia || '').trim() !== '';
 
-const ERR0 = { campos: {}, conceptoIdx: null, programaError: false, garantiaIdx: null, catalogoMonto: false, pdfFirmadoFalta: false, anticipoPdfFalta: false, garantiasFaltan: false };
+// O1 (revisión profe 09-jun): fecha local de HOY en ISO corto, para validar que la vigencia de
+// una póliza no esté ya vencida al capturarla (P5b — bug confirmado en vivo: se aceptó una
+// garantía con vigencia de ayer). Comparación de strings ISO, sin corrimiento de zona horaria.
+const hoyISOAlta = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
+
+const ERR0 = { campos: {}, conceptoIdx: null, programaError: false, garantiaIdx: null, catalogoMonto: false, pdfFirmadoFalta: false, anticipoPdfFalta: false, garantiasFaltan: false, planAmortError: false };
+
+// O2: default PROPORCIONAL del plan de amortización al centavo — n−1 cuotas iguales (ROUND a 2)
+// y la última absorbe el ajuste de redondeo, para que Σ = monto del anticipo EXACTO. Devuelve
+// { [periodoNumero]: 'monto' } (strings: son inputs controlados). Espejo del default del backend.
+const planProporcional = (montoAnticipo, numeros) => {
+  const plan = {};
+  const n = numeros.length;
+  if (!(montoAnticipo > 0) || n === 0) return plan;
+  const cuota = round2(montoAnticipo / n);
+  let acum = 0;
+  numeros.forEach((num, i) => {
+    const m = i < n - 1 ? cuota : round2(montoAnticipo - acum);
+    acum = round2(acum + m);
+    plan[num] = String(m);
+  });
+  return plan;
+};
 
 // alta-v2 (4.2): valores iniciales VACÍOS (también usados por "Cancelar"). El contrato nuevo
 // arranca en blanco; el `tipo` mantiene la primera opción del select (campo obligatorio que
@@ -205,10 +233,10 @@ function TabDatosGenerales({ datos, set, err, equipo, montoDerivado }) {
         </Field>
       </div>
 
-      <div className="mt-4 bg-blue-50 border-l-4 border-blue-500 px-4 py-3 text-sm text-blue-900 grid grid-cols-1 md:grid-cols-3 gap-2">
-        <div><span className="text-xs text-blue-700">Subtotal (sin IVA)</span><div className="font-semibold">{formatoMXN.format(montoNum)}</div></div>
-        <div><span className="text-xs text-blue-700">IVA (16%) — derivado</span><div className="font-semibold">{formatoMXN.format(montoNum * IVA_RATE)}</div></div>
-        <div><span className="text-xs text-blue-700">Total con IVA — derivado</span><div className="font-semibold" data-testid="total-con-iva">{formatoMXN.format(montoNum * (1 + IVA_RATE))}</div></div>
+      <div className="mt-4 bg-guinda-soft border-l-4 border-guinda px-4 py-3 text-sm text-tinta grid grid-cols-1 md:grid-cols-3 gap-2">
+        <div><span className="text-xs text-guinda">Subtotal (sin IVA)</span><div className="font-semibold">{formatoMXN.format(montoNum)}</div></div>
+        <div><span className="text-xs text-guinda">IVA (16%) — derivado</span><div className="font-semibold">{formatoMXN.format(montoNum * IVA_RATE)}</div></div>
+        <div><span className="text-xs text-guinda">Total con IVA — derivado</span><div className="font-semibold" data-testid="total-con-iva">{formatoMXN.format(montoNum * (1 + IVA_RATE))}</div></div>
       </div>
 
       <div className="mt-3 bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 text-sm text-slate-800">
@@ -242,6 +270,19 @@ function TabDatosGenerales({ datos, set, err, equipo, montoDerivado }) {
         {(eq.asignablesContratista || []).length === 0 && (
           <p className="text-xs text-amber-700 mt-2">No hay cuentas de contratista aprobadas; la dependencia debe aprobar al menos una para poder asignar superintendente.</p>
         )}
+        {/* O3 — AVISO (no bloqueo) si el superintendente y la supervisión son de la MISMA empresa.
+            El profe: "la supervisión es un tercero". Solo presentación: se deriva del empresa_id que
+            ahora traen los asignables (catálogo). [validar profe] si debe ser bloqueo. */}
+        {(() => {
+          const sup = (eq.asignablesContratista || []).find((u) => String(u.id) === String(eq.superintendenteId));
+          const sv = (eq.asignablesSupervision || []).find((u) => String(u.id) === String(eq.supervisionId));
+          if (!sup || !sv || !sup.empresa_id || sup.empresa_id !== sv.empresa_id) return null;
+          return (
+            <div className="mt-3 bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 text-sm text-slate-800 rounded-r-md" data-testid="aviso-misma-empresa">
+              ⚠️ El superintendente y la supervisión pertenecen a la misma empresa (<strong>{sup.empresa}</strong>). La supervisión debe ser un <strong>tercero independiente</strong> del contratista. <span className="text-slate-500">Puedes continuar; es un aviso. [validar con el profe]</span>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );
@@ -399,7 +440,7 @@ function TabProgramaMatriz({ conceptos, periodos, ciclo, setCiclo, celdas, setCe
                 {periodos.map((p) => (
                   <th key={p.numero} className="text-right px-2 py-2 w-24" title={`${fmtFechaES(p.inicio)} – ${fmtFechaES(p.fin)}`}>
                     P{p.numero}
-                    <div className="text-[10px] font-normal text-blue-700">{fmtFechaES(p.inicio).slice(0, 5)}</div>
+                    <div className="text-[10px] font-normal text-guinda">{fmtFechaES(p.inicio).slice(0, 5)}</div>
                   </th>
                 ))}
                 <th className="text-right px-2 py-2 w-24">Σ planeado</th>
@@ -463,7 +504,7 @@ function TabJuridicos({ datos, set, err = {} }) {
         <Field label="No. de poder notarial" hint="Opcional"><input className="sg-input" value={datos.poderNotarial} onChange={set('poderNotarial')} data-testid="jur-poder" /></Field>
         <Field label="Notaría" hint="Opcional"><input className="sg-input" value={datos.notaria} onChange={set('notaria')} data-testid="jur-notaria" /></Field>
       </div>
-      <div className="mt-4 bg-blue-50 border-l-4 border-blue-500 px-4 py-3 text-sm text-blue-900">
+      <div className="mt-4 bg-guinda-soft border-l-4 border-guinda px-4 py-3 text-sm text-tinta">
         <strong>Obligatorio para formalizar.</strong> El firmante de la dependencia y su cargo (art. 46 fr. I LOPSRM) y el representante legal del contratista (art. 46 fr. IV LOPSRM; RLOPSRM art. 61 fr. VI-b/VII) son mínimos de formalización. La cédula profesional se exige por decisión de la Fundación <span className="text-slate-500">[validar con el profe]</span>. Poder notarial y notaría son opcionales. Se guarda como un solo registro (<code>datos_juridicos</code>).
       </div>
     </div>
@@ -512,7 +553,7 @@ function AnticipoAutorizacionPDF({ contratoId, soloLectura, pendingFile, onPickF
   return (
     <div className="mt-2" data-testid="anticipo-pdf-uploader">
       {/* alta-v4: el PDF de autorización es OBLIGATORIO sobre el umbral (bloquea avance y guardado). */}
-      <p className="text-sm font-semibold text-blue-900 mb-1">Adjunta la autorización escrita (PDF) <span className="text-red-600">*</span>:</p>
+      <p className="text-sm font-semibold text-tinta mb-1">Adjunta la autorización escrita (PDF) <span className="text-red-600">*</span>:</p>
       {pendingFile && !contratoId ? (
         <p className="text-sm text-green-800" data-testid="anticipo-pdf-pendiente-file">📎 {pendingFile.name} — se adjuntará al guardar el contrato.{' '}
           <button type="button" className="text-red-600 hover:underline" onClick={() => onPickFile(null)} disabled={soloLectura}>quitar</button>
@@ -541,8 +582,8 @@ function TabGarantias({ rows, onCell, onPatch, onAdd, onRemove, anticipoPct, set
           <input type="number" min="0" max="100" step="0.01" className={inputCls(errAnticipo)} value={anticipoPct} onChange={(e) => setAnticipoPct(e.target.value)} disabled={soloLectura} data-testid="anticipo-input" />
         </Field>
         {ap > ANTICIPO_UMBRAL_PDF && (
-          <div className="mt-3 bg-blue-50 border-l-4 border-blue-500 px-4 py-3 text-sm text-blue-900 space-y-2" data-testid="avisos-anticipo">
-            <div className="text-xs font-bold uppercase tracking-wider text-blue-700">Autorización requerida</div>
+          <div className="mt-3 bg-guinda-soft border-l-4 border-guinda px-4 py-3 text-sm text-tinta space-y-2" data-testid="avisos-anticipo">
+            <div className="text-xs font-bold uppercase tracking-wider text-guinda">Autorización requerida</div>
             <p>Conforme al <strong>art. 50 fr. IV de la LOPSRM</strong>, un anticipo mayor al {ANTICIPO_UMBRAL_PDF}% requiere <strong>autorización escrita del titular</strong> de la dependencia o entidad. <strong>Adjunta el PDF de la autorización</strong> (el sistema lo guarda ligado al contrato; no valida su contenido — es responsabilidad del residente).</p>
             {ap > 50 && <p>Además, conforme al <strong>art. 139 del RLOPSRM</strong>, un anticipo mayor al 50% debe informarse a la Secretaría (SFP) antes de su entrega.</p>}
             {ap >= 100 && <p>El 100% solo procede en contrato plurianual que inicia en el último trimestre (art. 50 fr. V LOPSRM).</p>}
@@ -630,8 +671,84 @@ function TabGarantias({ rows, onCell, onPatch, onAdd, onRemove, anticipoPct, set
       <div className="bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 text-sm text-slate-800 mb-3">
         <strong>Penalizaciones — Art. 46 Bis LOPSRM:</strong> se aplicarán deductivas por atraso conforme al programa de obra. El 5 al millar (art. 191 LFD) se carga automáticamente sobre cada estimación.
       </div>
-      <div className="bg-blue-50 border-l-4 border-blue-500 px-4 py-3 text-sm text-blue-900">
+      <div className="bg-guinda-soft border-l-4 border-guinda px-4 py-3 text-sm text-tinta">
         <strong>Plan de amortización del anticipo — Art. 50 LOPSRM:</strong> el anticipo otorgado deberá amortizarse proporcionalmente al avance en cada estimación, conforme a la fórmula que prevé el art. 50 de la LOPSRM.
+      </div>
+    </div>
+  );
+}
+
+// O2 (10-jun) — Paso 5: PLAN DE AMORTIZACIÓN del anticipo (criterio de HU-01; el profe lo
+// definió en la revisión del 8-9 jun: "es en qué mes voy a devolver el dinero… muy parecido al
+// programa de obra: por estimación, qué cantidad va a amortizar. No hay límites"). Matriz por
+// periodo (patrón del programa): default PROPORCIONAL precargado, editable libre; el gate duro
+// (Σ = monto del anticipo al CENTAVO, art. 143 fr. I RLOPSRM) vive en validarPaso(5) y el
+// backend lo revalida. La carátula (G2) sigue amortizando proporcional:
+// [Fase B pendiente de validar con el profe].
+function TabPlanAmortizacion({ periodos, plan, onMonto, montoAnticipo, anticipoPct, sumaPlan, soloLectura, onRestablecer }) {
+  const cuadra = sumaPlan === montoAnticipo;
+  const dif = round2(montoAnticipo - sumaPlan);
+  return (
+    <div>
+      <h3 className="text-lg font-bold text-sigecop-blue mb-1">Plan de amortización del anticipo</h3>
+      <p className="text-sm text-slate-600 mb-4 max-w-3xl">
+        Define en qué periodos se devuelve el anticipo de <strong>{formatoMXN.format(montoAnticipo)}</strong>{' '}
+        ({anticipoPct}% del monto del contrato). Viene precargado <strong>proporcional</strong> entre los
+        periodos y es editable libremente; la suma debe ser <strong>exacta al centavo</strong> (art. 143 RLOPSRM).
+      </p>
+      <Tabla className="mb-4 max-w-2xl" testid="plan-amortizacion-tabla">
+        <thead>
+          <tr>
+            <th className={thClass}>Periodo</th>
+            <th className={thClass}>Del — al</th>
+            <th className={`${thClass} text-right`}>Monto a amortizar</th>
+            <th className={`${thClass} text-right`}>% del anticipo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {periodos.map((p) => {
+            const m = Number(plan[p.numero]) || 0;
+            return (
+              <tr key={p.numero} className="border-t border-borde">
+                <td className="px-3 py-2 font-medium">#{p.numero}</td>
+                <td className="px-3 py-2 text-slate-600 text-xs whitespace-nowrap">{fmtFechaES(p.inicio)} — {fmtFechaES(p.fin)}</td>
+                <td className="px-3 py-2 text-right">
+                  <input
+                    type="number" min="0" step="0.01"
+                    className="sg-input text-right w-40 inline-block"
+                    value={plan[p.numero] ?? ''}
+                    onChange={(e) => onMonto(p.numero, e.target.value)}
+                    disabled={soloLectura}
+                    data-testid={`plan-monto-${p.numero}`}
+                  />
+                </td>
+                <td className="px-3 py-2 text-right text-slate-500 text-xs">
+                  {montoAnticipo > 0 ? `${round2((m / montoAnticipo) * 100).toFixed(2)}%` : '—'}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+        <tfoot>
+          <tr className="border-t border-borde-fuerte bg-pagina font-semibold">
+            <td className="px-3 py-2" colSpan={2}>Suma del plan</td>
+            <td className="px-3 py-2 text-right font-mono" data-testid="plan-suma">{formatoMXN.format(sumaPlan)}</td>
+            <td className="px-3 py-2" />
+          </tr>
+        </tfoot>
+      </Tabla>
+      <div className="mb-4 text-sm max-w-2xl">
+        {cuadra
+          ? <span className="block text-exito bg-exito-bg border border-exito/30 rounded px-3 py-2" data-testid="plan-cuadra">✓ El plan suma exactamente el anticipo ({formatoMXN.format(montoAnticipo)}).</span>
+          : <span className="block text-peligro bg-peligro-bg border border-peligro/30 rounded px-3 py-2" data-testid="plan-descuadre">El plan debe sumar {formatoMXN.format(montoAnticipo)}: lleva {formatoMXN.format(sumaPlan)} ({dif > 0 ? `faltan ${formatoMXN.format(dif)}` : `sobran ${formatoMXN.format(-dif)}`}).</span>}
+      </div>
+      <Boton variante="secundario" onClick={onRestablecer} disabled={soloLectura} data-testid="plan-restablecer">
+        Restablecer proporcional
+      </Boton>
+      <div className="mt-4 bg-guinda-soft border-l-4 border-guinda px-4 py-3 text-sm text-tinta max-w-3xl">
+        <strong>Fase A:</strong> el plan se captura aquí y se consulta en el expediente. La carátula de la
+        estimación sigue amortizando <strong>proporcional</strong> (art. 143 fr. I RLOPSRM).{' '}
+        <span className="text-slate-500">[Fase B pendiente de validar con el profe: que la carátula obedezca este plan.]</span>
       </div>
     </div>
   );
@@ -820,7 +937,7 @@ function ModalDetalleContrato({ contratoId, onClose }) {
         // Pase 4: alertas de atraso (presentación/lectura). Solo si el rol tiene acceso a HU-07; un
         // 403 (cuenta sin participación) deja el indicador oculto (NUNCA inventa alertas).
         if (!sinAccesoAlertas) {
-          try { const al = await api.alertasDeContrato(contratoId); if (vivo) setAlertas(Array.isArray(al) ? al : []); }
+          try { const al = await api.alertasDeContrato(contratoId); if (vivo) setAlertas(al && typeof al === 'object' ? al : null); }
           catch (_) { if (vivo) setAlertas(null); }
         }
       } catch (e) { if (vivo) setError(e.message || 'No se pudo cargar el contrato'); }
@@ -829,9 +946,9 @@ function ModalDetalleContrato({ contratoId, onClose }) {
     return () => { vivo = false; };
   }, [contratoId, sinAccesoAlertas]);
 
-  // Pase 4: conteo de conceptos EN ATRASO = alertas disparadas (misma fórmula que la vista HU-07).
-  const alertasEnAtraso = Array.isArray(alertas) ? alertas.filter((a) => a.disparada).length : 0;
-  const totalAlertas = Array.isArray(alertas) ? alertas.length : 0;
+  // Pase 4 → O5: conteo de conceptos EN ATRASO = filas con déficit (misma fuente que la vista HU-07 v2).
+  // El endpoint ahora devuelve { total_atrasos, atrasos:[...] } en lugar de una lista de alertas disparadas.
+  const alertasEnAtraso = alertas ? Number(alertas.total_atrasos || 0) : 0;
 
   const jur = data && data.datos_juridicos
     ? (typeof data.datos_juridicos === 'string' ? (() => { try { return JSON.parse(data.datos_juridicos); } catch { return null; } })() : data.datos_juridicos)
@@ -847,12 +964,12 @@ function ModalDetalleContrato({ contratoId, onClose }) {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 overflow-y-auto" onClick={onClose} data-testid="modal-detalle">
       <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full my-8" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4 sticky top-0 bg-white rounded-t-lg z-10">
+        <div className="flex items-center justify-between border-b border-borde px-6 py-4 sticky top-0 bg-white rounded-t-lg z-10">
           <h3 className="text-lg font-bold text-sigecop-blue">Información del contrato{data?.folio ? ` · ${data.folio}` : ''}</h3>
           <button type="button" onClick={onClose} className="text-slate-500 hover:text-slate-900 text-xl font-bold leading-none" aria-label="Cerrar" data-testid="modal-detalle-cerrar">✕</button>
         </div>
         <div className="px-6 py-5 space-y-6 text-sm">
-          <div className="bg-slate-50 border border-slate-200 rounded px-3 py-2 text-xs text-slate-600">Vista de <strong>solo lectura</strong> — refleja lo capturado al dar de alta el contrato. No es editable.</div>
+          <div className="bg-pagina border border-borde rounded px-3 py-2 text-xs text-slate-600">Vista de <strong>solo lectura</strong> — refleja lo capturado al dar de alta el contrato. No es editable.</div>
           {cargando && <p className="text-slate-500">Cargando…</p>}
           {error && <p className="text-red-700 bg-red-50 border border-red-200 rounded px-3 py-2">{error}</p>}
           {data && (
@@ -879,18 +996,18 @@ function ModalDetalleContrato({ contratoId, onClose }) {
 
               {/* Pase 4: indicador de alertas de atraso + acceso directo a la lista del contrato.
                   Presentación/lectura: gateado por rol (HU-07) y por participación (403 → oculto). */}
-              {!sinAccesoAlertas && Array.isArray(alertas) && (
+              {!sinAccesoAlertas && alertas && (
                 <section data-testid="detalle-alertas">
-                  <h4 className="font-bold text-sigecop-blue mb-3">Alertas de atraso</h4>
+                  <h4 className="font-bold text-sigecop-blue mb-3">Atraso por concepto</h4>
                   {alertasEnAtraso > 0 ? (
                     <div className="flex flex-wrap items-center justify-between gap-3 bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 rounded" data-testid="detalle-alertas-atraso">
                       <span className="text-sm font-semibold text-slate-800">⚠ {alertasEnAtraso} {alertasEnAtraso === 1 ? 'concepto' : 'conceptos'} en atraso</span>
-                      <Link to={`/seguimiento/alertas?contrato=${contratoId}`} className="text-sm font-semibold text-sigecop-accent hover:underline whitespace-nowrap" data-testid="detalle-link-alertas">Ver alertas del contrato →</Link>
+                      <Link to={`/seguimiento/alertas?contrato=${contratoId}`} className="text-sm font-semibold text-sigecop-accent hover:underline whitespace-nowrap" data-testid="detalle-link-alertas">Ver atraso del contrato →</Link>
                     </div>
                   ) : (
-                    <div className="flex flex-wrap items-center justify-between gap-3 bg-green-50 border-l-4 border-green-500 px-4 py-3 rounded" data-testid="detalle-alertas-ok">
-                      <span className="text-sm text-green-800">✓ Sin conceptos en atraso{totalAlertas > 0 ? ` · ${totalAlertas} alerta${totalAlertas === 1 ? '' : 's'} configurada${totalAlertas === 1 ? '' : 's'}` : ' · sin alertas configuradas'}</span>
-                      <Link to={`/seguimiento/alertas?contrato=${contratoId}`} className="text-sm font-semibold text-sigecop-accent hover:underline whitespace-nowrap" data-testid="detalle-link-alertas">Ver alertas del contrato →</Link>
+                    <div className="flex flex-wrap items-center justify-between gap-3 bg-exito-bg border-l-4 border-exito px-4 py-3 rounded" data-testid="detalle-alertas-ok">
+                      <span className="text-sm text-exito">✓ Sin conceptos en atraso al periodo actual</span>
+                      <Link to={`/seguimiento/alertas?contrato=${contratoId}`} className="text-sm font-semibold text-sigecop-accent hover:underline whitespace-nowrap" data-testid="detalle-link-alertas">Ver atraso del contrato →</Link>
                     </div>
                   )}
                 </section>
@@ -899,7 +1016,7 @@ function ModalDetalleContrato({ contratoId, onClose }) {
               {Array.isArray(data.conceptos) && data.conceptos.length > 0 && (
                 <section>
                   <h4 className="font-bold text-sigecop-blue mb-3">Catálogo de conceptos</h4>
-                  <div className="overflow-x-auto border border-slate-200 rounded">
+                  <div className="overflow-x-auto border border-borde rounded">
                     <table className="w-full text-sm">
                       <thead className="bg-sigecop-blue-light text-sigecop-blue"><tr>
                         <th className="text-left px-3 py-2">Clave</th><th className="text-left px-3 py-2">Concepto</th>
@@ -908,7 +1025,7 @@ function ModalDetalleContrato({ contratoId, onClose }) {
                       </tr></thead>
                       <tbody>
                         {data.conceptos.map((c) => (
-                          <tr key={c.id} className="border-t border-slate-200">
+                          <tr key={c.id} className="border-t border-borde">
                             <td className="px-3 py-1 font-mono text-xs">{c.clave || '—'}</td>
                             <td className="px-3 py-1">{c.concepto}</td>
                             <td className="px-3 py-1">{c.unidad}</td>
@@ -938,7 +1055,7 @@ function ModalDetalleContrato({ contratoId, onClose }) {
               {Array.isArray(data.garantias) && data.garantias.length > 0 && (
                 <section>
                   <h4 className="font-bold text-sigecop-blue mb-3">Garantías</h4>
-                  <div className="overflow-x-auto border border-slate-200 rounded">
+                  <div className="overflow-x-auto border border-borde rounded">
                     <table className="w-full text-sm">
                       <thead className="bg-sigecop-blue-light text-sigecop-blue"><tr>
                         <th className="text-left px-3 py-2">Tipo</th><th className="text-left px-3 py-2">Afianzadora</th>
@@ -946,7 +1063,7 @@ function ModalDetalleContrato({ contratoId, onClose }) {
                       </tr></thead>
                       <tbody>
                         {data.garantias.map((g) => (
-                          <tr key={g.id} className="border-t border-slate-200">
+                          <tr key={g.id} className="border-t border-borde">
                             <td className="px-3 py-1">{g.tipo}</td>
                             <td className="px-3 py-1">{g.afianzadora || '—'}</td>
                             <td className="px-3 py-1 font-mono text-xs">{g.poliza || '—'}</td>
@@ -1024,7 +1141,7 @@ function TabRegistrados({ contratos, loading, errorMsg, sinSesion, onRecargar, s
     return (
       <div>
         <h3 className="text-lg font-bold text-sigecop-blue mb-4">Contratos registrados</h3>
-        <p className="text-sm text-slate-600 bg-slate-50 border border-slate-200 rounded-md px-4 py-6 text-center">
+        <p className="text-sm text-slate-600 bg-pagina border border-borde rounded-md px-4 py-6 text-center">
           Inicia sesión para ver los contratos guardados.
         </p>
       </div>
@@ -1041,7 +1158,7 @@ function TabRegistrados({ contratos, loading, errorMsg, sinSesion, onRecargar, s
       {!loading && errorMsg && <p className="text-sm text-slate-700 bg-red-50 border border-red-200 rounded-md px-4 py-3">{errorMsg}</p>}
       {!loading && !errorMsg && contratos.length === 0 && <p className="text-sm text-slate-500">No hay contratos registrados todavía.</p>}
       {!loading && !errorMsg && contratos.length > 0 && (
-        <div className="overflow-x-auto border border-slate-200 rounded-md">
+        <div className="overflow-x-auto border border-borde rounded-md">
           <table className="w-full text-sm">
             <thead className="bg-sigecop-blue-light text-sigecop-blue">
               <tr>
@@ -1057,7 +1174,7 @@ function TabRegistrados({ contratos, loading, errorMsg, sinSesion, onRecargar, s
             </thead>
             <tbody>
               {contratos.map((c) => (
-                <tr key={c.id} className="border-t border-slate-200 hover:bg-slate-50">
+                <tr key={c.id} className="border-t border-borde hover:bg-pagina">
                   <td className="px-3 py-2 font-mono text-xs">{c.folio}</td>
                   <td className="px-3 py-2">{c.objeto}</td>
                   <td className="px-3 py-2">{c.contratista}</td>
@@ -1096,12 +1213,14 @@ function TabRegistrados({ contratos, loading, errorMsg, sinSesion, onRecargar, s
 // Corrección profe (04-jun): contratista/dependencia ya no se validan como texto aquí (son cuentas:
 // superintendenteId y dependenciaId, validados aparte en validarPaso(0)).
 const REQ_GENERALES = ['folio', 'tipo', 'objeto', 'plazoDias', 'fechaInicio'];
-// 4.1 + alta-v3 (PDF firmado OBLIGATORIO): pasos del WIZARD de creación (captura). El PDF
-// firmado (5) es ahora el ÚLTIMO paso del wizard: el botón "Guardar contrato" vive ahí y queda
-// GATEADO (deshabilitado hasta adjuntar el PDF firmado; validarPaso(5)). Solo "Registrados" (6)
-// queda como pestaña auxiliar de consulta, fuera de la progresión obligatoria.
-const PASOS_WIZARD = [0, 1, 2, 3, 4, 5];
-const ULTIMO_PASO_WIZARD = 5;
+// 4.1 + alta-v3 (PDF firmado OBLIGATORIO): pasos del WIZARD de creación (captura). O2 (10-jun)
+// inserta el paso 5 "Plan de amortización" (criterio de HU-01, art. 143 fr. I RLOPSRM): solo
+// existe con anticipo > 0 (sin anticipo se OMITE: la pestaña se oculta y la navegación lo salta,
+// el gating se EXTIENDE sin relajarse). El PDF firmado pasa a ser el paso 6 (último: ahí vive
+// "Guardar contrato", gateado por validarPaso(6)). "Registrados" (7) sigue como pestaña auxiliar.
+const PASO_PLAN_AMORT = 5;
+const PASOS_WIZARD = [0, 1, 2, 3, 4, 5, 6];
+const ULTIMO_PASO_WIZARD = 6;
 // alta-v5.1: índice de la pestaña auxiliar "Registrados" (lista de contratos guardados, SOLO
 // LECTURA). Va justo DESPUÉS del último paso del wizard y queda FUERA del gating lineal de la
 // captura: es navegable SIEMPRE (captura vacía, a medias o completa), sin permitir saltarse pasos.
@@ -1169,6 +1288,12 @@ export default function AltaContrato() {
   // ocurre al guardar, pero el usuario puede adjuntar sin haber guardado primero).
   const [pdfFirmadoFile, setPdfFirmadoFile] = useState(null);
   const [pdfAnticipoFile, setPdfAnticipoFile] = useState(null);
+  // O1-P5a (revisión profe 09-jun): modal de AVISO cuando una garantía excede el % esperado
+  // ("me tendrás que decir: estás poniendo más del 30%"). Avisa, NO bloquea: el usuario confirma
+  // y continúa. La confirmación se recuerda por snapshot (tipo+monto+esperado); si después cambia
+  // un monto o el % de anticipo, el snapshot ya no coincide y el aviso se vuelve a mostrar.
+  const [modalExceso, setModalExceso] = useState(null); // { excesos, snap, onContinuar }
+  const excesoConfirmadoRef = useRef('');
 
   const setDatosGen = (k) => (e) => setDatosGenerales((prev) => ({ ...prev, [k]: e.target.value }));
   const setDatosJur = (k) => (e) => setDatosJuridicos((prev) => ({ ...prev, [k]: e.target.value }));
@@ -1194,6 +1319,43 @@ export default function AltaContrato() {
     return { ...r, pu: String(pu), importe: importeDe(r.cantidad, pu) }; // snapea al importe real resultante
   }));
   const montoDerivado = round2(conceptos.reduce((s, c) => s + (Number(importeDe(c.cantidad, c.pu)) || 0), 0));
+
+  // --- O2: PLAN DE AMORTIZACIÓN del anticipo (paso 5, art. 143 fr. I RLOPSRM) ---
+  // montoAnticipo = ROUND(monto derivado × %anticipo, 2). El plan vive como { numero: 'monto' }
+  // y se PRECARGA PROPORCIONAL (editable libre por periodo, "no hay límites" — profe) cada vez
+  // que cambian el anticipo, el monto del contrato o los periodos: el plan DERIVA de esos tres
+  // (ediciones previas dejan de cuadrar y se reponen al default, predecible y siempre válido).
+  const montoAnticipo = round2(montoDerivado * ((Number(anticipoPct) || 0) / 100));
+  const [planAmort, setPlanAmort] = useState({});
+  useEffect(() => {
+    setPlanAmort(planProporcional(montoAnticipo, periodos.map((p) => p.numero)));
+  }, [montoAnticipo, periodos]);
+  const setPlanMonto = (numero, value) => setPlanAmort((prev) => ({ ...prev, [numero]: value }));
+  // Σ actual del plan (round2 incremental, espejo del backend) — para el resumen y validarPaso(5).
+  const sumaPlan = round2(periodos.reduce((s, p) => round2(s + (Number(planAmort[p.numero]) || 0)), 0));
+  // El paso 5 se OMITE sin anticipo (pestaña oculta + salto en irAPaso).
+  const planOmitido = !((Number(anticipoPct) || 0) > 0) || montoAnticipo <= 0;
+
+  // O1-P5a: excesos actuales de garantías vs el % esperado del monto del contrato.
+  //  · Cumplimiento: 10% del monto (lo que pidió el profe en P5a; [validar el tope exacto]).
+  //  · Anticipo: %anticipo × monto (art. 48 fr. I LOPSRM: garantiza la totalidad del anticipo).
+  //    Su monto es derivado/read-only, así que normalmente NO excede; se revisa por defensa.
+  // Solo pólizas completas (las incompletas las detiene validarPaso(4) antes).
+  const excesosGarantias = () => {
+    if (!(montoDerivado > 0)) return [];
+    const out = [];
+    garantias.forEach((g) => {
+      if (!polizaCompleta(g)) return;
+      let pct = null;
+      if (g.tipo === TIPO_CUMPLIMIENTO) pct = 10;
+      else if (g.tipo === TIPO_ANTICIPO) pct = Number(anticipoPct) || 0;
+      if (pct == null || pct <= 0) return;
+      const esperado = round2(montoDerivado * pct / 100);
+      if (Number(g.monto) > esperado) out.push({ tipo: g.tipo, monto: Number(g.monto), esperado, pct });
+    });
+    return out;
+  };
+  const snapExcesos = (exc) => JSON.stringify(exc.map((x) => [x.tipo, x.monto, x.esperado]));
 
   // Plan2 Pase3: la fianza de ANTICIPO se DERIVA = (% de anticipo) × (monto del contrato), read-only.
   // Mantiene sincronizado el monto de las pólizas tipo Anticipo cuando cambia el % o el monto del
@@ -1364,6 +1526,11 @@ export default function AltaContrato() {
         if (!String(g.poliza).trim()) return { ok: false, msg: `Garantía #${i + 1} (${g.tipo}): el número de póliza es obligatorio.`, errores: { ...ERR0, garantiaIdx: i } };
         if (!(Number(g.monto) > 0)) return { ok: false, msg: `Garantía #${i + 1} (${g.tipo}): indica un monto mayor a 0.`, errores: { ...ERR0, garantiaIdx: i } };
         if (!String(g.vigencia).trim()) return { ok: false, msg: `Garantía #${i + 1} (${g.tipo}): la vigencia es obligatoria.`, errores: { ...ERR0, garantiaIdx: i } };
+        // O1-P5b (revisión profe 09-jun): una póliza con vigencia ya VENCIDA no garantiza nada al
+        // formalizar — se RECHAZA al capturar (vigencia >= hoy). El backend la revalida.
+        if (String(g.vigencia).slice(0, 10) < hoyISOAlta()) {
+          return { ok: false, msg: `Garantía #${i + 1} (${g.tipo}): la vigencia (${fmtFechaES(g.vigencia)}) ya está vencida; captura una vigencia de hoy o posterior.`, errores: { ...ERR0, garantiaIdx: i } };
+        }
         // alta-v2 (1.4): una garantía no puede exceder el monto del contrato (la vista la marca
         // EN VIVO; aquí se bloquea el avance; el backend la revalida).
         if (Number(g.monto) > montoDerivado) return { ok: false, msg: `Garantía #${i + 1}: el monto (${formatoMXN.format(Number(g.monto))}) no puede exceder el monto del contrato (${formatoMXN.format(montoDerivado)}).`, errores: { ...ERR0, garantiaIdx: i } };
@@ -1384,12 +1551,36 @@ export default function AltaContrato() {
       }
       return { ok: true };
     }
-    if (idx === 5) {
+    if (idx === PASO_PLAN_AMORT) {
+      // O2 (10-jun): PLAN DE AMORTIZACIÓN del anticipo (criterio de HU-01; art. 143 fr. I
+      // RLOPSRM — la ley dice "proporcionalmente", el profe pidió plan EDITABLE; la carátula
+      // G2 sigue proporcional: [Fase B pendiente de validar con el profe]). Sin anticipo el
+      // paso SE OMITE (auto-válido; la pestaña ni se muestra). Con anticipo: cada periodo con
+      // monto válido ≥ 0 y Σ EXACTA al centavo = monto del anticipo (el backend revalida).
+      if (planOmitido) return { ok: true };
+      if (periodos.length === 0) {
+        return { ok: false, msg: 'Define la fecha de inicio, el plazo y el ciclo: el plan de amortización se captura por periodo.', errores: { ...ERR0, planAmortError: true } };
+      }
+      for (const p of periodos) {
+        const v = planAmort[p.numero];
+        if (v === '' || v == null || !(Number(v) >= 0)) {
+          return { ok: false, msg: `Plan de amortización: captura un monto válido (≥ 0) para el periodo ${p.numero}.`, errores: { ...ERR0, planAmortError: true } };
+        }
+      }
+      if (sumaPlan !== montoAnticipo) {
+        const dif = round2(montoAnticipo - sumaPlan);
+        const detalle = dif > 0 ? `faltan ${formatoMXN.format(dif)}` : `sobran ${formatoMXN.format(-dif)}`;
+        return { ok: false, msg: `El plan de amortización debe sumar exactamente el anticipo (${formatoMXN.format(montoAnticipo)}): lleva ${formatoMXN.format(sumaPlan)}, ${detalle} (art. 143 RLOPSRM).`, errores: { ...ERR0, planAmortError: true } };
+      }
+      return { ok: true };
+    }
+    if (idx === 6) {
       // alta-v3: el PDF firmado es OBLIGATORIO para registrar el contrato. Debe estar
       // adjuntado (retenido durante la captura, 1.5) ANTES de guardar; el botón "Guardar"
       // también queda deshabilitado sin él (doble gateo: vista + validación). [validar] — el
       // fundamento (el contrato se formaliza/existe una vez firmado) lo CONFIRMA el profe;
       // NO se asume número de artículo. `contratoGuardadoId` cubre el caso ya-guardado.
+      // (O2: era el paso 5; el plan de amortización lo recorrió al 6.)
       if (!pdfFirmadoFile && !contratoGuardadoId) {
         return { ok: false, msg: 'El PDF firmado del contrato es obligatorio: adjúntalo en el último paso para poder guardar.', errores: { ...ERR0, pdfFirmadoFalta: true } };
       }
@@ -1417,7 +1608,8 @@ export default function AltaContrato() {
   //    abren el resto en cascada. Los errores van al banner PERSISTENTE (1.3).
   const irAPaso = (target) => {
     if (target > ULTIMO_PASO_WIZARD) { setTabActivo(target); return; } // auxiliar (Registrados)
-    if (target <= tabActivo) { setTabActivo(target); return; }          // atrás libre
+    // O2: «Atrás» también SALTA el paso omitido (sin anticipo, del PDF se regresa a garantías).
+    if (target <= tabActivo) { setTabActivo(target === PASO_PLAN_AMORT && planOmitido ? Math.max(0, target - 1) : target); return; } // atrás libre
     // DEFENSA EXPLÍCITA (fix de raíz): NUNCA avanzar si el paso ACTUAL no es válido. El loop de
     // prefijo de abajo ya lo hacía cuando `pasoMaxAlcanzado >= tabActivo`; pero si por algún flujo
     // queda `tabActivo > pasoMaxAlcanzado` (p.ej. tras guardar, que hace setTabActivo(Registrados)
@@ -1425,10 +1617,25 @@ export default function AltaContrato() {
     // sin validar. Validar el paso actual de entrada cierra ese hueco sin importar el estado.
     const vActual = validarPaso(tabActivo);
     if (!vActual.ok) { setErrores(vActual.errores); setTabActivo(tabActivo); setErrorWizard(vActual.msg); return; }
-    const destino = Math.min(target, pasoMaxAlcanzado + 1);             // solo un paso nuevo
+    let destino = Math.min(target, pasoMaxAlcanzado + 1);               // solo un paso nuevo
     for (let p = tabActivo; p < destino; p++) {
       const v = validarPaso(p);
       if (!v.ok) { setErrores(v.errores); setTabActivo(p); setErrorWizard(v.msg); return; }
+    }
+    // O2: si el destino cae en el paso OMITIDO (plan sin anticipo), se salta UN paso más.
+    // El paso omitido es auto-válido (validarPaso lo aprueba), así que el gating no se relaja:
+    // simplemente no existe para esta captura. pasoMaxAlcanzado absorbe el salto (abajo).
+    if (destino === PASO_PLAN_AMORT && planOmitido) destino = Math.min(destino + 1, ULTIMO_PASO_WIZARD);
+    // O1-P5a: al SALIR del paso de garantías (4) con montos por encima del % esperado, AVISAR con
+    // el modal y esperar confirmación (no bloquea). Tras confirmar se reentra con el snapshot ya
+    // aceptado y el avance procede. El gating lineal NO cambia (esto corre DESPUÉS de validar).
+    if (tabActivo === 4 && destino > 4) {
+      const exc = excesosGarantias();
+      const snap = snapExcesos(exc);
+      if (exc.length > 0 && excesoConfirmadoRef.current !== snap) {
+        setModalExceso({ excesos: exc, snap, onContinuar: () => { excesoConfirmadoRef.current = snap; setModalExceso(null); irAPaso(target); } });
+        return;
+      }
     }
     setErrores(ERR0);
     setErrorWizard(null);
@@ -1440,6 +1647,14 @@ export default function AltaContrato() {
     if (guardando || soloLectura) return;
     const v = validar();
     if (v) { setErrores(v.errores); setTabActivo(v.tab); setErrorWizard(v.msg); return; }
+    // O1-P5a: mismo aviso de exceso al GUARDAR — cubre la edición tardía (con captura completa se
+    // navega por nombre sin re-pasar por «Siguiente» del paso 4). Tras confirmar, reentra aquí.
+    const excG = excesosGarantias();
+    const snapG = snapExcesos(excG);
+    if (excG.length > 0 && excesoConfirmadoRef.current !== snapG) {
+      setModalExceso({ excesos: excG, snap: snapG, onContinuar: () => { excesoConfirmadoRef.current = snapG; setModalExceso(null); handleGuardar(); } });
+      return;
+    }
     // 4.1: confirmación explícita antes de guardar (último paso del wizard).
     if (!window.confirm('¿Seguro de guardar el contrato?')) return;
     setErrores(ERR0);
@@ -1476,7 +1691,10 @@ export default function AltaContrato() {
         // alta-v5: defensa-en-profundidad: solo se persisten pólizas COMPLETAS (polizaCompleta). El
         // guardado ya pasó por validar() (todos los pasos), que exige cumplimiento/anticipo completos;
         // este filtro hace explícito en el borde de persistencia que nunca se manda una póliza a medias.
-        garantias: garantias.filter((g) => polizaCompleta(g)).map((g) => ({ tipo: g.tipo, afianzadora: g.afianzadora, poliza: g.poliza, monto: g.monto, vigencia: g.vigencia }))
+        garantias: garantias.filter((g) => polizaCompleta(g)).map((g) => ({ tipo: g.tipo, afianzadora: g.afianzadora, poliza: g.poliza, monto: g.monto, vigencia: g.vigencia })),
+        // O2: plan de amortización del anticipo (validar() ya exigió Σ = anticipo al centavo;
+        // el backend lo revalida y, si faltara, derivaría el proporcional). Sin anticipo: vacío.
+        planAmortizacion: planOmitido ? [] : periodos.map((p) => ({ periodoNumero: p.numero, monto: Number(planAmort[p.numero]) || 0 }))
       };
       const creado = await api.crearContrato(payload);
       const nuevoId = creado && creado.id ? creado.id : null;
@@ -1552,7 +1770,8 @@ export default function AltaContrato() {
     if (errores.programaError) s.add(2);
     if (REQ_JURIDICOS.some((k) => c[k])) s.add(3); // alta-v5: jurídicos obligatorios
     if (c.anticipoPct || errores.garantiaIdx != null || errores.anticipoPdfFalta || errores.garantiasFaltan) s.add(4); // alta-v4: +PDF anticipo; alta-v5: +fianzas obligatorias
-    if (errores.pdfFirmadoFalta) s.add(5); // alta-v3: PDF firmado obligatorio (último paso)
+    if (errores.planAmortError) s.add(PASO_PLAN_AMORT); // O2: plan de amortización (Σ = anticipo)
+    if (errores.pdfFirmadoFalta) s.add(6); // alta-v3: PDF firmado obligatorio (último paso; O2 lo recorrió al 6)
     return s;
   }, [errores]);
 
@@ -1599,6 +1818,7 @@ export default function AltaContrato() {
       return;
     }
     if (!capturaCompleta) return; // pasos de captura: gating lineal (solo Siguiente/Atrás)
+    if (target === PASO_PLAN_AMORT && planOmitido) return; // O2: el paso omitido no existe (pestaña oculta)
     setErrores(ERR0);
     setErrorWizard(null);
     setTabActivo(target);
@@ -1627,6 +1847,13 @@ export default function AltaContrato() {
     { label: 'Datos jurídicos', content: wrapTab(<TabJuridicos datos={datosJuridicos} set={setDatosJur} err={errores.campos} />) },
     { label: 'Garantías, penalizaciones y amortización', content: wrapTab(
       <TabGarantias rows={garantias} onCell={mkCell(setGarantias)} onPatch={mkPatch(setGarantias)} onAdd={mkAdd(setGarantias, { tipo: '', afianzadora: '', poliza: '', monto: '', vigencia: '' })} onRemove={mkRemove(setGarantias)} anticipoPct={anticipoPct} setAnticipoPct={setAnticipoPct} soloLectura={soloLectura} errIdx={errores.garantiaIdx} errAnticipo={errores.campos.anticipoPct} contratoId={contratoGuardadoId} montoContrato={montoDerivado} pdfAnticipoFile={pdfAnticipoFile} setPdfAnticipoFile={setPdfAnticipoFile} />
+    ) },
+    // O2: paso 5 — plan de amortización. `oculta` (sin anticipo) lo esconde del wizard y la
+    // navegación lo salta (irAPaso); el orden de índices NO cambia (gating intacto).
+    { label: 'Plan de amortización', oculta: planOmitido, content: wrapTab(
+      <TabPlanAmortizacion periodos={periodos} plan={planAmort} onMonto={setPlanMonto} montoAnticipo={montoAnticipo}
+        anticipoPct={Number(anticipoPct) || 0} sumaPlan={sumaPlan} soloLectura={soloLectura}
+        onRestablecer={() => setPlanAmort(planProporcional(montoAnticipo, periodos.map((p) => p.numero)))} />
     ) },
     { label: 'PDF firmado', content: wrapTab(<TabPdfFirmado contratoId={contratoGuardadoId} soloLectura={soloLectura} pendingFile={pdfFirmadoFile} onPickFile={setPdfFirmadoFile} />) },
     { label: 'Registrados', content: (
@@ -1693,6 +1920,35 @@ export default function AltaContrato() {
           )}
         </div>
       </div>
+
+      {/* O1-P5a: modal de AVISO (no bloqueo) de garantía por encima del % esperado.
+          UI-1: usa el Modal compartido (components/ui/Modal.jsx, extraído de este patrón);
+          textos y data-testid idénticos. */}
+      {modalExceso && (
+        <Modal
+          titulo="Garantía por encima de lo esperado"
+          testid="modal-exceso-garantia"
+          pie={
+            <>
+              <button type="button" className="px-4 py-2 text-slate-600 hover:text-slate-900" onClick={() => setModalExceso(null)} data-testid="btn-exceso-revisar">Revisar montos</button>
+              <button type="button" className="sg-btn-primary" onClick={modalExceso.onContinuar} data-testid="btn-exceso-continuar">Continuar de todos modos</button>
+            </>
+          }
+        >
+          <ul className="text-sm text-slate-700 space-y-2 mb-3 list-disc pl-5">
+            {modalExceso.excesos.map((x, i) => (
+              <li key={i} data-testid={`exceso-detalle-${i}`}>
+                La póliza de <strong>{x.tipo}</strong> es de <strong>{formatoMXN.format(x.monto)}</strong>: está poniendo
+                más del <strong>{x.pct}%</strong> esperado del monto del contrato ({formatoMXN.format(x.esperado)}).
+              </li>
+            ))}
+          </ul>
+          <p className="text-xs text-slate-500">
+            Es un aviso, no un bloqueo: puedes continuar si el monto es intencional.
+            <span className="text-slate-400"> [validar con el profe el % esperado de cumplimiento]</span>
+          </p>
+        </Modal>
+      )}
 
       <SeccionCriterios
         huId="HU-01"

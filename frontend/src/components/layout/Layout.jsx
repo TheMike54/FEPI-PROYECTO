@@ -1,16 +1,8 @@
-import Header from './Header.jsx';
-import Sidebar from './Sidebar.jsx';
+import AppShell from '../ui/AppShell.jsx';
 
+// UI-1 (10-jun): el shell vive en components/ui/AppShell.jsx (barra guinda + filo dorado,
+// sidebar claro). Layout se conserva como punto de montaje porque App.jsx (zona congelada)
+// lo importa: así el swap de cara no toca el router ni las guardas.
 export default function Layout({ children }) {
-  return (
-    <div className="h-screen flex flex-col bg-slate-50">
-      <Header />
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar />
-        <main className="flex-1 overflow-y-auto">
-          <div className="max-w-6xl mx-auto px-6 py-6">{children}</div>
-        </main>
-      </div>
-    </div>
-  );
+  return <AppShell>{children}</AppShell>;
 }

@@ -3,6 +3,21 @@ import { historiasUsuario } from '../../data/dummy.js';
 import { ROLES, nivelDe } from '../../data/permisos.js';
 import { useSesion } from '../../context/SesionContext.jsx';
 
+// UI-1 (10-jun): sidebar CLARO (#FAFAF8) con item activo guinda-soft + texto guinda +
+// borde izquierdo guinda. La ESTRUCTURA no cambia (mismo <aside>, mismos NavLink con
+// href, mismas secciones por rol): la suite navega con `aside a[href=...]`.
+// El chip de rol vive ahora en la barra superior (AppShell); aquí queda solo el
+// acceso "Cambiar de rol" (salirRol) al pie de la navegación.
+
+const itemClass = ({ isActive }) =>
+  `flex items-start gap-3 px-3 py-2.5 rounded-md text-sm transition-colors border-l-[3px] ${
+    isActive
+      ? 'bg-guinda-soft text-guinda border-guinda font-medium'
+      : 'border-transparent text-tinta-sec hover:bg-white hover:text-tinta'
+  }`;
+
+const seccionClass = 'text-[11px] font-medium uppercase tracking-wider text-tinta-ter px-3 mb-2';
+
 export default function Sidebar() {
   const { rol, salirRol } = useSesion();
 
@@ -13,52 +28,20 @@ export default function Sidebar() {
     .filter((hu) => hu.codigo !== 'HU-00' && nivelDe(hu.codigo, rol) !== null)
     .map((hu) => ({ ...hu, nivel: nivelDe(hu.codigo, rol) }));
 
-  const rolActivo = ROLES.find((r) => r.id === rol);
-
   return (
-    <aside className="w-64 bg-white border-r border-slate-200 flex-shrink-0 overflow-y-auto">
-      <div className="px-4 py-4">
-        {rolActivo && (
-          <div className="mb-4 p-3 rounded-md bg-sigecop-blue-light border border-sigecop-accent/30">
-            <div className="text-[10px] uppercase tracking-wider text-sigecop-blue font-semibold">
-              Rol activo
-            </div>
-            <div className="text-sm font-bold text-sigecop-blue leading-tight mt-0.5">
-              {rolActivo.nombre}
-            </div>
-            <button
-              type="button"
-              onClick={salirRol}
-              className="mt-2 text-xs text-sigecop-accent hover:underline"
-            >
-              ← Cambiar de rol
-            </button>
-          </div>
-        )}
+    <aside className="w-64 bg-pagina border-r border-borde flex-shrink-0 overflow-y-auto">
+      <div className="px-3 py-4 flex flex-col min-h-full">
+        <div className={seccionClass}>Pantallas disponibles</div>
 
-        <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 px-3 mb-2">
-          Pantallas disponibles
-        </div>
-
-        <nav className="space-y-1">
+        <nav className="space-y-0.5">
           {entradas.map((hu) => (
-            <NavLink
-              key={hu.codigo}
-              to={hu.ruta}
-              className={({ isActive }) =>
-                `flex items-start gap-3 px-3 py-2.5 rounded-md text-sm transition-colors border-l-4 ${
-                  isActive
-                    ? 'bg-sigecop-blue-light/60 text-sigecop-blue border-sigecop-accent font-semibold'
-                    : 'border-transparent text-slate-700 hover:bg-slate-50 hover:text-sigecop-blue'
-                }`
-              }
-            >
-              <span className="text-lg leading-none flex-shrink-0">{hu.icono}</span>
+            <NavLink key={hu.codigo} to={hu.ruta} className={itemClass}>
+              <span className="text-base leading-none flex-shrink-0 mt-0.5">{hu.icono}</span>
               <div className="flex-1 min-w-0">
                 <div className="text-sm leading-tight flex items-center gap-2">
                   {hu.titulo}
                   {hu.nivel === 'C' && (
-                    <span className="text-[9px] uppercase tracking-wider bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded">
+                    <span className="text-[9px] uppercase tracking-wider bg-white border border-borde text-tinta-ter px-1.5 py-0.5 rounded">
                       lectura
                     </span>
                   )}
@@ -71,22 +54,11 @@ export default function Sidebar() {
         {/* Bandeja de firmas pendientes: cualquier miembro de equipo (residente,
             contratista/superintendente, supervisión). Fuera del catálogo de HU. */}
         {['residente', 'contratista', 'supervision'].includes(rol) && (
-          <div className="mt-6 pt-4 border-t border-slate-200">
-            <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 px-3 mb-2">
-              Bitácora
-            </div>
-            <nav className="space-y-1">
-              <NavLink
-                to="/bitacora/por-firmar"
-                className={({ isActive }) =>
-                  `flex items-start gap-3 px-3 py-2.5 rounded-md text-sm transition-colors border-l-4 ${
-                    isActive
-                      ? 'bg-sigecop-blue-light/60 text-sigecop-blue border-sigecop-accent font-semibold'
-                      : 'border-transparent text-slate-700 hover:bg-slate-50 hover:text-sigecop-blue'
-                  }`
-                }
-              >
-                <span className="text-lg leading-none flex-shrink-0">✍️</span>
+          <div className="mt-6 pt-4 border-t border-borde">
+            <div className={seccionClass}>Bitácora</div>
+            <nav className="space-y-0.5">
+              <NavLink to="/bitacora/por-firmar" className={itemClass}>
+                <span className="text-base leading-none flex-shrink-0 mt-0.5">✍️</span>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm leading-tight">Por firmar</div>
                 </div>
@@ -98,22 +70,11 @@ export default function Sidebar() {
         {/* Administración de la dependencia: gestión de solicitudes de registro.
             Fuera del catálogo de HU para no alterar conteos ni permisos por HU. */}
         {rol === 'dependencia' && (
-          <div className="mt-6 pt-4 border-t border-slate-200">
-            <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 px-3 mb-2">
-              Administración
-            </div>
-            <nav className="space-y-1">
-              <NavLink
-                to="/usuarios/solicitudes"
-                className={({ isActive }) =>
-                  `flex items-start gap-3 px-3 py-2.5 rounded-md text-sm transition-colors border-l-4 ${
-                    isActive
-                      ? 'bg-sigecop-blue-light/60 text-sigecop-blue border-sigecop-accent font-semibold'
-                      : 'border-transparent text-slate-700 hover:bg-slate-50 hover:text-sigecop-blue'
-                  }`
-                }
-              >
-                <span className="text-lg leading-none flex-shrink-0">📝</span>
+          <div className="mt-6 pt-4 border-t border-borde">
+            <div className={seccionClass}>Administración</div>
+            <nav className="space-y-0.5">
+              <NavLink to="/usuarios/solicitudes" className={itemClass}>
+                <span className="text-base leading-none flex-shrink-0 mt-0.5">📝</span>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm leading-tight">Solicitudes de registro</div>
                 </div>
@@ -125,22 +86,11 @@ export default function Sidebar() {
         {/* Roster del contrato: sustitución de personas (Pasada F, art. 125 fr. I g). La autoridad
             es la dependencia o el residente asignado. Fuera del catálogo de HU (no altera permisos). */}
         {['dependencia', 'residente'].includes(rol) && (
-          <div className="mt-6 pt-4 border-t border-slate-200">
-            <div className="text-xs font-semibold uppercase tracking-wider text-slate-500 px-3 mb-2">
-              Roster del contrato
-            </div>
-            <nav className="space-y-1">
-              <NavLink
-                to="/contratos/roster"
-                className={({ isActive }) =>
-                  `flex items-start gap-3 px-3 py-2.5 rounded-md text-sm transition-colors border-l-4 ${
-                    isActive
-                      ? 'bg-sigecop-blue-light/60 text-sigecop-blue border-sigecop-accent font-semibold'
-                      : 'border-transparent text-slate-700 hover:bg-slate-50 hover:text-sigecop-blue'
-                  }`
-                }
-              >
-                <span className="text-lg leading-none flex-shrink-0">👥</span>
+          <div className="mt-6 pt-4 border-t border-borde">
+            <div className={seccionClass}>Roster del contrato</div>
+            <nav className="space-y-0.5">
+              <NavLink to="/contratos/roster" className={itemClass}>
+                <span className="text-base leading-none flex-shrink-0 mt-0.5">👥</span>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm leading-tight">Sustitución de personas</div>
                 </div>
@@ -149,6 +99,17 @@ export default function Sidebar() {
           </div>
         )}
 
+        {/* Cambiar de rol (salirRol: conserva el token, vuelve al selector). Antes vivía en la
+            tarjeta "Rol activo"; el rol se muestra ahora como chip en la barra superior. */}
+        <div className="mt-auto pt-6 pb-2 px-3">
+          <button
+            type="button"
+            onClick={salirRol}
+            className="text-xs text-tinta-sec hover:text-guinda transition-colors"
+          >
+            ← Cambiar de rol
+          </button>
+        </div>
       </div>
     </aside>
   );

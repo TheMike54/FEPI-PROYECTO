@@ -1,21 +1,23 @@
 const express = require('express');
 const { authMiddleware, requireRole } = require('../middlewares/auth.middleware');
 const {
-  alertasDeContrato, crearAlerta, actualizarAlerta, eliminarAlerta
+  alertasDeContrato, resumenAtrasos, asentarAtraso
 } = require('../controllers/alertas.controller');
 
 const router = express.Router();
 
 router.use(authMiddleware);
 
-// Lectura: cualquier rol con acceso al contrato (acotada por participación en el
-// controller, igual que pagosDeContrato).
+// HU-07 v2 (O5): atraso por concepto AUTOMÁTICO (sin config/umbral). Solo lectura + asentar en bitácora.
+
+// AVISO al iniciar sesión (badge): conteo de conceptos/contratos con déficit, acotado por participación.
+router.get('/resumen', resumenAtrasos);
+
+// Panel de atraso del contrato: cualquier rol con acceso (acotado por participación en el controller).
 router.get('/contrato/:contratoId', alertasDeContrato);
 
-// Escritura: SOLO residente (único rol con nivel 'E' en HU-07, ver permisos.js);
-// además, el controller exige participación en el contrato.
-router.post('/', requireRole('residente'), crearAlerta);
-router.patch('/:id', requireRole('residente'), actualizarAlerta);
-router.delete('/:id', requireRole('residente'), eliminarAlerta);
+// Asentar el atraso de un concepto en la bitácora: SOLO residente (único nivel 'E' en HU-07, ver
+// permisos.js). El controller exige además participación y que el concepto tenga déficit > 0.
+router.post('/contrato/:contratoId/asentar', requireRole('residente'), asentarAtraso);
 
 module.exports = router;
