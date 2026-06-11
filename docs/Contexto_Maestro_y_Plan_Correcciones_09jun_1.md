@@ -28,7 +28,7 @@
 
 ## 2. Cómo llegamos aquí (cronología corta)
 
-1. **Fundación (P1–P3):** auth, alta de contrato completa (catálogo de conceptos con cuadre al centavo, programa de obra con regla del 100%, garantías, jurídicos, PDF), bitácora (apertura/notas/firmas inmutables con folio correlativo), estimación con carátula calculada en servidor (G1–G8: bruto = Σvol×PU − amortización proporcional del anticipo art. 143 RLOPSRM − 5 al millar art. 191 LFD), pago, backend de convenios.
+1. **Fundación (P1–P3):** auth, alta de contrato completa (catálogo de conceptos con cuadre al centavo, programa de obra con regla del 100%, garantías, jurídicos, PDF), bitácora (apertura/notas/firmas inmutables con folio correlativo), estimación con carátula calculada en servidor (G1–G8: bruto = Σvol×PU − amortización proporcional del anticipo art. 138 RLOPSRM − 5 al millar art. 191 LFD), pago, backend de convenios.
 2. **Integración de equipos:** HU-02 sustitución (E2), HU-04 expediente (E2), HU-06 avance físico con candado art. 118 (E2), HU-07 alertas (E2), HU-13 envío de estimación (E3), HU-14 historial (E3), HU-05 curva de avance (E2), HU-17 tablero (E3). Patrón: Code revisa el PR (rebase, zona congelada, spec real), corre la suite, Maiki integra.
 3. **Plan Maestro 1 (UI de estimación):** pantalla única con carátula viva, semáforo de plan por periodo, retención por atraso (pena × bruto), avance físico/financiero.
 4. **Plan Maestro 2 (correcciones del testing de Maiki):** matriz mes-por-mes visible en detalle/expediente, validación de fecha de pago, garantía de anticipo auto-calculada, fecha+hora en notas, indicador de atrasos, **sustitución genera nota de bitácora automática** (con diferido si no hay bitácora abierta).
@@ -87,7 +87,7 @@ Existe el botón para dar de alta una dependencia nueva, pero al usarlo *"vas a 
 (a) Si el monto capturado **excede el % esperado** (anticipo > % de anticipo del contrato; cumplimiento > 10% del monto), **avisar con la modal** acordada: *"me tendrás que decir: estás poniendo más del 30%"*. No bloquear: avisar. (b) **Bug confirmado en vivo:** el sistema **aceptó una garantía con vigencia vencida** (fecha de ayer). Validar vigencia.
 
 **P6 — PLAN DE AMORTIZACIÓN (grande — criterio de HU-01 que falta).**
-Está en los criterios de aceptación de HU-01 y no existe. El profe lo definió: *"es en qué mes voy a devolver el dinero [del anticipo]… muy parecido al programa de obra: por estimación, qué cantidad va a amortizar. No hay límites — puede amortizar todo en el primer pago o repartido"*. Se captura **en el alta** (matriz por periodo/estimación) y se muestra **en el expediente**. ⚠️ Implicación profunda: hoy la carátula amortiza **proporcional** (anticipo% × bruto, art. 143 RLOPSRM, que literalmente dice "proporcionalmente"). El plan libre del profe ≠ proporcional estricto → ver propuesta S2 y el `[validar]` correspondiente.
+Está en los criterios de aceptación de HU-01 y no existe. El profe lo definió: *"es en qué mes voy a devolver el dinero [del anticipo]… muy parecido al programa de obra: por estimación, qué cantidad va a amortizar. No hay límites — puede amortizar todo en el primer pago o repartido"*. Se captura **en el alta** (matriz por periodo/estimación) y se muestra **en el expediente**. ⚠️ Implicación profunda: hoy la carátula amortiza **proporcional** (anticipo% × bruto, art. 138 RLOPSRM, que literalmente dice "proporcionalmente"). El plan libre del profe ≠ proporcional estricto → ver propuesta S2 y el `[validar]` correspondiente.
 
 **P7 — Nota de apertura narrativa (confirmado; es la corrección estructural de E2).**
 La apertura debe desplegar **una redacción** que jale automáticamente fecha, nombres y datos del contrato, **editable** para agregar texto. *"Les enseñé un ejemplo de una nota de apertura"*. (La nota actual fue "para que tuviéramos una bitácora", hay que corregirla.)
@@ -230,7 +230,7 @@ Frontend + validaciones, **sin DDL** salvo indicado:
 
 ### S2 — Plan de amortización (P6)
 **Fase A (Oleada 2, sin tocar G):** tabla aditiva `plan_amortizacion(contrato_id, periodo_numero, monto)` (o %); paso nuevo en el alta tipo matriz (reusa el patrón del programa): por periodo, cuánto se amortiza; **validación: Σ = monto del anticipo** (si anticipo = 0, paso se omite); default precargado **proporcional** (el usuario lo edita libre — "no hay límites" por periodo). Lectura en expediente (HU-04). 
-**Fase B (Oleada 10, tras `[validar]`):** la carátula usa `plan[periodo]` en vez de `anticipo% × bruto`. ⚠️ **Conflicto a informar al profe:** el art. 143 RLOPSRM indica amortización **proporcional** con cargo a cada estimación; el plan libre la generaliza. Propuesta al profe: *"plan editable con default proporcional; ¿la carátula obedece al plan?"* — hasta su OK, la carátula sigue proporcional (los números no cambian sin aviso).
+**Fase B (Oleada 10, tras `[validar]`):** la carátula usa `plan[periodo]` en vez de `anticipo% × bruto`. ⚠️ **Conflicto a informar al profe:** el art. 138 RLOPSRM indica amortización **proporcional** con cargo a cada estimación; el plan libre la generaliza. Propuesta al profe: *"plan editable con default proporcional; ¿la carátula obedece al plan?"* — hasta su OK, la carátula sigue proporcional (los números no cambian sin aviso).
 
 ### S3 — Catálogo de empresas (P1)
 DDL aditivo: `empresas(id, nombre UNIQUE normalizado, rfc?, tipo?)` + `usuarios.empresa_id NULL`. 
@@ -390,7 +390,7 @@ Corre la suite completa. Reporta. Doc + runbook. NO push.
 **Prompt O2:**
 ```
 Soy Maiki. PLAN DE AMORTIZACIÓN (criterio faltante de HU-01, pedido del profe). LOCAL, sin commit/push.
-Ley: el anticipo se amortiza con cargo a las estimaciones (art. 143 RLOPSRM, que indica "proporcionalmente" — el profe pidió plan editable; la carátula NO cambia en esta fase).
+Ley: el anticipo se amortiza con cargo a las estimaciones (art. 138 RLOPSRM, que indica "proporcionalmente" — el profe pidió plan editable; la carátula NO cambia en esta fase).
 1) DDL ADITIVO: tabla plan_amortizacion(contrato_id, periodo_numero, monto NUMERIC) — idempotente.
 2) ALTA: si el contrato tiene anticipo > 0, paso nuevo "Plan de amortización" (matriz por periodo, patrón del programa): default precargado PROPORCIONAL entre periodos, editable libre por periodo; validación: la suma = monto del anticipo (al centavo). Si anticipo = 0, el paso se omite.
 3) EXPEDIENTE (HU-04): sección "Plan de amortización" en lectura.
@@ -478,7 +478,7 @@ Tests + suite verde. Doc + runbook. NO push.
 ```
 
 ### Oleada 10 — Plan de amortización Fase B (solo tras `[validar]` del profe)
-La carátula toma la amortización del plan (`plan[periodo]`) en lugar del proporcional. Toca G2: se hace solo con el OK explícito (el art. 143 dice "proporcionalmente"; que el profe decida la regla del sistema).
+La carátula toma la amortización del plan (`plan[periodo]`) en lugar del proporcional. Toca G2: se hace solo con el OK explícito (el art. 138 dice "proporcionalmente"; que el profe decida la regla del sistema).
 
 ### Oleada UI-B — barrido final de consistencia (antes del smoke E2E)
 **Prompt UI-B:**
@@ -501,7 +501,7 @@ Soy Maiki. REDISEÑO UI/UX — Fase B: barrido final de consistencia. LOCAL, sin
 **Resueltos por esta revisión (ya decididos por él):** datos jurídicos simplificados sin cédula ✓ · apertura narrativa ✓ (cómo) · programa mes-por-mes ✓ · fecha/hora en notas ✓ · sustitución con nota automática ✓ (concepto) · plan de amortización: existe y es editable ✓.
 
 **Nuevos / siguen abiertos:**
-1. **Amortización en la carátula:** ¿obedece al plan capturado o se mantiene proporcional (art. 143 RLOPSRM dice "proporcionalmente")? — define la Fase B.
+1. **Amortización en la carátula:** ¿obedece al plan capturado o se mantiene proporcional (art. 138 RLOPSRM dice "proporcionalmente")? — define la Fase B.
 2. **Convenios 25%:** ¿tope duro (hoy bloquea) o disparador de revisión? (El bloqueo del equipo en pruebas fue este guardrail.)
 3. **Avance que excede el periodo:** ¿bloquear (como hoy se propone) o avisar y permitir?
 4. **Emisor de las notas automáticas** (sustitución/avance/convenio/atraso): ¿quien ejecuta o forzar residente (art. 125 fr. I g)?

@@ -106,20 +106,21 @@ async function historialEstimaciones(req, res) {
   }
 }
 
-// POST /api/estimaciones-ciclo/estimacion/:id/enviar — HU-13: ENVÍO de la estimación.
-// Sella enviada_en = NOW() y enviada_por = req.user.id (del JWT, NUNCA del body) y avanza
-// el estado 'integrada' -> 'enviada'. Escribe SOLO estado + sellos: NO toca la carátula.
-// El trigger sigecop_estimacion_inmutable congela la carátula y deja LIBRE estado/enviada_*
-// (a propósito, ver schema.sql ~L951 y la pasada de soporte HU-13/16), así que este UPDATE
-// pasa sin tocar esquema congelado.
+// POST /api/estimaciones-ciclo/estimacion/:id/enviar — HU-13 (O7): REVISIÓN Y AUTORIZACIÓN de la
+// estimación por la RESIDENCIA (art. 54 LOPSRM; el profe CONFIRMÓ invertir el flujo: el contratista
+// PRESENTA en HU-12, la residencia AUTORIZA aquí). SIN migrar datos: el estado interno avanza
+// 'integrada' -> 'enviada' (igual que antes) y se REUTILIZAN las columnas enviada_en/enviada_por como
+// SELLO DE AUTORIZACIÓN (solo cambia la etiqueta de UI a "Autorizada", no las columnas). Escribe SOLO
+// estado + sellos: NO toca la carátula. El trigger sigecop_estimacion_inmutable congela la carátula y
+// deja LIBRE estado/enviada_*, así que este UPDATE pasa sin tocar esquema congelado. El endpoint
+// conserva el path /enviar por compatibilidad de API (no es una columna).
 //
-// Acceso: SOLO el superintendente asignado al contrato (HU-13 nivel 'E' = contratista; es la
-// MISMA posición que integra en HU-12, no un rol global). Espejo de integrarEstimacion.
+// Acceso (O7): SOLO el RESIDENTE asignado al contrato (HU-13 nivel 'E' = residente; antes era el
+// superintendente). Acotamiento de IDENTIDAD localizado (no un rol global), espejo de integrarEstimacion.
 //
-// Plazo art. 54 LOPSRM: el envío ARRANCA el plazo de revisión (15 días naturales). NO se
-// persiste contador alguno: el semáforo se DERIVA en lectura desde enviada_en (aquí solo se
-// sella la fecha). La notificación a residencia/supervisión es un indicador in-app derivado
-// (la estimación 'enviada' figura como pendiente de revisión): sin tabla, cron ni correo.
+// Plazo art. 54 LOPSRM (referencia visual, NO bloqueante en esta fase): la autorización corre 15 días
+// naturales desde la PRESENTACIÓN (integrada_en); el pago 20 días desde la AUTORIZACIÓN (enviada_en).
+// El semáforo se DERIVA en lectura; aquí solo se sella la fecha.
 async function enviarEstimacion(req, res) {
   try {
     const id = Number(req.params.id);
@@ -137,21 +138,21 @@ async function enviarEstimacion(req, res) {
     if (e.rowCount === 0) return res.status(404).json({ error: 'Estimación no encontrada' });
     const row = e.rows[0];
 
-    // (2) Acceso localizado: solo el superintendente del contrato envía sus estimaciones.
-    if (row.superintendente_id !== req.user.id) {
-      return res.status(403).json({ error: 'Solo el superintendente asignado a este contrato puede enviar sus estimaciones' });
+    // (2) Acceso localizado (O7): solo el RESIDENTE del contrato autoriza sus estimaciones.
+    if (row.residente_id !== req.user.id) {
+      return res.status(403).json({ error: 'Solo el residente asignado a este contrato puede revisar y autorizar sus estimaciones (art. 54 LOPSRM)' });
     }
 
-    // (3) Máquina de estados: solo se envía desde 'integrada'. No reenviar; no saltar/retroceder.
+    // (3) Máquina de estados: solo se autoriza desde 'integrada' (Presentada). No reautorizar; no saltar.
     if (row.estado === 'enviada') {
-      return res.status(409).json({ error: 'La estimación ya fue enviada' });
+      return res.status(409).json({ error: 'La estimación ya fue autorizada' });
     }
     if (row.estado !== 'integrada') {
-      return res.status(409).json({ error: `No se puede enviar una estimación en estado '${row.estado}'` });
+      return res.status(409).json({ error: `No se puede autorizar una estimación en estado '${row.estado}'` });
     }
 
-    // (4) Sello ATÓMICO: el WHERE estado='integrada' serializa y bloquea el doble-envío en
-    //     carrera (si otro proceso la envió entre el SELECT y el UPDATE, rowCount = 0).
+    // (4) Sello ATÓMICO: el WHERE estado='integrada' serializa y bloquea la doble-autorización en
+    //     carrera (si otro proceso la autorizó entre el SELECT y el UPDATE, rowCount = 0).
     const upd = await pool.query(
       `UPDATE estimaciones
           SET estado = 'enviada', enviada_en = NOW(), enviada_por = $2
@@ -160,7 +161,7 @@ async function enviarEstimacion(req, res) {
       [id, req.user.id]
     );
     if (upd.rowCount === 0) {
-      return res.status(409).json({ error: 'La estimación ya fue enviada' });
+      return res.status(409).json({ error: 'La estimación ya fue autorizada' });
     }
     return res.status(200).json(upd.rows[0]);
   } catch (err) {

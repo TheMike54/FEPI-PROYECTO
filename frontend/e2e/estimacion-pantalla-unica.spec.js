@@ -1,7 +1,7 @@
 // @ts-check
 // Etapa A — Pantalla ÚNICA de estimación (presentación). Verifica:
 //   · carátula VIVA: recalcula al teclear (el neto oficial lo materializa el backend).
-//   · ejemplo guía: C-001 PU=200, anticipo 30%, vol=400 → bruto 80,000 − amort 24,000 (art.143)
+//   · ejemplo guía: C-001 PU=200, anticipo 30%, vol=400 → bruto 80,000 − amort 24,000 (art.138)
 //     − 5 al millar 400 (art.191) = neto $55,600.
 //   · semáforo de PLAN: si el volumen excede lo planeado para el periodo, marca rojo y DESHABILITA
 //     "Confirmar" (solo ADELANTA la validación del server; el server sigue validando al integrar).

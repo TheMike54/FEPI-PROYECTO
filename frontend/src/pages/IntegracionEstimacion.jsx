@@ -8,6 +8,7 @@ import BuscadorNotas, { useFiltrosNotas } from '../components/notas/BuscadorNota
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
+import { labelEstadoEstimacion } from '../data/estadoEstimacion.js';
 import MatrizProgramaLectura, { periodoQueContiene } from '../components/programa/MatrizProgramaLectura.jsx';
 
 // HU-12 Fase 3 — cableado al backend real. El superintendente del contrato integra
@@ -54,8 +55,8 @@ const CLASE_ESTADO = {
   rechazada: 'bg-red-100 text-red-700'
 };
 const BadgeEstado = ({ estado }) => (
-  <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold capitalize ${CLASE_ESTADO[estado] || 'bg-slate-100 text-slate-600'}`}>
-    {estado}
+  <span className={`inline-block px-2 py-0.5 rounded text-[11px] font-semibold ${CLASE_ESTADO[estado] || 'bg-slate-100 text-slate-600'}`}>
+    {labelEstadoEstimacion(estado)}
   </span>
 );
 
@@ -327,7 +328,7 @@ function TabGeneradores({ filas, onCantidad, tienePlan }) {
 function TabCaratula({ caratula, anticipoPct, deductivas, onDeductivas, acumulados, numeroEstimacion, periodoNumero, periodoInicio, periodoFin }) {
   const renglones = [
     { label: 'Importe bruto del periodo', importe: caratula.subtotal, formula: 'Σ ROUND(volumen ejecutado × PU, 2) de los generadores con avance' },
-    { label: `(−) Amortización de anticipo (${anticipoPct}%)`, importe: -caratula.amortizacion, formula: `subtotal × ${anticipoPct}/100 — art. 143 fr. I RLOPSRM`, art: 'art. 143 RLOPSRM' },
+    { label: `(−) Amortización de anticipo (${anticipoPct}%)`, importe: -caratula.amortizacion, formula: `subtotal × ${anticipoPct}/100 — art. 138 fr. I RLOPSRM`, art: 'art. 138 RLOPSRM' },
     { label: '(−) Retención 5 al millar (0.5%)', importe: -caratula.retencion, formula: 'subtotal × 0.005 — art. 191 LFD', art: 'art. 191 LFD' }
   ];
   return (
@@ -416,7 +417,7 @@ function TabCaratula({ caratula, anticipoPct, deductivas, onDeductivas, acumulad
         </div>
       )}
       <div className="bg-guinda-soft border-l-4 border-guinda px-4 py-3 text-sm text-tinta rounded-r-md max-w-2xl">
-        Amortización del anticipo conforme al <strong>art. 143 fr. I RLOPSRM</strong> y retención del{' '}
+        Amortización del anticipo conforme al <strong>art. 138 fr. I RLOPSRM</strong> y retención del{' '}
         <strong>5 al millar (art. 191 LFD)</strong>. La estimación se calcula <strong>sin IVA</strong>.
       </div>
     </div>
@@ -691,7 +692,7 @@ export default function IntegracionEstimacion() {
         notas: notasVinculadas.map((n) => n.id)
       });
       setResultado(est);
-      showToast(`Estimación #${est.numero} integrada`);
+      showToast(`Estimación #${est.numero} presentada`);
       // El acumulado y el historial cambiaron: recargar y limpiar el formulario.
       await Promise.all([recargarAvance(contratoId), recargarHistorial(contratoId)]);
       setCantidades({}); setDeductivas('0'); setPeriodoInicio(''); setPeriodoFin(''); setNotasVinculadas([]);
@@ -727,10 +728,10 @@ export default function IntegracionEstimacion() {
     <div>
       <HeaderVista
         huId="HU-12"
-        titulo="Apertura del periodo e integración de la estimación"
+        titulo="Formular y presentar la estimación"
         sprint="Sprint 3"
         rolAcademico="Contratista"
-        breadcrumb={[{ label: 'Inicio', href: '/' }, { label: 'Estimaciones' }, { label: 'Integración del periodo' }]}
+        breadcrumb={[{ label: 'Inicio', href: '/' }, { label: 'Estimaciones' }, { label: 'Formular y presentar' }]}
       />
 
       {sinSesion && (
@@ -773,18 +774,18 @@ export default function IntegracionEstimacion() {
 
           {!soloLectura && !esSuperintendente && (
             <div className="bg-amber-50 border-l-4 border-amber-400 px-4 py-3 mb-4 text-sm text-amber-800 rounded-r-md">
-              Solo el <strong>superintendente asignado</strong> a este contrato puede integrar estimaciones; el servidor rechazará el intento si no lo eres.
+              Solo el <strong>superintendente asignado</strong> a este contrato puede presentar estimaciones; el servidor rechazará el intento si no lo eres.
             </div>
           )}
 
           {resultado && (
             <div className="bg-sigecop-green-bg border-l-4 border-sigecop-green-validation px-4 py-3 mb-4 rounded-r-md" data-testid="banner-integrada">
-              <div className="text-sm font-semibold text-sigecop-green-validation">✓ Estimación #{resultado.numero} integrada</div>
+              <div className="text-sm font-semibold text-sigecop-green-validation">✓ Estimación #{resultado.numero} presentada</div>
               <p className="text-sm text-slate-800 mt-1">
                 Carátula oficial del backend (fuente de verdad): subtotal {moneda(resultado.subtotal)} − amortización {moneda(resultado.amortizacion)} − retención {moneda(resultado.retencion)} − deductivas {moneda(resultado.deductivas)} = <strong>neto {moneda(resultado.neto)}</strong> (sin IVA). Estado: <BadgeEstado estado={resultado.estado} />.
               </p>
               <p className="text-xs text-slate-500 mt-1">
-                Quedó registrada como expediente del periodo. El envío y la revisión por supervisión/residencia son etapas posteriores (HU-13/HU-15), aún no implementadas.
+                Quedó registrada como expediente del periodo (art. 132 RLOPSRM). La <strong>revisión y autorización por la residencia</strong> es la etapa siguiente (HU-13, art. 54 LOPSRM).
               </p>
             </div>
           )}
@@ -866,7 +867,7 @@ export default function IntegracionEstimacion() {
                 title={hayExceso ? 'Hay conceptos que exceden lo contratado' : hayExcesoPlan ? 'Hay conceptos que exceden lo planeado del periodo' : (!hayLineas ? 'Captura al menos un concepto con cantidad > 0' : '')}
                 data-testid="btn-integrar"
               >
-                {integrando ? 'Integrando…' : 'Confirmar e integrar estimación'}
+                {integrando ? 'Presentando…' : 'Confirmar y presentar estimación'}
               </button>
             </div>
           )}

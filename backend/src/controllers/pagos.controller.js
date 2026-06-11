@@ -64,9 +64,11 @@ async function registrarPago(req, res) {
       if (est.contrato_id !== contratoId) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'La estimación no pertenece al contrato indicado' }); }
       if (est.estado === 'pagada') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'Esta estimación ya está pagada' }); }
       if (est.estado === 'rechazada') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'No se puede pagar una estimación rechazada' }); }
-      // [validar con el profe] estado que habilita el pago: hoy integrada/autorizada (el flujo de
-      // autorización HU-15 aún no existe; cuando exista podría exigirse solo 'autorizada').
-      if (!['integrada', 'autorizada'].includes(est.estado)) { await client.query('ROLLBACK'); return res.status(409).json({ error: `Solo puede pagarse una estimación integrada o autorizada (estado actual: ${est.estado})` }); }
+      // O7 (Opción A, decisión de Maiki — NO bloqueante esta fase): se añade 'enviada' (= "Autorizada"
+      // por la residencia, HU-13) al conjunto pagable, para que finanzas pueda pagar lo AUTORIZADO. Se
+      // conserva 'integrada'/'autorizada' (permisivo, consistente con #6: los plazos del art. 54 son
+      // referencia visual, no candado duro todavía). [validar profe] endurecer luego a solo lo autorizado.
+      if (!['integrada', 'enviada', 'autorizada'].includes(est.estado)) { await client.query('ROLLBACK'); return res.status(409).json({ error: `Solo puede pagarse una estimación presentada o autorizada (estado actual: ${est.estado})` }); }
       const dup = await client.query('SELECT 1 FROM pagos WHERE estimacion_id = $1 LIMIT 1', [estimacionId]);
       if (dup.rowCount > 0) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'Esta estimación ya tiene un pago registrado' }); }
 

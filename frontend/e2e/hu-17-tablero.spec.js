@@ -8,8 +8,8 @@
 // en varios estados y verifica:
 //   · El grid muestra las estimaciones aceptadas/en proceso y EXCLUYE la rechazada (CA-1).
 //   · Los montos (neto) llegan cuadrados server-side (formateados en la tarjeta).
-//   · "Mis pendientes" CAMBIA según el rol (residente revisa lo 'enviada';
-//     contratista envía lo 'integrada' y reingresa lo 'rechazada').
+//   · "Mis pendientes" CAMBIA según el rol (O7: el RESIDENTE revisa y autoriza lo 'integrada'
+//     /Presentada; finanzas paga lo 'enviada'/Autorizada; el contratista reingresa lo 'rechazada').
 //   · ACOTAMIENTO: un operativo (residente) NO ve el contrato ajeno; dependencia
 //     (ve todo) SÍ lo ve.
 //   · Finanzas no tiene acceso a la HU (PERMISOS[HU-17].finanzas = null).
@@ -78,14 +78,14 @@ test.describe('HU-17 — Residente (es parte de SMK17-001)', () => {
     await expect(page.locator(card(1))).toContainText('$ 199,000.00');
   });
 
-  test('Mis pendientes (residente) = revisar la estimación enviada (#3), no las del contratista', async ({ page }) => {
-    // Aserción por PRESENCIA/ROL (no por total): la BD puede traer datos de otras
-    // corridas. Lo que prueba la HU es el filtrado por rol según el estado.
+  test('Mis pendientes (residente) = revisar y autorizar la presentada (#4), no las de finanzas/contratista', async ({ page }) => {
+    // O7: la residencia revisa y autoriza lo PRESENTADO ('integrada' = #4). Aserción por PRESENCIA/ROL
+    // (no por total): la BD puede traer datos de otras corridas. Prueba el filtrado por rol según estado.
     const mis = page.getByTestId('mis-pendientes');
-    await expect(mis).toContainText('SMK17-001 · Estimación N.º 3');
-    await expect(mis).toContainText('Revisar');
-    // #4 (enviar) y #5 (reingresar) son del CONTRATISTA, no del residente.
-    await expect(mis).not.toContainText('SMK17-001 · Estimación N.º 4');
+    await expect(mis).toContainText('SMK17-001 · Estimación N.º 4');
+    await expect(mis).toContainText('autorizar');
+    // #3 (autorizada → la PAGA finanzas) y #5 (rechazada → la reingresa el contratista) NO son del residente.
+    await expect(mis).not.toContainText('SMK17-001 · Estimación N.º 3');
     await expect(mis).not.toContainText('SMK17-001 · Estimación N.º 5');
   });
 
@@ -98,8 +98,8 @@ test.describe('HU-17 — Residente (es parte de SMK17-001)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Contratista (consulta, pero ES superintendente de SMK17-001): sus pendientes
-// son enviar la integrada (#4) y reingresar la rechazada (#5).
+// Contratista (consulta, pero ES superintendente de SMK17-001): O7 — ya NO presenta/autoriza;
+// su único pendiente es reingresar la rechazada (#5, HU-16).
 // ---------------------------------------------------------------------------
 test.describe('HU-17 — Contratista (superintendente de SMK17-001)', () => {
   test.beforeEach(async ({ page }) => {
@@ -108,14 +108,13 @@ test.describe('HU-17 — Contratista (superintendente de SMK17-001)', () => {
     await goToViaSidebar(page, VIEW_PATH);
   });
 
-  test('Mis pendientes (contratista) = enviar #4 y reingresar #5', async ({ page }) => {
+  test('Mis pendientes (contratista) = reingresar la rechazada (#5); ya NO autoriza/paga', async ({ page }) => {
     // Presencia, no total (la BD puede traer estimaciones de otras corridas).
     const mis = page.getByTestId('mis-pendientes');
-    await expect(mis).toContainText('SMK17-001 · Estimación N.º 4');
-    await expect(mis).toContainText('Enviar');
     await expect(mis).toContainText('SMK17-001 · Estimación N.º 5');
     await expect(mis).toContainText('Reingresar');
-    // La #3 (enviada) es del RESIDENTE/SUPERVISIÓN, no del contratista.
+    // O7: la #4 (presentada) la AUTORIZA el residente; la #3 (autorizada) la paga finanzas — no el contratista.
+    await expect(mis).not.toContainText('SMK17-001 · Estimación N.º 4');
     await expect(mis).not.toContainText('SMK17-001 · Estimación N.º 3');
   });
 });

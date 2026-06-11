@@ -194,7 +194,7 @@ EQUIPO 2 ───────┘   lee catálogo/programa (RO)   EQUIPO 3 ─�
 | HU | Falta para e2e | Hallazgos del profe que aplican |
 |---|---|---|
 | HU-01 | **Programa de obra rehecho** = conceptos del catálogo repartidos en periodos (matriz concepto×periodo, valida ≤ contratado, define el ciclo de estimación). Hoy es `contrato_actividades` (texto libre). Esto es el **Paquete A2** (A1 ya cerró cuadre exacto + clave). + Anticipo como regla de negocio. + UX incremental del alta. + Bug de carga de PDF. + Catálogo de unidades (mes/hectárea/Otro). | **R1/C2** (cuadre exacto, ya A1), **R3/C5/Anexo** (programa = catálogo en periodos), **C3** (clave, ya A1), **R2/C6** (anticipo regla), **C1** (alta inicia vacía), **C7** (validar en vista, no perder datos), **C8** (bug PDF), **C9** (modales salir), **C10** (unidades), **C11** (siguiente/guardar), **C4** (folio captura, confirmar), **C12** (día inicio↔apertura), **C13/U4** (supervisión/póliza selector) |
-| HU-12 | Carátula calculada **server-side ya existe** (amort. art.143, 5 al millar art.191, exceso art.118, periodo art.54). Falta: cerrar el preview client-side contra el server, soportes/fotos reales (hoy esqueleto). ¿CMIC/2 al millar? | **E1** (programa↔catálogo↔estimación consistentes — depende de A2), **E2** (cuadre exacto en carátula, hecho), **E3** (CMIC 2 al millar — pendiente decisión), **E4** (revisión real con el profe) |
+| HU-12 | Carátula calculada **server-side ya existe** (amort. art.138, 5 al millar art.191, exceso art.118, periodo art.54). Falta: cerrar el preview client-side contra el server, soportes/fotos reales (hoy esqueleto). ¿CMIC/2 al millar? | **E1** (programa↔catálogo↔estimación consistentes — depende de A2), **E2** (cuadre exacto en carátula, hecho), **E3** (CMIC 2 al millar — pendiente decisión), **E4** (revisión real con el profe) |
 | Transversal | **Sustitución de personas sin perder histórico** (tabla 1:N contrato→persona por rol, solo una activa). HOY NO EXISTE → incumple la ley. | **S1/S2/S3** (alta prioridad legal) |
 
 ### Equipo 2 (bitácora + documental + avance)
@@ -292,7 +292,7 @@ Estos archivos **no los toca ningún equipo** (solo tú, vía PR-review). Lléna
 - `frontend/src/pages/AltaContrato.jsx` — formulario de 6 bloques + Registrados; round2/round4; derivación de fecha término.
 
 ### 5.4 Integración de estimación HU-12
-- `backend/src/controllers/estimaciones.controller.js` — `integrarEstimacion`: carátula server-side (subtotal, amortización art.143, retención 5 al millar art.191 LFD, deductivas, neto), exceso art.118, periodo art.54, solo superintendente, congelado por trigger.
+- `backend/src/controllers/estimaciones.controller.js` — `integrarEstimacion`: carátula server-side (subtotal, amortización art.138, retención 5 al millar art.191 LFD, deductivas, neto), exceso art.118, periodo art.54, solo superintendente, congelado por trigger.
 - `backend/src/routes/estimaciones.routes.js` — `POST /api/estimaciones`, `GET /contrato/:id[/avance]`, `GET /:id`.
 - `frontend/src/pages/IntegracionEstimacion.jsx` — captura de generadores, modal vincular notas, preview de carátula.
 

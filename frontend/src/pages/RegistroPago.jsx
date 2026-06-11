@@ -5,14 +5,19 @@ import RegionEditable from '../components/vista/RegionEditable.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
+import { labelEstadoEstimacion } from '../data/estadoEstimacion.js';
 
 // HU-21 ENDURECIDO: el pago se AMARRA a una estimación REAL del contrato (estimacion_id); el
 // importe = NETO de esa estimación (read-only, derivado del servidor, no se teclea); no se paga
 // dos veces; al registrar, la estimación pasa a 'pagada' (CA-1). El actor sale del JWT (CA-2).
+//
+// O7 (art. 54 LOPSRM): finanzas paga lo AUTORIZADO por la residencia (estado 'enviada' = "Autorizada").
+// Se añade 'enviada' al conjunto pagable (decisión de Maiki, no bloqueante esta fase) conservando
+// 'integrada'/'autorizada'; el candado real lo aplica el backend (pagos.controller).
 
 const mxn = (n) => `$ ${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmtFecha = (s) => { if (!s) return '—'; const [y, m, d] = String(s).slice(0, 10).split('-'); return (y && m && d) ? `${d}/${m}/${y}` : '—'; };
-const PAGABLES = new Set(['integrada', 'autorizada']);
+const PAGABLES = new Set(['integrada', 'enviada', 'autorizada']);
 
 export default function RegistroPago() {
   const { token } = useSesion();
@@ -142,14 +147,14 @@ export default function RegistroPago() {
               <RegionEditable disabled={soloLectura}>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="md:col-span-2">
-                    <label className="sg-label">Estimación a pagar * <span className="text-[11px] font-normal text-slate-500">(integrada/autorizada, no pagada)</span></label>
+                    <label className="sg-label">Estimación a pagar * <span className="text-[11px] font-normal text-slate-500">(presentada/autorizada, no pagada)</span></label>
                     <select className="sg-input" value={estimacionId} onChange={(e) => setEstimacionId(e.target.value)} data-testid="pago-estimacion">
                       <option value="">— Selecciona la estimación —</option>
                       {estimaciones.map((e) => (
-                        <option key={e.id} value={e.id}>Estimación #{e.numero} · {fmtFecha(e.periodo_inicio)}–{fmtFecha(e.periodo_fin)} · neto {mxn(e.neto)}</option>
+                        <option key={e.id} value={e.id}>Estimación #{e.numero} · {labelEstadoEstimacion(e.estado)} · {fmtFecha(e.periodo_inicio)}–{fmtFecha(e.periodo_fin)} · neto {mxn(e.neto)}</option>
                       ))}
                     </select>
-                    {estimaciones.length === 0 && <p className="text-[11px] text-amber-700 mt-1">Este contrato no tiene estimaciones pagables (integradas o autorizadas, no pagadas).</p>}
+                    {estimaciones.length === 0 && <p className="text-[11px] text-amber-700 mt-1">Este contrato no tiene estimaciones pagables (presentadas o autorizadas, no pagadas).</p>}
                   </div>
 
                   <div>

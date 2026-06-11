@@ -18,33 +18,33 @@ const { esParteOSupervision } = require('../lib/acceso');
 
 // Catálogo canónico de estados. Son EXACTAMENTE los del CHECK de
 // estimaciones.estado en schema.sql (integrada/enviada/autorizada/pagada/rechazada).
-// `responsable` = rol que debe ACTUAR a continuación dado el estado (next-actor),
-// derivado de la máquina de estados + matriz de permisos (no inventado):
-//   · integrada  -> contratista envía a revisión (HU-13; PERMISOS[HU-13].contratista='E')
-//   · enviada    -> supervisión/residente revisan (HU-15; ambos 'E')
-//   · autorizada -> finanzas programa/registra el pago (HU-20/21; finanzas 'E')
+// O7 (art. 54 LOPSRM, confirmado por el profe): SOLO cambian las ETIQUETAS y el next-actor (sin migrar
+// datos). El contratista PRESENTA (integrada="Presentada"), la residencia AUTORIZA (enviada="Autorizada"),
+// finanzas PAGA. `responsable` = rol que debe ACTUAR a continuación dado el estado (next-actor):
+//   · integrada  (Presentada) -> RESIDENTE revisa y autoriza (HU-13; PERMISOS[HU-13].residente='E')
+//   · enviada    (Autorizada) -> finanzas registra el pago (HU-21; finanzas 'E')
+//   · autorizada -> estado VESTIGIAL del esquema (sin uso en el flujo cableado); next = finanzas. Se
+//     etiqueta "Autorizada" igual que 'enviada' (indistinguible para el usuario; en el flujo real no aparece).
 //   · pagada     -> terminal, sin siguiente actor
 //   · rechazada  -> contratista reingresa (HU-16; contratista 'E')
-// `enGrid`: CA-1 — el tablero NO muestra las rechazadas en el grid (viven en el
-// historial, HU-14). Sí cuentan como métrica agregada informativa.
+// `enGrid`: CA-1 — el tablero NO muestra 'rechazada' en el grid (vive en HU-14); sí cuenta como métrica.
 const ESTADOS = [
-  { estado: 'integrada',  etiqueta: 'Integrada',             responsable: 'contratista', enGrid: true },
-  { estado: 'enviada',    etiqueta: 'Enviada / en revisión', responsable: 'supervision', enGrid: true },
-  { estado: 'autorizada', etiqueta: 'Autorizada',            responsable: 'finanzas',    enGrid: true },
-  { estado: 'pagada',     etiqueta: 'Pagada',                responsable: null,          enGrid: true },
-  { estado: 'rechazada',  etiqueta: 'Rechazada',             responsable: 'contratista', enGrid: false },
+  { estado: 'integrada',  etiqueta: 'Presentada',         responsable: 'residente',   enGrid: true },
+  { estado: 'enviada',    etiqueta: 'Autorizada',         responsable: 'finanzas',    enGrid: true },
+  { estado: 'autorizada', etiqueta: 'Autorizada',         responsable: 'finanzas',    enGrid: true },
+  { estado: 'pagada',     etiqueta: 'Pagada',             responsable: null,          enGrid: true },
+  { estado: 'rechazada',  etiqueta: 'Rechazada',          responsable: 'contratista', enGrid: false },
 ];
 const ESTADO_META = new Map(ESTADOS.map((e) => [e.estado, e]));
 
-// Mis pendientes: estado actual -> rol(es) que deben actuar + acción concreta.
+// Mis pendientes: estado actual -> rol(es) que deben actuar + acción concreta (O7).
 // Anclado a la máquina de estados y a PERMISOS (frontend/src/data/permisos.js).
-// Una estimación es "pendiente" de un usuario si su estado exige una acción que
-// SU rol ejecuta. (pagada = terminal, no genera pendiente.)
+// Una estimación es "pendiente" de un usuario si su estado exige una acción que SU rol ejecuta.
 const PENDIENTE_POR_ESTADO = {
-  integrada:  { roles: ['contratista'],              accion: 'Enviar la estimación a revisión (art. 54 LOPSRM, HU-13)' },
-  enviada:    { roles: ['residente', 'supervision'], accion: 'Revisar la estimación enviada (HU-15)' },
-  autorizada: { roles: ['finanzas'],                 accion: 'Programar y registrar el pago (HU-20/21)' },
-  rechazada:  { roles: ['contratista'],              accion: 'Reingresar la estimación rechazada (HU-16)' },
+  integrada:  { roles: ['residente'],   accion: 'Revisar y autorizar la estimación presentada (art. 54 LOPSRM, HU-13)' },
+  enviada:    { roles: ['finanzas'],    accion: 'Registrar el pago de la estimación autorizada (HU-21)' },
+  autorizada: { roles: ['finanzas'],    accion: 'Registrar el pago de la estimación (HU-21)' },
+  rechazada:  { roles: ['contratista'], accion: 'Reingresar la estimación rechazada (HU-16)' },
 };
 
 // Centavos como número, para sumar sin perder precisión y reformatear al final.

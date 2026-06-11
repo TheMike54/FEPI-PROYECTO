@@ -2,9 +2,10 @@
 // O4 — HU-06 v2: registro de avance POR PERIODO + NOTA automática + validación contra el programa
 // VIGENTE (P14 del profe). Cubre:
 //   · registro dentro del periodo (UI: selector + toggle "ejecuté todo") → OK + nota asentada.
-//   · excede lo programado del periodo → BLOQUEA (409, art. 59).
-//   · concepto no programado en el periodo → BLOQUEA (409).
-//   · convenio que AMPLÍA el periodo → el avance que excedía ahora PASA (programa vigente).
+//   · O-PROFE: excede lo programado del periodo → AVISA (201 + aviso_programa, NO bloquea).
+//   · O-PROFE: concepto no programado en el periodo → AVISA (201 + aviso).
+//   · art. 118 (acumulado sobre lo contratado) SIGUE bloqueando (409).
+//   · convenio que AMPLÍA el periodo → el avance siguiente ya NO lleva aviso (programa vigente).
 //   · sin bitácora → la nota se DIFIERE y se asienta sola al abrir la bitácora.
 // LOGIN REAL (backend+BD). No corre en CI.
 import { test, expect } from '@playwright/test';
@@ -59,37 +60,64 @@ const abrirBitacora = (request, token, contratoId) => request.post(`${API}/bitac
 
 test.describe('O4 — avance por periodo + nota + validación vs programa vigente', () => {
 
-  test('excede lo programado del periodo → BLOQUEA (art. 59); concepto no programado → BLOQUEA', async ({ request }) => {
+  test('O-PROFE: excede lo programado del periodo → AVISA (201 + aviso); concepto no programado → AVISA', async ({ request }) => {
     const { id, S } = await crearContrato(request, { conSegundo: true });
     const t = await trabajos(request, S.token, id);
     const c1 = t.conceptos.find((c) => c.clave === 'C-001').contrato_concepto_id;
     const c2 = t.conceptos.find((c) => c.clave === 'C-002').contrato_concepto_id;
 
-    // Dentro de lo programado del periodo 1 (400) → OK.
-    expect((await registrar(request, S.token, { contrato_concepto_id: c1, periodo_numero: 1, cantidad: 400 })).status()).toBe(201);
-    // 400 + 100 = 500 > 400 programado en P1 → 409.
+    // Dentro de lo programado del periodo 1 (400) → 201 SIN aviso.
+    const ok = await registrar(request, S.token, { contrato_concepto_id: c1, periodo_numero: 1, cantidad: 400 });
+    expect(ok.status()).toBe(201);
+    expect((await ok.json()).aviso_programa).toBeNull();
+    // 400 + 100 = 500 > 400 programado en P1 → O-PROFE: 201 CON aviso (no bloquea; precios pactados).
     const exc = await registrar(request, S.token, { contrato_concepto_id: c1, periodo_numero: 1, cantidad: 100 });
-    expect(exc.status()).toBe(409);
-    expect(((await exc.json()).error || '')).toContain('programado del periodo');
-    // C-002 NO está programado en el periodo 1 (programado acum = 0) → 409 "no está programado".
+    expect(exc.status()).toBe(201);
+    expect(((await exc.json()).aviso_programa || '')).toContain('excede lo programado');
+    // C-002 NO está programado en el periodo 1 (programado acum = 0) → 201 con aviso "no está programado".
     const np = await registrar(request, S.token, { contrato_concepto_id: c2, periodo_numero: 1, cantidad: 10 });
-    expect(np.status()).toBe(409);
-    expect(((await np.json()).error || '')).toContain('no está programado');
+    expect(np.status()).toBe(201);
+    expect(((await np.json()).aviso_programa || '')).toContain('no está programado');
   });
 
-  test('un convenio que AMPLÍA el periodo deja pasar el avance que antes excedía (programa vigente)', async ({ request }) => {
+  test('art. 118 SIGUE bloqueando: el acumulado sobre lo contratado → 409 (no es aviso)', async ({ request }) => {
+    const { id, S } = await crearContrato(request);
+    const t = await trabajos(request, S.token, id);
+    const c1 = t.conceptos.find((c) => c.clave === 'C-001').contrato_concepto_id;
+    // Contratado 1000; intentar 1100 en P1 → excede lo CONTRATADO (art. 118) → 409 (el único bloqueo que queda).
+    const r = await registrar(request, S.token, { contrato_concepto_id: c1, periodo_numero: 1, cantidad: 1100 });
+    expect(r.status()).toBe(409);
+    expect(((await r.json()).error || '')).toContain('118');
+  });
+
+  test('O-PROFE: editar (PATCH) a una cantidad que excede el periodo → 200 + aviso_programa (no bloquea)', async ({ request }) => {
+    const { id, S } = await crearContrato(request);
+    const t = await trabajos(request, S.token, id);
+    const c1 = t.conceptos.find((c) => c.clave === 'C-001').contrato_concepto_id;
+    // Registrar 300 en P1 (cabe, sin aviso) y quedarse con el id del avance.
+    const reg = await registrar(request, S.token, { contrato_concepto_id: c1, periodo_numero: 1, cantidad: 300 });
+    expect(reg.status()).toBe(201);
+    const avId = (await reg.json()).avance.id;
+    // Editar a 500 (> 400 programado en P1) → 200 CON aviso_programa (no bloquea; art. 118 no se rebasa).
+    const patch = await request.patch(`${API}/trabajos/${avId}`, { headers: { Authorization: `Bearer ${S.token}` }, data: { cantidad: 500 } });
+    expect(patch.status()).toBe(200);
+    expect(((await patch.json()).aviso_programa || '')).toContain('excede lo programado');
+  });
+
+  test('un convenio que AMPLÍA el periodo quita el AVISO del avance siguiente (programa vigente)', async ({ request }) => {
     const { id, R, S } = await crearContrato(request);
     const t = await trabajos(request, S.token, id);
     const c1 = t.conceptos.find((c) => c.clave === 'C-001').contrato_concepto_id;
 
-    // P1 programado = 400. Registrar 400 (OK), luego 200 más excede (600 > 400) → 409.
+    // P1 programado = 400. Registrar 400 (OK sin aviso), luego 100 más → 500 > 400 → 201 CON aviso.
     expect((await registrar(request, S.token, { contrato_concepto_id: c1, periodo_numero: 1, cantidad: 400 })).status()).toBe(201);
-    const exc = await registrar(request, S.token, { contrato_concepto_id: c1, periodo_numero: 1, cantidad: 200 });
-    expect(exc.status()).toBe(409);
+    const exc = await registrar(request, S.token, { contrato_concepto_id: c1, periodo_numero: 1, cantidad: 100 });
+    expect(exc.status()).toBe(201);
+    expect(((await exc.json()).aviso_programa || ''), 'el avance que excede lleva aviso').toContain('excede lo programado');
 
     // Convenio tipo 'programa' que REDISTRIBUYE el volumen a P1 (600/400 en vez de 400/600). El
     // catálogo no cambia → variación de monto 0% (esquiva el guardrail). El programa VIGENTE
-    // (programa_obra) queda con P1=600, así que el mismo avance ahora cabe.
+    // (programa_obra) queda con P1=600.
     const conv = await request.post(`${API}/convenios/contrato/${id}`, {
       headers: { Authorization: `Bearer ${R.token}` },
       data: {
@@ -100,9 +128,10 @@ test.describe('O4 — avance por periodo + nota + validación vs programa vigent
     });
     expect(conv.status(), 'crear convenio de programa').toBe(201);
 
-    // Ahora P1 programado = 600; 400 + 200 = 600 <= 600 → PASA automáticamente (sin tocar O4).
-    const ok = await registrar(request, S.token, { contrato_concepto_id: c1, periodo_numero: 1, cantidad: 200 });
+    // Ahora P1 programado = 600; el ejecutado va en 500, así que 100 más (=600) cabe → 201 SIN aviso.
+    const ok = await registrar(request, S.token, { contrato_concepto_id: c1, periodo_numero: 1, cantidad: 100 });
     expect(ok.status(), 'tras el convenio, el avance cabe').toBe(201);
+    expect((await ok.json()).aviso_programa, 'ya dentro del programa vigente → sin aviso').toBeNull();
   });
 
   test('sin bitácora la nota se DIFIERE; al abrir la bitácora se asienta sola', async ({ request }) => {

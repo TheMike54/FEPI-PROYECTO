@@ -128,15 +128,17 @@ export const api = {
   historialEstimaciones: (contratoId) => request(`/estimaciones-ciclo/contrato/${contratoId}/historial`),
   // HU-06 v2 (O4): trabajos terminados (avance ejecutado por concepto). Lectura por participación;
   // escritura solo contratista (lo valida el backend). El periodo se SELECCIONA (payload.periodo_numero);
-  // el backend BLOQUEA si excede lo programado del periodo (programa vigente, art. 59) o art. 118; y
+  // el backend BLOQUEA por art. 118 (acumulado > contratado) y AVISA (201 + aviso_programa, O-PROFE: ya no
+  // bloquea) si excede lo programado del periodo o el concepto no estaba programado; y
   // GENERA la nota de bitácora tipo `avance` (diferida si no hay bitácora). payload: {contrato_concepto_id,
   // periodo_numero, cantidad, observaciones}.
   trabajosDeContrato: (contratoId) => request(`/trabajos/contrato/${contratoId}`),
   registrarAvance: (payload) => request('/trabajos', { method: 'POST', body: JSON.stringify(payload) }),
   actualizarAvance: (id, payload) => request(`/trabajos/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   eliminarAvance: (id) => request(`/trabajos/${id}`, { method: 'DELETE' }),
-  // HU-13: envío de la estimación. Sella la fecha (enviada_en/por) y avanza a 'enviada'.
-  // Solo el superintendente del contrato (lo valida el backend); arranca el plazo art. 54.
+  // HU-13 (O7): REVISIÓN Y AUTORIZACIÓN de la estimación por la RESIDENCIA (art. 54 LOPSRM). Reusa el
+  // endpoint /enviar (path estable por compat); sella enviada_en/por como SELLO DE AUTORIZACIÓN y avanza
+  // 'integrada' (Presentada) → 'enviada' (Autorizada). Solo el RESIDENTE del contrato (lo valida el backend).
   enviarEstimacion: (id) => request(`/estimaciones-ciclo/estimacion/${id}/enviar`, { method: 'POST' }),
   // HU-03 (Fundación): convenios modificatorios (art. 59 LOPSRM). El backend YA EXISTE
   // (tabla inmutable + versionado del programa). Lectura por participación; crear = solo

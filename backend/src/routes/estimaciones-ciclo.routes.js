@@ -14,8 +14,9 @@ router.use(authMiddleware);
 // Historial del contrato: cada estimación con su estado y sus transiciones (cronológico).
 router.get('/contrato/:contratoId/historial', historialEstimaciones);
 
-// HU-13: envío de la estimación (sella enviada_en/por, estado integrada -> enviada).
-// El acotamiento (solo el superintendente del contrato) se hace en el controller.
+// HU-13 (O7): REVISIÓN Y AUTORIZACIÓN de la estimación (sella enviada_en/por como sello de
+// autorización, estado integrada -> enviada). El acotamiento (solo el RESIDENTE del contrato autoriza,
+// art. 54 LOPSRM) se hace en el controller. El path /enviar se conserva por compatibilidad de API.
 router.post('/estimacion/:id/enviar', enviarEstimacion);
 
 module.exports = router;

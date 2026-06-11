@@ -9,7 +9,7 @@
 //   bitácora restringe al residente_id en abrirBitacora).
 // - cantidad_anterior_acum se acumula de las estimaciones PREVIAS no rechazadas.
 // - art. 118 RLOPSRM (CA-3): por concepto, acumulado + periodo <= lo contratado.
-// - Sin IVA (art. 2 fr. XIX RLOPSRM). Amortización art. 143 fr. I; retención 5 al
+// - Sin IVA (art. 2 fr. XIX RLOPSRM). Amortización art. 138 fr. I; retención 5 al
 //   millar art. 191 LFD.
 const { pool } = require('../db/pool');
 const { esParteOSupervision } = require('../lib/acceso');

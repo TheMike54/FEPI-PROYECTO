@@ -215,9 +215,12 @@ async function asentarAtraso(req, res) {
         concepto: concepto.concepto, unidad: concepto.unidad,
         cantidad: fila.deficit, periodoNumero: periodo ? periodo.numero : null
       });
-      // emisor = quien asienta (residente del JWT). [validar profe] si el emisor formal debe forzarse.
+      // O-PROFE: la nota de ATRASO es de CONSECUENCIA → la AVALA el RESIDENTE del contrato (art. 53
+      // LOPSRM), no quien dispara la acción (aunque hoy solo el residente puede asentar). Emisor =
+      // residente_id del contrato. Tipo PROPIO 'atraso' del catálogo (art. 125 fr. I), ya no 'otro'+tag.
       const nota = await insertarNotaAtomica(client, {
-        bitacoraId: bit.rows[0].id, tipo: 'otro', asunto, contenido, emisorId: req.user.id, tag: 'atraso'
+        bitacoraId: bit.rows[0].id, tipo: 'atraso', asunto, contenido,
+        emisorId: c.rows[0].residente_id || req.user.id, tag: 'atraso'
       });
 
       await client.query('COMMIT');

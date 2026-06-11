@@ -3,16 +3,15 @@
 // fecha libre — P14 del profe) y respaldada por una NOTA AUTOMÁTICA de bitácora tipo `avance`.
 // Alimenta la curva ejecutada (HU-05).
 //
-// Reglas de dominio (O4):
+// Reglas de dominio (O4 + O-PROFE):
 // - art. 118 RLOPSRM (BLOQUEO DURO, 409): por concepto, Σ cantidad ejecutada ≤ lo contratado
-//   (contrato_conceptos.cantidad). CRUCE DE FILAS. NO se toca: es el candado total.
-// - Programa VIGENTE por periodo (P14, art. 45-A-X RLOPSRM + art. 52 LOPSRM) — AHORA BLOQUEA (antes
-//   alertaba): ejecutado_acumulado(≤ periodo sel) + nuevo ≤ programado_acumulado(≤ periodo sel),
-//   computado sobre programa_obra (= el programa VIGENTE: los convenios lo reescriben en vivo vía
-//   guardarMatriz, así que un convenio que adelantó volumen lo permite solo). Mensajes: "concepto
-//   no programado en el periodo" / "excede lo programado del periodo — requiere convenio (art. 59)".
-//   Solo aplica si el contrato TIENE programa (matriz); sin programa, solo rige art. 118.
-//   [validar profe] si prefiere AVISO en vez de bloqueo.
+//   (contrato_conceptos.cantidad). CRUCE DE FILAS. NO se toca: es el candado total. También bloquearían
+//   los conceptos fuera de catálogo (imposible aquí: el avance es siempre de un concepto del catálogo).
+// - Programa VIGENTE por periodo (P14, art. 45-A-X RLOPSRM + art. 52 LOPSRM) — AVISO, ya NO BLOQUEA
+//   (O-PROFE, el profe: adelantar avance a PRECIOS PACTADOS no requiere convenio): ejecutado_acumulado
+//   (≤ periodo sel) + nuevo vs programado_acumulado(≤ periodo sel) sobre programa_obra (= el programa
+//   VIGENTE; los convenios lo reescriben en vivo). Si excede, o el concepto no estaba programado, se
+//   REGISTRA igual y se devuelve `aviso_programa` (verificar monto/conceptos). Solo aplica si hay programa.
 // - NOTA AUTOMÁTICA (P14: "el aviso es a través de una nota"): el registro GENERA su nota de bitácora
 //   tipo `avance` (insertarNotaAtomica, folio atómico) y la liga (nota_id). DIFERIDO si no hay bitácora
 //   abierta (se asienta sola al abrirla — abrirBitacora). Emisor = quien registra (contratista) [validar].
@@ -80,12 +79,13 @@ async function contratoTienePrograma(client, contratoId) {
   return r.rowCount > 0;
 }
 
-// O4 — VALIDACIÓN BLOQUEANTE contra el programa VIGENTE (programa_obra) hasta el periodo
-// seleccionado (P14). programado_acumulado = Σ programa_obra del concepto hasta cp.numero <=
-// periodo.numero (el programa vigente: los convenios lo reescriben en vivo). ejecutado_acumulado
-// = Σ concepto_avance del concepto imputado a periodos hasta el seleccionado (excluyendo `excluirId`).
-// Devuelve { error } (string) si bloquea, o { programadoAcum, ejecutadoAcum } si pasa. NO se llama
-// si el contrato no tiene programa (solo rige art. 118).
+// O4 + O-PROFE — VALIDACIÓN INFORMATIVA (AVISO, ya NO bloqueante) contra el programa VIGENTE
+// (programa_obra) hasta el periodo seleccionado (P14). El profe aclaró: adelantar avance a PRECIOS
+// PACTADOS no requiere convenio; el sistema AVISA pero DEJA registrar. Solo BLOQUEAN el art. 118
+// (acumulado sobre lo contratado, en el caller) y los conceptos fuera de catálogo (imposible aquí: el
+// avance siempre es de un concepto del catálogo). programado_acumulado = Σ programa_obra del concepto
+// hasta cp.numero <= periodo.numero; ejecutado_acumulado = Σ concepto_avance hasta el periodo (excl.
+// `excluirId`). Devuelve { aviso } (string, NO bloquea) o { programadoAcum, ejecutadoAcum } si está al día.
 async function validarProgramaPeriodo(client, concepto, periodo, nuevaCantidad, excluirId) {
   const plan = await client.query(
     `SELECT COALESCE(SUM(po.cantidad), 0) AS planeado
@@ -95,9 +95,9 @@ async function validarProgramaPeriodo(client, concepto, periodo, nuevaCantidad, 
     [concepto.concepto_id, periodo.numero]
   );
   const programadoAcum = Number(plan.rows[0].planeado);
-  // "concepto no programado en este periodo": no hay volumen autorizado del concepto hasta aquí.
+  // "concepto no programado en este periodo": no hay volumen programado del concepto hasta aquí. AVISO.
   if (programadoAcum <= EPS_CANT) {
-    return { error: `El concepto "${concepto.concepto}" no está programado en el periodo ${periodo.numero} (ni antes). Para ejecutarlo aquí se requiere un convenio modificatorio (art. 59 LOPSRM).` };
+    return { aviso: `El concepto "${concepto.concepto}" no está programado en el periodo ${periodo.numero} (ni antes): verifica el monto y los conceptos nuevos. Se registra de todos modos (adelantar a precios pactados no requiere convenio).` };
   }
   const ejec = await client.query(
     `SELECT COALESCE(SUM(ca.cantidad), 0) AS ejecutado
@@ -109,7 +109,7 @@ async function validarProgramaPeriodo(client, concepto, periodo, nuevaCantidad, 
   );
   const ejecutadoAcum = Number(ejec.rows[0].ejecutado);
   if (ejecutadoAcum + Number(nuevaCantidad) > programadoAcum + EPS_CANT) {
-    return { error: `Excede lo programado del periodo ${periodo.numero} para "${concepto.concepto}": ejecutado acumulado ${ejecutadoAcum} + ${nuevaCantidad} supera lo programado ${programadoAcum}. Para adelantar volumen se requiere un convenio modificatorio (art. 59 LOPSRM).` };
+    return { aviso: `El avance del periodo ${periodo.numero} en "${concepto.concepto}" excede lo programado (ejecutado acumulado ${ejecutadoAcum} + ${nuevaCantidad} supera lo programado ${programadoAcum}): verifica el monto y los conceptos nuevos. Se registra (adelantar a precios pactados no requiere convenio).` };
   }
   return { programadoAcum, ejecutadoAcum };
 }
@@ -204,9 +204,9 @@ async function trabajosDeContrato(req, res) {
   }
 }
 
-// POST /api/trabajos — registra una entrada de avance. Deriva el periodo de la fecha,
-// valida art. 118 (409), exige nota `avance` si cantidad > 0 (400) y devuelve la alerta
-// A2 por periodo (no bloquea). registrado_por del JWT.
+// POST /api/trabajos — registra una entrada de avance. El periodo se SELECCIONA (periodo_numero),
+// valida art. 118 (409, bloquea), exige nota `avance` si cantidad > 0 y devuelve `aviso_programa`
+// (no bloqueante) si el avance excede lo programado del periodo. registrado_por del JWT.
 async function registrarAvance(req, res) {
   const body = req.body || {};
   const conceptoId = Number(body.contrato_concepto_id);
@@ -250,12 +250,13 @@ async function registrarAvance(req, res) {
         return res.status(400).json({ error: `El periodo ${periodoNumero} no existe en el programa de este contrato` });
       }
 
-      // O4 — VALIDACIÓN BLOQUEANTE contra el programa VIGENTE por periodo (P14). Solo si el contrato
-      // tiene programa (matriz); sin programa, solo rige art. 118 (abajo). Mensajes: no programado /
-      // excede lo programado del periodo (art. 59). Es ADEMÁS del art. 118.
+      // O4 + O-PROFE — VALIDACIÓN INFORMATIVA (AVISO, ya NO bloquea) contra el programa por periodo. El
+      // profe: adelantar avance a precios pactados NO requiere convenio → se registra con un aviso. Solo
+      // si hay programa. El BLOQUEO real es el art. 118 (abajo). El aviso viaja en la respuesta 201.
+      let avisoPrograma = null;
       if (cantidad > 0 && await contratoTienePrograma(client, concepto.contrato_id)) {
         const vp = await validarProgramaPeriodo(client, concepto, periodo, cantidad, null);
-        if (vp.error) { await client.query('ROLLBACK'); return res.status(409).json({ error: vp.error }); }
+        if (vp.aviso) avisoPrograma = vp.aviso;
       }
 
       // art. 118 (BLOQUEO, NO se toca): Σ ejecutado TOTAL por concepto + esta cantidad ≤ contratado.
@@ -300,7 +301,10 @@ async function registrarAvance(req, res) {
         avance: ins.rows[0],
         nota: notaCreada ? { id: notaCreada.id, numero: notaCreada.numero, tipo: notaCreada.tipo } : null,
         nota_diferida: notaDiferida,
-        aviso: notaDiferida ? 'El avance quedó registrado; su nota de bitácora se asentará automáticamente al abrir la bitácora.' : null
+        aviso: notaDiferida ? 'El avance quedó registrado; su nota de bitácora se asentará automáticamente al abrir la bitácora.' : null,
+        // O-PROFE: aviso (no bloqueante) si el avance excede lo programado del periodo o el concepto no
+        // estaba programado. El registro se hizo igual (solo art. 118 bloquea).
+        aviso_programa: avisoPrograma
       });
     } catch (e) {
       try { await client.query('ROLLBACK'); } catch (_) { /* el client pudo morir */ }
@@ -315,7 +319,7 @@ async function registrarAvance(req, res) {
 }
 
 // PATCH /api/trabajos/:id — edita cantidad / observaciones de una entrada. Revalida art. 118
-// (excluyéndose) y la validación de periodo (bloqueante, como el POST). El PERIODO no cambia.
+// (excluyéndose, BLOQUEA) y el programa por periodo (AVISO no bloqueante, O-PROFE). El PERIODO no cambia.
 // O4: la nota es AUTOMÁTICA y de sistema (no se edita aquí); la nota original queda como el
 // asiento del registro inicial (editar la cantidad no la regenera — limitación documentada).
 async function actualizarAvance(req, res) {
@@ -366,12 +370,14 @@ async function actualizarAvance(req, res) {
         observaciones = typeof body.observaciones === 'string' ? body.observaciones.trim() || null : null;
       }
 
-      // O4: validación de periodo BLOQUEANTE (periodo intacto, el guardado), igual que el POST.
+      // O4 + O-PROFE: validación de periodo INFORMATIVA (AVISO, ya no bloquea), igual que el POST. El
+      // periodo no cambia. Solo art. 118 (abajo) bloquea.
+      let avisoPrograma = null;
       if (cantidad > 0 && actual.contrato_periodo_id && await contratoTienePrograma(client, concepto.contrato_id)) {
         const pr = await client.query('SELECT id, numero, inicio, fin FROM contrato_periodos WHERE id = $1', [actual.contrato_periodo_id]);
         if (pr.rowCount) {
           const vp = await validarProgramaPeriodo(client, concepto, pr.rows[0], cantidad, id);
-          if (vp.error) { await client.query('ROLLBACK'); return res.status(409).json({ error: vp.error }); }
+          if (vp.aviso) avisoPrograma = vp.aviso;
         }
       }
 
@@ -390,7 +396,7 @@ async function actualizarAvance(req, res) {
       );
 
       await client.query('COMMIT');
-      return res.status(200).json({ avance: upd.rows[0] });
+      return res.status(200).json({ avance: upd.rows[0], aviso_programa: avisoPrograma });
     } catch (e) {
       try { await client.query('ROLLBACK'); } catch (_) { /* el client pudo morir */ }
       throw e;

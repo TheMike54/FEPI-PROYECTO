@@ -37,7 +37,7 @@ Con eso, **las ~28 vistas (incluidas las de UI-2) quedaron coherentes con la ide
 2. **Alta de contrato** — wizard re-skineado vía `Tab.jsx` + tokens; cajas informativas azules → guinda-soft; el modal de exceso usa el `Modal` compartido (testids idénticos).
 3. **Bitácora (apertura, notas+firmas, consulta)** — ya consumían tokens `sigecop-*` al 100%: migraron por el remapeo (cero ediciones de markup necesarias = cero riesgo en sus 600+ líneas de testids).
 4. **Consulta de expediente** — bloques acordeón a tarjeta blanca/encabezado claro; `EncabezadoContrato` (mismo `testid` banner-expediente).
-5. **Estimación (pantalla única)** — `EncabezadoContrato`; badges ⓘ de artículos y caja del art. 143 a guinda-soft; carátula/semáforo/barras heredan por tokens.
+5. **Estimación (pantalla única)** — `EncabezadoContrato`; badges ⓘ de artículos y caja del art. 138 a guinda-soft; carátula/semáforo/barras heredan por tokens.
 
 ## Decisiones (y por qué)
 

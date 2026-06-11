@@ -60,7 +60,7 @@ Verificación de **todas** las citas legales del código y docs contra el **text
 | **art. 128 RLOPSRM** (retención fiscal sobre la estimación) | *"…deberán considerar para su pago los **derechos e impuestos** que les sean aplicables, así como **retener** el importe de los mismos…"* |
 | **art. 132 fr. I/II/IV RLOPSRM** (expediente de estimación) | *"I. **Números generadores**; II. **Notas de Bitácora**; … IV. Controles de calidad, pruebas de laboratorio y **fotografías**…"* |
 | **art. 139 RLOPSRM** (anticipo >50% → informar a SFP) | *"…anticipo **superior al cincuenta por ciento**… deberá **informar a la Secretaría de la Función Pública, previamente a la entrega del anticipo**, señalando las razones…"* |
-| **art. 143 fr. I RLOPSRM** (amortización proporcional) | *"El anticipo se amortizará del importe de cada estimación… dicha amortización deberá ser **proporcional al porcentaje de anticipo otorgado**…"* |
+| **art. 138 fr. I RLOPSRM** (amortización proporcional) | *"El anticipo se amortizará del importe de cada estimación… dicha amortización deberá ser **proporcional al porcentaje de anticipo otorgado**…"* |
 | **art. 185 RLOPSRM** (precio unitario por unidad de concepto) | *"…se considerará como **precio unitario** el importe de la remuneración o pago total que debe cubrirse al contratista **por unidad de concepto terminado** y ejecutado…"* |
 | **art. 2 fr. XIX RLOPSRM** (monto ejercido SIN IVA) | *"Monto total ejercido: el importe… **sin considerar el impuesto al valor agregado**;"* |
 | **art. 191 LFD** (5 al millar) | *"…obra pública y de servicios relacionados con la misma, pagarán un derecho equivalente al **cinco al millar**…"* (servicio de vigilancia, inspección y control). |

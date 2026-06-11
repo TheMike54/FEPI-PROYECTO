@@ -5,6 +5,7 @@ import EncabezadoContrato from '../components/ui/EncabezadoContrato.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { api } from '../services/api.js';
+import { labelEstadoEstimacion } from '../data/estadoEstimacion.js';
 import MatrizProgramaLectura, { periodoQueContiene } from '../components/programa/MatrizProgramaLectura.jsx';
 
 // HU-04 cableado al backend. El expediente sale de GET /api/contratos/:id + los endpoints propios
@@ -254,7 +255,7 @@ function BloquePlanAmortizacion({ data }) {
     <div data-testid="plan-amortizacion-expediente">
       <p className="text-xs text-slate-500 mb-3">
         Anticipo del {Number(data.anticipo_pct) || 0}% — se amortiza con cargo a las estimaciones
-        (art. 143 fr. I RLOPSRM). Plan capturado en el alta (editable, default proporcional).
+        (art. 138 fr. I RLOPSRM). Plan capturado en el alta (editable, default proporcional).
       </p>
       <div className="overflow-x-auto border border-borde rounded-lg max-w-2xl">
         <table className="w-full text-sm">
@@ -426,10 +427,7 @@ function BloqueConvenios({ data, contratoId }) {
 }
 
 // O9 — Resumen de estimaciones (ciclo de cobro). Números y estados; el detalle vive en sus HU (12–21).
-// Estados reales del ciclo (chk_estimaciones_estado): integrada → enviada → autorizada → pagada (o rechazada).
-const ESTADO_EST_LABEL = {
-  integrada: 'Integrada', enviada: 'Enviada', autorizada: 'Autorizada', pagada: 'Pagada', rechazada: 'Rechazada'
-};
+// O7: las etiquetas del ciclo salen del util compartido (integrada→"Presentada", enviada→"Autorizada").
 function BloqueEstimaciones({ estimaciones }) {
   const filas = Array.isArray(estimaciones) ? estimaciones : [];
   if (filas.length === 0) {
@@ -458,7 +456,7 @@ function BloqueEstimaciones({ estimaciones }) {
                 <td className="px-3 py-2 text-slate-600 text-xs">{soloFecha(e.periodo_inicio)} — {soloFecha(e.periodo_fin)}</td>
                 <td className="px-3 py-2">
                   <span className="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-pagina text-tinta-sec border border-borde" data-testid={`estimacion-estado-${e.id}`}>
-                    {ESTADO_EST_LABEL[e.estado] || e.estado}
+                    {labelEstadoEstimacion(e.estado)}
                   </span>
                 </td>
                 <td className="px-3 py-2 text-right font-mono">{moneda(e.neto)}</td>

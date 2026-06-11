@@ -113,7 +113,7 @@
 - **Qué poner:** estimación del contrato OBRA-2026-001, **periodo 1**, volumen ejecutado **C-001 = 400 m²** (se captura en la pestaña "Números generadores", no en la carátula). Periodo máximo de una estimación = 1 mes (**art. 54 RLOPSRM**).
 - **Qué ver — la carátula (calculada en el servidor):**
   - Importe bruto = 400 × 200 = **$80,000**
-  - Amortización anticipo 30% = **$24,000** (**art. 143 RLOPSRM**)
+  - Amortización anticipo 30% = **$24,000** (**art. 138 RLOPSRM**)
   - 5 al millar (0.5%) = **$400** (**art. 191 LFD**)
   - **Neto a pagar = $55,600**
 - **Comprueba:**

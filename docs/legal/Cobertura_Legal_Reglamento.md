@@ -51,8 +51,8 @@ Clasificación: ✅ Cubierto · ⚠️ Hueco / respaldo adicional disponible · 
 
 **Hueco R-2 — Art. 143: amortización de anticipos (respaldo de HU-12).**
 **Cita textual:** "El anticipo se amortizará del importe de cada estimación... dicha amortización deberá ser proporcional al porcentaje de anticipo otorgado."
-**Por qué importa:** HU-12 muestra la amortización citando el art. 50 de la ley; el art. 143 del reglamento detalla CÓMO se amortiza (proporcional al porcentaje de anticipo). Es el respaldo reglamentario del cálculo.
-**Recomendación:** citar art. 143 RLOPSRM junto al art. 50 LOPSRM en HU-12. Certeza ALTA. Prioridad media.
+**Por qué importa:** HU-12 muestra la amortización citando el art. 50 de la ley; el art. 138 del reglamento detalla CÓMO se amortiza (proporcional al porcentaje de anticipo). Es el respaldo reglamentario del cálculo.
+**Recomendación:** citar art. 138 RLOPSRM junto al art. 50 LOPSRM en HU-12. Certeza ALTA. Prioridad media.
 
 **Hueco R-3 — Arts. 127–128: cantidades y cálculo de estimaciones (respaldo de HU-12).**
 Tratan que las cantidades de las estimaciones correspondan a la secuencia del programa y el cálculo de importes. Refuerzan los números generadores y la carátula de HU-12.
@@ -101,7 +101,7 @@ Detallan la designación del servidor público que funge como residente. Complem
 | Prioridad | Acción | Fundamento |
 |-----------|--------|------------|
 | **Alta** | Citar **art. 118 RLOPSRM** como base de la CA-3 de HU-12 (bloqueo por exceso de catálogo) | Convierte la regla de UI en regla con respaldo legal |
-| Media | Citar **art. 143 RLOPSRM** junto al art. 50 en HU-12 (cómo se amortiza) | Detalle reglamentario del cálculo |
+| Media | Citar **art. 138 RLOPSRM** junto al art. 50 en HU-12 (cómo se amortiza) | Detalle reglamentario del cálculo |
 | Baja | Citar **arts. 111–112** junto al art. 53 al fundamentar el rol Residente | Completa la designación del residente |
 | Baja | Citar **127–128** (generadores) y **130** (tipos de estimación) como respaldo de HU-12/HU-14 | Refuerzo opcional |
 | Baja | Declarar fuera de alcance suspensión (144-149) y rescisión (154-163), como ya se hizo con finiquito | Coherencia |

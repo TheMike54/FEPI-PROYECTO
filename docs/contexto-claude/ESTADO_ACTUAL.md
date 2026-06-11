@@ -70,7 +70,7 @@ sigecop/
 | `/api/pagos` | POST /, GET /contrato/:id | ✅ append-only; plazo art. 54 derivado en lectura |
 | `/api/estimaciones` | POST /, GET /contrato/:id/avance, GET /contrato/:id, GET /:id | ✅ carátula server-side; valida exceso art. 118 y periodo art. 54; lock por contrato |
 
-**Lógica de dominio real:** monto derivado `Σ ROUND(cant×pu,2)` sin tolerancia (alta); carátula (amortización art. 143, retención 5 al millar art. 191 LFD, neto) calculada en SQL NUMERIC; inmutabilidad por **7 triggers**; identidad (`registrado_por`/`integrada_por`/firmas) sale del **JWT**, no del body. *No hay endpoints fuera de estos 6 routers* (todo lo demás vive como prototipo en el frontend).
+**Lógica de dominio real:** monto derivado `Σ ROUND(cant×pu,2)` sin tolerancia (alta); carátula (amortización art. 138, retención 5 al millar art. 191 LFD, neto) calculada en SQL NUMERIC; inmutabilidad por **7 triggers**; identidad (`registrado_por`/`integrada_por`/firmas) sale del **JWT**, no del body. *No hay endpoints fuera de estos 6 routers* (todo lo demás vive como prototipo en el frontend).
 
 ### 3.2 Frontend — cableado real vs prototipo (verificado con grep propio)
 

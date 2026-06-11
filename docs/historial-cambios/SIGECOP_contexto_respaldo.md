@@ -22,7 +22,7 @@ React 18 + Vite + Tailwind · Node 20 + Express + **PostgreSQL** (`pg`) · Docke
 - **Cuentas demo** (todas `Sigecop2026!`): `residente@`, `contratista@`, `supervision@`, `dependencia@`, `finanzas@sigecop.test`, `csilvasa@ipn.mx` (profe).
 
 ## 5. Estado REAL hoy (≈2026-06-04) — main ≈ `ac9ce34` (P1 integrada; P2 integrándose)
-**7 HU funcionan end-to-end vs PostgreSQL (Maiki las probó en producción):** HU-00 login · HU-01 alta+catálogo+programa · HU-08 apertura bitácora · HU-09 notas · HU-10 consulta · HU-12 estimación (carátula server-side: amortización art. 143 RLOPSRM, 5 al millar art. 191 LFD) · HU-21 pago. Inmutabilidad por triggers.
+**7 HU funcionan end-to-end vs PostgreSQL (Maiki las probó en producción):** HU-00 login · HU-01 alta+catálogo+programa · HU-08 apertura bitácora · HU-09 notas · HU-10 consulta · HU-12 estimación (carátula server-side: amortización art. 138 RLOPSRM, 5 al millar art. 191 LFD) · HU-21 pago. Inmutabilidad por triggers.
 
 **Fundación ya integrada y desplegada:** A2 (programa = matriz concepto×periodo), alta completa v2–v5 (nav lineal, **regla 100% Σ=contratado**, garantías+jurídicos+PDFs obligatorios, anticipo>30%→PDF), bitácora-v2 (apertura=nota#1, firmas, candado server-side, tipos por rol art. 125, datos mínimos art. 123 fr. III, búsqueda por tag), **MODO PROYECTO ELIMINADO** (todo login real, sin dummy), **8 tablas de soporte** para los equipos, /docs reorganizado.
 

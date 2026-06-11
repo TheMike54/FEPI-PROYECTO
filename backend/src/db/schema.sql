@@ -531,9 +531,9 @@ CREATE TABLE IF NOT EXISTS estimaciones (
   periodo_inicio        DATE NOT NULL,
   periodo_fin           DATE NOT NULL,
   estado                VARCHAR(20) NOT NULL DEFAULT 'integrada',  -- ciclo: integrada -> enviada -> autorizada -> pagada (o rechazada); el estado puede AVANZAR
-  anticipo_pct_snapshot NUMERIC(5,2)  NOT NULL,            -- % de anticipo del contrato congelado al integrar (art. 50 LOPSRM / art. 143 RLOPSRM)
+  anticipo_pct_snapshot NUMERIC(5,2)  NOT NULL,            -- % de anticipo del contrato congelado al integrar (art. 50 LOPSRM / art. 138 RLOPSRM)
   subtotal              NUMERIC(14,2) NOT NULL,            -- Σ (cantidad_periodo × pu_snapshot) de los generadores
-  amortizacion          NUMERIC(14,2) NOT NULL,            -- subtotal × anticipo_pct/100 (amortización proporcional, art. 143 fr. I RLOPSRM)
+  amortizacion          NUMERIC(14,2) NOT NULL,            -- subtotal × anticipo_pct/100 (amortización proporcional, art. 138 fr. I RLOPSRM)
   retencion             NUMERIC(14,2) NOT NULL,            -- subtotal × 0.005 (5 al millar, art. 191 LFD)
   deductivas            NUMERIC(14,2) NOT NULL DEFAULT 0,  -- captura manual en Etapa 1 (penas convencionales / retenciones a estimaciones, art. 46 Bis LOPSRM)
   neto                  NUMERIC(14,2) NOT NULL,            -- subtotal − amortizacion − retencion − deductivas (SIN IVA; cf. art. 2 fr. XIX RLOPSRM "monto ejercido sin IVA")
@@ -905,6 +905,13 @@ UPDATE bitacora_nota_tipos SET orden = 301 WHERE clave = 'avance';
 UPDATE bitacora_nota_tipos SET orden = 302 WHERE clave = 'calidad';
 UPDATE bitacora_nota_tipos SET orden = 303 WHERE clave = 'seguridad';
 UPDATE bitacora_nota_tipos SET orden = 304 WHERE clave = 'junta';
+
+-- O-PROFE (10-jun): TIPO PROPIO 'atraso' (antes la nota de atraso de O5 usaba 'otro'+tag). El RESIDENTE
+-- registra/avala en la bitácora el atraso de la obra respecto del programa de ejecución (art. 125 fr. I
+-- RLOPSRM; nota de CONSECUENCIA → la avala el residente, art. 53 LOPSRM). Aditivo e idempotente.
+INSERT INTO bitacora_nota_tipos (clave, etiqueta, rol_emisor, orden) VALUES
+  ('atraso', 'Atraso de obra respecto del programa de ejecución', 'residente', 112)
+ON CONFLICT (clave) DO NOTHING;
 UPDATE bitacora_nota_tipos SET orden = 400 WHERE clave = 'apertura';
 UPDATE bitacora_nota_tipos SET orden = 401 WHERE clave = 'cierre';
 UPDATE bitacora_nota_tipos SET orden = 999 WHERE clave = 'otro';
@@ -1496,7 +1503,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_pagos_estimacion ON pagos(estimacion_id) WH
 -- =====================================================================
 -- OLEADA O2 (10-jun-2026) — PLAN DE AMORTIZACIÓN DEL ANTICIPO (criterio de HU-01,
 -- pedido del profe en la revisión del 8-9 jun). El anticipo se amortiza con cargo a las
--- estimaciones (art. 143 fr. I RLOPSRM, que indica "proporcionalmente"); el profe pidió un
+-- estimaciones (art. 138 fr. I RLOPSRM, que indica "proporcionalmente"); el profe pidió un
 -- plan EDITABLE por periodo: "no hay límites — puede amortizar todo en el primer pago o
 -- repartido". FASE A: el plan se CAPTURA en el alta (default proporcional) y se CONSULTA
 -- en el expediente. La carátula (G2, estimaciones.controller) NO cambia: sigue amortizando

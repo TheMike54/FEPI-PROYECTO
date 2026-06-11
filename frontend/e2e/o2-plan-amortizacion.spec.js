@@ -1,5 +1,5 @@
 // @ts-check
-// O2 — PLAN DE AMORTIZACIÓN del anticipo (criterio de HU-01; art. 143 fr. I RLOPSRM).
+// O2 — PLAN DE AMORTIZACIÓN del anticipo (criterio de HU-01; art. 138 fr. I RLOPSRM).
 // El profe (revisión 8-9 jun): "es en qué mes voy a devolver el dinero… muy parecido al programa
 // de obra… No hay límites". Fase A: captura en el alta (default proporcional, editable, Σ =
 // anticipo al CENTAVO) + lectura en el expediente. La carátula (G2) sigue proporcional.
@@ -102,7 +102,7 @@ test.describe('O2 — plan de amortización del anticipo', () => {
     await expect(page.getByTestId('garantias-requeridas')).toBeVisible();
   });
 
-  test('API sin plan: el backend DERIVA el proporcional; API con plan que no cuadra: 400 (art. 143)', async ({ request }) => {
+  test('API sin plan: el backend DERIVA el proporcional; API con plan que no cuadra: 400 (art. 138)', async ({ request }) => {
     const [R, S, V, D] = await Promise.all([
       loginApi(request, 'residente@sigecop.test'),
       loginApi(request, 'contratista@sigecop.test'),
@@ -127,7 +127,7 @@ test.describe('O2 — plan de amortización del anticipo', () => {
     const plan1 = await (await request.get(`${API}/contratos/${id1}/plan-amortizacion`, { headers: { Authorization: `Bearer ${R.token}` } })).json();
     expect(plan1.plan.length).toBe(2);
     expect(Number(plan1.plan[0].monto) + Number(plan1.plan[1].monto)).toBe(1500);
-    // (b) Plan que NO suma el anticipo → 400 citando el art. 143.
+    // (b) Plan que NO suma el anticipo → 400 citando el art. 138.
     const r2 = await request.post(`${API}/contratos`, {
       headers: { Authorization: `Bearer ${R.token}` },
       data: {
@@ -136,6 +136,6 @@ test.describe('O2 — plan de amortización del anticipo', () => {
       }
     });
     expect(r2.status()).toBe(400);
-    expect(((await r2.json()).error || '')).toContain('143');
+    expect(((await r2.json()).error || '')).toContain('138');
   });
 });

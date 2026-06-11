@@ -191,7 +191,7 @@ index 0000000..ee72145
 +// @ts-check
 +// Etapa A — Pantalla ÚNICA de estimación (presentación). Verifica:
 +//   · carátula VIVA: recalcula al teclear (el neto oficial lo materializa el backend).
-+//   · ejemplo guía: C-001 PU=200, anticipo 30%, vol=400 → bruto 80,000 − amort 24,000 (art.143)
++//   · ejemplo guía: C-001 PU=200, anticipo 30%, vol=400 → bruto 80,000 − amort 24,000 (art.138)
 +//     − 5 al millar 400 (art.191) = neto $55,600.
 +//   · semáforo de PLAN: si el volumen excede lo planeado para el periodo, marca rojo y DESHABILITA
 +//     "Confirmar" (solo ADELANTA la validación del server; el server sigue validando al integrar).
@@ -420,10 +420,10 @@ index 13c7036..506f53b 100644
 +function TabCaratula({ caratula, anticipoPct, deductivas, onDeductivas, acumulados }) {
    const renglones = [
 -    { label: 'Subtotal del periodo', importe: caratula.subtotal, formula: 'Σ (cantidad_periodo × PU) de los generadores con avance' },
--    { label: `(−) Amortización de anticipo (${anticipoPct}%)`, importe: -caratula.amortizacion, formula: `subtotal × ${anticipoPct}/100 (art. 143 fr. I RLOPSRM)` },
+-    { label: `(−) Amortización de anticipo (${anticipoPct}%)`, importe: -caratula.amortizacion, formula: `subtotal × ${anticipoPct}/100 (art. 138 fr. I RLOPSRM)` },
 -    { label: '(−) Retención 5 al millar (art. 191 LFD)', importe: -caratula.retencion, formula: 'subtotal × 0.005' }
 +    { label: 'Importe bruto del periodo', importe: caratula.subtotal, formula: 'Σ ROUND(volumen ejecutado × PU, 2) de los generadores con avance' },
-+    { label: `(−) Amortización de anticipo (${anticipoPct}%)`, importe: -caratula.amortizacion, formula: `subtotal × ${anticipoPct}/100 — art. 143 fr. I RLOPSRM`, art: 'art. 143 RLOPSRM' },
++    { label: `(−) Amortización de anticipo (${anticipoPct}%)`, importe: -caratula.amortizacion, formula: `subtotal × ${anticipoPct}/100 — art. 138 fr. I RLOPSRM`, art: 'art. 138 RLOPSRM' },
 +    { label: '(−) Retención 5 al millar (0.5%)', importe: -caratula.retencion, formula: 'subtotal × 0.005 — art. 191 LFD', art: 'art. 191 LFD' }
    ];
    return (
@@ -480,7 +480,7 @@ index 13c7036..506f53b 100644
 +        </div>
 +      )}
        <div className="bg-blue-50 border-l-4 border-blue-500 px-4 py-3 text-sm text-blue-900 rounded-r-md max-w-2xl">
-         Amortización del anticipo conforme al <strong>art. 143 fr. I RLOPSRM</strong> y retención del{' '}
+         Amortización del anticipo conforme al <strong>art. 138 fr. I RLOPSRM</strong> y retención del{' '}
          <strong>5 al millar (art. 191 LFD)</strong>. La estimación se calcula <strong>sin IVA</strong>.
 @@ -423,6 +480,8 @@ export default function IntegracionEstimacion() {
    const [tipos, setTipos] = useState([]);

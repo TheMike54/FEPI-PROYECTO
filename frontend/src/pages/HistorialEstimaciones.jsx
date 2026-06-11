@@ -6,6 +6,7 @@ import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import { useSesion } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
+import { labelEstadoEstimacion } from '../data/estadoEstimacion.js';
 
 // HU-14 (Equipo 3) — cableado al backend real. Historial del ciclo de cobro: todas
 // las estimaciones del contrato (incl. rechazadas) en orden cronológico, con su estado
@@ -36,12 +37,10 @@ const ESTADO_CLASE = {
   pagada:     'bg-exito-bg text-exito',
   rechazada:  'bg-peligro-bg text-peligro'
 };
-const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
-
 function EstadoBadge({ estado }) {
   return (
-    <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold capitalize ${ESTADO_CLASE[estado] || 'bg-slate-200 text-slate-600'}`}>
-      {cap(estado)}
+    <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${ESTADO_CLASE[estado] || 'bg-slate-200 text-slate-600'}`}>
+      {labelEstadoEstimacion(estado)}
     </span>
   );
 }
@@ -126,7 +125,7 @@ function exportarHistorialExcel(filas, folioContrato) {
     Estimación: f.estimacion,
     Versión: f.version,
     Periodo: f.periodo,
-    Estado: f.estado,
+    Estado: labelEstadoEstimacion(f.estado),
     Importe: f.importe,
     'Fecha presentación': f.fechaPresentacion ?? '',
     'Fecha revisión':     f.fechaRevision     ?? '',
@@ -285,7 +284,7 @@ export default function HistorialEstimaciones() {
                   onChange={(e) => setEstado(e.target.value)}
                   data-testid="he-estado"
                 >
-                  {estadosOpts.map((s) => <option key={s} value={s}>{s === 'Todos' ? 'Todos' : cap(s)}</option>)}
+                  {estadosOpts.map((s) => <option key={s} value={s}>{s === 'Todos' ? 'Todos' : labelEstadoEstimacion(s)}</option>)}
                 </select>
               </div>
             </div>

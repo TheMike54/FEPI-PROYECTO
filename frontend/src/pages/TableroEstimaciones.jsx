@@ -12,14 +12,13 @@ import { api } from '../services/api.js';
 // calculada SERVER-SIDE con los montos EXACTOS que HU-12 congeló (cuadre al
 // centavo): el cliente solo da formato. Sin datos dummy.
 
-// Pipeline canónico de una estimación en proceso. Son los estados reales del CHECK
-// de estimaciones.estado (schema.sql), menos 'rechazada' (CA-1: no se muestra en el
-// tablero; vive en el historial, HU-14). El stepper marca como "completado" todo lo
-// anterior al estado actual.
+// Pipeline canónico de una estimación en proceso (O7, art. 54 LOPSRM): Presentada (integrada, el
+// contratista) → Autorizada (enviada, la residencia) → Pagada (finanzas). Sin 'rechazada' (vive en el
+// historial, HU-14) ni la 'autorizada' VESTIGIAL del esquema (sin uso en el flujo cableado). El stepper
+// marca como "completado" todo lo anterior al estado actual.
 const FASES = [
-  { estado: 'integrada',  label: 'Integrada' },
-  { estado: 'enviada',    label: 'En revisión' },
-  { estado: 'autorizada', label: 'Autorizada' },
+  { estado: 'integrada',  label: 'Presentada' },
+  { estado: 'enviada',    label: 'Autorizada' },
   { estado: 'pagada',     label: 'Pagada' },
 ];
 const FASE_IDX = new Map(FASES.map((f, i) => [f.estado, i]));

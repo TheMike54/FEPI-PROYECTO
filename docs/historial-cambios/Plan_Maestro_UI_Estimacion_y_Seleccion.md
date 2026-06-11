@@ -50,7 +50,7 @@ NO cambies código. Solo el reporte.
 
 **Ley (renglones de la carátula, ya establecidos):**
 - Importe bruto = Σ (volumen ejecutado × PU).
-- Amortización de anticipo = % anticipo × bruto — **art. 143 RLOPSRM**.
+- Amortización de anticipo = % anticipo × bruto — **art. 138 RLOPSRM**.
 - 5 al millar = 0.5% × bruto — **art. 191 LFD**.
 - Tope por periodo (no estimar más de lo planeado) — **art. 45-A-X / 52**.
 - Periodo de estimación ≤ 1 mes — **art. 54 RLOPSRM**.
@@ -69,7 +69,7 @@ NO cambies código. Solo el reporte.
 ```
 Soy Maiki. Etapa A: implementa la pantalla única de estimación (más amigable), en LOCAL, sin commit/push, sobre 069a71d.
 Es PRESENTACIÓN: el núcleo server-side de estimación (cálculo y validaciones G1-G8) NO se toca; la UI solo lee y muestra. Cualquier dato que falte exponer (acumulados, saldos, avance físico/financiero) va por endpoint de SOLO LECTURA.
-La pantalla: una sola vista con (1) captura de volumen ejecutado por concepto, (2) carátula viva que recalcula al teclear (bruto = Σ vol×PU; − amortización anticipo art.143; − 5 al millar 0.5% art.191 LFD; = neto), (3) semáforo de plan inline por concepto (planeado/ya estimado/disponible este periodo) que marca en rojo si excede y deshabilita "confirmar" — solo ADELANTA la validación G5 del servidor, que sigue validando al confirmar, (4) columnas acumulado/saldos, (5) barras de avance físico vs financiero (derivadas de programa vs ejecutado). NO incluyas retención por atraso (va en otra etapa, falta el % del profe).
+La pantalla: una sola vista con (1) captura de volumen ejecutado por concepto, (2) carátula viva que recalcula al teclear (bruto = Σ vol×PU; − amortización anticipo art.138; − 5 al millar 0.5% art.191 LFD; = neto), (3) semáforo de plan inline por concepto (planeado/ya estimado/disponible este periodo) que marca en rojo si excede y deshabilita "confirmar" — solo ADELANTA la validación G5 del servidor, que sigue validando al confirmar, (4) columnas acumulado/saldos, (5) barras de avance físico vs financiero (derivadas de programa vs ejecutado). NO incluyas retención por atraso (va en otra etapa, falta el % del profe).
 Etiquetas en español claro con tooltip del artículo en amortización y 5 al millar.
 Tests: deja verdes los specs de estimación existentes + agrega specs de UI (carátula recalcula, semáforo dispara al exceder, no confirma si excede, ejemplo guía C-001=400 → neto $55,600).
 Entrégame doc .md + patch + runbook + suite. NO push.

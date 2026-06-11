@@ -21,7 +21,9 @@ export const PERMISOS = {
   'HU-10': { residente:'E', contratista:'C', supervision:'C', dependencia:null, finanzas:null },
   'HU-11': { residente:'E', contratista:'C', supervision:'C', dependencia:null, finanzas:null },
   'HU-12': { residente:'C', contratista:'E', supervision:'C', dependencia:null, finanzas:null },
-  'HU-13': { residente:'C', contratista:'E', supervision:'C', dependencia:null, finanzas:null },
+  // O7 (10-jun, art. 54 LOPSRM, confirmado por el profe): la RESIDENCIA revisa y autoriza la estimación
+  // (antes la enviaba el superintendente). Se invierten E/C: residente 'E', contratista 'C'.
+  'HU-13': { residente:'E', contratista:'C', supervision:'C', dependencia:null, finanzas:null },
   'HU-14': { residente:'E', contratista:'C', supervision:null, dependencia:'C', finanzas:null },
   'HU-15': { residente:'E', contratista:null, supervision:'E', dependencia:'C', finanzas:null },
   'HU-16': { residente:'C', contratista:'E', supervision:null, dependencia:null, finanzas:null },

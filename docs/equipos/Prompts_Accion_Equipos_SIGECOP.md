@@ -99,7 +99,7 @@ Patrón a seguir: HU-12/HU-21 ya cableadas son tu referencia (auth + acceso por 
 - **Catálogo / clave de concepto** = art. 45 apartado A **fr. IX** RLOPSRM ("…formará el presupuesto de la obra…").
 - **Programa de obra** = art. 45 apartado A **fr. X** RLOPSRM ("programa de ejecución convenido conforme al catálogo de conceptos, calendarizado y cuantificado por periodos").
 - **Anticipo >30%** = **art. 50 fr. IV LOPSRM** (autorización escrita del titular). **Anticipo >50%** = **art. 139 RLOPSRM** (informar a la SFP previamente, con las razones).
-- **Amortización del anticipo** = **art. 143 RLOPSRM**. **Retención 5 al millar** = **art. 191 LFD**. **Exceso de cantidades** = **art. 118 RLOPSRM**. **Plazos de estimación/pago** = **art. 54 LOPSRM**.
+- **Amortización del anticipo** = **art. 138 RLOPSRM**. **Retención 5 al millar** = **art. 191 LFD**. **Exceso de cantidades** = **art. 118 RLOPSRM**. **Plazos de estimación/pago** = **art. 54 LOPSRM**.
 - **Tipos de nota de bitácora por rol** = **art. 125 RLOPSRM** (fr. I residente · **fr. II superintendente/contratista** · fr. III supervisión). **art. 122** = uso obligatorio de la Bitácora (NO tipos de nota).
 - **Sustitución de personas** = **art. 125 fr. I inciso g) RLOPSRM** ("La sustitución del superintendente, del anterior residente y de la supervisión").
 - **CMIC / 2 al millar** = base **LFD / aportación CMIC de capacitación** (NO LOPSRM); **tasa y aplicabilidad a confirmar con el profe** (Nivel 1).

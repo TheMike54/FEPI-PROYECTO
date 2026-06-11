@@ -240,9 +240,11 @@ async function crearConvenio(req, res) {
         const { asunto, contenido } = textoNotaConvenio({
           folio: folioFinal, tipo, deltaMontoPct, deltaPlazoPct, motivo, diferida: false
         });
+        // O-PROFE: la nota del CONVENIO es de CONSECUENCIA → la AVALA el RESIDENTE del contrato (art. 53
+        // LOPSRM), no quien registra (puede ser dependencia). Emisor = residente_id del contrato.
         notaConv = await insertarNotaAtomica(client, {
           bitacoraId: bit.rows[0].id, tipo: 'res_convenios', asunto, contenido,
-          emisorId: req.user.id, tag: 'convenio'
+          emisorId: contrato.residente_id || req.user.id, tag: 'convenio'
         });
       }
 

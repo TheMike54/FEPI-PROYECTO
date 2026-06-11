@@ -11,8 +11,8 @@ Una **sola vista** (se eliminaron las pestañas) en `IntegracionEstimacion.jsx` 
 
 1. **Captura de volumen ejecutado** por concepto (los "números generadores"). *(ya existía; se conserva)*.
 2. **Carátula viva** que recalcula al teclear, con el **mismo redondeo que el backend** (`r2`):
-   - `bruto = Σ ROUND(vol × PU, 2)` · `(−) amortización = ROUND(bruto × %ant/100, 2)` **(art. 143 RLOPSRM)** · `(−) 5 al millar = ROUND(bruto × 0.005, 2)` **(art. 191 LFD)** · `(=) neto`.
-   - Etiquetas en español + **badge/tooltip del artículo** (`ⓘ art. 143 RLOPSRM`, `ⓘ art. 191 LFD`) con la fórmula en el `title`.
+   - `bruto = Σ ROUND(vol × PU, 2)` · `(−) amortización = ROUND(bruto × %ant/100, 2)` **(art. 138 RLOPSRM)** · `(−) 5 al millar = ROUND(bruto × 0.005, 2)` **(art. 191 LFD)** · `(=) neto`.
+   - Etiquetas en español + **badge/tooltip del artículo** (`ⓘ art. 138 RLOPSRM`, `ⓘ art. 191 LFD`) con la fórmula en el `title`.
    - **Renglón "(−) Retención por atraso" PREVISTO pero en $0** (badge "próxima etapa"; Etapa C — falta el % del profe, art. 138/139 RLOPSRM `[validar]`). No se calcula aquí.
 3. **Semáforo de plan inline** por concepto: columnas **Planeado / Ya estimado / Disp. periodo**. Si el volumen excede lo **planeado hasta el periodo**, marca la fila/celda en rojo, muestra el aviso `semaforo-plan-exceso` y **deshabilita "Confirmar"**. Solo **ADELANTA** la validación del servidor (A2/art. 45-A-X+52 + art. 118); **el servidor sigue validando al integrar** (no se quitó ninguna validación; el candado duro de art. 118 también se conserva).
 4. **Columnas acumulado / por estimar** (estilo carátula real, sin IVA): importe del contrato · estimado acumulado anterior · esta estimación · estimado acumulado · **saldo por estimar**.

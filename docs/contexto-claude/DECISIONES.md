@@ -83,7 +83,7 @@ imposibles respecto al alcance contratado.
 
 ### 3.4 Otras citas aplicadas
 La trazabilidad legal se extiende al resto del catálogo de historias; entre otras:
-art. 52 Bis (HU-08), art. 130 (HU-14), art. 55 (HU-20), art. 143 (HU-12), art. 53 y
+art. 52 Bis (HU-08), art. 130 (HU-14), art. 55 (HU-20), art. 138 (HU-12), art. 53 y
 art. 118. La matriz de servicios contra artículos mantiene este cruce completo.
 
 ---

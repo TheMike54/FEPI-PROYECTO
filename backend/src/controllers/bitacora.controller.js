@@ -239,9 +239,11 @@ async function abrirBitacora(req, res) {
           folio: folioCv, tipo: cv.tipo, deltaMontoPct: cv.delta_monto_pct,
           deltaPlazoPct: cv.delta_plazo_pct, motivo: cv.motivo, diferida: true
         });
+        // O-PROFE: nota de CONSECUENCIA (convenio) → la avala el RESIDENTE (art. 53); emisor = residente
+        // del contrato (= quien apertura, pero explícito por art. 53). Las de HECHO (avance/sustitución, arriba) NO.
         const nota = await insertarNotaAtomica(client, {
           bitacoraId: bitacora.id, tipo: 'res_convenios', asunto, contenido,
-          emisorId: req.user.id, tag: 'convenio'
+          emisorId: contrato.residente_id || req.user.id, tag: 'convenio'
         });
         await client.query('UPDATE convenios_modificatorios SET nota_id = $1 WHERE id = $2', [nota.id, cv.id]);
       }

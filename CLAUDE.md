@@ -50,7 +50,7 @@ La app quedará **solo en modo aplicación** (login real). **No construyas nada 
 
 ## Convenciones legales y de datos
 - **Cuadre EXACTO al centavo** (sin tolerancia): el monto se DERIVA `Σ ROUND(cant×pu, 2)`. Clave de concepto **capturada** por el usuario (art. 45 fr. IX RLOPSRM).
-- **Carátula de estimación server-side:** amortización (art. 143 RLOPSRM), 5 al millar (art. 191 LFD), exceso (art. 118 RLOPSRM), periodo (art. 54 LOPSRM). **CMIC / 2 al millar: parametrizable, base LFD / aportación CMIC (NO LOPSRM), tasa y aplicabilidad a CONFIRMAR con el profe** (Nivel 1: no la decide Code).
+- **Carátula de estimación server-side:** amortización (art. 138 RLOPSRM), 5 al millar (art. 191 LFD), exceso (art. 118 RLOPSRM), periodo (art. 54 LOPSRM). **CMIC / 2 al millar: parametrizable, base LFD / aportación CMIC (NO LOPSRM), tasa y aplicabilidad a CONFIRMAR con el profe** (Nivel 1: no la decide Code).
 - **Inmutabilidad:** apertura, firmas, notas, documentos, estimaciones y pagos son append-only (triggers). Corregir = registro vinculado NUEVO, no editar.
 - **Sustitución de personas (art. 125):** se SUSTITUYE, no se borra. Histórico 1:N en `contrato_roster`; el cache de punteros de `contratos` se sincroniza en **un solo punto** (endpoint de sustitución, transaccional).
 - Cita siempre el artículo (LOPSRM / RLOPSRM / LFD) en las validaciones. Code lee los PDF de `docs/`, pero **lo legal lo confirma el profe**.

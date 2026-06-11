@@ -11,8 +11,9 @@ import { api } from '../services/api.js';
 // programa VIGENTE (P14 del profe). Cada captura imputa una cantidad ejecutada a un concepto del
 // catálogo y a un PERIODO del programa (SELECTOR, ya no fecha libre). El backend es la verdad:
 //  · art. 118 RLOPSRM (BLOQUEO): Σ ejecutado por concepto ≤ contratado → 409.
-//  · programa vigente por periodo (BLOQUEO): ejecutado_acum + nuevo ≤ programado_acum al periodo;
-//    si el concepto no está programado en el periodo, o se excede → 409 (requiere convenio, art. 59).
+//  · programa vigente por periodo (AVISO, O-PROFE): si el avance excede lo programado del periodo o el
+//    concepto no estaba programado → se REGISTRA igual con aviso (adelantar a precios pactados no
+//    requiere convenio); el backend devuelve aviso_programa. Solo art. 118 y conceptos fuera de catálogo bloquean.
 //  · NOTA automática de bitácora tipo `avance` (se genera sola; diferida si no hay bitácora abierta).
 //  · captura EDITABLE (PATCH/DELETE): no append-only.
 
@@ -141,8 +142,10 @@ export default function TrabajosTerminados() {
     return { acumNuevo, excede118, noProgramado, excedePeriodo };
   }, [conceptoSel, cantNueva, tienePrograma, refPrograma, periodoSel]);
 
+  // O-PROFE: SOLO el art. 118 (acumulado sobre lo contratado) BLOQUEA el registro. noProgramado y
+  // excedePeriodo son AVISOS (no bloquean): adelantar avance a precios pactados no requiere convenio.
   const puedeGuardar = !soloLectura && !guardando && !!conceptoSel && !!periodoSel && cantNueva > 0
-    && !validacion.excede118 && !validacion.noProgramado && !validacion.excedePeriodo;
+    && !validacion.excede118;
 
   // Toggle "Ejecuté todo lo programado del periodo" → autollena la cantidad con lo disponible.
   const autollenarTodo = () => {
@@ -160,7 +163,9 @@ export default function TrabajosTerminados() {
         cantidad: cantNueva,
         observaciones: form.observaciones || null
       });
-      showToast(r?.nota_diferida ? 'Avance registrado. La nota de bitácora se asentará al abrir la bitácora.' : 'Avance registrado y nota de bitácora asentada.');
+      const baseMsg = r?.nota_diferida ? 'Avance registrado. La nota de bitácora se asentará al abrir la bitácora.' : 'Avance registrado y nota de bitácora asentada.';
+      // O-PROFE: el backend puede devolver un aviso (no bloqueante) si el avance excede lo programado.
+      showToast(r?.aviso_programa ? `${baseMsg} ⚠ ${r.aviso_programa}` : baseMsg);
       setForm(FORM_VACIO);
       await recargar(contratoId);
     } catch (e) {
@@ -179,11 +184,12 @@ export default function TrabajosTerminados() {
     if (!edicion) return;
     setGuardando(true);
     try {
-      await api.actualizarAvance(edicion.id, {
+      const r = await api.actualizarAvance(edicion.id, {
         cantidad: Number(edicion.cantidad) || 0,
         observaciones: edicion.observaciones || null
       });
-      showToast('Avance actualizado');
+      // O-PROFE: el PATCH también puede devolver aviso_programa (no bloqueante) si excede lo programado.
+      showToast(r?.aviso_programa ? `Avance actualizado. ⚠ ${r.aviso_programa}` : 'Avance actualizado');
       setEdicion(null);
       await recargar(contratoId);
     } catch (e) {
@@ -381,7 +387,7 @@ export default function TrabajosTerminados() {
                       type="number"
                       min="0"
                       step="any"
-                      className={`sg-input text-right font-mono ${(validacion.excede118 || validacion.noProgramado || validacion.excedePeriodo) ? 'border-red-500 ring-2 ring-red-200' : ''}`}
+                      className={`sg-input text-right font-mono ${validacion.excede118 ? 'border-red-500 ring-2 ring-red-200' : (validacion.noProgramado || validacion.excedePeriodo) ? 'border-amber-400 ring-2 ring-amber-100' : ''}`}
                       value={form.cantidad}
                       onChange={(e) => setCampo('cantidad', e.target.value)}
                       data-testid="cap-cantidad"
@@ -410,13 +416,13 @@ export default function TrabajosTerminados() {
                   </div>
                 )}
                 {!validacion.excede118 && validacion.noProgramado && (
-                  <div className="mt-4 bg-red-50 border-l-4 border-red-500 px-4 py-3 text-sm text-red-800 rounded-r-md" data-testid="aviso-no-programado">
-                    ⛔ El concepto <strong>no está programado en el periodo {periodoSel?.numero}</strong> (ni antes). Para ejecutarlo aquí se requiere un convenio modificatorio (art. 59 LOPSRM).
+                  <div className="mt-4 bg-amber-50 border-l-4 border-amber-400 px-4 py-3 text-sm text-amber-800 rounded-r-md" data-testid="aviso-no-programado">
+                    ⚠ El concepto <strong>no está programado en el periodo {periodoSel?.numero}</strong> (ni antes). Verifica el monto y los conceptos nuevos. <strong>Se puede registrar</strong> (adelantar a precios pactados no requiere convenio).
                   </div>
                 )}
                 {!validacion.excede118 && !validacion.noProgramado && validacion.excedePeriodo && (
-                  <div className="mt-4 bg-red-50 border-l-4 border-red-500 px-4 py-3 text-sm text-red-800 rounded-r-md" data-testid="aviso-excede-periodo">
-                    ⛔ <strong>Excede lo programado del periodo {periodoSel?.numero}</strong>: ejecutado acumulado {num(refPrograma?.ejecutadoAcum)} + {num(cantNueva)} supera lo programado {num(refPrograma?.programadoAcum)}. Para adelantar volumen se requiere un convenio modificatorio (art. 59 LOPSRM).
+                  <div className="mt-4 bg-amber-50 border-l-4 border-amber-400 px-4 py-3 text-sm text-amber-800 rounded-r-md" data-testid="aviso-excede-periodo">
+                    ⚠ <strong>Excede lo programado del periodo {periodoSel?.numero}</strong>: ejecutado acumulado {num(refPrograma?.ejecutadoAcum)} + {num(cantNueva)} supera lo programado {num(refPrograma?.programadoAcum)}. Verifica el monto y los conceptos nuevos. <strong>Se puede registrar</strong> (no requiere convenio).
                   </div>
                 )}
 
@@ -525,8 +531,8 @@ export default function TrabajosTerminados() {
         huId="HU-06"
         criterios={[
           { numero: 1, texto: 'Cada cantidad capturada queda ligada al concepto del catálogo y al PERIODO del programa, y genera una nota de bitácora del avance (art. 125 fr. II).' },
-          { numero: 2, texto: 'El sistema valida el avance contra lo programado del periodo (programa vigente) y bloquea si lo excede o el concepto no está programado (requiere convenio, art. 59).' },
-          { numero: 3, texto: 'El sistema bloquea el registro cuando la cantidad acumulada excede la contratada (art. 118 RLOPSRM).' }
+          { numero: 2, texto: 'El sistema AVISA (no bloquea) si el avance del periodo excede lo programado o el concepto no estaba programado: adelantar a precios pactados no requiere convenio (se registra, verificando monto/conceptos).' },
+          { numero: 3, texto: 'El sistema BLOQUEA el registro solo cuando la cantidad acumulada excede la contratada (art. 118 RLOPSRM) o se introducen conceptos fuera del catálogo.' }
         ]}
       />
 
