@@ -8,13 +8,20 @@
 //   1 Avance físico   ← leerProgramaObra + trabajosDeContrato + listarPagos  (PDF + Excel)
 //   2 Avance financiero ← historialEstimaciones + listarPagos                  (Excel)
 //   3 Estimaciones    ← historialEstimaciones                                  (Excel)
-//   4 Observaciones   ← (sin fuente: depende de HU-15)                         [DESHABILITADO]
+//   4 Observaciones   ← (sin fuente: falta un GET de observaciones a NIVEL CONTRATO)            [DESHABILITADO]
 //   5 Bitácora        ← notasDeContrato                                        (PDF)
 //   6 Modificatorios  ← convenios                                             (Excel)
-//   7 Penalizaciones  ← historialEstimaciones (retención/deductivas) + preparacionEstimacion (pena %) (Excel)
+//   7 Penalizaciones  ← historialEstimaciones (pena por atraso DERIVADA + 5 al millar fiscal + deductivas)
+//                       + preparacionEstimacion (pena % pactada) (Excel)
+//
+// RECONCILIACIÓN O7↔HU-15 (HU-19 ramificó antes de la reconciliación): los reportes muestran el ESTADO
+// con su ETIQUETA canónica (labelEstadoEstimacion: enviada→"Presentada", autorizada→"Autorizada", …),
+// no el valor crudo del esquema. La PENA POR ATRASO (art. 138/139 RLOPSRM) se DERIVA por identidad de la
+// carátula porque el endpoint del historial aún no expone `retencion_atraso` (ver penaAtrasoDerivada).
 
 import jsPDF from 'jspdf';
 import { descargarExcelHoja, descargarExcelMultihoja } from './excelExport.js';
+import { labelEstadoEstimacion } from '../data/estadoEstimacion.js';
 
 // ---------------------------------------------------------------------------
 // Utilidades
@@ -32,6 +39,16 @@ function hoyISO() {
 }
 const baseName = (id, slug, periodo) => `reporte_${id}_${slug}_${periodo.toLowerCase()}_${stamp()}`;
 const rangoPeriodo = (ini, fin) => `${dISO(ini) || '—'} – ${dISO(fin) || '—'}`;
+const r2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+
+// Pena por ATRASO (art. 138/139 RLOPSRM) DERIVADA por la identidad de la carátula que arma el server:
+//   neto = subtotal − amortización − retención(5 al millar) − deductivas − retencion_atraso
+//   ⟹ retencion_atraso = subtotal − amortización − retención − deductivas − neto
+// Es EXACTA (todos los términos vienen ROUNDed del backend; NO recalcula la carátula, sólo despeja el
+// renglón que el endpoint del historial aún no expone). Así las columnas de carátula CUADRAN al neto.
+// [validar profe] el fundamento legal de la pena (138/139 RLOPSRM).
+const penaAtrasoDerivada = (e) =>
+  Math.max(0, r2((Number(e.subtotal) || 0) - (Number(e.amortizacion) || 0) - (Number(e.retencion) || 0) - (Number(e.deductivas) || 0) - (Number(e.neto) || 0)));
 
 // Resta `meses` (calendario) a una fecha ISO 'AAAA-MM-DD'.
 function restarMeses(iso, meses) {
@@ -228,11 +245,12 @@ function avanceFinancieroExcel(d, contrato, periodo) {
     .map((e) => ({
       Estimacion: `EST-${String(e.numero).padStart(3, '0')}`,
       Periodo: rangoPeriodo(e.periodo_inicio, e.periodo_fin),
-      Estado: e.estado,
+      Estado: labelEstadoEstimacion(e.estado),
       Subtotal: Number(e.subtotal) || 0,
       Amortizacion: Number(e.amortizacion) || 0,
-      Retencion: Number(e.retencion) || 0,
+      'Retencion (5 al millar)': Number(e.retencion) || 0,
       Deductivas: Number(e.deductivas) || 0,
+      'Retencion por atraso': penaAtrasoDerivada(e),
       Neto: Number(e.neto) || 0
     }));
   // Pagado y % financiero DERIVADOS de los pagos reales (Σ listarPagos ÷ monto): misma definición
@@ -241,7 +259,10 @@ function avanceFinancieroExcel(d, contrato, periodo) {
   const pagadoAcum = (d.pagos || []).reduce((s, p) => s + (Number(p.importe) || 0), 0);
   const resumen = [
     { Concepto: 'Monto del contrato', Valor: monto },
-    { Concepto: 'Σ Neto autorizado (estimaciones no rechazadas)', Valor: (d.historial || []).filter((e) => e.estado !== 'rechazada').reduce((s, e) => s + (Number(e.neto) || 0), 0) },
+    // Suma de netos de estimaciones NO rechazadas (incluye integradas/presentadas/autorizadas/pagadas).
+    // NO se rotula "autorizado": el ciclo es integrada→Presentada(HU-13)→Autorizada(HU-15)→pagada y el
+    // gate de pago es permisivo, así que "no rechazada" ≠ "autorizada por la residencia".
+    { Concepto: 'Σ Neto de estimaciones no rechazadas', Valor: (d.historial || []).filter((e) => e.estado !== 'rechazada').reduce((s, e) => s + (Number(e.neto) || 0), 0) },
     { Concepto: 'Pagado acumulado', Valor: pagadoAcum },
     { Concepto: 'Avance financiero % (pagado ÷ monto)', Valor: monto > 0 ? Number(((pagadoAcum / monto) * 100).toFixed(2)) : '' },
     { Concepto: 'Comprometido / disponible presupuestal', Valor: 'PENDIENTE — depende de HU-20 (presupuesto_anual)' }
@@ -259,16 +280,19 @@ function estimacionesExcel(d, contrato, periodo) {
   const filas = (d.historial || []).map((e) => ({
     Estimacion: `EST-${String(e.numero).padStart(3, '0')}`,
     Periodo: rangoPeriodo(e.periodo_inicio, e.periodo_fin),
-    Estado: e.estado,
+    Estado: labelEstadoEstimacion(e.estado),
     Subtotal: Number(e.subtotal) || 0,
     Amortizacion: Number(e.amortizacion) || 0,
-    Retencion: Number(e.retencion) || 0,
+    'Retencion (5 al millar)': Number(e.retencion) || 0,
     Deductivas: Number(e.deductivas) || 0,
+    'Retencion por atraso': penaAtrasoDerivada(e),
     Neto: Number(e.neto) || 0,
     'Integrada en': dISO(e.integrada_en),
     'Integrada por': e.integrada_por_nombre || '',
-    'Enviada en': dISO(e.enviada_en),
-    'Enviada por': e.enviada_por_nombre || ''
+    // Sello de PRESENTACIÓN (HU-13). La columna del esquema es `enviada_en/por`; en el flujo reconciliado
+    // O7↔HU-15 "enviada" = la estimación que el contratista PRESENTÓ (arranca el plazo del art. 54 LOPSRM).
+    'Presentada en': dISO(e.enviada_en),
+    'Presentada por': e.enviada_por_nombre || ''
   }));
   return descargarExcelHoja(`${baseName(3, 'estimaciones', periodo)}.xlsx`, 'Estimaciones', filas);
 }
@@ -326,18 +350,22 @@ function modificatoriosExcel(d, contrato, periodo) {
 }
 
 // ---------------------------------------------------------------------------
-// 7) Penalizaciones y deductivas (Excel) — retención/deductivas de la carátula.
-//    [DECISIÓN LEGAL PENDIENTE de confirmar con el profe — Nivel 1] el fundamento de la
-//    pena por atraso (art. 138/139 LOPSRM) NO está verificado; la fuente de datos es la
-//    retención y las deductivas registradas en cada estimación.
+// 7) Penalizaciones y deductivas (Excel). Distingue TRES conceptos que NO son lo mismo:
+//    · PENA POR ATRASO (art. 138/139 RLOPSRM): DERIVADA de la carátula (el historial no expone
+//      `retencion_atraso`); ver penaAtrasoDerivada. [DECISIÓN LEGAL PENDIENTE — Nivel 1] el
+//      fundamento de la pena (138/139 RLOPSRM) lo confirma el profe, no Code.
+//    · RETENCIÓN 5 AL MILLAR (art. 191 LFD): retención FISCAL, NO es una pena. `e.retencion`.
+//    · DEDUCTIVAS (art. 46/46 Bis): retenciones económicas / penas convencionales registradas.
+//    + Pena convencional % pactada del contrato (preparacionEstimacion).
 // ---------------------------------------------------------------------------
 function penalizacionesExcel(d, contrato, periodo) {
   const penaPct = d.prep?.contrato?.pena_convencional_pct;
   const filas = (d.historial || []).map((e) => ({
     Estimacion: `EST-${String(e.numero).padStart(3, '0')}`,
     Periodo: rangoPeriodo(e.periodo_inicio, e.periodo_fin),
-    Estado: e.estado,
-    'Retencion (pena por atraso)': Number(e.retencion) || 0,
+    Estado: labelEstadoEstimacion(e.estado),
+    'Retencion por atraso (art.138/139 RLOPSRM)': penaAtrasoDerivada(e),
+    'Retencion 5 al millar (art.191 LFD)': Number(e.retencion) || 0,
     Deductivas: Number(e.deductivas) || 0,
     'Pena convencional % (contrato)': penaPct == null ? 'No pactada' : penaPct
   }));
@@ -351,12 +379,12 @@ function penalizacionesExcel(d, contrato, periodo) {
 // ---------------------------------------------------------------------------
 export const CATALOGO_REPORTES = [
   { id: 1, slug: 'avance-fisico', nombre: 'Avance físico vs programado', descripcion: 'Curva S + concepto × periodo (programa, trabajos y pagos reales).', formatos: ['PDF', 'Excel'], disponible: true },
-  { id: 2, slug: 'avance-financiero', nombre: 'Avance financiero', descripcion: 'Por estimación: subtotal, amortización, retención, deductivas y neto + pagado acumulado.', formatos: ['Excel'], disponible: true },
-  { id: 3, slug: 'estimaciones', nombre: 'Listado de estimaciones', descripcion: 'Una fila por estimación con estado, periodo, importes y sellos de integración/envío.', formatos: ['Excel'], disponible: true },
-  { id: 4, slug: 'observaciones', nombre: 'Listado de observaciones', descripcion: 'Sin fuente — depende de HU-15 (GET de observaciones a nivel contrato).', formatos: ['Excel'], disponible: false },
+  { id: 2, slug: 'avance-financiero', nombre: 'Avance financiero', descripcion: 'Por estimación: subtotal, amortización, retención, deductivas, pena por atraso y neto + pagado acumulado.', formatos: ['Excel'], disponible: true },
+  { id: 3, slug: 'estimaciones', nombre: 'Listado de estimaciones', descripcion: 'Una fila por estimación con estado, periodo, importes y sellos de integración/presentación.', formatos: ['Excel'], disponible: true },
+  { id: 4, slug: 'observaciones', nombre: 'Listado de observaciones', descripcion: 'Sin fuente — falta un GET de observaciones a nivel contrato (HU-15 las expone por estimación).', formatos: ['Excel'], disponible: false },
   { id: 5, slug: 'bitacora', nombre: 'Bitácora completa', descripcion: 'Notas cronológicas con folio, fecha, tipo, emisor y firmas.', formatos: ['PDF'], disponible: true, requiereBitacora: true },
   { id: 6, slug: 'modificatorios', nombre: 'Histórico de modificatorios', descripcion: 'Convenios del contrato (art. 59 / 59 Bis LOPSRM) con deltas de monto y plazo.', formatos: ['Excel'], disponible: true },
-  { id: 7, slug: 'penalizaciones', nombre: 'Penalizaciones y deductivas', descripcion: 'Retención por atraso y deductivas registradas en cada estimación.', formatos: ['Excel'], disponible: true }
+  { id: 7, slug: 'penalizaciones', nombre: 'Penalizaciones y deductivas', descripcion: 'Pena por atraso (derivada, art.138/139 RLOPSRM), 5 al millar fiscal (art.191 LFD), deductivas y pena % pactada.', formatos: ['Excel'], disponible: true }
 ];
 
 export const PERIODOS_REPORTE = ['Mensual', 'Trimestral', 'Acumulado'];

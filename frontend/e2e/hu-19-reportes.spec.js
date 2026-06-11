@@ -3,7 +3,7 @@
 //
 // Cubre el comportamiento del prototipo:
 //   · 7 reportes definidos; cada botón dispara una descarga REAL (jsPDF para
-//     PDF, SheetJS para Excel). Verificamos suggestedFilename.
+//     PDF, exceljs vía excelExport.js para Excel). Verificamos suggestedFilename.
 //   · El selector de periodo (Mensual, Trimestral, Acumulado) etiqueta el
 //     archivo y acota los meses incluidos donde aplica (1, 2, 5), sin alterar
 //     el contenido predefinido del reporte (CA-2).
