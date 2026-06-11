@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import ExcelJS from 'exceljs';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import BuscadorNotas, { useFiltrosNotas, ETIQUETA_ACEPTACION } from '../components/notas/BuscadorNotas.jsx';
+import DocumentoNota from '../components/notas/DocumentoNota.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
@@ -30,6 +31,9 @@ export default function ConsultaNotas() {
   const [cargando, setCargando] = useState(false);
   const [sinBitacora, setSinBitacora] = useState(false);
   const [seleccionadas, setSeleccionadas] = useState(() => new Set());
+  // O8 (b): nota abierta como documento imprimible.
+  const [notaDoc, setNotaDoc] = useState(null);
+  const contratoSel = useMemo(() => contratos.find((c) => String(c.id) === String(contratoId)) || null, [contratos, contratoId]);
 
   // Carga inicial: contratos del usuario + catálogo REAL de tipos (art. 125).
   useEffect(() => {
@@ -195,6 +199,7 @@ export default function ConsultaNotas() {
         seleccionadas={seleccionadas}
         onToggle={toggle}
         onToggleTodas={toggleTodas}
+        onVerDocumento={setNotaDoc}
       />
 
       <SeccionCriterios
@@ -204,6 +209,8 @@ export default function ConsultaNotas() {
           { numero: 2, texto: 'Se pueden seleccionar varias notas del resultado y exportarlas en formato Excel.' }
         ]}
       />
+
+      {notaDoc && <DocumentoNota nota={notaDoc} contrato={contratoSel} onCerrar={() => setNotaDoc(null)} />}
     </div>
   );
 }

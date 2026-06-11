@@ -4,6 +4,7 @@ import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
+import DocumentoNota from '../components/notas/DocumentoNota.jsx';
 
 // HU-09 conectado al backend. Pasada bitácora:
 //  · La APERTURA es la nota #1 (art. 123 fr. III); su firma es CONJUNTA (todos los participantes).
@@ -52,6 +53,11 @@ export default function EmisionNotas() {
   // Anulación (dice / debe decir)
   const [anulando, setAnulando] = useState(null);   // id de nota o null
   const [correccion, setCorreccion] = useState('');
+
+  // O8 (b): nota abierta como "documento" imprimible (DocumentoNota) o null.
+  const [notaDoc, setNotaDoc] = useState(null);
+  // Contrato seleccionado (para el membrete del documento de la nota).
+  const contratoSel = useMemo(() => contratos.find((c) => String(c.id) === String(contratoId)) || null, [contratos, contratoId]);
 
   const miRol = data?.mi_rol || null;
   const esParte = !!miRol;
@@ -208,6 +214,12 @@ export default function EmisionNotas() {
         {n.vinculada_a && (
           <div className="text-xs text-sigecop-blue mt-1" data-testid={`vinculo-${n.numero}`}>↪ Vinculada a {folioFmt(numeroPorId[n.vinculada_a])}</div>
         )}
+        {/* O8 (b): ver la nota como documento imprimible (siempre disponible, solo lectura). */}
+        <div className="mt-2">
+          <button type="button" className="text-xs text-guinda font-semibold hover:underline" onClick={() => setNotaDoc(n)} data-testid={`btn-doc-nota-${n.numero}`}>
+            📄 Ver como documento
+          </button>
+        </div>
         {(puedeResponder || puedeAnular || puedeFirmar) && (
           <div className="mt-2 flex gap-4 flex-wrap">
             {puedeFirmar && (
@@ -386,6 +398,8 @@ export default function EmisionNotas() {
         ]}
       />
       <p className="mt-4 text-xs text-slate-500 italic text-center">Fundamento: arts. 122, 123 y 125 RLOPSRM.</p>
+
+      {notaDoc && <DocumentoNota nota={notaDoc} contrato={contratoSel} onCerrar={() => setNotaDoc(null)} />}
     </div>
   );
 }

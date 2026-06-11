@@ -113,6 +113,7 @@ export default function BuscadorNotas({
   seleccionadas,
   onToggle,
   onToggleTodas,
+  onVerDocumento,   // O8 (b): opcional; si se pasa, cada fila ofrece "📄 documento" (vista imprimible)
   idPrefix = ''
 }) {
   const tid = (s) => `${idPrefix}${s}`;
@@ -195,12 +196,13 @@ export default function BuscadorNotas({
                 <th className="text-left p-3 font-semibold">Vínculo</th>
                 <th className="text-left p-3 font-semibold">Asunto</th>
                 <th className="text-left p-3 font-semibold">Estado</th>
+                {onVerDocumento && <th className="text-left p-3 font-semibold">Documento</th>}
               </tr>
             </thead>
             <tbody>
               {resultados.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="p-8 text-center text-slate-400 italic">
+                  <td colSpan={onVerDocumento ? 9 : 8} className="p-8 text-center text-slate-400 italic">
                     Sin resultados con los filtros aplicados.
                   </td>
                 </tr>
@@ -239,6 +241,13 @@ export default function BuscadorNotas({
                           {ETIQUETA_ACEPTACION[n.aceptacion] || n.aceptacion}
                         </span>
                       </td>
+                      {onVerDocumento && (
+                        <td className="p-3">
+                          <button type="button" className="text-xs text-guinda font-semibold hover:underline whitespace-nowrap" onClick={() => onVerDocumento(n)} data-testid={tid(`btn-doc-${n.numero}`)}>
+                            📄 documento
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   );
                 })

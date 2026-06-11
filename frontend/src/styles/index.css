@@ -47,3 +47,18 @@
   table { page-break-inside: auto; }
   tr { page-break-inside: avoid; }
 }
+
+/* O8 (b) — Vista "documento" de UNA nota (DocumentoNota). Cuando el modal está abierto marca el <body>
+   con `doc-nota-abierto`; entonces la impresión muestra SOLO el documento (truco de visibility) y oculta
+   todo lo demás (página de fondo, backdrop, barra de acciones con `data-print-ocultar`). El alcance por
+   clase de body evita romper la impresión del expediente (O9), que NO lleva esa clase. */
+@media print {
+  body.doc-nota-abierto * { visibility: hidden !important; }
+  body.doc-nota-abierto [data-print-area],
+  body.doc-nota-abierto [data-print-area] * { visibility: visible !important; }
+  body.doc-nota-abierto [data-print-area] {
+    position: absolute !important; left: 0 !important; top: 0 !important;
+    width: 100% !important; margin: 0 !important; box-shadow: none !important;
+  }
+  body.doc-nota-abierto [data-print-ocultar] { display: none !important; }
+}

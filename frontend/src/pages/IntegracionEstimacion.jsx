@@ -9,6 +9,7 @@ import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
 import { labelEstadoEstimacion } from '../data/estadoEstimacion.js';
+import DocumentoNota from '../components/notas/DocumentoNota.jsx';
 import MatrizProgramaLectura, { periodoQueContiene } from '../components/programa/MatrizProgramaLectura.jsx';
 
 // HU-12 Fase 3 — cableado al backend real. El superintendente del contrato integra
@@ -95,7 +96,7 @@ function ModalVincularNotas({ onCerrar, onConfirmar, notas, tipos, yaVinculadas 
         <div className="flex-1 overflow-auto px-6 py-4">
           {notas.length === 0 ? (
             <p className="p-8 text-center text-slate-400 italic" data-testid="mb-sin-notas">
-              Este contrato no tiene notas de bitácora para vincular.
+              Este contrato no tiene notas <strong>firmadas</strong> para vincular (solo las firmadas soportan la estimación).
             </p>
           ) : (
             <BuscadorNotas
@@ -135,7 +136,7 @@ function ModalVincularNotas({ onCerrar, onConfirmar, notas, tipos, yaVinculadas 
 // (GET /estimaciones/:id): carátula + generadores (importe/acumulado/% avance) +
 // notas vinculadas + estado.
 // ---------------------------------------------------------------------------
-function ModalDetalle({ estimacion, onCerrar }) {
+function ModalDetalle({ estimacion, onCerrar, onVerDocumento }) {
   const e = estimacion;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 p-4" data-testid="modal-detalle">
@@ -207,6 +208,7 @@ function ModalDetalle({ estimacion, onCerrar }) {
                       <th className="text-left p-2 font-semibold">Fecha</th>
                       <th className="text-left p-2 font-semibold">Asunto</th>
                       <th className="text-left p-2 font-semibold">Estado</th>
+                      <th className="text-left p-2 font-semibold">Documento</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -217,6 +219,11 @@ function ModalDetalle({ estimacion, onCerrar }) {
                         <td className="p-2">{fechaHora(n.fecha)}</td>
                         <td className="p-2 text-slate-700">{n.asunto || '—'}</td>
                         <td className="p-2">{n.estado}</td>
+                        <td className="p-2">
+                          <button type="button" className="text-xs text-guinda font-semibold hover:underline whitespace-nowrap" onClick={() => onVerDocumento(n)} data-testid={`btn-doc-detalle-${n.numero}`}>
+                            📄 documento
+                          </button>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -424,19 +431,20 @@ function TabCaratula({ caratula, anticipoPct, deductivas, onDeductivas, acumulad
   );
 }
 
-function TabNotasVinculadas({ vinculadas, onAbrir, onQuitar, soloLectura }) {
+function TabNotasVinculadas({ vinculadas, onAbrir, onQuitar, onVerDocumento, soloLectura }) {
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h3 className="text-lg font-bold text-sigecop-blue">Notas vinculadas a esta estimación ({vinculadas.length})</h3>
         {!soloLectura && (
           <button type="button" className="sg-btn-secondary" onClick={onAbrir} data-testid="btn-abrir-buscador-notas">
-            🔍 Buscar y vincular notas de bitácora
+            🔍 Buscar y vincular notas firmadas
           </button>
         )}
       </div>
       <p className="text-sm text-slate-600 mb-4">
-        Las notas de bitácora vinculadas forman parte del expediente de la estimación (art. 132 fr. II RLOPSRM).
+        Las notas de bitácora <strong>firmadas</strong> que soportan esta estimación forman parte de su expediente
+        (art. 132 fr. II RLOPSRM). Cada una se puede ver como documento imprimible.
       </p>
       <div className="overflow-x-auto border border-slate-200 rounded-md">
         <table className="w-full text-sm" data-testid="tabla-notas-vinculadas">
@@ -447,12 +455,13 @@ function TabNotasVinculadas({ vinculadas, onAbrir, onQuitar, soloLectura }) {
               <th className="text-left p-3 font-semibold">Fecha</th>
               <th className="text-left p-3 font-semibold">Firmante</th>
               <th className="text-left p-3 font-semibold">Asunto</th>
+              <th className="text-left p-3 font-semibold">Documento</th>
               <th className="text-center p-3 font-semibold w-24">Quitar</th>
             </tr>
           </thead>
           <tbody>
             {vinculadas.length === 0 ? (
-              <tr><td colSpan="6" className="p-6 text-center text-slate-400 italic">Sin notas vinculadas.</td></tr>
+              <tr><td colSpan="7" className="p-6 text-center text-slate-400 italic">Sin notas vinculadas.</td></tr>
             ) : (
               vinculadas.map((n) => (
                 <tr key={n.id} className="border-t border-slate-200 hover:bg-slate-50">
@@ -461,6 +470,11 @@ function TabNotasVinculadas({ vinculadas, onAbrir, onQuitar, soloLectura }) {
                   <td className="p-3">{fechaHora(n.fecha)}</td>
                   <td className="p-3">{n.emisor_nombre || '—'}</td>
                   <td className="p-3 text-slate-700">{n.asunto || '—'}</td>
+                  <td className="p-3">
+                    <button type="button" className="text-xs text-guinda font-semibold hover:underline whitespace-nowrap" onClick={() => onVerDocumento(n)} data-testid={`btn-doc-vinculada-${n.numero}`}>
+                      📄 documento
+                    </button>
+                  </td>
                   <td className="p-3 text-center">
                     {!soloLectura && (
                       <button type="button" className="text-xs text-red-600 hover:underline" onClick={() => onQuitar(n.id)}>Quitar</button>
@@ -507,6 +521,8 @@ export default function IntegracionEstimacion() {
   const [historial, setHistorial] = useState([]);
   const [notasContrato, setNotasContrato] = useState([]);
   const [cargando, setCargando] = useState(false);
+  // O8 (b): nota abierta como documento imprimible (DocumentoNota) o null.
+  const [notaDoc, setNotaDoc] = useState(null);
 
   const [cantidades, setCantidades] = useState({}); // { [contrato_concepto_id]: string }
   const [deductivas, setDeductivas] = useState('0');
@@ -667,6 +683,19 @@ export default function IntegracionEstimacion() {
   const onCantidad = (cid, valor) => setCantidades((prev) => ({ ...prev, [cid]: valor }));
 
   const idsVinculados = useMemo(() => notasVinculadas.map((n) => n.id), [notasVinculadas]);
+  // O8 (a): solo se vinculan notas FIRMADAS del contrato ("notas que soportan esta estimación"). El
+  // estado 'firmada' lo deriva el backend (todo el roster firmó antes del plazo, art. 123 fr. III). Se
+  // excluye la APERTURA (nota #1): es el acta de apertura de la bitácora, no un soporte de la estimación.
+  const notasFirmadas = useMemo(
+    () => notasContrato.filter((n) => n.aceptacion === 'firmada' && n.tipo !== 'apertura'),
+    [notasContrato]
+  );
+  // O8 (b): abrir el documento de una nota. La nota vinculada/del detalle puede venir mínima (solo
+  // nota_id/numero); se resuelve a la nota COMPLETA (con firmas) desde notasContrato cuando existe.
+  const verDocumentoNota = useCallback((n) => {
+    const id = n.id ?? n.nota_id;
+    setNotaDoc(notasContrato.find((x) => x.id === id) || n);
+  }, [notasContrato]);
   const confirmarNotas = (elegidas) => {
     setNotasVinculadas((prev) => {
       const existentes = new Set(prev.map((n) => n.id));
@@ -848,7 +877,7 @@ export default function IntegracionEstimacion() {
               numeroEstimacion={proximoNumeroEstimacion} periodoNumero={periodoResaltadoEstim} periodoInicio={periodoInicio} periodoFin={periodoFin} />)}
 
             {wrapTab(
-              <TabNotasVinculadas vinculadas={notasVinculadas} onAbrir={() => setModalAbierto(true)} onQuitar={quitarNota} soloLectura={soloLectura} />
+              <TabNotasVinculadas vinculadas={notasVinculadas} onAbrir={() => setModalAbierto(true)} onQuitar={quitarNota} onVerDocumento={verDocumentoNota} soloLectura={soloLectura} />
             )}
           </div>
 
@@ -923,14 +952,15 @@ export default function IntegracionEstimacion() {
 
       {modalAbierto && (
         <ModalVincularNotas
-          notas={notasContrato}
+          notas={notasFirmadas}
           tipos={tipos}
           yaVinculadas={idsVinculados}
           onConfirmar={confirmarNotas}
           onCerrar={() => setModalAbierto(false)}
         />
       )}
-      {detalle && <ModalDetalle estimacion={detalle} onCerrar={() => setDetalle(null)} />}
+      {detalle && <ModalDetalle estimacion={detalle} onCerrar={() => setDetalle(null)} onVerDocumento={verDocumentoNota} />}
+      {notaDoc && <DocumentoNota nota={notaDoc} contrato={selected} onCerrar={() => setNotaDoc(null)} />}
     </div>
   );
 }
