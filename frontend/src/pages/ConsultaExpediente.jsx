@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import { descargarExcelHoja } from '../services/excelExport.js';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
@@ -494,6 +495,82 @@ function BloqueRoster({ roster }) {
   );
 }
 
+// O6 (10-jun) — Convenios modificatorios en el expediente (art. 59 LOPSRM). Historial INMUTABLE
+// (la fuente es GET /api/convenios/contrato/:id; mismo endpoint que HU-03) + estado de su NOTA de
+// bitácora (asiento automático, art. 123 fr. III) + link a las versiones del programa (viven en HU-03,
+// con su visor de snapshots). Append-only: corregir = convenio nuevo (no se edita ni se anula).
+const TIPO_CONVENIO_LABEL = { monto: 'Monto', plazo: 'Plazo', programa: 'Programa', mixto: 'Mixto' };
+const pctConv = (n) => (n == null ? null : `${Number(n) >= 0 ? '+' : ''}${Number(n)}%`);
+
+function BloqueConvenios({ data, contratoId }) {
+  const convenios = Array.isArray(data?.convenios) ? data.convenios : [];
+  const versiones = Array.isArray(data?.versiones) ? data.versiones : [];
+  if (convenios.length === 0) {
+    return <p className="text-sm text-slate-400 italic">Este contrato no tiene convenios modificatorios registrados.</p>;
+  }
+  return (
+    <div data-testid="convenios-expediente">
+      <p className="text-xs text-slate-500 mb-3">
+        Historial inmutable de convenios (art. 59 LOPSRM / art. 99 RLOPSRM): {convenios.length} registrado(s).
+        Cada convenio asienta su nota en la bitácora del contrato (art. 123 fr. III). Corregir = convenio nuevo.
+      </p>
+      <div className="overflow-x-auto border border-slate-200 rounded-md">
+        <table className="w-full text-sm">
+          <thead className="bg-sigecop-blue-light text-sigecop-blue">
+            <tr>
+              <th className="text-left px-3 py-2 w-32">N.º / folio</th>
+              <th className="text-left px-3 py-2 w-24">Tipo</th>
+              <th className="text-left px-3 py-2">Cambio</th>
+              <th className="text-left px-3 py-2">Motivo</th>
+              <th className="text-left px-3 py-2 w-28">Fecha</th>
+              <th className="text-center px-3 py-2 w-28">Bitácora</th>
+            </tr>
+          </thead>
+          <tbody>
+            {convenios.map((c) => (
+              <tr key={c.id} className="border-t border-slate-200 align-top hover:bg-slate-50" data-testid={`convenio-fila-${c.id}`}>
+                <td className="px-3 py-2 font-mono text-xs">{c.folio || `CM-${String(c.numero).padStart(3, '0')}`}</td>
+                <td className="px-3 py-2">{TIPO_CONVENIO_LABEL[c.tipo] || c.tipo}</td>
+                <td className="px-3 py-2 text-xs">
+                  {(c.monto_anterior != null || c.monto_nuevo != null) && (
+                    <div>Monto: {moneda(c.monto_anterior)} → {moneda(c.monto_nuevo)}{pctConv(c.delta_monto_pct) ? <span className="text-slate-400"> ({pctConv(c.delta_monto_pct)})</span> : null}</div>
+                  )}
+                  {(c.plazo_anterior_dias != null || c.plazo_nuevo_dias != null) && (
+                    <div>Plazo: {c.plazo_anterior_dias ?? '—'} → {c.plazo_nuevo_dias ?? '—'} días{pctConv(c.delta_plazo_pct) ? <span className="text-slate-400"> ({pctConv(c.delta_plazo_pct)})</span> : null}</div>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-slate-700 max-w-xs">{c.motivo}</td>
+                <td className="px-3 py-2 text-slate-600 text-xs">{soloFecha(c.fecha)}</td>
+                <td className="px-3 py-2 text-center text-xs">
+                  {c.nota_id
+                    ? <span className="text-sigecop-green-validation" title={`Nota de bitácora #${c.nota_id}`} data-testid={`convenio-nota-${c.id}`}>📝 asentada</span>
+                    : <span className="text-sigecop-amber-attention" data-testid={`convenio-nota-${c.id}`}>pendiente al abrir</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Link a las versiones del programa (snapshots inmutables) — viven en Convenios (HU-03) con su visor. */}
+      {versiones.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
+          <span>
+            Versiones del programa: {versiones.map((v) => `v${v.numero}${v.vigente ? ' (vigente)' : ''}`).join(' · ')}.
+          </span>
+          <Link
+            to={`/contratos/modificatorios?contrato=${contratoId}`}
+            className="font-semibold text-sigecop-accent hover:underline whitespace-nowrap"
+            data-testid="convenios-link-versiones"
+          >
+            Ver versiones del programa →
+          </Link>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function ConsultaExpediente() {
   // soloLectura no bloquea la consulta (todos los roles con acceso consultan); el
   // hook se mantiene por la metadata académica y el aviso del HeaderVista.
@@ -507,6 +584,7 @@ export default function ConsultaExpediente() {
   const [programa, setPrograma] = useState(null); // Pase 1: matriz A2 (leerProgramaObra)
   const [roster, setRoster] = useState(null);     // Pase 2.3: roster histórico / sustituciones
   const [planAmort, setPlanAmort] = useState(null); // O2: plan de amortización (Fase A, lectura)
+  const [convenios, setConvenios] = useState(null); // O6: convenios modificatorios + versiones del programa
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
@@ -526,6 +604,7 @@ export default function ConsultaExpediente() {
     setPrograma(null);
     setRoster(null);
     setPlanAmort(null);
+    setConvenios(null);
     setError('');
     setQuery('');
     if (!id) return;
@@ -541,6 +620,8 @@ export default function ConsultaExpediente() {
       try { setRoster(await api.rosterContrato(id)); } catch (_) { setRoster(null); }
       // O2: plan de amortización (endpoint propio, mismo patrón). Sin plan/403 → null.
       try { setPlanAmort(await api.planAmortizacion(id)); } catch (_) { setPlanAmort(null); }
+      // O6: convenios modificatorios + versiones del programa (endpoint propio HU-03). 403/404 → null.
+      try { setConvenios(await api.convenios(id)); } catch (_) { setConvenios(null); }
     } catch (e) {
       // El acotamiento es server-side: 403 = sin acceso a este contrato.
       setError(
@@ -666,9 +747,21 @@ export default function ConsultaExpediente() {
           return blob.includes(q);
         },
         body: <BloqueRoster roster={roster} />
+      },
+      {
+        // O6: convenios modificatorios (art. 59 LOPSRM) — historial inmutable + link a las versiones.
+        id: 'convenios',
+        titulo: 'Convenios modificatorios',
+        icono: '📝',
+        haceMatch: (q, campo) => {
+          if (campo === 'documento') return 'convenios modificatorios versiones programa'.includes(q);
+          const blob = (convenios?.convenios || []).map((cv) => `${cv.folio || ''} ${cv.tipo} ${cv.motivo || ''}`).join(' ').toLowerCase();
+          return blob.includes(q);
+        },
+        body: <BloqueConvenios data={convenios} contratoId={c.id} />
       }
     ];
-  }, [expediente, programa, roster, planAmort]);
+  }, [expediente, programa, roster, planAmort, convenios]);
 
   // Buscador con semántica AND: un bloque coincide si TODOS los términos de la
   // búsqueda hacen match sobre el campo seleccionado (criterio 2, art. lógica Y).

@@ -221,6 +221,31 @@ async function abrirBitacora(req, res) {
         await client.query('UPDATE concepto_avance SET nota_id = $1 WHERE id = $2', [nota.id, a.id]);
       }
 
+      // O6 (10-jun) — Asiento DIFERIDO de CONVENIOS registrados ANTES de abrir la bitácora (nota_id
+      // NULL). Mismo patrón que la sustitución/avance: el registro del convenio genera su nota; si no
+      // había bitácora, se difiere y se asienta aquí, numerada TRAS la #1 de apertura. El UPDATE de
+      // nota_id es la ÚNICA transición que el trigger de inmutabilidad del convenio permite (NULL→valor).
+      // Emisor = quien apertura (residente). [validar profe].
+      const pendientesConvenio = await client.query(
+        `SELECT id, numero, folio, tipo, delta_monto_pct, delta_plazo_pct, motivo
+           FROM convenios_modificatorios
+          WHERE contrato_id = $1 AND nota_id IS NULL
+          ORDER BY numero`,
+        [contratoId]
+      );
+      for (const cv of pendientesConvenio.rows) {
+        const folioCv = cv.folio || `CM-${String(cv.numero).padStart(3, '0')}`;
+        const { asunto, contenido } = textoNotaConvenio({
+          folio: folioCv, tipo: cv.tipo, deltaMontoPct: cv.delta_monto_pct,
+          deltaPlazoPct: cv.delta_plazo_pct, motivo: cv.motivo, diferida: true
+        });
+        const nota = await insertarNotaAtomica(client, {
+          bitacoraId: bitacora.id, tipo: 'res_convenios', asunto, contenido,
+          emisorId: req.user.id, tag: 'convenio'
+        });
+        await client.query('UPDATE convenios_modificatorios SET nota_id = $1 WHERE id = $2', [nota.id, cv.id]);
+      }
+
       await client.query('COMMIT');
       return res.status(201).json(bitacora);
     } catch (e) {
@@ -452,6 +477,27 @@ function textoNotaAtraso({ concepto, unidad, cantidad, periodoNumero }) {
     `Atraso registrado — ${concepto}: déficit de ${cant} ${u} respecto del programa al periodo ${p}. ` +
     `El déficit es lo programado acumulado al periodo vigente menos lo ejecutado acumulado, en unidades ` +
     `del concepto (LOPSRM art. 52; RLOPSRM art. 45 ap. A fr. X). Asiento del sistema (art. 123 RLOPSRM).`;
+  return { asunto, contenido };
+}
+
+// O6 (10-jun) — Redacta el asunto/contenido de la nota AUTOMÁTICA de un CONVENIO MODIFICATORIO
+// (art. 59 LOPSRM; el convenio es un hecho relevante que se asienta en la bitácora, art. 123 fr. III /
+// 125 fr. I RLOPSRM). Compartida por convenios.controller (al registrar, en vivo) y por abrirBitacora
+// (al asentar los convenios previos DIFERIDOS). La variación se reporta según el `tipo`: monto/programa/
+// mixto incluyen monto; plazo/mixto incluyen plazo. `diferida` añade la aclaración temporal.
+function textoNotaConvenio({ folio, tipo, deltaMontoPct, deltaPlazoPct, motivo, diferida }) {
+  const incMonto = ['monto', 'programa', 'mixto'].includes(tipo);
+  const incPlazo = ['plazo', 'mixto'].includes(tipo);
+  const fmtPct = (n) => (n == null ? '—' : String(n));   // delta_*_pct ya viene redondeado a 2 dec (NUMERIC)
+  const partes = [];
+  if (incMonto) partes.push(`${fmtPct(deltaMontoPct)}% sobre monto`);
+  if (incPlazo) partes.push(`${fmtPct(deltaPlazoPct)}% sobre plazo`);
+  const variacion = partes.length ? partes.join(' y ') : 'sin variación de monto ni plazo';
+  const asunto = `Convenio modificatorio ${folio} (${tipo})`.slice(0, 200);
+  const cola = diferida ? ' Registrado antes de abrir la bitácora; asentado al abrirla.' : '';
+  const contenido =
+    `Convenio modificatorio ${folio}: ${tipo}; variación ${variacion}. Motivo: ${motivo || '—'}.${cola} ` +
+    `(art. 59 LOPSRM / art. 99, 123 fr. III RLOPSRM; asiento automático del sistema.)`;
   return { asunto, contenido };
 }
 
@@ -854,5 +900,7 @@ module.exports = {
   // O4 — reutilizado por trabajos.controller para la nota automática de avance.
   textoNotaAvance,
   // O5 — reutilizado por alertas.controller para la nota de atraso (acción "Asentar en bitácora").
-  textoNotaAtraso
+  textoNotaAtraso,
+  // O6 — reutilizado por convenios.controller para la nota automática del convenio modificatorio.
+  textoNotaConvenio
 };

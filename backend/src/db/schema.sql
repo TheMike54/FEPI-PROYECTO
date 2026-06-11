@@ -1353,10 +1353,43 @@ CREATE TABLE IF NOT EXISTS convenios_modificatorios (
 );
 CREATE INDEX IF NOT EXISTS idx_convenios_contrato ON convenios_modificatorios(contrato_id);
 
--- Inmutabilidad: un convenio registrado es un evento formal append-only (como notas/pagos).
+-- O6 (10-jun): NOTA de bitácora del convenio (asiento automático, art. 123 fr. III / 125 fr. I
+-- RLOPSRM: el convenio modificatorio es un hecho relevante que se asienta en la bitácora). Aditivo e
+-- idempotente. ON DELETE NO ACTION (la nota es inmutable; mismo idioma que concepto_avance.nota_id):
+-- la nota solo muere por la cascada del contrato. Se LIGA en el INSERT (nota en vivo, sin UPDATE) o,
+-- si no había bitácora al registrar, se DIFIERE (nota_id NULL) y se liga al abrir la bitácora — esa
+-- es la ÚNICA transición que el trigger de inmutabilidad permite (abajo).
+ALTER TABLE convenios_modificatorios ADD COLUMN IF NOT EXISTS nota_id INTEGER REFERENCES bitacora_notas(id) ON DELETE NO ACTION;
+CREATE INDEX IF NOT EXISTS idx_convenios_nota ON convenios_modificatorios(nota_id);
+
+-- Inmutabilidad: un convenio registrado es un evento formal append-only (como notas/pagos). O6:
+-- identidad CONGELADA; SOLO se permite LIGAR la nota de bitácora una vez (nota_id NULL→valor), el
+-- asiento DIFERIDO al abrir la bitácora (mismo idioma de transición controlada que programa_version).
 CREATE OR REPLACE FUNCTION sigecop_convenio_inmutable() RETURNS trigger AS $func$
 BEGIN
-  RAISE EXCEPTION 'Un convenio modificatorio registrado es inalterable (art. 59 LOPSRM / art. 99 RLOPSRM)';
+  IF NEW.contrato_id            IS DISTINCT FROM OLD.contrato_id
+     OR NEW.numero              IS DISTINCT FROM OLD.numero
+     OR NEW.folio               IS DISTINCT FROM OLD.folio
+     OR NEW.tipo                IS DISTINCT FROM OLD.tipo
+     OR NEW.fundamento          IS DISTINCT FROM OLD.fundamento
+     OR NEW.motivo              IS DISTINCT FROM OLD.motivo
+     OR NEW.fecha               IS DISTINCT FROM OLD.fecha
+     OR NEW.monto_anterior      IS DISTINCT FROM OLD.monto_anterior
+     OR NEW.monto_nuevo         IS DISTINCT FROM OLD.monto_nuevo
+     OR NEW.plazo_anterior_dias IS DISTINCT FROM OLD.plazo_anterior_dias
+     OR NEW.plazo_nuevo_dias    IS DISTINCT FROM OLD.plazo_nuevo_dias
+     OR NEW.delta_monto_pct     IS DISTINCT FROM OLD.delta_monto_pct
+     OR NEW.delta_plazo_pct     IS DISTINCT FROM OLD.delta_plazo_pct
+     OR NEW.requiere_revision_sfp  IS DISTINCT FROM OLD.requiere_revision_sfp
+     OR NEW.requiere_ajuste_costos IS DISTINCT FROM OLD.requiere_ajuste_costos
+     OR NEW.autorizado_por      IS DISTINCT FROM OLD.autorizado_por
+     OR NEW.created_at          IS DISTINCT FROM OLD.created_at THEN
+    RAISE EXCEPTION 'Un convenio modificatorio registrado es inalterable (art. 59 LOPSRM / art. 99 RLOPSRM)';
+  END IF;
+  IF OLD.nota_id IS NOT NULL THEN
+    RAISE EXCEPTION 'El convenio ya tiene su nota de bitácora ligada; el vínculo es inmutable';
+  END IF;
+  RETURN NEW;  -- permite SOLO nota_id NULL→valor (asiento diferido al abrir la bitácora)
 END;
 $func$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS trg_convenio_inmutable ON convenios_modificatorios;

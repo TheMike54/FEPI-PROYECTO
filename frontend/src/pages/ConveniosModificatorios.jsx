@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import EncabezadoContrato from '../components/ui/EncabezadoContrato.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
@@ -155,6 +156,17 @@ export default function ConveniosModificatorios() {
     precargaToken.current++; // invalida cualquier precarga del contrato anterior aún en vuelo
     cargarContrato(id);
   }, [cargarContrato]);
+
+  // O6: acceso directo desde el expediente (HU-04) vía ?contrato=ID — preselecciona en cuanto la lista
+  // esté cargada y mientras el usuario no haya elegido otro a mano (mismo patrón que AlertasAtraso).
+  const [searchParams] = useSearchParams();
+  const contratoQuery = searchParams.get('contrato');
+  useEffect(() => {
+    if (sinSesion || !contratoQuery || contratoId) return;
+    if (contratos.some((c) => String(c.id) === String(contratoQuery))) {
+      seleccionarContrato(String(contratoQuery));
+    }
+  }, [sinSesion, contratoQuery, contratoId, contratos, seleccionarContrato]);
 
   // Precarga el editor con el programa VIGENTE: catálogo con P.U. (detalleContrato) + periodos y
   // celdas (leerProgramaObra). Las celdas del vigente se reindexan por rid sintético + periodo.
@@ -315,7 +327,11 @@ export default function ConveniosModificatorios() {
       const cambios = [];
       if (res.plazo_anterior_dias !== res.plazo_nuevo_dias) cambios.push(`plazo ${res.plazo_anterior_dias}→${res.plazo_nuevo_dias} días`);
       if (String(res.monto_anterior) !== String(res.monto_nuevo)) cambios.push(`monto ${moneda(res.monto_anterior)}→${moneda(res.monto_nuevo)}`);
-      showToast(`Convenio ${ref} registrado${cambios.length ? ' (' + cambios.join(' · ') + ')' : ''}${avisos.length ? ' · ' + avisos.join(' · ') : ''}.`);
+      // O6: el convenio asentó su nota en la bitácora (en vivo) o quedó diferida si aún no hay bitácora.
+      const notaMsg = res.nota_diferida
+        ? ' · su nota de bitácora se asentará al abrir la bitácora'
+        : (res.nota ? ` · nota de bitácora #${res.nota.numero} asentada` : '');
+      showToast(`Convenio ${ref} registrado${cambios.length ? ' (' + cambios.join(' · ') + ')' : ''}${avisos.length ? ' · ' + avisos.join(' · ') : ''}${notaMsg}.`);
       setPlazoNuevo(''); setMotivo(''); setFolio('');
       setCmConceptos([]); setCmCeldas({}); setCmPeriodos([]);
       await cargarContrato(contratoId); // recarga vigente + historial; la precarga del editor se redispara
