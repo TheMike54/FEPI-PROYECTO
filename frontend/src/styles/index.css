@@ -31,3 +31,19 @@
     @apply bg-white rounded-lg shadow-sm border border-borde p-6;
   }
 }
+
+/* O9 (HU-04) — Impresión consolidada del expediente como un solo PDF (window.print). Oculta el chrome
+   del AppShell (topbar <header> + sidebar <aside>) y suelta el layout de altura fija/scroll a flujo
+   normal; los bloques del expediente fuerzan su cuerpo abierto vía `print:block` en el componente.
+   Es global (la impresión solo se ofrece desde el expediente). Marca `print:hidden` lo que no debe ir
+   al PDF (selector, búsqueda, botón, criterios). */
+@media print {
+  header, aside { display: none !important; }
+  .h-screen { height: auto !important; }
+  .overflow-hidden { overflow: visible !important; }
+  main { overflow: visible !important; }
+  main > div { max-width: none !important; padding: 0 !important; }
+  body { background: #fff !important; }
+  table { page-break-inside: auto; }
+  tr { page-break-inside: avoid; }
+}
