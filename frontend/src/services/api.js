@@ -140,6 +140,15 @@ export const api = {
   // endpoint /enviar (path estable por compat); sella enviada_en/por como SELLO DE AUTORIZACIÓN y avanza
   // 'integrada' (Presentada) → 'enviada' (Autorizada). Solo el RESIDENTE del contrato (lo valida el backend).
   enviarEstimacion: (id) => request(`/estimaciones-ciclo/estimacion/${id}/enviar`, { method: 'POST' }),
+  // HU-15 (Equipo 3): recepción/revisión/autorización. Lectura por participación; las acciones
+  // las gatea el backend por rol (supervisión=registra/turna, residencia=autoriza/rechaza).
+  // El semáforo del art. 54 se deriva en el frontend desde enviada_en (sello de HU-13).
+  revisionEstimacion: (id) => request(`/estimaciones-ciclo/estimacion/${id}/revision`),
+  crearObservacionEstimacion: (id, payload) => request(`/estimaciones-ciclo/estimacion/${id}/observaciones`, { method: 'POST', body: JSON.stringify(payload) }),
+  eliminarObservacionEstimacion: (id, obsId) => request(`/estimaciones-ciclo/estimacion/${id}/observaciones/${obsId}`, { method: 'DELETE' }),
+  turnarEstimacion: (id, payload) => request(`/estimaciones-ciclo/estimacion/${id}/turnar`, { method: 'POST', body: JSON.stringify(payload || {}) }),
+  autorizarEstimacion: (id) => request(`/estimaciones-ciclo/estimacion/${id}/autorizar`, { method: 'POST' }),
+  rechazarEstimacion: (id, payload) => request(`/estimaciones-ciclo/estimacion/${id}/rechazar`, { method: 'POST', body: JSON.stringify(payload) }),
   // HU-03 (Fundación): convenios modificatorios (art. 59 LOPSRM). El backend YA EXISTE
   // (tabla inmutable + versionado del programa). Lectura por participación; crear = solo
   // dependencia/residente/created_by (lo valida el backend). El monto/deltas/flags SFP(art.102)

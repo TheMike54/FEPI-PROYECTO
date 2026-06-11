@@ -3,7 +3,16 @@
 // server.js como /api/estimaciones-ciclo (ver bloque "PARA FUNDACIÓN" del PR).
 const express = require('express');
 const { authMiddleware } = require('../middlewares/auth.middleware');
-const { historialEstimaciones, enviarEstimacion } = require('../controllers/estimaciones-ciclo.controller');
+const {
+  historialEstimaciones,
+  enviarEstimacion,
+  revisionEstimacion,
+  crearObservacion,
+  eliminarObservacion,
+  turnarEstimacion,
+  autorizarEstimacion,
+  rechazarEstimacion
+} = require('../controllers/estimaciones-ciclo.controller');
 
 const router = express.Router();
 
@@ -18,5 +27,14 @@ router.get('/contrato/:contratoId/historial', historialEstimaciones);
 // autorización, estado integrada -> enviada). El acotamiento (solo el RESIDENTE del contrato autoriza,
 // art. 54 LOPSRM) se hace en el controller. El path /enviar se conserva por compatibilidad de API.
 router.post('/estimacion/:id/enviar', enviarEstimacion);
+
+// HU-15: recepción/revisión/autorización. Lectura por participación + gating de acción por
+// rol (supervisión=registra/turna, residencia=autoriza/rechaza) en el controller.
+router.get('/estimacion/:id/revision', revisionEstimacion);
+router.post('/estimacion/:id/observaciones', crearObservacion);
+router.delete('/estimacion/:id/observaciones/:obsId', eliminarObservacion);
+router.post('/estimacion/:id/turnar', turnarEstimacion);
+router.post('/estimacion/:id/autorizar', autorizarEstimacion);
+router.post('/estimacion/:id/rechazar', rechazarEstimacion);
 
 module.exports = router;
