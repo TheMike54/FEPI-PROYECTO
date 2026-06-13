@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import Tabs from '../components/ui/Tab.jsx';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import EncabezadoContrato from '../components/ui/EncabezadoContrato.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
@@ -485,18 +484,6 @@ function TabNotasVinculadas({ vinculadas, onAbrir, onQuitar, onVerDocumento, sol
             )}
           </tbody>
         </table>
-      </div>
-    </div>
-  );
-}
-
-function TabPlaceholder({ titulo }) {
-  return (
-    <div>
-      <h3 className="text-lg font-bold text-sigecop-blue mb-4">{titulo}</h3>
-      <div className="bg-slate-50 border border-dashed border-slate-300 rounded-md p-8 text-center text-slate-400">
-        <div className="text-4xl mb-2">🗂️</div>
-        <p className="text-sm">Carga de archivos diferida a una etapa siguiente (como en el prototipo).</p>
       </div>
     </div>
   );

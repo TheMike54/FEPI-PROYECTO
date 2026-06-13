@@ -1,144 +1,250 @@
-# Guía de pruebas end-to-end — SIGECOP
+# Plan de pruebas end-to-end — SIGECOP
 
-**Estado:** `origin/main = 069a71d`, desplegado en Render. Cubre todo lo que ya está en producción: fundación (HU-00, 01, 02, 08, 09, 10, 12, 21 + endpoint de 03) y las dos primeras de Equipo 2 (HU-04, HU-07).
+**Estado:** todo lo de fundación + equipos integrado y desplegado en Render. 15 historias para probar en orden.
 
-**Cómo leer esto:** orden de pasos → quién hace login → qué datos meter (de ejemplo, ya cuadran con las validaciones) → qué deberías ver → cómo compruebas que está bien. Los nombres de campo en pantalla pueden variar; te los doy por su función. **El truco para el profe:** mete datos malos a propósito para ver que el sistema te frena.
+**Cómo usar esto:** sigue los pasos en orden (cada uno depende del anterior). Para cada paso te digo **quién entra, qué hacer, qué poner en cada campo, qué debes ver y qué comprobar** (incluyendo meterle datos malos a propósito para ver que el sistema te frena — eso es lo que más le gusta ver al profe).
 
-## Cuentas (todas con contraseña `Sigecop2026!`)
-- `residente@sigecop.test` — crea contratos, abre bitácora, emite notas, crea estimaciones y alertas
-- `contratista@sigecop.test` — es el **superintendente** (firma, parte del roster)
-- `supervision@sigecop.test` — supervisión (firma, parte del roster)
-- `dependencia@sigecop.test` — la dependencia contratante (parte contratante; **no firma** la bitácora)
-- `finanzas@sigecop.test` — pagos
-- `csilvasa@ipn.mx` — profe
+---
 
-> Las cuentas demo ya quedaron con **nombre y apellidos completos** (backfill del deploy `83e0a72`). Si registras una nueva, el sistema exige nombre + apellido (≥2 palabras).
+## Cuentas (todas con contraseña: `Sigecop2026!`)
 
-## Datos de ejemplo del contrato (úsalos en el alta — ya cuadran exacto)
-- **Clave:** OBRA-2026-001 · **Monto contratado:** $1,000,000.00 · **Anticipo:** 30% ($300,000)
+| Correo | Rol | Para qué |
+|---|---|---|
+| `residente@sigecop.test` | Residente | Crea contratos, abre bitácora, emite notas, crea estimaciones, alertas |
+| `contratista@sigecop.test` | Contratista (superintendente) | Firma, registra avance físico, envía estimación |
+| `supervision@sigecop.test` | Supervisión | Firma, consulta |
+| `dependencia@sigecop.test` | Dependencia | Parte contratante, crea convenios |
+| `finanzas@sigecop.test` | Finanzas | Registra pagos |
+
+---
+
+## Datos del contrato de prueba (cópialos tal cual — cuadran exacto)
+
+- **Clave:** `OBRA-2026-001`
+- **Objeto / nombre:** `Construcción de edificio administrativo`
+- **Monto contratado:** `1000000` ($1,000,000.00)
+- **Anticipo:** `30` (%)
+- **% pena por atraso:** `0.05` (= 5%, para probar la retención)
+- **Fecha inicio:** hoy · **Fecha fin:** dentro de 3 meses
 
 **Conceptos (suman exacto $1,000,000):**
 
-| Clave | Descripción | Unidad | Cantidad | PU | Importe |
-|-------|-------------|--------|----------|------|-----------|
-| C-001 | Preliminares | m² | 1000 | 200 | 200,000 |
-| C-002 | Cimentación | m³ | 500 | 800 | 400,000 |
-| C-003 | Estructura | m² | 800 | 500 | 400,000 |
-|       |             |      |          | **Total** | **1,000,000** |
+| Clave | Descripción | Unidad | Cantidad | Precio unitario |
+|---|---|---|---|---|
+| `C-001` | `Preliminares` | `m2` | `1000` | `200` |
+| `C-002` | `Cimentación` | `m3` | `500` | `800` |
+| `C-003` | `Estructura` | `m2` | `800` | `500` |
 
-**Programa de obra (3 periodos; cada concepto suma su cantidad = regla del 100%):**
+**Programa de obra (cada concepto debe sumar su cantidad total = regla del 100%):**
 
-| Concepto | P1 | P2 | P3 | Σ |
-|----------|-----|-----|-----|------|
-| C-001 | 400 | 600 | 0 | 1000 |
-| C-002 | 0 | 250 | 250 | 500 |
-| C-003 | 0 | 300 | 500 | 800 |
+| Concepto | Periodo 1 | Periodo 2 | Periodo 3 | Suma |
+|---|---|---|---|---|
+| C-001 | `400` | `600` | `0` | 1000 |
+| C-002 | `0` | `250` | `250` | 500 |
+| C-003 | `0` | `300` | `500` | 800 |
 
-- **Garantía de cumplimiento:** 10% ($100,000) · **Garantía de anticipo:** 30% ($300,000)
+**Garantías:** cumplimiento `100000` (10%) · anticipo → **se calcula solo** ($300,000).
 
 ---
 
-## Paso 1 — HU-00 Login
-- **Quién:** `residente@sigecop.test` / `Sigecop2026!`
-- **Qué ver:** entras a la app con el menú/rol de residente.
-- **Comprueba:** (a) contraseña mal → te rechaza; (b) bien → entras; (c) ves solo lo que le toca al residente.
+## Paso 1 — HU-00 · Login
 
-## Paso 2 — HU-01 Alta de contrato (+ catálogo + programa + roster)
-- **Quién:** residente → "Alta / nuevo contrato".
-- **Navegación:** lineal — solo avanzas con **Siguiente** cuando el paso está completo. (La pestaña "Registrados" sí es navegable siempre; la captura sigue bloqueada por pasos.)
-- **Qué poner, por paso:**
-  1. **Datos generales:** clave `OBRA-2026-001`, objeto/nombre, fechas inicio/fin, anticipo 30%.
-     - **Contratista = se selecciona la cuenta del superintendente** (`contratista@sigecop.test`), ya no es texto libre.
-     - **Dependencia = se selecciona de un `<select>`** de cuentas con rol dependencia (`dependencia@sigecop.test`). Es la parte contratante.
-  2. **Catálogo de conceptos:** los 3 conceptos de arriba. El total debe dar **exacto $1,000,000**.
-  3. **Programa de obra:** llena la matriz como la tabla (cada concepto suma su cantidad contratada).
-  4. **Garantías:** cumplimiento $100,000 + anticipo $300,000 (obligatorias).
-  5. **Datos jurídicos:** llena los obligatorios.
-  6. **PDF firmado:** sube un PDF (obligatorio para guardar).
-- **Qué ver:** al guardar, se limpia el formulario y te manda a **Registrados**; el contrato aparece ahí. **Por detrás, el alta llena el roster** (residente + superintendente + supervisión) dentro de la misma transacción.
-- **Comprueba las validaciones (lo que busca el profe — métele datos malos a propósito):**
-  - Catálogo que NO suma exacto → banner de error, no avanzas.
-  - Programa de un concepto que no suma su cantidad → te frena (regla 100%).
-  - Garantía que excede el contrato → bloqueada.
-  - Falta PDF / jurídicos / garantías → no guarda.
-  - **Falta seleccionar dependencia** → no guarda (400).
-  - "Ver info" de un contrato registrado → **solo lectura**.
-  - **Anticipo >30%:** crea otro con anticipo 35% → debe exigir PDF de anticipo obligatorio.
+- **Entra con:** `residente@sigecop.test` / `Sigecop2026!`
+- **Comprueba:**
+  - Contraseña incorrecta → te rechaza.
+  - Correcta → entras con el menú de residente.
 
-## Paso 3 — HU-02 Sustitución de personas (roster)
-- **Quién:** residente, en `/contratos/roster` (o la vista de roster del contrato OBRA-2026-001).
-- **Qué ver:** el roster vigente del contrato — residente, superintendente, supervisión.
-- **Qué hacer:** sustituye al superintendente por otra cuenta de rol contratista (motivo + fecha).
-- **Comprueba (esto es lo fuerte para el profe):**
-  - El registro es **append-only**: la persona anterior NO se borra, queda en el historial; la nueva pasa a vigente.
-  - **La bitácora es inmutable:** las notas/firmas previas conservan al firmante original (la sustitución NO reescribe quién firmó). Mira una nota firmada antes de sustituir y confirma que sigue mostrando al firmante original.
-  - No puedes dejar dos personas vigentes en el mismo rol (lo frena el CHECK).
+---
 
-## Paso 4 — HU-08 Apertura de bitácora
-- **Quién:** residente, en el contrato OBRA-2026-001, abre la bitácora.
-- **Qué ver:** se crea la **nota #1 = apertura**, con fecha y datos mínimos.
-- **Comprueba:** no puedes abrir la bitácora dos veces (candado server-side); la apertura es la nota #1.
+## Paso 2 — HU-01 · Alta de contrato
 
-## Paso 5 — HU-09 Notas de bitácora (+ firmas)
-- **Quién:** residente emite; luego supervisión / contratista firman.
-- **Qué poner:** crea una nota (de un tipo permitido para residente) con sus datos mínimos.
-- **Qué ver:** la nota aparece con folio correlativo, su tipo, y estado "pendiente de firma".
-- **Firmas:** entra como cada rol del roster (residente + superintendente/supervisión) y firma. Cuando todos firman → la nota pasa a **"Firmada"**.
-- **Comprueba:** folio correlativo e inmutable; un rol no puede emitir un tipo que no le toca; una vez firmada no se edita.
-- ⚠️ **Para la demo con el profe NO uses "Anular" / "Eliminar nota"** aunque hoy todavía aparezcan. El profe pidió quitarlos (la ley no permite alterar la bitácora, **art. 123 fr. VI RLOPSRM** — una corrección se hace con una nota nueva que referencia a la anterior). Es corrección **pendiente de Equipo 2**.
+- **Quién:** residente → "Alta / Nuevo contrato".
+- **Avanzas paso por paso con "Siguiente"** (no te deja saltar si falta algo).
 
-## Paso 6 — HU-10 Consulta de notas
+**Sub-paso 1 — Datos generales:**
+- Clave: `OBRA-2026-001`
+- Objeto: `Construcción de edificio administrativo`
+- Fechas: inicio hoy / fin +3 meses
+- Anticipo: `30`
+- **% pena por atraso:** `0.05`
+- **Contratista:** selecciona la cuenta `contratista@sigecop.test` (es el superintendente — **no se escribe**, se elige)
+- **Dependencia:** selecciona `dependencia@sigecop.test` del desplegable
+
+**Sub-paso 2 — Catálogo de conceptos:** captura los 3 de la tabla. El total debe marcar **$1,000,000 exacto**.
+
+**Sub-paso 3 — Programa de obra:** llena la matriz como la tabla (cada renglón suma su cantidad).
+
+**Sub-paso 4 — Garantías:**
+- Cumplimiento: `100000`
+- Anticipo: elige tipo de póliza = **Anticipo** → el monto se llena solo en **$300,000** (30% del contrato). Verifica que sea read-only.
+
+**Sub-paso 5 — Datos jurídicos:** llena los campos obligatorios.
+
+**Sub-paso 6 — PDF firmado:** sube cualquier PDF.
+
+- **Qué ver:** al guardar te manda a "Registrados" y el contrato aparece en la lista.
+- **Comprueba (mete datos malos):**
+  - Catálogo que NO suma $1,000,000 → error, no avanzas.
+  - Un concepto del programa que no suma su cantidad → te frena (regla 100%).
+  - % de pena fuera de 0–1 (ej. `5`) → rechazado.
+  - Falta dependencia / PDF / garantías → no guarda.
+  - Abre el contrato en Registrados → en "Programa de obra" debe verse la **matriz mes por mes** (no un resumen) y todo en **solo lectura**.
+
+---
+
+## Paso 3 — HU-08 · Apertura de bitácora
+
+- **Quién:** residente, en el contrato `OBRA-2026-001` → Abrir bitácora.
+- **Qué ver:** se crea la **nota #1 (apertura)** con fecha.
+- **Comprueba:** intenta abrirla otra vez → no te deja (ya está abierta).
+
+---
+
+## Paso 4 — HU-02 · Sustitución de personas (genera nota de bitácora)
+
+- **Quién:** residente, en la vista de Roster del contrato.
+- **Qué hacer:** sustituye al superintendente: **selecciona** otra cuenta de rol contratista, motivo: `Cambio de superintendente por reasignación`, fecha: hoy.
+- **Qué ver:**
+  - El roster muestra la nueva persona como vigente y la anterior en el histórico.
+  - **Se crea automáticamente una nota de bitácora** de la sustitución (rol, persona anterior → nueva, motivo, fecha y hora).
+- **Comprueba:**
+  - **No hay campo para teclear el ID** — solo el selector; si no hubiera cuentas elegibles, sale un aviso.
+  - Una nota firmada **antes** de sustituir conserva al firmante original (inmutabilidad).
+  - *(Opcional, prueba el diferido):* crea un 2º contrato, sustituye **antes** de abrir su bitácora → te avisa que la nota queda "diferida"; al abrir la bitácora aparece asentada.
+
+---
+
+## Paso 5 — HU-09 · Notas de bitácora (+ firmas + vincular)
+
+- **Quién:** residente emite; supervisión/contratista firman.
+- **Qué hacer:** crea una nota. Tipo: el que permita tu rol. Contenido: `Inicio de trabajos de preliminares conforme al programa`.
+- **Qué ver:** la nota aparece con su folio correlativo, **fecha y hora de creación**, y estado "pendiente de firma".
+- **Firmas:** entra como supervisión (y como el superintendente) y firma. Cuando todos firman → estado **"Firmada"**.
+- **Vincular:** crea otra nota y vincúlala a la anterior (es una nota nueva que la referencia). Comprueba que solo deja vincular notas **del mismo contrato**.
+- **Comprueba:**
+  - El folio es correlativo e inmutable.
+  - Una nota firmada ya no se edita.
+  - **NO uses "Anular"** en la demo (aunque aparezca) — está pendiente de definir con el profe.
+
+---
+
+## Paso 6 — HU-10 · Consulta de notas
+
 - **Quién:** cualquiera con acceso al contrato.
-- **Qué ver:** el listado de notas de la bitácora.
-- **Comprueba:** la búsqueda por tag filtra; ves la apertura + las notas que creaste.
-
-## Paso 7 — HU-04 Consulta integrada del expediente (Equipo 2)
-- **Quién:** entra con cada rol que solo consulta — `contratista`, `supervision`, `dependencia`.
-- **Qué hacer:** abre la consulta de expediente → **selecciona el contrato** OBRA-2026-001.
-- **Qué ver:** carga el expediente (aparece el buscador), con el aviso **"solo consulta"**.
-- **Comprueba:** es **solo lectura** — no hay botones de crear/editar/borrar; sin contrato seleccionado no carga nada; no aparece aviso de error al cargar.
-
-## Paso 8 — HU-07 Alertas de atraso (Equipo 2)
-- **Quién:** residente (escribe) y supervisión (solo lee).
-- **Qué hacer (residente):** abre alertas de atraso → **selecciona el contrato** → elige concepto + umbral → **crear alerta**.
-- **Qué ver:** la alerta se evalúa **en el servidor** comparando avance físico vs. lo planeado; si el concepto va atrasado, la alerta dispara.
-- **Comprueba:**
-  - Como **residente**: campos de concepto/umbral habilitados + botón crear visible; la alerta se crea y se ve.
-  - Como **supervisión**: el mismo panel pero en **solo lectura** (campos deshabilitados, sin botón de crear) + aviso "solo consulta".
-  - Sin contrato seleccionado, no aparecen los campos (hay que elegir contrato primero).
-  - Una cuenta que no es parte ni supervisión del contrato no puede crear ni ver sus alertas (permiso por participación).
-
-## Paso 9 — HU-12 Estimación (núcleo)
-- **Quién:** residente.
-- **Qué poner:** estimación del contrato OBRA-2026-001, **periodo 1**, volumen ejecutado **C-001 = 400 m²** (se captura en la pestaña "Números generadores", no en la carátula). Periodo máximo de una estimación = 1 mes (**art. 54 RLOPSRM**).
-- **Qué ver — la carátula (calculada en el servidor):**
-  - Importe bruto = 400 × 200 = **$80,000**
-  - Amortización anticipo 30% = **$24,000** (**art. 138 RLOPSRM**)
-  - 5 al millar (0.5%) = **$400** (**art. 191 LFD**)
-  - **Neto a pagar = $55,600**
-- **Comprueba:**
-  - Los 4 números coinciden con la cuenta de arriba.
-  - **Tope por periodo (ya activo):** intenta capturar **C-001 = 500** en el periodo 1 (planeado P1 = 400) → **te frena** (no puedes estimar más de lo planeado del periodo; art. 45-A-X / 52).
-  - La carátula muestra **acumulados y saldos** (lo estimado antes, lo de esta estimación, y lo que queda por estimar).
-
-## Paso 10 — HU-21 Pago
-- **Quién:** `finanzas@sigecop.test`.
-- **Qué hacer:** registra el pago **seleccionando la estimación** del paso 9 (ya no es texto libre).
-- **Qué ver:** el importe del pago = el **neto $55,600** (lo trae el servidor, es de solo lectura); al pagar, la estimación pasa a **"pagada"**.
-- **Comprueba (ciclo endurecido):**
-  - **No puedes editar el importe** (viene del servidor).
-  - **No puedes pagar dos veces la misma estimación** (te lo bloquea).
-  - El PDF/carátula del pago se genera del lado del servidor (no a mano).
-  - Una vez registrado, el pago es inmutable.
+- **Qué ver:** el listado de notas (apertura + las que creaste + la de sustitución).
+- **Comprueba:** la búsqueda/filtro funciona; cada nota muestra fecha y hora.
 
 ---
 
-## Lo que NO se prueba aquí (todavía)
-- **HU-03 convenios modificatorios:** el **endpoint y la migración ya están** (fundación); la **UI la hace Equipo 3**, así que aún no hay pantalla para probar el flujo completo.
-- **HU-13–20 (revisión/aprobación/reportes de estimaciones):** son de Equipo 3, pendientes.
-- **HU-14 historial:** Equipo 3 la está reentregando.
+## Paso 7 — HU-04 · Consulta del expediente
 
-## Recordatorios
-- El orden importa: sin contrato (paso 2) no hay roster, bitácora, estimación ni pago.
-- Lo que más pesa para el profe: las **validaciones del paso 2** (catálogo exacto, regla 100%, garantías, dependencia obligatoria), los **folios/firmas inmutables del paso 5**, la **inmutabilidad de la bitácora ante sustitución (paso 3)** y el **ciclo estimación→pago blindado (pasos 9–10)**. Pruébalos metiendo datos malos a propósito.
-- **Para la demo: no toques "Anular"/"Eliminar nota"** (paso 5) — está pendiente de quitarse.
+- **Quién:** entra como `contratista`, `supervision` o `dependencia`.
+- **Qué hacer:** abre Consulta de expediente → **selecciona** el contrato.
+- **Qué ver:**
+  - El expediente carga con aviso **"solo consulta"**.
+  - **Programa de obra mes por mes** (matriz, no resumen).
+  - Sección **"Roster y sustituciones"** con el histórico de quién entró/salió.
+- **Comprueba:** todo es **solo lectura** (sin botones de crear/editar/borrar).
+
+---
+
+## Paso 8 — HU-06 · Registro de avance físico
+
+- **Quién:** entra como `contratista` (el superintendente).
+- **Qué hacer:** selecciona el contrato → tabla de conceptos → registra avance del concepto `C-001`: cantidad ejecutada `400`.
+- **Qué ver:** el avance se registra contra el concepto.
+- **Comprueba (art. 118):**
+  - Intenta registrar más de lo contratado (ej. `1200` en C-001 cuando el total es 1000) → **te frena**.
+  - Como residente/supervisión ves la tabla pero **sin** botón de registrar.
+  - Como dependencia/finanzas → sin acceso.
+
+---
+
+## Paso 9 — HU-07 · Alertas de atraso
+
+- **Quién:** residente (crea), supervisión (solo lee).
+- **Qué hacer (residente):** Alertas de atraso → **selecciona** el contrato → concepto `C-001`, umbral (ej. `10` %) → Crear alerta.
+- **Qué ver:** la alerta se evalúa en el servidor (avance vs. planeado).
+- **Comprueba:**
+  - En el **detalle del contrato (Registrados)** aparece el indicador **"N conceptos en atraso"** + link directo a las alertas (solo para residente/supervisión).
+  - Como supervisión, el panel de alertas está en **solo lectura**.
+  - Una cuenta sin acceso al contrato no ve sus alertas.
+
+---
+
+## Paso 10 — HU-12 · Estimación (pantalla única)
+
+- **Quién:** residente → nueva estimación del contrato, **periodo 1**.
+- **Qué poner:** volumen ejecutado de `C-001` = `400` (en la captura de volúmenes).
+- **Qué ver — la carátula se calcula en vivo:**
+  - Importe bruto = 400 × 200 = **$80,000**
+  - − Amortización anticipo 30% = **$24,000**
+  - − 5 al millar 0.5% = **$400**
+  - − Retención por atraso = **$0** (vas al corriente: 400 = lo planeado del periodo)
+  - **Neto = $55,600**
+- **Comprueba:**
+  - **Semáforo de plan:** captura `C-001 = 500` (el plan del periodo es 400) → la fila se pone **roja**, aviso, y "Confirmar" se deshabilita.
+  - **Retención (ahora sí):** captura `C-001 = 300` (menos que el plan de 400 → atraso) → aparece la retención. Con pena 5%: bruto $60,000 − amort $18,000 − 5 al millar $300 − **retención $3,000** = **neto $38,700**.
+  - Panel plegable **"Ver programa de obra"** muestra la matriz con el periodo actual resaltado.
+  - Barras de avance físico/financiero.
+- **Deja una estimación válida integrada** (con C-001 = 400, neto $55,600) para los pasos siguientes.
+
+---
+
+## Paso 11 — HU-13 · Envío de estimación
+
+- **Quién:** entra como `contratista` (superintendente).
+- **Qué hacer:** toma la estimación **integrada** del paso 10 → botón **Enviar**.
+- **Qué ver:** la estimación pasa a estado **"Enviada"**, se sella la fecha/hora de envío.
+- **Comprueba:**
+  - Intenta enviarla otra vez → **no te deja** (409, ya está enviada).
+  - Como residente, solo la consultas (sin botón Enviar).
+  - Solo una estimación **integrada** es enviable.
+
+---
+
+## Paso 12 — HU-21 · Pago
+
+- **Quién:** entra como `finanzas@sigecop.test`.
+- **Qué hacer:** registra el pago **seleccionando** la estimación enviada del paso 11. Fecha de pago: hoy.
+- **Qué ver:** el importe = el **neto $55,600** (lo trae el servidor, no lo editas); al pagar, la estimación pasa a **"Pagada"**.
+- **Comprueba:**
+  - Pon una **fecha de pago anterior** a la integración de la estimación → **te frena** (no se paga antes de estimar).
+  - Intenta editar el importe → no se puede.
+  - Intenta pagar dos veces la misma estimación → bloqueado.
+
+---
+
+## Paso 13 — HU-14 · Historial de estimaciones
+
+- **Quién:** cualquiera con acceso al contrato.
+- **Qué hacer:** abre Historial de estimaciones → selecciona el contrato.
+- **Qué ver:** la lista de estimaciones con su estado (integrada / enviada / pagada).
+- **Comprueba:** es solo lectura; el filtro por estado funciona; una cuenta sin acceso no ve el historial.
+
+---
+
+## Paso 14 — HU-03 · Convenios modificatorios (plazo)
+
+- **Quién:** entra como `dependencia@sigecop.test`.
+- **Qué hacer:** Convenios → **selecciona** el contrato → tipo **Plazo** → nuevo plazo (ej. +30 días), motivo: `Ampliación por lluvias`, fecha hoy.
+- **Qué ver:** el convenio se registra y aparece en el **historial inmutable**.
+- **Comprueba:**
+  - El folio y nombre del contrato **no se teclean** (se derivan del seleccionado).
+  - Intenta una variación **mayor al 25%** → ves el **aviso** (y si la mandas, el servidor la rechaza — tope configurable).
+  - El historial **no se edita ni se borra** (inmutable).
+  - Como residente/contratista/supervisión → solo lectura; como finanzas → sin acceso.
+  - En "Versiones del programa" se ve el snapshot (solo lectura).
+
+---
+
+## Resumen de lo que más le importa al profe
+1. **Validaciones del alta** (catálogo exacto, regla 100%, garantías, dependencia obligatoria) — paso 2.
+2. **Folios y firmas inmutables** + fecha/hora en notas — paso 5.
+3. **Inmutabilidad de la bitácora ante sustitución** + que la sustitución quede asentada — pasos 4 y 7.
+4. **Ciclo estimación → envío → pago blindado** (neto del servidor, no doble pago, no pagar antes de estimar) — pasos 10–12.
+5. **Carátula viva con retención y avance** + tope por periodo — paso 10.
+6. **Convenios inmutables con aviso de tope** — paso 14.
+7. **Todo lo que ya existe se SELECCIONA, no se teclea** (contrato, personas, estimación) — en todos los pasos.
+
+> Nota: no toques "Anular nota" en la demo (pendiente de confirmar con el profe).

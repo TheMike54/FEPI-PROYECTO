@@ -58,6 +58,10 @@ postgres-data/
 *.tmp
 *.bak
 
+# Scratch de sesiones de trabajo (scripts/JSON intermedios en la raíz; estos son por PREFIJO)
+.tmp_*
+.work_*
+
 # Scripts personales con rutas absolutas locales
 encenderserver.bat
 
