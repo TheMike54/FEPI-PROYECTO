@@ -7,14 +7,14 @@ import { useSesion } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
 import { labelEstadoEstimacion } from '../data/estadoEstimacion.js';
+import { monedaMXN as moneda } from '../utils/formato.js';
 
 // HU-14 (Equipo 3) — cableado al backend real. Historial del ciclo de cobro: todas
 // las estimaciones del contrato (incl. rechazadas) en orden cronológico, con su estado
 // y sus transiciones. La fuente de la verdad es el backend (GET historial); aquí solo
 // se DERIVA el modelo de vista que ya consumía la UI (sin tocar su estructura).
 
-const fmtMXN = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const moneda = (n) => fmtMXN.format(Number(n) || 0);
+// moneda: utilidad compartida (utils/formato.js)
 // dd/mm/aaaa sin corrimiento de zona (parte de fecha de un ISO/Date). null si no hay.
 const fechaMX = (iso) => {
   const p = (iso || '').slice(0, 10).split('-');

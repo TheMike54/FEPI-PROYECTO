@@ -3,9 +3,10 @@ import Breadcrumb from '../components/ui/Breadcrumb.jsx';
 import { useSesion } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
+import { fechaHora } from '../utils/formato.js';
 
 const ROL_LABEL = { residente: 'Residente de obra', superintendente: 'Superintendente (contratista)', supervision: 'Supervisión' };
-const fechaHora = (s) => (s ? new Date(s).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : '');
+// fechaHora: utilidad compartida (utils/formato.js)
 
 export default function PorFirmar() {
   const { token } = useSesion();

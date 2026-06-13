@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { fechaHora } from '../../utils/formato.js';
 
 // Buscador de notas de bitácora reutilizable: filtros con lógica Y (AND) sobre
 // datos REALES (GET /api/bitacora/contrato/:id/notas) + tabla con selección
@@ -51,7 +52,7 @@ const CLASE_ACEPTACION = {
 const soloFecha = (f) => (f || '').slice(0, 10);
 // Pase 2.2: para MOSTRAR la fecha de una nota se incluye la HORA (columna TIMESTAMPTZ). Mismo
 // formato es-MX que la bitácora (EmisionNotas). NO usar en el filtro (rompería el rango por fecha).
-const fechaHora = (f) => (f ? new Date(f).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : '');
+// fechaHora: utilidad compartida (utils/formato.js)
 
 // Hook con el estado de los filtros y los resultados derivados (AND). Lo usan tanto
 // la página (HU-10) como el modal (HU-12); cada uno aporta su propio `notas` ya

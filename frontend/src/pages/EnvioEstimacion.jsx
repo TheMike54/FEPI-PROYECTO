@@ -6,6 +6,7 @@ import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
 import { labelEstadoEstimacion } from '../data/estadoEstimacion.js';
+import { monedaMXN as moneda } from '../utils/formato.js';
 
 // HU-13 — PRESENTACIÓN de la estimación por el CONTRATISTA (art. 54 LOPSRM). RECONCILIACIÓN O7↔HU-15
 // (11-jun): O7 había puesto aquí la autorización del residente porque HU-15 no existía; con HU-15
@@ -21,8 +22,7 @@ import { labelEstadoEstimacion } from '../data/estadoEstimacion.js';
 const PLAZO_REVISION_DIAS = 15;     // revisión/autorización (HU-15) desde la presentación
 const PLAZO_PRESENTACION_DIAS = 6;  // el contratista presenta (desde el corte) — informativo
 
-const fmtMXN = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const moneda = (n) => fmtMXN.format(Number(n) || 0);
+// moneda: utilidad compartida (utils/formato.js)
 
 // dd/mm/aaaa hh:mm a partir de un ISO/Date (acuse de presentación). null si no hay.
 const fechaHoraMX = (iso) => {

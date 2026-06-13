@@ -15,7 +15,8 @@
 // cuadre) viven en la página (ConveniosModificatorios), que también las usa para el gating y el
 // payload. Aquí solo se pinta y se emiten cambios por callbacks.
 
-const fmtMXN = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 });
+import { fmtMXN } from '../../utils/formato.js';
+
 const TOL = 0.0005; // espejo de TOL_PROGRAMA del alta/backend (media milésima)
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 const fechaCorta = (iso) => {

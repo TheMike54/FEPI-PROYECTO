@@ -24,7 +24,6 @@ async function request(path, options = {}) {
 }
 
 export const api = {
-  health: () => request('/health'),
   login: (credenciales) => request('/auth/login', { method: 'POST', body: JSON.stringify(credenciales) }),
   register: (payload) => request('/auth/register', { method: 'POST', body: JSON.stringify(payload) }),
   // O3: catálogo PÚBLICO de empresas para el autocomplete del registro (no requiere token).

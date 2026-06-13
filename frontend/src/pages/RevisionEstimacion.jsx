@@ -6,6 +6,7 @@ import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
+import { monedaMXN as moneda } from '../utils/formato.js';
 
 // HU-15 (Equipo 3) — cableado al backend real. Recepción, revisión técnica y autorización/
 // rechazo de la estimación. Fuente de la verdad = backend; aquí NO se calcula dinero ni se
@@ -34,8 +35,7 @@ const SEVERIDADES = [
 const labelTipo = (v) => TIPOS.find((t) => t.value === v)?.label || v;
 const labelSeveridad = (v) => SEVERIDADES.find((s) => s.value === v)?.label || v;
 
-const fmtMXN = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const moneda = (n) => fmtMXN.format(Number(n) || 0);
+// moneda: utilidad compartida (utils/formato.js)
 
 const fmtMes = new Intl.DateTimeFormat('es-MX', { month: 'short', year: 'numeric', timeZone: 'UTC' });
 const mesLabel = (iso) => {

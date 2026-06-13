@@ -5,6 +5,7 @@ import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
 import DocumentoNota from '../components/notas/DocumentoNota.jsx';
+import { fechaHora } from '../utils/formato.js';
 
 // HU-09 conectado al backend. Pasada bitácora:
 //  · La APERTURA es la nota #1 (art. 123 fr. III); su firma es CONJUNTA (todos los participantes).
@@ -15,7 +16,7 @@ import DocumentoNota from '../components/notas/DocumentoNota.jsx';
 const folioFmt = (n) => (n == null ? '—' : 'BIT-' + String(n).padStart(4, '0'));
 // Pase 2.2: las notas muestran fecha Y HORA (la columna `fecha` es TIMESTAMPTZ). Mismo formato es-MX
 // que ya se usa para las firmas (firmado_en), para coherencia visual en toda la bitácora.
-const fechaHora = (s) => (s ? new Date(s).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : '');
+// fechaHora: utilidad compartida (utils/formato.js)
 const ROL_LABEL = { residente: 'Residente', superintendente: 'Superintendente', supervision: 'Supervisión' };
 
 const ACEPTACION = {

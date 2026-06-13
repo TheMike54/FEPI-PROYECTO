@@ -5,12 +5,13 @@ import RegionEditable from '../components/vista/RegionEditable.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
+import { fechaHora } from '../utils/formato.js';
 
 const formatoMXN = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 2 });
 const soloFecha = (s) => (s ? String(s).slice(0, 10) : '');
 const mxn = (v) => (v == null || v === '' ? '—' : formatoMXN.format(Number(v)));
 const ROL_LABEL = { residente: 'Residente de obra', superintendente: 'Superintendente (contratista)', supervision: 'Supervisión' };
-const fechaHora = (s) => (s ? new Date(s).toLocaleString('es-MX', { dateStyle: 'short', timeStyle: 'short' }) : '');
+// fechaHora: utilidad compartida (utils/formato.js)
 
 // Render solo-lectura de una bitácora ya aperturada (acta inmutable + estado de firmas).
 function BitacoraReadOnly({ bitacora }) {

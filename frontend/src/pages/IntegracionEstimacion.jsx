@@ -8,6 +8,7 @@ import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
 import { labelEstadoEstimacion } from '../data/estadoEstimacion.js';
+import { monedaMXN as moneda } from '../utils/formato.js';
 import DocumentoNota from '../components/notas/DocumentoNota.jsx';
 import MatrizProgramaLectura, { periodoQueContiene } from '../components/programa/MatrizProgramaLectura.jsx';
 
@@ -16,8 +17,7 @@ import MatrizProgramaLectura, { periodoQueContiene } from '../components/program
 // dinero la calcula el backend al integrar; la carátula del cliente es SOLO preview.
 // El buscador de notas REUSA el componente compartido de HU-10 (BuscadorNotas).
 
-const fmtMXN = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const moneda = (n) => fmtMXN.format(Number(n) || 0);
+// moneda: utilidad compartida (utils/formato.js)
 const num = (n) => (Number(n) || 0).toLocaleString('es-MX', { maximumFractionDigits: 4 });
 // Redondeo a 2 decimales (centavos), ESPEJO del r2() del backend: la carátula viva muestra
 // EXACTAMENTE lo que materializará el server (importe=ROUND(cant×pu,2); amort/retención ROUND a 2).
