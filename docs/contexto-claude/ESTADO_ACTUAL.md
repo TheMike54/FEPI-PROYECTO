@@ -1,13 +1,20 @@
-# SIGECOP — Documento de traspaso técnico
+# SIGECOP — Estado actual del sistema (documento canónico)
 
-> **Propósito:** que cualquier desarrollador (o Claude en otra sesión) pueda **retomar el proyecto sin
-> contexto previo**. Todo lo de aquí está **verificado contra el código/git real** (no asumido) al
-> **2026-06-13**, `main = d6abfdd`. Tono honesto: lo que funciona y lo que es maqueta están marcados como
-> tales.
+> **Este es el documento ÚNICO y canónico del estado del sistema.** `CLAUDE.md` ordena leerlo ANTES de
+> cualquier tarea y mantenerlo actualizado DESPUÉS de cualquier cambio. Si algo aquí contradice otro doc,
+> **manda éste** (y manda el código sobre éste). No debe haber un segundo doc de estado compitiendo: la foto
+> vieja del 02-jun quedó archivada en `docs/historial/contexto/ESTADO_ACTUAL_02jun.md`.
 >
-> **Docs hermanos:** historia completa → `docs/HISTORIAL_PROYECTO.md` · auditoría criterio-por-criterio →
-> `docs/analisis-y-diseno/AUDITORIA_COHERENCIA_HU.md` · historias actualizadas →
-> `docs/analisis-y-diseno/Historias_Usuario_ACTUALIZADAS_12jun.md`.
+> **Propósito:** que cualquier desarrollador (o Claude en otra sesión) pueda **retomar el proyecto sin
+> contexto previo**. Todo lo de aquí está **verificado contra el código/git real** (no asumido). Tono
+> honesto: lo que funciona y lo que es maqueta están marcados como tales.
+>
+> **Cabecera de versión:** fecha **2026-06-13**, `main = d6abfdd` (al generarse). **Actualízala** cuando
+> edites este doc tras un cambio de sistema.
+>
+> **Docs hermanos:** historia completa → `docs/HISTORIAL_PROYECTO.md` · historias de usuario vigentes
+> (criterios = sistema real) → `docs/analisis-y-diseno/Historias_Usuario_ACTUALIZADAS_12jun.md` · auditoría
+> criterio-por-criterio → `docs/analisis-y-diseno/AUDITORIA_COHERENCIA_HU.md`.
 
 ---
 
@@ -349,7 +356,7 @@ origin. Esas HU son maquetas que viven en `main` sin backend.
   (pagar plan vs instancia nueva); runbook de backup/restore ensayado en O0. **Es el riesgo #1.**
 - **Tablas muertas** (DDL sin controller que las use): `instruccion_pago`, `presupuesto_anual` (HU-20),
   `garantia_endosos` (HU-02). Existen con sus triggers pero nadie las escribe.
-- **Código muerto dudoso** (NO tocar sin decisión de Maiki, ver `docs/AUDITORIA_CODIGO_MUERTO.md`):
+- **Código muerto dudoso** (NO tocar sin decisión de Maiki, ver `docs/analisis-y-diseno/AUDITORIA_CODIGO_MUERTO.md`):
   componentes UI huérfanos `Card.jsx`, `Badge.jsx`, `CardCriterioAceptacion.jsx` (0 importadores);
   `BadgeSprint.jsx` es stub de compatibilidad intencional (retorna `null`); `api.health` sin caller.
 - **Higiene de BD de prueba:** la BD local acumula contratos/estimaciones entre corridas e2e (722 contratos
@@ -360,6 +367,9 @@ origin. Esas HU son maquetas que viven en `main` sin backend.
 - **Historial de estimación incompleto:** no refleja autorización/rechazo/pago (faltan columnas-sello).
 - **Enforcement del alta solo-cliente:** PDF firmado, anticipo>umbral, fianzas obligatorias y jurídicos solo
   se exigen en el frontend; un cliente que pegue al API directo puede saltárselos.
+- **Specs e2e de HU-08 desactualizados:** `frontend/e2e/hu-08-apertura-bitacora.spec.js` prueba un formulario
+  dummy viejo (testids `btn-firmar-1..3`, `data-parte`) que ya no existe; los tests interactivos están en
+  `test.fixme` (parte de los 8 skipped de la suite). Falta reescribirlos como integración con backend real.
 
 ---
 
@@ -411,3 +421,20 @@ origin. Esas HU son maquetas que viven en `main` sin backend.
 - **Art. 118 RLOPSRM:** el acumulado ejecutado por concepto no puede exceder lo contratado (ni lo planeado).
 - **Art. 53 LOPSRM:** responsabilidad de la residencia (por eso es emisor de notas de consecuencia).
 - **Niveles de acceso (permisos.js):** `E` = edita/ejecuta · `C` = solo consulta · `null` = sin acceso.
+
+---
+
+## 10. Coherencia con las historias de usuario (verificada 13-jun-2026)
+
+Pasada de coherencia entre **este doc** y `docs/analisis-y-diseno/Historias_Usuario_ACTUALIZADAS_12jun.md`:
+**concuerdan** (ambos leídos del código real). Las historias marcan honestamente como **maqueta/dummy** las
+mismas que aquí (HU-11, HU-16, HU-18, HU-20) y como **parcial** HU-02 (la pantalla es dummy; las garantías
+persisten vía el alta HU-01). Coinciden también en: HU-14 línea de tiempo incompleta (el backend solo
+empuja `integrada`/`enviada`), HU-13 bloqueo de 6 días = solo aviso, HU-07 rediseñado (panel automático),
+gate de pago permisivo.
+
+**Sin discrepancias de fondo.** Salvedades menores anotadas:
+- Las historias son **criterio-por-criterio** (más granulares en los `[validar profe]`); este doc es la foto
+  de sistema. Si divergen, **manda el código**; al actualizar uno, revisar el otro (ver regla en `CLAUDE.md`).
+- El siguiente número de HU libre es **HU-24** (HU-22 roster y HU-23 empresas ya existen).
+- Las historias detectaron specs de **HU-08** desactualizados (`test.fixme`) — añadido a §8 de este doc.

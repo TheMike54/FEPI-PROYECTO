@@ -77,8 +77,10 @@ FEPI/
 # Material interno con credenciales (NUNCA subir: contraseñas + cuenta del profe)
 Cuentas_Prueba_SIGECOP.md
 
-# Respaldos locales de base de datos
+# Respaldos locales de base de datos (consolidados en backups/ — traen datos reales)
+backups/
 render_backup_*.sql
+render_backup_*.json
 backend/backups/
 *.dump
 

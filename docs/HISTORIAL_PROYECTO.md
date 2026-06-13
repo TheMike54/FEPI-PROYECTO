@@ -152,5 +152,8 @@ En [historial/integraciones-equipos/](historial/integraciones-equipos/):
 
 - `historial/_duplicados/Revision_Profesor_Sprint1-2_Analisis_y_Plan_copia-exacta.md` — duplicado byte-a-byte del de revisiones-profe/.
 - `historial/contexto/` — versiones superadas: 3 copias del contexto de respaldo (04-jun/06-jun/09-jun),
-  la guía de pruebas vieja (069a71d), la matriz de accesos corta, ESTADO_ACTUAL (foto 02-jun),
-  Auditoría F3, y el backup `Historias_Usuario_BACKUP_20260601.xlsx`.
+  la guía de pruebas vieja (069a71d), la matriz de accesos corta, ESTADO_ACTUAL (foto 02-jun) y Auditoría F3.
+- `historial/sesiones/` — reportes de sesiones de orden/mantenimiento (`REPORTE_SESION_ORDEN_11jun.md`,
+  `FIXES_AUDITORIAS_12jun.md`).
+- `backups/` (raíz del repo, **gitignored**) — respaldos de la BD de Render (`render_backup_*.sql/.json`) y
+  de las Historias de Usuario (`*_BACKUP_*.xlsx`). Traen datos reales; no se versionan.

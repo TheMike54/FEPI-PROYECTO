@@ -48,8 +48,9 @@ todo lo demás vive en una subcarpeta.
 | `oleadas/` | Oleadas O0–O9, O-PROFE y reskin UI-1/UI-2 (09–10 jun). |
 | `revisiones-profe/` | Análisis de las revisiones del profe, hoja de reunión, contexto maestro superado (+ material gitignorado). |
 | `integraciones-equipos/` | Integración de los PR de E3: HU-15 y HU-19 (11-jun). |
+| `sesiones/` | Reportes de sesiones de orden/mantenimiento (REPORTE_SESION_ORDEN, FIXES_AUDITORIAS). |
 | `planes/` | Planes ya ejecutados (Plan maestro UI estimación, Plan maestro 2, paralelización inicial). |
-| `contexto/` | Versiones superadas de contextos/guías + backups apartados. |
+| `contexto/` | Versiones superadas de contextos/guías. |
 | `_duplicados/` | Copias byte-a-byte apartadas (no borradas). |
 
 ### `analisis-y-diseno/` — Entregables académicos, matrices, maquetas y diagramas
@@ -58,6 +59,7 @@ todo lo demás vive en una subcarpeta.
 | `Estudio_Factibilidad_Tecnica_SIGECOP.docx` | Estudio de factibilidad técnica. |
 | `Historias_Usuario_ACTUALIZADAS_12jun.md` / `.xlsx` | **Versión vigente** de las historias: criterios que reflejan lo que el sistema HACE HOY (HU-00..21 + Registro/Por Firmar conservados + HU-22 roster, HU-23 empresas). |
 | `AUDITORIA_COHERENCIA_HU.md` | Auditoría criterio-por-criterio ficha ↔ código (✅/🟡/❌ con evidencia `archivo:línea`); brechas y recomendaciones. |
+| `AUDITORIA_CODIGO_MUERTO.md` | Barrido de código muerto clasificado por riesgo (lo eliminado + dudosos para decisión). |
 | `Historias_Usuario.xlsx` | Las 22 HU formato del profe — **foto previa** (la actualizada es `Historias_Usuario_ACTUALIZADAS_12jun.*`); se conserva intacta. |
 | `matriz_DEFINITIVA.xlsx` | Trazabilidad necesidades ↔ servicios ↔ módulos ↔ HU. |
 | `Fichas_Trazabilidad.md` | Estado por HU (trazabilidad). ⚠️ Foto vieja del estado. |
@@ -82,6 +84,7 @@ Estos archivos existen en disco pero **están en `.gitignore`** y no se versiona
 - `Cuentas_Prueba_SIGECOP.md`, `comandos usuario.txt`, `Acordeon_Defensa_SIGECOP.md` (raíz de docs/)
 - `historial/revisiones-profe/Revision_Profesor_Sprint1-2_Analisis_y_Plan.md` y
   `…audio_profe_revision_01jun_transcript.txt` · `historial/_duplicados/Revision_Profesor_…_copia-exacta.md`
-- `historial/contexto/Historias_Usuario_BACKUP_20260601.xlsx` · `~$*` (locks de Office)
+- `backups/` (raíz del repo): respaldos de la BD de Render (`render_backup_*.sql/.json`) y de las
+  Historias (`*_BACKUP_*.xlsx`) · `~$*` (locks de Office)
 
 > **Material de referencia / fases tempranas:** carpeta `/FEPI` en la raíz del repo.

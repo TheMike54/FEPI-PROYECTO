@@ -3,7 +3,36 @@
 Sistema de Gestión Técnico-Administrativa de Contratos de Obra Pública (LOPSRM / RLOPSRM / LFD).
 **Stack:** React + Vite + Tailwind (`frontend/`) · Node + Express + PostgreSQL (`backend/`) · deploy en Render. **Idioma del proyecto: español.**
 
-> **Docs guía** (léelos antes de tocar algo): plan completo `docs/Plan_Particion_3Equipos_SIGECOP.md` · DDL anticipado (borrador) `docs/Borrador_DDL_Tablas_Nuevas_SIGECOP.md` · briefs por equipo `docs/Prompts_Accion_Equipos_SIGECOP.md`.
+## 🔱 REGLA PERMANENTE — leer primero, mantener después (OBLIGATORIO)
+
+**ANTES de cualquier tarea, LEE:**
+1. `docs/contexto-claude/ESTADO_ACTUAL.md` — el documento **canónico** del estado real del sistema (cómo
+   levantarlo, arquitectura, modelo de datos, flujos críticos con `archivo:función`, catálogo de HU con
+   estado, zona congelada, pendientes). Es la **fuente de verdad** sobre lo que el sistema HACE HOY.
+2. `docs/analisis-y-diseno/Historias_Usuario_ACTUALIZADAS_12jun.md` — las historias de usuario vigentes
+   (sus criterios = comportamiento real del sistema).
+
+**DESPUÉS de cualquier cambio que altere comportamiento o agregue funcionalidad:**
+1. **Actualiza `ESTADO_ACTUAL.md`** (incluida su cabecera de fecha/commit) para que siga reflejando la
+   realidad.
+2. **Revisa que la(s) historia(s) afectada(s) concuerden con el sistema:**
+   - Si construiste algo **sin historia** → agrégala con el **siguiente número libre** (HU-24, HU-25, …),
+     **sin renumerar** las existentes; si no puedes, **repórtalo** a Maiki.
+   - Si una historia **ya no concuerda** con lo que hace el sistema → **actualízala**.
+3. **Cita el artículo de ley** (LOPSRM / RLOPSRM / LFD) donde aplique, o marca **`[validar]`** si es
+   interpretativo (lo legal lo confirma el profe, no Code).
+4. **No dejes dos docs de estado compitiendo:** `ESTADO_ACTUAL.md` es el único; las fotos viejas viven en
+   `docs/historial/`.
+
+> **Docs guía:** historia del proyecto `docs/HISTORIAL_PROYECTO.md` · plan de partición
+> `docs/equipos/Plan_Particion_3Equipos_SIGECOP.md` · DDL anticipado `docs/contexto-claude/Borrador_DDL_Tablas_Nuevas_SIGECOP.md` · briefs por equipo `docs/equipos/Prompts_Accion_Equipos_SIGECOP.md`.
+
+**Resumen de zona congelada (detalle abajo §⛔):** NO tocar auth, `permisos.js`, `server.js`, `schema.sql`
+(salvo aditivo idempotente), triggers de inmutabilidad, G1-G8 del alta ni la lógica de cálculo de la
+carátula. **Método de trabajo:** **Maiki (TheMike54) integra y es el ÚNICO que despliega** (auto-deploy
+desde `main`); los equipos entregan **por PR** que Maiki revisa/rebasa/integra; **Code trabaja en local sin
+commit/push** (Maiki revisa el diff); correcciones por **oleadas**; cuadre EXACTO al centavo; registros
+formales **append-only** (corregir = registro nuevo vinculado).
 
 ## Equipos y ramas
 - 6 personas, 3 frentes. **Maiki (TheMike54) integra y es el ÚNICO que despliega a Render** (auto-deploy desde `main`).
