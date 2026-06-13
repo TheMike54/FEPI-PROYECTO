@@ -6,6 +6,10 @@
 // residente en HU-13 como solución temporal sin HU-15; aquí se reconcilia al flujo definitivo.)
 // Cubre el ciclo completo + los candados de cada actor. LOGIN REAL (backend+BD). No corre en CI.
 import { test, expect } from '@playwright/test';
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import path from 'node:path';
 import { freshHome, enterAppMode, goToViaSidebar } from './_helpers.js';
 
 test.skip(!!process.env.CI, 'login real requiere backend+BD; se corre en local');
@@ -15,6 +19,22 @@ const PASS = 'Sigecop2026!';
 const PDF = Buffer.from('%PDF-1.4\n%E2E\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n');
 const loginApi = async (request, email) => (await request.post(`${API}/auth/login`, { data: { email, password: PASS } })).json();
 const auth = (t) => ({ Authorization: `Bearer ${t}` });
+
+// Higiene de BD de prueba: cada test crea un contrato E2E-RECON-* (uno con estimación 'rechazada'),
+// que es append-only por diseño. Sin limpieza, la BD acumula rechazadas entre corridas y rompe métricas
+// globales (p.ej. el contador del tablero HU-17). El afterAll revierte esos contratos vía psql, igual que
+// hu-14/hu-17 con su unseed. Corre contra el stack local (docker); en CI el describe entero está skipped.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SEED_DIR = path.resolve(__dirname, '../../backend/scripts');
+function runSql(file) {
+  const sql = readFileSync(path.join(SEED_DIR, file));
+  execFileSync(
+    'docker',
+    ['exec', '-i', 'sigecop_db', 'psql', '-U', 'sigecop', '-d', 'sigecop_db', '-v', 'ON_ERROR_STOP=1', '-q'],
+    { input: sql, stdio: ['pipe', 'ignore', 'inherit'] }
+  );
+}
+test.afterAll(() => runSql('unseed_o7_recon.sql'));
 
 // Crea contrato (R residente/creador, S superintendente, V supervisión, D dependencia) + PDF firmado e
 // INTEGRA una estimación (HU-12, como el contratista). Devuelve { cid, est ('integrada'), R, S, V, F }.

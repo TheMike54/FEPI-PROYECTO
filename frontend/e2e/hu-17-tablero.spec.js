@@ -70,8 +70,12 @@ test.describe('HU-17 — Residente (es parte de SMK17-001)', () => {
     await expect(page.locator(card(3))).toBeVisible();
     await expect(page.locator(card(4))).toBeVisible();
     await expect(page.locator(card(5))).toHaveCount(0);
-    // El contador de rechazadas SÍ refleja la métrica (≥ 1 sembrada).
-    await expect(page.getByTestId('contador-estado-rechazada')).toContainText('1');
+    // El contador de rechazadas es una métrica GLOBAL del residente (cuenta TODOS sus contratos), por eso
+    // se valida ≥ 1 (la sembrada) y NO == 1: así el assert es robusto a datos acumulados de otras corridas.
+    // La exclusión de la rechazada del grid (CA-1) ya la verifica card(5).toHaveCount(0) arriba.
+    const txtRechazadas = (await page.getByTestId('contador-estado-rechazada').textContent()) ?? '';
+    const nRechazadas = Number((txtRechazadas.match(/\d+/) ?? ['0'])[0]);
+    expect(nRechazadas, 'al menos la rechazada sembrada').toBeGreaterThanOrEqual(1);
   });
 
   test('el monto neto llega cuadrado server-side (tarjeta pagada = $199,000.00)', async ({ page }) => {

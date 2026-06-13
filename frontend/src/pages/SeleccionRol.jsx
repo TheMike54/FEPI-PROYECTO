@@ -33,7 +33,10 @@ function FormLogin({ onIrRegistro, mensaje, setMensaje }) {
     setLoading(true);
     setMensaje(null);
     try {
-      await login(email, password);
+      // Normaliza el correo a minúsculas+trim ANTES de mandarlo: el registro lo guarda normalizado
+      // (auth.controller, server-side), así que sin esto un usuario que tecleó "Maiki@x.com" no entraría
+      // con "maiki@x.com". Solo frontend; no cambia el backend de auth.
+      await login(email.trim().toLowerCase(), password);
     } catch (err) {
       // El backend devuelve un mensaje claro (403 pendiente/rechazada, 401 credenciales).
       setMensaje({ tipo: 'error', texto: err.message || 'No se pudo iniciar sesión' });
@@ -167,7 +170,8 @@ function FormRegistro({ onIrLogin, setMensaje }) {
 
     setLoading(true);
     try {
-      await api.register({ nombre, email: email.trim(), password, rolSolicitado, empresa: empresaTrim });
+      // Email normalizado a minúsculas+trim, simétrico con el login (el backend ya normaliza igual).
+      await api.register({ nombre, email: email.trim().toLowerCase(), password, rolSolicitado, empresa: empresaTrim });
       // Vuelve al login mostrando el mensaje de cuenta pendiente.
       setMensaje({
         tipo: 'exito',
