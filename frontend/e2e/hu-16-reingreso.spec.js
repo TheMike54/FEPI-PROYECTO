@@ -1,16 +1,21 @@
 // @ts-check
 // E2E HU-16 — Reingreso de estimación tras rechazo.
 //
-// Cubre el comportamiento del prototipo:
-//   · Botones "Descargar PDF" y "Descargar Excel" disparan descargas reales
-//     (jsPDF / SheetJS) con las observaciones de la versión rechazada.
-//   · El botón "Reingresar estimación (nueva versión)" queda disabled hasta
-//     que la textarea tenga texto Y la casilla de confirmación esté marcada.
-//   · Al pulsarlo: aparece el banner verde de aviso-reingreso (v2 vinculada a
-//     v1 rechazada, plazo no se reinicia) y la mini-tabla "Trazabilidad de
-//     versiones" con la fila vN-1 → vN.
+// alta-v2/HU-16 cableada al backend real: la vista ya NO usa dummy. Arranca con un selector
+// de contrato → estimación RECHAZADA y carga las observaciones reales del rechazo (HU-15,
+// GET /estimaciones-ciclo/estimacion/:id/revision) para exportarlas (CA-2). El reingreso
+// (POST .../reingresar) crea la nueva versión como bloque independiente ligado vía
+// reemplaza_a (CA-1) sin reiniciar el plazo del art. 54 (CA-3).
 //
-// PERMISOS[HU-16]: residente='C' · contratista='E' · supervision/dependencia/finanzas=null
+// El CICLO funcional completo (sembrar una estimación 'enviada' → turnar → rechazar →
+// reingresar, con las cuentas exactas residencia/supervisión/contratista) depende de datos
+// sembrados, por lo que se valida con el SMOKE de backend (frontend/e2e/smoke-hu16.sh) y NO
+// aquí. Este spec cubre la capa robusta sin seed:
+//   · Control de acceso por rol (sidebar/inicio) idéntico a la matriz PERMISOS[HU-16].
+//   · Carga de la vista y del selector de contrato para el rol ejecutor (contratista).
+//   · Aviso de solo-consulta para residente y ausencia de panel de acción.
+//
+// PERMISOS[HU-16]: contratista='E' · residente='C' · supervision/dependencia/finanzas=null
 //
 // Helpers comunes: ver frontend/e2e/_helpers.js.
 
@@ -20,7 +25,6 @@ import {
   enterAppMode,
   goToViaSidebar,
   sidebarLinkFor,
-  cardInInicioFor,
   expectAvisoSoloConsulta,
   expectMetadataAcademicaOculta
 } from './_helpers.js';
@@ -53,12 +57,11 @@ test.describe('HU-16 — modo aplicacion (Contratista: ejecuta)', () => {
     });
   });
 
-  test('puede ejecutar el reingreso completo', async ({ page }) => {
+  test('rol ejecutor ve el selector de contrato (sin aviso de solo consulta)', async ({ page }) => {
     await goToViaSidebar(page, VIEW_PATH);
-    await page.getByTestId('textarea-nota').fill('Corregido eje 7-B y catálogo.');
-    await page.getByTestId('chk-confirmado').check();
-    await page.getByTestId('btn-reingresar').click();
-    await expect(page.getByTestId('aviso-reingreso')).toBeVisible();
+    await expect(page.getByTestId('select-contrato')).toBeVisible();
+    // El ejecutor no debe ver el aviso de solo-consulta.
+    await expect(page.getByText('solo consulta')).toHaveCount(0);
   });
 });
 
@@ -72,18 +75,16 @@ test.describe('HU-16 — modo aplicacion (Residente: consulta)', () => {
     await enterAppMode(page, 'residente');
   });
 
-  test('aviso de solo consulta visible; boton de reingresar deshabilitado', async ({ page }) => {
+  test('aviso de solo consulta visible; sin panel de reingreso antes de seleccionar', async ({ page }) => {
     await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
     await goToViaSidebar(page, VIEW_PATH);
 
     await expectAvisoSoloConsulta(page);
-    // RegionEditable solo deshabilita los descendientes; los nodos siguen en el
-    // DOM. El boton de reingresar queda disabled.
-    await expect(page.getByTestId('btn-reingresar')).toBeDisabled();
-    await expect(page.getByTestId('textarea-nota')).toBeDisabled();
-    // Las descargas viven fuera de RegionEditable.
-    await expect(page.getByTestId('btn-descargar-obs-pdf')).toBeVisible();
-    await expect(page.getByTestId('btn-descargar-obs-excel')).toBeVisible();
+    // El selector existe (la consulta puede navegar contratos), pero el panel de acción
+    // (textarea + botón de reingreso) no se renderiza hasta elegir una estimación rechazada.
+    await expect(page.getByTestId('select-contrato')).toBeVisible();
+    await expect(page.getByTestId('btn-reingresar')).toHaveCount(0);
+    await expect(page.getByTestId('textarea-nota')).toHaveCount(0);
   });
 });
 

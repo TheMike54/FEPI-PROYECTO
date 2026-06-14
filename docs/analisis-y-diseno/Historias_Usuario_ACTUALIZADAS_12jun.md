@@ -475,22 +475,23 @@
 
 **Historia:**
 - **Como** contratista
-- **Deseo** abrir la pantalla de Reingreso de estimación rechazada, donde veo (con datos de ejemplo / dummy) las observaciones de la versión rechazada con su severidad, puedo descargarlas en PDF o Excel, capturo una nota de atención a observaciones, confirmo con una casilla que las atendí, y al pulsar 'Reingresar' aparece en pantalla un aviso y una mini-tabla de trazabilidad que vincula la nueva versión (v2) con la rechazada (v1) indicando que el plazo de presentación NO se reinicia
-- **A fin de** contar con la maqueta del flujo de reingreso tras rechazo; el comportamiento se simula en el navegador (estado local), sin persistir nada en el backend ni leer el rechazo real de HU-15
+- **Deseo** abrir la pantalla de Reingreso, seleccionar un contrato y una estimación RECHAZADA real, ver las observaciones reales del rechazo (leídas de HU-15) con su severidad y descargarlas en PDF o Excel, capturar una nota de atención a observaciones, confirmar con una casilla que las atendí, y al pulsar 'Reingresar' crear una NUEVA versión real (bloque completo independiente) vinculada a la rechazada, con su trazabilidad de versiones derivada de datos reales
+- **A fin de** re-presentar la estimación corrigiendo lo observado, conservando la trazabilidad fiscal con la versión rechazada y sin reiniciar el plazo de presentación del art. 54 LOPSRM
 
 **Criterios de aceptación (comportamiento actual del sistema):**
-1. La vista carga con el rol contratista (ejecuta) y muestra el formulario editable; con rol residente carga en SOLO LECTURA (botón y textarea deshabilitados) y los demás roles (supervisión/dependencia/finanzas) NO la ven (permisos.js:30; spec hu-16-reingreso.spec.js)
-2. La tabla 'Observaciones de la versión rechazada' lista las observaciones dummy con badge de severidad (Alta/Media/Baja) y los botones 'Descargar PDF' (jsPDF) y 'Descargar Excel' (exceljs) generan un archivo real con esas observaciones dummy
-3. El botón 'Reingresar estimación (nueva versión)' permanece deshabilitado hasta que la nota tenga texto Y la casilla de confirmación esté marcada (ReingresoEstimacion.jsx:100)
-4. Al reingresar (estado de cliente) aparece el banner verde 'aviso-reingreso' (v2 vinculada a v1, plazo no se reinicia) y la tabla 'Trazabilidad de versiones' con la fila v1(Rechazada)->v2(En proceso, vinculada a v1); nada se envía al servidor
-5. La BD tiene preparada la trazabilidad persistente (estimaciones.reemplaza_a self-FK + UNIQUE), pero NO existe endpoint que la escriba o lea: el reingreso aún no está conectado a datos reales
+1. La vista carga con un selector de contrato → estimación RECHAZADA (historial real, GET /estimaciones-ciclo/contrato/:id/historial, filtrando estado='rechazada' aún no reingresadas). Con rol contratista el panel de reingreso es editable; con residente carga en SOLO LECTURA; supervisión/dependencia/finanzas NO la ven (permisos.js:30; spec hu-16-reingreso.spec.js)
+2. La tabla 'Observaciones de la versión rechazada' lista las observaciones REALES del rechazo (GET .../estimacion/:id/revision de HU-15: sección/tipo/severidad/descripción) y los botones 'Descargar PDF' (jsPDF) y 'Descargar Excel' (exceljs) generan el archivo con esos datos reales
+3. El botón 'Reingresar estimación (nueva versión)' permanece deshabilitado hasta que la nota tenga texto Y la casilla de confirmación esté marcada (gate de control)
+4. Al reingresar, el backend (POST .../estimacion/:id/reingresar) crea ATÓMICAMENTE una NUEVA estimación 'integrada' como bloque completo independiente (número correlativo propio, copiando generadores y carátula-snapshot de la rechazada) y la liga a la rechazada vía reemplaza_a; aparece el banner 'aviso-reingreso' y la tabla 'Trazabilidad de versiones' derivada del historial real (rechazada → reingreso). La rechazada permanece 'rechazada' (histórico vinculado). 1 rechazada → 1 reingreso (UNIQUE reemplaza_a; 2º intento → 409)
+5. El plazo de presentación (art. 54 LOPSRM) NO se reinicia: la nueva versión nace con enviada_en=NULL y REFERENCIA el envío original de la rechazada (enviada_en), derivado en lectura sin contador persistido. Solo el superintendente del contrato reingresa (gate server-side; residencia → 403)
+
+**Fundamento legal:** art. 54 LOPSRM (plazo de presentación que no se reinicia — [validar profe] la semántica exacta); trazabilidad fiscal de la versión rechazada (histórico vinculado, coherente con la inmutabilidad de estimaciones, art. 132 RLOPSRM).
 
 **Pendientes / [validar profe]:**
-- [NO CONSTRUIDO - backend] No existe endpoint de reingreso: ningún controller escribe/lee estimaciones.reemplaza_a (grep en estimaciones-ciclo.controller.js sin coincidencias); falta crear POST de reingreso que inserte la nueva estimación real con reemplaza_a = <id rechazada>, copiando el catálogo como bloque independiente
-- [NO CONSTRUIDO - datos reales] Las observaciones, el banner y el histórico son dummy (dummy.js:719-737); falta conectar con las observaciones reales del rechazo de HU-15 (estimacion_observaciones, tipo 'rechazo') y con las versiones reales de la estimación
-- [NO CONSTRUIDO - plazo art.54] El 'no reinicio del plazo de presentación' es solo un texto del prototipo; falta lógica de backend que respete el sello enviada_en original (no reabrir el plazo del art.54 LOPSRM) al reingresar — confirmar regla legal con el profe
-- [validar profe] La ficha vieja cita 'descarga en PDF o Excel' de observaciones: confirmar si el reingreso real debe mantener ambos formatos o consolidarse (coherente con O9 expediente como un solo PDF)
-- [validar profe] Numeración de versiones (v1/v2) y semántica de 'bloque completo independiente' vs reutilizar número de estimación del mismo periodo: definir cómo se modela en estimaciones (¿misma estimación con versión, o nueva fila vinculada por reemplaza_a?). El schema sugiere nueva fila vinculada.
+- [validar profe] Semántica exacta de 'no reiniciar el plazo de presentación' del art. 54 LOPSRM: hoy la nueva versión referencia la enviada_en de la rechazada (derivado en lectura, sin reabrir el contador). Confirmar regla legal.
+- [validar profe] El reingreso COPIA la carátula/generadores de la rechazada como bloque independiente (no re-deriva dinero: propaga el snapshot validado por HU-12). Confirmar si el reingreso debe permitir RE-CAPTURAR cantidades corregidas (re-integrar vía HU-12) en lugar de copiar el bloque.
+- [validar/PARA MAIKI] La 'nota de atención a observaciones' es hoy un gate de control que NO se persiste (no hay columna; el esquema es de Fundación). Si debe quedar registrada, requiere DDL aditivo.
+- [validar profe] Confirmar si se mantienen ambos formatos de descarga (PDF y Excel) de las observaciones o se consolida (coherencia con O9 expediente como un solo PDF).
 
 ---
 

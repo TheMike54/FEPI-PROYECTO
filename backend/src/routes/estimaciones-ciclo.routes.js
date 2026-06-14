@@ -11,7 +11,8 @@ const {
   eliminarObservacion,
   turnarEstimacion,
   autorizarEstimacion,
-  rechazarEstimacion
+  rechazarEstimacion,
+  reingresarEstimacion
 } = require('../controllers/estimaciones-ciclo.controller');
 
 const router = express.Router();
@@ -36,5 +37,10 @@ router.delete('/estimacion/:id/observaciones/:obsId', eliminarObservacion);
 router.post('/estimacion/:id/turnar', turnarEstimacion);
 router.post('/estimacion/:id/autorizar', autorizarEstimacion);
 router.post('/estimacion/:id/rechazar', rechazarEstimacion);
+
+// HU-16: reingreso de la estimación RECHAZADA (:id = la rechazada). Crea la nueva versión
+// como bloque independiente ligado vía reemplaza_a (atómico). Solo el superintendente del
+// contrato (lo valida el controller). NO reinicia el plazo del art. 54 (derivado en lectura).
+router.post('/estimacion/:id/reingresar', reingresarEstimacion);
 
 module.exports = router;

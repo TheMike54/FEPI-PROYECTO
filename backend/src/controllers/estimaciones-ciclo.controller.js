@@ -42,7 +42,8 @@ async function historialEstimaciones(req, res) {
       `SELECT e.id, e.numero, e.contrato_id, e.estado, e.periodo_inicio, e.periodo_fin,
               e.subtotal, e.amortizacion, e.retencion, e.deductivas, e.neto,
               e.integrada_por, u.nombre AS integrada_por_nombre, e.integrada_en,
-              e.enviada_por, ue.nombre AS enviada_por_nombre, e.enviada_en
+              e.enviada_por, ue.nombre AS enviada_por_nombre, e.enviada_en,
+              e.reemplaza_a
          FROM estimaciones e
          LEFT JOIN usuarios u  ON u.id  = e.integrada_por
          LEFT JOIN usuarios ue ON ue.id = e.enviada_por
@@ -95,6 +96,10 @@ async function historialEstimaciones(req, res) {
         enviada_por: e.enviada_por,
         enviada_por_nombre: e.enviada_por_nombre,
         enviada_en: e.enviada_en,
+        // HU-16: puntero a la estimación RECHAZADA que esta versión reingresa (null si
+        // no es un reingreso). La trazabilidad de versiones y la derivación del plazo
+        // del art. 54 (que NO se reinicia) se arman en lectura a partir de este campo.
+        reemplaza_a: e.reemplaza_a,
         transiciones
       };
     });
@@ -511,6 +516,124 @@ async function rechazarEstimacion(req, res) {
   }
 }
 
+// =====================================================================
+// HU-16 (Equipo 3) — Reingreso de estimación tras rechazo.
+// POST /api/estimaciones-ciclo/estimacion/:id/reingresar  (:id = la RECHAZADA)
+//
+// CA-1: la nueva versión es un BLOQUE COMPLETO INDEPENDIENTE — fila nueva en
+//   `estimaciones` con su propio número correlativo (MAX+1), copiando los números
+//   generadores y la carátula YA calculada de la rechazada. NO se re-deriva dinero:
+//   se PROPAGA el snapshot que validó HU-12 (fuente única de verdad), no se recalcula
+//   ninguna fórmula de carátula. La rechazada queda como HISTÓRICO VINCULADO a través
+//   de reemplaza_a (self-FK) en la nueva.
+// CA-3: la nueva versión REFERENCIA el timeline de la rechazada vía reemplaza_a y NO
+//   reinicia el plazo de presentación (art. 54 LOPSRM): nace 'integrada' con
+//   enviada_en = NULL; el "día N de plazo" se DERIVA en lectura desde la enviada_en de
+//   la rechazada (sin contador persistido). [validar profe]: semántica exacta de "no
+//   reiniciar el plazo de presentación" del art. 54 LOPSRM.
+//
+// SIN tocar zona congelada: no edita el controller de HU-12 ni el esquema. El INSERT no
+//   dispara el trigger sigecop_estimacion_inmutable (es BEFORE UPDATE). reemplaza_a es
+//   columna mutable (fuera de la lista del trigger). La numeración la serializa un
+//   advisory lock transaccional por contrato (espejo de HU-12). Unicidad 1-rechazada→
+//   1-reingreso garantizada por UNIQUE(reemplaza_a) + pre-chequeo.
+//
+// Gate de rol: SOLO el superintendente asignado al contrato (HU-16 = contratista nivel
+//   'E'), espejo exacto de enviarEstimacion (HU-13).
+//
+// Nota: el texto de la "nota de atención a observaciones" NO se persiste — no existe
+//   columna para él y el esquema es de Fundación. El gate de control es la confirmación
+//   booleana. [validar/PARA MAIKI]: si la nota debe quedar registrada, requiere DDL.
+// =====================================================================
+async function reingresarEstimacion(req, res) {
+  const client = await pool.connect();
+  try {
+    const rechazadaId = Number(req.params.id);
+    if (!Number.isInteger(rechazadaId) || rechazadaId <= 0) return res.status(400).json({ error: 'id inválido' });
+
+    // El contratista declara que atendió las observaciones (gate de control).
+    if (!(req.body && req.body.confirmacion === true)) {
+      return res.status(400).json({ error: 'Debes confirmar que atendiste las observaciones de la versión rechazada' });
+    }
+
+    // (1) Estimación + equipo del contrato. 404 antes que 403 (espejo de HU-12/13).
+    const est = await cargarEstimacionConContrato(rechazadaId);
+    if (!est) return res.status(404).json({ error: 'Estimación no encontrada' });
+
+    // (2) Acceso localizado: solo el superintendente del contrato reingresa sus estimaciones.
+    if (est.superintendente_id !== req.user.id) {
+      return res.status(403).json({ error: 'Solo el superintendente asignado a este contrato puede reingresar sus estimaciones' });
+    }
+
+    // (3) Máquina de estados: solo se reingresa lo RECHAZADO.
+    if (est.estado !== 'rechazada') {
+      return res.status(409).json({ error: `Solo se puede reingresar una estimación 'rechazada' (estado actual: '${est.estado}')` });
+    }
+
+    await client.query('BEGIN');
+    // Serializa numeración/no-duplicado por contrato (espejo de HU-12).
+    await client.query('SELECT pg_advisory_xact_lock($1)', [est.contrato_id]);
+
+    // (4) Unicidad del reingreso: 1 rechazada → a lo sumo 1 reingreso (pre-chequeo; el
+    //     UNIQUE(reemplaza_a) lo blinda en carrera).
+    const ya = await client.query('SELECT 1 FROM estimaciones WHERE reemplaza_a = $1', [rechazadaId]);
+    if (ya.rowCount > 0) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({ error: 'Esta estimación rechazada ya fue reingresada' });
+    }
+
+    // (5) Número correlativo propio (bloque independiente, CA-1).
+    const num = await client.query(
+      'SELECT COALESCE(MAX(numero), 0) + 1 AS numero FROM estimaciones WHERE contrato_id = $1',
+      [est.contrato_id]
+    );
+    const numero = num.rows[0].numero;
+
+    // (6) Cabecera + carátula: COPIA el snapshot validado por HU-12 (no se re-deriva),
+    //     número nuevo, estado 'integrada', integrada_por del JWT, reemplaza_a = rechazada.
+    //     enviada_en/por quedan NULL (CA-3: no reinicia el plazo).
+    const ins = await client.query(
+      `INSERT INTO estimaciones
+         (contrato_id, numero, periodo_inicio, periodo_fin, estado, anticipo_pct_snapshot,
+          subtotal, amortizacion, retencion, deductivas, neto, integrada_por, reemplaza_a)
+       SELECT contrato_id, $2, periodo_inicio, periodo_fin, 'integrada', anticipo_pct_snapshot,
+              subtotal, amortizacion, retencion, deductivas, neto, $3, id
+         FROM estimaciones WHERE id = $1
+       RETURNING id, contrato_id, numero, periodo_inicio, periodo_fin, estado,
+                 subtotal, amortizacion, retencion, deductivas, neto,
+                 integrada_por, integrada_en, reemplaza_a`,
+      [rechazadaId, numero, req.user.id]
+    );
+    const nueva = ins.rows[0];
+
+    // (7) Números generadores: copia los mismos snapshots (pu_snapshot, cantidad_anterior_acum).
+    await client.query(
+      `INSERT INTO estimacion_generadores
+         (estimacion_id, contrato_concepto_id, cantidad_periodo, cantidad_anterior_acum, pu_snapshot)
+       SELECT $2, contrato_concepto_id, cantidad_periodo, cantidad_anterior_acum, pu_snapshot
+         FROM estimacion_generadores WHERE estimacion_id = $1`,
+      [rechazadaId, nueva.id]
+    );
+
+    await client.query('COMMIT');
+    return res.status(201).json({
+      nueva,
+      reemplaza_a: rechazadaId,
+      // El plazo del art. 54 NO se reinicia: la lectura deriva el día N desde este sello.
+      plazo_origen_enviada_en: est.enviada_en || null
+    });
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (err && err.code === '23505') {
+      return res.status(409).json({ error: 'Esta estimación rechazada ya fue reingresada' });
+    }
+    console.error('[reingresarEstimacion]', err);
+    return res.status(500).json({ error: 'Error interno' });
+  } finally {
+    client.release();
+  }
+}
+
 module.exports = {
   historialEstimaciones,
   enviarEstimacion,
@@ -519,5 +642,6 @@ module.exports = {
   eliminarObservacion,
   turnarEstimacion,
   autorizarEstimacion,
-  rechazarEstimacion
+  rechazarEstimacion,
+  reingresarEstimacion
 };

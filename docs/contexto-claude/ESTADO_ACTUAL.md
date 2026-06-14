@@ -31,8 +31,8 @@ núcleo (alta → bitácora → avance → estimación → autorización → pag
 real. Quedan 4 pantallas que son **maqueta pura sin backend**.
 
 **% funcional (por HU, honesto):** de 26 unidades (HU-00..21 + Registro + Por Firmar + HU-22 roster + HU-23
-empresas), **~21 funcionan end-to-end** (≈80%); **4 son maqueta sobre datos dummy** (HU-11 minutas, HU-16
-reingreso, HU-18 portafolio, HU-20 tránsito a pago); **HU-02 fianzas** es parcial (la pantalla es dummy,
+empresas), **~22 funcionan end-to-end** (≈85%); **3 son maqueta sobre datos dummy** (HU-11 minutas,
+HU-18 portafolio, HU-20 tránsito a pago); **HU-02 fianzas** es parcial (la pantalla es dummy,
 pero las garantías SÍ persisten vía el alta HU-01). Detalle exacto en §7.
 
 ---
@@ -235,7 +235,8 @@ Estados internos (columna `estimaciones.estado`, CHECK `schema.sql:544`) vs etiq
 | `enviada` | **Presentada** | `POST /estimaciones-ciclo/estimacion/:id/enviar` (`enviarEstimacion:122`); `superintendente_id===user.id`; arranca art. 54 |
 | (turnado) | — | supervisión registra observaciones y **turna** (`turnarEstimacion:350`); `supervision_id===user.id` (el turnado se modela como `estimacion_observaciones.turnado_a='residencia'`, no como estado) |
 | `autorizada` | **Autorizada** | `.../autorizar` (`autorizarEstimacion:419`); `residente_id===user.id` + turnado previo |
-| `rechazada` | **Rechazada** | `.../rechazar` (`rechazarEstimacion:459`); `residente_id===user.id`; inserta obs `tipo='rechazo'`. **Estado terminal** (no hay reingreso, ver §7) |
+| `rechazada` | **Rechazada** | `.../rechazar` (`rechazarEstimacion:459`); `residente_id===user.id`; inserta obs `tipo='rechazo'` → `turnado_a='contratista'` |
+| (reingreso) | — | **HU-16** `.../reingresar` (`reingresarEstimacion`); `superintendente_id===user.id`; crea NUEVA estimación `'integrada'` (bloque indep., `numero` MAX+1, copia generadores+carátula) ligada a la rechazada por `reemplaza_a` (atómico). NO reinicia el plazo art. 54 (derivado en lectura desde la `enviada_en` de la rechazada). 1 rechazada → 1 reingreso (`UNIQUE reemplaza_a`) |
 | `pagada` | **Pagada** | `POST /api/pagos` (`pagos.controller::registrarPago`); `requireRole('finanzas')` (único gate por rol global) |
 
 - **Vocabulario cruzado a propósito:** estado interno `enviada` = etiqueta "Presentada", endpoint `/enviar`
@@ -323,7 +324,6 @@ vive en el MISMO BEGIN/COMMIT que el evento); toma advisory lock por bitácora y
 | HU | Pantalla | Estado real | Bloqueado por |
 |---|---|---|---|
 | **HU-11** Minutas | `MinutasVisitas.jsx` | Todo en `useState` sobre dummies; el PDF solo captura el **nombre**; "adjuntar a nota" es modal informativo | Falta controller/route de minutas; `minutas.nota_id` huérfana |
-| **HU-16** Reingreso | `ReingresoEstimacion.jsx` | No importa `api.js`; `handleReingresar` solo `setState`. El rechazo (HU-15) deja la estimación en `'rechazada'` **terminal** | Falta `POST` de reingreso que inserte estimación con `reemplaza_a=<id rechazada>` |
 | **HU-18** Portafolio | `PortafolioEjecutivo.jsx` | 5 contratos hardcodeados; el semáforo se calcula pero sobre dummy; no filtra por usuario | Falta endpoint + filtro por participación |
 | **HU-20** Tránsito a pago | `TransitoPago.jsx` | Suficiencia/soportes 100% en memoria; monto editable hardcoded. **La DDL existe** (`presupuesto_anual` + `instruccion_pago`) pero **ningún controller la usa** | Falta TODO el backend (suficiencia presupuestal + instrucción de pago + upload de soportes) |
 
@@ -394,7 +394,7 @@ origin. Esas HU son maquetas que viven en `main` sin backend.
 | HU-13 | Envío/presentación de estimación | ✅ (bloqueo 6 días = solo aviso) |
 | HU-14 | Historial de estimaciones | ✅ (línea de tiempo incompleta) |
 | HU-15 | Revisión técnica y autorización | ✅ |
-| HU-16 | Reingreso tras rechazo | ❌ maqueta (rechazo terminal) |
+| HU-16 | Reingreso tras rechazo | ✅ (reingreso real: nueva versión bloque indep. ligada por `reemplaza_a`; plazo art. 54 no se reinicia) |
 | HU-17 | Tablero de estimaciones | ✅ |
 | HU-18 | Portafolio ejecutivo con semáforos | ❌ maqueta |
 | HU-19 | Exportación de 7 reportes | ✅ (R4 observaciones pendiente) |
