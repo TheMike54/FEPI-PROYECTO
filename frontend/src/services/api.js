@@ -148,6 +148,11 @@ export const api = {
   turnarEstimacion: (id, payload) => request(`/estimaciones-ciclo/estimacion/${id}/turnar`, { method: 'POST', body: JSON.stringify(payload || {}) }),
   autorizarEstimacion: (id) => request(`/estimaciones-ciclo/estimacion/${id}/autorizar`, { method: 'POST' }),
   rechazarEstimacion: (id, payload) => request(`/estimaciones-ciclo/estimacion/${id}/rechazar`, { method: 'POST', body: JSON.stringify(payload) }),
+  // HU-16 (Equipo 3): reingreso de la estimación RECHAZADA (id = la rechazada). Crea la nueva
+  // versión como bloque INDEPENDIENTE ligado vía reemplaza_a (atómico, server-side); NO reinicia
+  // el plazo del art. 54 (se deriva en lectura desde la enviada_en de la rechazada). Solo el
+  // superintendente del contrato (lo valida el backend). payload: { confirmacion: true }.
+  reingresarEstimacion: (id, payload) => request(`/estimaciones-ciclo/estimacion/${id}/reingresar`, { method: 'POST', body: JSON.stringify(payload || {}) }),
   // HU-03 (Fundación): convenios modificatorios (art. 59 LOPSRM). El backend YA EXISTE
   // (tabla inmutable + versionado del programa). Lectura por participación; crear = solo
   // dependencia/residente/created_by (lo valida el backend). El monto/deltas/flags SFP(art.102)
