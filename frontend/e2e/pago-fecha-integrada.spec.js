@@ -66,6 +66,13 @@ async function sembrarEstimacionIntegrada(request) {
   });
   expect(er.status(), 'integrar estimación').toBe(201);
   const est = await er.json();
+
+  // OLEADA PAGO (14-jun, art. 54): el pago exige estado 'autorizada'. Recorremos el ciclo (presentar →
+  // turnar → autorizar). integrada_en y neto NO cambian, así que las pruebas de FECHA siguen siendo válidas.
+  const Cic = (id) => `${API}/estimaciones-ciclo/estimacion/${id}`;
+  expect((await request.post(`${Cic(est.id)}/enviar`, { headers: auth(S.token) })).status(), 'presentar').toBe(200);
+  expect((await request.post(`${Cic(est.id)}/turnar`, { headers: auth(V.token), data: { sin_observaciones: true } })).status(), 'turnar').toBe(200);
+  expect((await request.post(`${Cic(est.id)}/autorizar`, { headers: auth(R.token) })).status(), 'autorizar').toBe(200);
   return { cid, est, F };
 }
 

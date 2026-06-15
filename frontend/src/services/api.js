@@ -29,7 +29,7 @@ export const api = {
   // O3: catálogo PÚBLICO de empresas para el autocomplete del registro (no requiere token).
   listarEmpresas: () => request('/auth/empresas'),
   listarUsuarios: (estado) => request(`/usuarios${estado ? `?estado=${encodeURIComponent(estado)}` : ''}`),
-  // Cuentas aprobadas asignables al equipo del contrato (rol: contratista|supervision).
+  // Cuentas aprobadas asignables al equipo/roster del contrato (rol: contratista|supervision|dependencia|residente).
   listarAsignables: (rol) => request(`/usuarios/asignables?rol=${encodeURIComponent(rol)}`),
   aprobarUsuario: (id, rol) => request(`/usuarios/${id}/aprobar`, { method: 'PATCH', body: JSON.stringify({ rol }) }),
   rechazarUsuario: (id) => request(`/usuarios/${id}/rechazar`, { method: 'PATCH' }),

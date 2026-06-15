@@ -254,8 +254,8 @@ function BloquePlanAmortizacion({ data }) {
   return (
     <div data-testid="plan-amortizacion-expediente">
       <p className="text-xs text-slate-500 mb-3">
-        Anticipo del {Number(data.anticipo_pct) || 0}% — se amortiza con cargo a las estimaciones
-        (art. 138 fr. I RLOPSRM). Plan capturado en el alta (editable, default proporcional).
+        Anticipo del {Number(data.anticipo_pct) || 0}% — se amortiza proporcional con cargo a las estimaciones
+        (art. 143 fr. I RLOPSRM). Plan de aplicación capturado en el alta (art. 138 párr. 3 RLOPSRM; editable, default proporcional).
       </p>
       <div className="overflow-x-auto border border-borde rounded-lg max-w-2xl">
         <table className="w-full text-sm">
@@ -434,11 +434,14 @@ function BloqueEstimaciones({ estimaciones }) {
   if (filas.length === 0) {
     return <p className="text-sm text-slate-400 italic">Este contrato no tiene estimaciones registradas.</p>;
   }
-  const totalNeto = filas.reduce((s, e) => s + num(e.neto), 0);
+  // P3 (revisión 14-jun): el total NO suma las estimaciones RECHAZADAS. Una rechazada se sustituye por su
+  // reingreso (HU-16, ligado por reemplaza_a), que ya aporta su neto → sumar ambas doble-contabilizaría.
+  const totalNeto = filas.filter((e) => e.estado !== 'rechazada').reduce((s, e) => s + num(e.neto), 0);
   return (
     <div data-testid="estimaciones-expediente">
       <p className="text-xs text-slate-500 mb-3">
         Resumen del ciclo de cobro: {filas.length} estimación(es). El detalle (carátula, generadores) vive en sus HU (12–21).
+        Las estimaciones <strong>rechazadas</strong> se muestran por trazabilidad pero <strong>no suman</strong> al total (su reingreso ya cuenta).
       </p>
       <div className="overflow-x-auto border border-slate-200 rounded-md">
         <table className="w-full text-sm">

@@ -227,8 +227,8 @@ function TabDatosGenerales({ datos, set, err, equipo, montoDerivado }) {
         <Field label="Fecha de término (calculada)" hint="Se deriva del inicio + plazo (LOPSRM 31-V). No editable.">
           <input className="sg-input bg-slate-100 text-slate-700" value={terminoDerivado ? fmtFechaES(terminoDerivado) : '—'} readOnly data-testid="termino-derivado" />
         </Field>
-        {/* Etapa C: % de pena por atraso (penas convencionales, art. 138/139 RLOPSRM). OPCIONAL. */}
-        <Field label="% de pena por atraso (opcional)" hint="Penas convencionales por atraso (art. 138/139 RLOPSRM). Fracción 0–1 (ej. 0.05 = 5%). Vacío = sin pena.">
+        {/* Etapa C: % de pena por atraso (penas convencionales, art. 46 Bis LOPSRM / 86-90 RLOPSRM). OPCIONAL. */}
+        <Field label="% de pena por atraso (opcional)" hint="Penas convencionales por atraso (art. 46 Bis LOPSRM / 86-90 RLOPSRM). Fracción 0–1 (ej. 0.05 = 5%). Vacío = sin pena.">
           <input type="number" min="0" max="1" step="0.0001" className={inputCls(e.penaConvencionalPct)} value={datos.penaConvencionalPct} onChange={set('penaConvencionalPct')} data-testid="dg-pena" placeholder="0.05" />
         </Field>
       </div>
@@ -682,7 +682,7 @@ function TabGarantias({ rows, onCell, onPatch, onAdd, onRemove, anticipoPct, set
 // definió en la revisión del 8-9 jun: "es en qué mes voy a devolver el dinero… muy parecido al
 // programa de obra: por estimación, qué cantidad va a amortizar. No hay límites"). Matriz por
 // periodo (patrón del programa): default PROPORCIONAL precargado, editable libre; el gate duro
-// (Σ = monto del anticipo al CENTAVO, art. 138 fr. I RLOPSRM) vive en validarPaso(5) y el
+// (Σ = monto del anticipo al CENTAVO, art. 138 párr. 3 RLOPSRM) vive en validarPaso(5) y el
 // backend lo revalida. La carátula (G2) sigue amortizando proporcional:
 // [Fase B pendiente de validar con el profe].
 function TabPlanAmortizacion({ periodos, plan, onMonto, montoAnticipo, anticipoPct, sumaPlan, soloLectura, onRestablecer }) {
@@ -694,7 +694,7 @@ function TabPlanAmortizacion({ periodos, plan, onMonto, montoAnticipo, anticipoP
       <p className="text-sm text-slate-600 mb-4 max-w-3xl">
         Define en qué periodos se devuelve el anticipo de <strong>{formatoMXN.format(montoAnticipo)}</strong>{' '}
         ({anticipoPct}% del monto del contrato). Viene precargado <strong>proporcional</strong> entre los
-        periodos y es editable libremente; la suma debe ser <strong>exacta al centavo</strong> (art. 138 RLOPSRM).
+        periodos y es editable libremente; la suma debe ser <strong>exacta al centavo</strong> (art. 138 párr. 3 RLOPSRM).
       </p>
       <Tabla className="mb-4 max-w-2xl" testid="plan-amortizacion-tabla">
         <thead>
@@ -747,7 +747,7 @@ function TabPlanAmortizacion({ periodos, plan, onMonto, montoAnticipo, anticipoP
       </Boton>
       <div className="mt-4 bg-guinda-soft border-l-4 border-guinda px-4 py-3 text-sm text-tinta max-w-3xl">
         <strong>Fase A:</strong> el plan se captura aquí y se consulta en el expediente. La carátula de la
-        estimación sigue amortizando <strong>proporcional</strong> (art. 138 fr. I RLOPSRM).{' '}
+        estimación sigue amortizando <strong>proporcional</strong> (art. 143 fr. I RLOPSRM).{' '}
         <span className="text-slate-500">[Fase B pendiente de validar con el profe: que la carátula obedezca este plan.]</span>
       </div>
     </div>
@@ -1214,7 +1214,7 @@ function TabRegistrados({ contratos, loading, errorMsg, sinSesion, onRecargar, s
 // superintendenteId y dependenciaId, validados aparte en validarPaso(0)).
 const REQ_GENERALES = ['folio', 'tipo', 'objeto', 'plazoDias', 'fechaInicio'];
 // 4.1 + alta-v3 (PDF firmado OBLIGATORIO): pasos del WIZARD de creación (captura). O2 (10-jun)
-// inserta el paso 5 "Plan de amortización" (criterio de HU-01, art. 138 fr. I RLOPSRM): solo
+// inserta el paso 5 "Plan de amortización" (criterio de HU-01, art. 138 párr. 3 RLOPSRM): solo
 // existe con anticipo > 0 (sin anticipo se OMITE: la pestaña se oculta y la navegación lo salta,
 // el gating se EXTIENDE sin relajarse). El PDF firmado pasa a ser el paso 6 (último: ahí vive
 // "Guardar contrato", gateado por validarPaso(6)). "Registrados" (7) sigue como pestaña auxiliar.
@@ -1320,7 +1320,7 @@ export default function AltaContrato() {
   }));
   const montoDerivado = round2(conceptos.reduce((s, c) => s + (Number(importeDe(c.cantidad, c.pu)) || 0), 0));
 
-  // --- O2: PLAN DE AMORTIZACIÓN del anticipo (paso 5, art. 138 fr. I RLOPSRM) ---
+  // --- O2: PLAN DE AMORTIZACIÓN del anticipo (paso 5, art. 138 párr. 3 RLOPSRM) ---
   // montoAnticipo = ROUND(monto derivado × %anticipo, 2). El plan vive como { numero: 'monto' }
   // y se PRECARGA PROPORCIONAL (editable libre por periodo, "no hay límites" — profe) cada vez
   // que cambian el anticipo, el monto del contrato o los periodos: el plan DERIVA de esos tres
@@ -1552,9 +1552,10 @@ export default function AltaContrato() {
       return { ok: true };
     }
     if (idx === PASO_PLAN_AMORT) {
-      // O2 (10-jun): PLAN DE AMORTIZACIÓN del anticipo (criterio de HU-01; art. 138 fr. I
-      // RLOPSRM — la ley dice "proporcionalmente", el profe pidió plan EDITABLE; la carátula
-      // G2 sigue proporcional: [Fase B pendiente de validar con el profe]). Sin anticipo el
+      // O2 (10-jun): PLAN DE APLICACIÓN del anticipo (criterio de HU-01; art. 138 párr. 3
+      // RLOPSRM — la "forma en que se aplicará el anticipo"; el profe pidió plan EDITABLE). La
+      // amortización de la carátula G2 es proporcional (art. 143 fr. I RLOPSRM): [Fase B pendiente
+      // de validar con el profe si la carátula obedece este plan]. Sin anticipo el
       // paso SE OMITE (auto-válido; la pestaña ni se muestra). Con anticipo: cada periodo con
       // monto válido ≥ 0 y Σ EXACTA al centavo = monto del anticipo (el backend revalida).
       if (planOmitido) return { ok: true };
@@ -1570,7 +1571,7 @@ export default function AltaContrato() {
       if (sumaPlan !== montoAnticipo) {
         const dif = round2(montoAnticipo - sumaPlan);
         const detalle = dif > 0 ? `faltan ${formatoMXN.format(dif)}` : `sobran ${formatoMXN.format(-dif)}`;
-        return { ok: false, msg: `El plan de amortización debe sumar exactamente el anticipo (${formatoMXN.format(montoAnticipo)}): lleva ${formatoMXN.format(sumaPlan)}, ${detalle} (art. 138 RLOPSRM).`, errores: { ...ERR0, planAmortError: true } };
+        return { ok: false, msg: `El plan de amortización debe sumar exactamente el anticipo (${formatoMXN.format(montoAnticipo)}): lleva ${formatoMXN.format(sumaPlan)}, ${detalle} (art. 138 párr. 3 RLOPSRM).`, errores: { ...ERR0, planAmortError: true } };
       }
       return { ok: true };
     }

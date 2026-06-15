@@ -334,7 +334,7 @@ function TabGeneradores({ filas, onCantidad, tienePlan }) {
 function TabCaratula({ caratula, anticipoPct, deductivas, onDeductivas, acumulados, numeroEstimacion, periodoNumero, periodoInicio, periodoFin }) {
   const renglones = [
     { label: 'Importe bruto del periodo', importe: caratula.subtotal, formula: 'Σ ROUND(volumen ejecutado × PU, 2) de los generadores con avance' },
-    { label: `(−) Amortización de anticipo (${anticipoPct}%)`, importe: -caratula.amortizacion, formula: `subtotal × ${anticipoPct}/100 — art. 138 fr. I RLOPSRM`, art: 'art. 138 RLOPSRM' },
+    { label: `(−) Amortización de anticipo (${anticipoPct}%)`, importe: -caratula.amortizacion, formula: `subtotal × ${anticipoPct}/100 — art. 143 fr. I RLOPSRM`, art: 'art. 143 RLOPSRM' },
     { label: '(−) Retención 5 al millar (0.5%)', importe: -caratula.retencion, formula: 'subtotal × 0.005 — art. 191 LFD', art: 'art. 191 LFD' }
   ];
   return (
@@ -385,8 +385,8 @@ function TabCaratula({ caratula, anticipoPct, deductivas, onDeductivas, acumulad
                 />
               </td>
             </tr>
-            {/* Etapa C (falta el % del profe, art. 138/139 RLOPSRM [validar]): renglón PREVISTO en $0. */}
-            <tr className={`border-t border-slate-200 ${caratula.retencionAtraso > 0 ? 'text-red-700' : 'text-slate-400'}`} title="Penas convencionales por atraso (art. 138/139 RLOPSRM). Aplica si hay % de pena pactado en el contrato y la obra va atrasada vs su programa al periodo.">
+            {/* Etapa C (falta el % del profe, art. 46 Bis LOPSRM / 86-90 RLOPSRM [validar]): renglón PREVISTO en $0. */}
+            <tr className={`border-t border-slate-200 ${caratula.retencionAtraso > 0 ? 'text-red-700' : 'text-slate-400'}`} title="Penas convencionales por atraso (art. 46 Bis LOPSRM / 86-90 RLOPSRM). Aplica si hay % de pena pactado en el contrato y la obra va atrasada vs su programa al periodo.">
               <td className="px-4 py-3">(−) Retención por atraso {caratula.atraso && <span className="text-[10px] uppercase tracking-wide bg-red-100 text-red-700 border border-red-200 rounded px-1.5 py-0.5 ml-1" data-testid="badge-atraso">atraso</span>}</td>
               <td className="px-4 py-3 text-right font-mono" data-testid="caratula-retencion-atraso">{moneda(caratula.retencionAtraso)}</td>
             </tr>
@@ -423,7 +423,7 @@ function TabCaratula({ caratula, anticipoPct, deductivas, onDeductivas, acumulad
         </div>
       )}
       <div className="bg-guinda-soft border-l-4 border-guinda px-4 py-3 text-sm text-tinta rounded-r-md max-w-2xl">
-        Amortización del anticipo conforme al <strong>art. 138 fr. I RLOPSRM</strong> y retención del{' '}
+        Amortización del anticipo conforme al <strong>art. 143 fr. I RLOPSRM</strong> y retención del{' '}
         <strong>5 al millar (art. 191 LFD)</strong>. La estimación se calcula <strong>sin IVA</strong>.
       </div>
     </div>
@@ -632,7 +632,7 @@ export default function IntegracionEstimacion() {
   );
 
   // Carátula VIVA con el MISMO redondeo del backend (r2). Renglón "retención por atraso" PREVISTO
-  // pero en $0 (Etapa C: falta el % del profe — art. 138/139 RLOPSRM [validar]); no se calcula aquí.
+  // pero en $0 (Etapa C: falta el % del profe — art. 46 Bis LOPSRM / 86-90 RLOPSRM [validar]); no se calcula aquí.
   // Etapa C: datos para la retención por atraso (del prep, solo lectura): % de pena pactado y los
   // valores para medir el atraso GLOBAL (ejecutado vs programado al periodo).
   const penaPct = prep?.contrato?.pena_convencional_pct != null ? Number(prep.contrato.pena_convencional_pct) : null;

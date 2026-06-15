@@ -125,6 +125,13 @@ async function sembrarContratoCompleto(request) {
   expect(est.status(), 'integrar estimación').toBe(201);
   const estimacionId = (await est.json()).id;
 
+  // 4b) OLEADA PAGO (14-jun, art. 54): el pago exige estado 'autorizada'. Recorre el ciclo: el
+  //     superintendente PRESENTA, la supervisión TURNA, la residencia AUTORIZA (HU-13/15).
+  const Cic = (id) => `${API}/estimaciones-ciclo/estimacion/${id}`;
+  expect((await request.post(`${Cic(estimacionId)}/enviar`, { headers: { Authorization: `Bearer ${S.token}` } })).status(), 'presentar').toBe(200);
+  expect((await request.post(`${Cic(estimacionId)}/turnar`, { headers: { Authorization: `Bearer ${V.token}` }, data: { sin_observaciones: true } })).status(), 'turnar').toBe(200);
+  expect((await request.post(`${Cic(estimacionId)}/autorizar`, { headers: hR })).status(), 'autorizar').toBe(200);
+
   // 5) Registrar el pago (finanzas). Importe = neto (server-side). fecha_pago = hoy (≥ día de integración).
   const hoy = new Date().toISOString().slice(0, 10);
   const pago = await request.post(`${API}/pagos`, {

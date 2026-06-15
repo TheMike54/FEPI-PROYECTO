@@ -127,11 +127,14 @@ test.describe('Flujo reconciliado de la estimación (O7↔HU-15, art. 54)', () =
     expect(rj.observacion.tipo, 'registra la observación del rechazo').toBe('rechazo');
   });
 
-  test('Opción A (no bloqueante esta fase): pagar una INTEGRADA (sin presentar/autorizar) AÚN se permite (201)', async ({ request }) => {
-    // El candado de pago queda PERMISIVO (['integrada','enviada','autorizada']) como se decidió en O7. Este
-    // test BLINDA esa decisión: si se endurece a solo 'autorizada', fallará y forzará una decisión consciente.
+  test('OLEADA PAGO (art. 54): pagar una INTEGRADA (sin presentar/autorizar) se RECHAZA (409)', async ({ request }) => {
+    // Candado ESTRICTO (14-jun, confirmado por la ley): el art. 54 LOPSRM hace de la AUTORIZACIÓN de la
+    // residencia el disparador del pago. Pagar una 'integrada'/'enviada' (no autorizada) responde 409.
+    // El camino feliz —pagar la AUTORIZADA→201— ya lo cubre el primer test de este describe.
     const { cid, est, F } = await crearEstimacionIntegrada(request);
-    expect((await pagar(request, F.token, cid, est.id)).status(), "Opción A: pagar la 'Integrada' sigue permitido").toBe(201);
+    const r = await pagar(request, F.token, cid, est.id);
+    expect(r.status(), "pagar la 'Integrada' (no autorizada) → 409").toBe(409);
+    expect((await r.json()).error, 'el mensaje cita la autorización (art. 54)').toMatch(/autorizada|art\. 54/i);
   });
 
   test('UI: el contratista ve "Integrada", presenta, y la fila pasa a "Presentada"', async ({ page, request }) => {

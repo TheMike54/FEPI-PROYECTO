@@ -90,14 +90,16 @@ test.describe('Roster — Fix B-1: selección (sin input numérico de ID)', () =
     await expect(page.getByTestId('roster-form-sustituir').locator('input[type="number"]')).toHaveCount(0);
   });
 
-  test('lista vacía → aviso claro, SIN input para teclear ID', async ({ page, request }) => {
+  test('P1 (gate cruzado corregido): el slot residente SÍ lista candidatos; sin input para teclear ID', async ({ page, request }) => {
     await abrirRoster(page, request);
-    // Como residente, listar cuentas de rol 'residente' exige rol dependencia → 403 → lista vacía.
+    // P1 (revisión 14-jun): ANTES, como residente, listar cuentas de rol 'residente' exigía rol dependencia
+    // (gate cruzado en /usuarios/asignables) → 403 silencioso → lista vacía. CORREGIDO: /asignables admite
+    // 'residente' y su gate permite residente Y dependencia, así que el slot residente AHORA puebla el selector.
     await page.getByTestId('sust-rol').selectOption('residente');
-    await expect(page.getByTestId('sust-sin-elegibles')).toBeVisible();
-    await expect(page.getByTestId('sust-sin-elegibles')).toContainText('No hay cuentas disponibles');
-    await expect(page.getByTestId('sust-nuevo-id')).toHaveCount(0);
-    await expect(page.getByTestId('sust-nuevo')).toHaveCount(0);
+    await expect(page.getByTestId('sust-nuevo')).toBeVisible();
+    await expect(page.getByTestId('sust-sin-elegibles')).toHaveCount(0);
+    await expect(page.getByTestId('sust-elegibles-error')).toHaveCount(0); // ya no hay 403 silencioso
+    await expect(page.getByTestId('sust-nuevo-id')).toHaveCount(0); // sin captura manual de ID (B-1)
   });
 
   test('el backend sigue rechazando un ID inexistente (400)', async ({ request }) => {

@@ -79,7 +79,7 @@ async function crearContrato(req, res) {
   if (anticipoPct !== null && (anticipoPct < 0 || anticipoPct > 100)) {
     return res.status(400).json({ error: 'anticipoPct debe estar entre 0 y 100' });
   }
-  // Etapa C: % de pena por atraso (penas convencionales, art. 138/139 RLOPSRM), OPCIONAL: fracción 0–1
+  // Etapa C: % de pena por atraso (penas convencionales, art. 46 Bis LOPSRM / 86-90 RLOPSRM), OPCIONAL: fracción 0–1
   // (ej. 0.05 = 5%). Vacío/ausente → NULL (sin pena pactada → retención por atraso $0). No afecta el
   // gating del alta ni la regla del 100% (es un dato más de la cabecera). [validar tasa con el profe].
   const penaConvencionalPct = numOrNull(body.penaConvencionalPct);
@@ -226,7 +226,7 @@ async function crearContrato(req, res) {
     catch (e) { return res.status(400).json({ error: 'No se pudieron generar los periodos del ciclo: ' + e.message }); }
   }
 
-  // --- O2: PLAN DE AMORTIZACIÓN del anticipo (art. 138 fr. I RLOPSRM; plan EDITABLE pedido
+  // --- O2: PLAN DE AMORTIZACIÓN (forma de aplicación) del anticipo (art. 138 párr. 3 RLOPSRM; plan EDITABLE pedido
   // por el profe, revisión 09-jun). Solo aplica con anticipo > 0 Y periodos generados (el plan
   // es por periodo del ciclo). Si el cliente NO manda plan (p. ej. contratos creados por API),
   // se DERIVA el default PROPORCIONAL (mismo default que precarga el alta) — retrocompatible.
@@ -253,7 +253,7 @@ async function crearContrato(req, res) {
         planFilas.push({ periodoNumero: pnum, monto: m });
       }
       if (suma !== montoAnticipoPlan) {
-        return res.status(400).json({ error: `El plan de amortización debe sumar exactamente el anticipo ($${montoAnticipoPlan.toFixed(2)}); suma $${suma.toFixed(2)} (art. 138 RLOPSRM)` });
+        return res.status(400).json({ error: `El plan de amortización debe sumar exactamente el anticipo ($${montoAnticipoPlan.toFixed(2)}); suma $${suma.toFixed(2)} (art. 138 párr. 3 RLOPSRM)` });
       }
     } else {
       // Default PROPORCIONAL al centavo: n−1 cuotas iguales + ajuste de redondeo en la última.

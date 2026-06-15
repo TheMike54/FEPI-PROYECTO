@@ -1,5 +1,5 @@
 // @ts-check
-// Etapa C — Retención por ATRASO (penas convencionales, art. 138/139 RLOPSRM) + avance físico/financiero.
+// Etapa C — Retención por ATRASO (penas convencionales, art. 46 Bis LOPSRM / 86-90 RLOPSRM) + avance físico/financiero.
 //   · Carátula viva: con pena pactada y atraso (ejecutado < programado) → retención = pena × bruto.
 //   · Sin pena pactada (NULL) → retención por atraso $0 (aunque haya atraso).
 //   · Server (integrar): guarda retencion_atraso + avance_fisico_pct/avance_financiero_pct (snapshot).

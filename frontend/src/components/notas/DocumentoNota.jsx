@@ -13,7 +13,7 @@ const ROL_LABEL = {
 };
 const fechaHora = (s) => (s ? new Date(s).toLocaleString('es-MX', { dateStyle: 'long', timeStyle: 'short' }) : '—');
 
-export default function DocumentoNota({ nota, contrato, onCerrar }) {
+export default function DocumentoNota({ nota, contrato, aperturaFirmantes, onCerrar }) {
   // Alcance de impresión: al montar marca el <body> para que el @media print (styles/index.css) imprima
   // SOLO este documento (truco de visibility). Se limpia al desmontar → no afecta otras impresiones (p.ej.
   // el expediente de O9).
@@ -24,14 +24,23 @@ export default function DocumentoNota({ nota, contrato, onCerrar }) {
 
   if (!nota) return null;
 
-  // Firmantes = emisor (firmó al emitir, art. 125 un emisor por nota) + contraparte que aceptó/firmó
-  // (art. 123 fr. III). Las firmas vienen del backend (bitacora_nota_firmas), append-only.
-  const firmantes = [
-    { nombre: nota.emisor_nombre, rol: ROL_LABEL[nota.rol_emisor] || 'Emisor', firmado_en: nota.firmado_en, esEmisor: true },
-    ...(nota.firmas || []).map((f) => ({
-      nombre: f.nombre, rol: ROL_LABEL[f.rol_en_firma] || f.rol_en_firma || '—', firmado_en: f.firmado_en, esEmisor: false
-    }))
-  ];
+  // Firmantes. Para una nota NORMAL: emisor (firmó al emitir, art. 125 un emisor por nota) + contraparte
+  // que aceptó/firmó (bitacora_nota_firmas, append-only). Para la APERTURA (nota #1) la firma es CONJUNTA
+  // y vive en bitacora_firmantes (NO en firmado_en/firmas de la nota, que nacen NULL/vacío por diseño):
+  // se toma de aperturaFirmantes para que el documento muestre las firmas reales por rol y NO salga todo
+  // "Pendiente" (P2 de la revisión 14-jun; art. 123 fr. III RLOPSRM).
+  const esApertura = nota.tipo === 'apertura';
+  const firmantes = (esApertura && Array.isArray(aperturaFirmantes) && aperturaFirmantes.length)
+    ? aperturaFirmantes.map((f) => ({
+        nombre: f.nombre, rol: ROL_LABEL[f.rol_en_firma] || f.rol_en_firma || '—',
+        firmado_en: f.firmado ? f.firmado_en : null, esEmisor: false
+      }))
+    : [
+        { nombre: nota.emisor_nombre, rol: ROL_LABEL[nota.rol_emisor] || 'Emisor', firmado_en: nota.firmado_en, esEmisor: true },
+        ...(nota.firmas || []).map((f) => ({
+          nombre: f.nombre, rol: ROL_LABEL[f.rol_en_firma] || f.rol_en_firma || '—', firmado_en: f.firmado_en, esEmisor: false
+        }))
+      ];
 
   return (
     <div className="fixed inset-0 z-[60] flex items-start justify-center bg-black bg-opacity-40 p-4 overflow-auto" data-testid="documento-nota">

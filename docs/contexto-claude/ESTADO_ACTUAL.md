@@ -9,7 +9,7 @@
 > contexto previo**. Todo lo de aquí está **verificado contra el código/git real** (no asumido). Tono
 > honesto: lo que funciona y lo que es maqueta están marcados como tales.
 >
-> **Cabecera de versión:** fecha **2026-06-13**, `main = d6abfdd` (al generarse). **Actualízala** cuando
+> **Cabecera de versión:** fecha **2026-06-15**, `main = d6abfdd` + **correcciones post-pruebas LOCALES (sin commit): oleadas A/CITAS/B/PAGO/C** (`docs/contexto-claude/PLAN_CORRECCIONES_POST_PRUEBAS_14jun.md`). **Actualízala** cuando
 > edites este doc tras un cambio de sistema.
 >
 > **Docs hermanos:** historia completa → `docs/HISTORIAL_PROYECTO.md` · historias de usuario vigentes
@@ -232,23 +232,23 @@ Estados internos (columna `estimaciones.estado`, CHECK `schema.sql:544`) vs etiq
 | Estado interno | Etiqueta UI | Transición — endpoint — candado de identidad (JWT vs columna del contrato) |
 |---|---|---|
 | `integrada` | **Integrada** | alta `POST /api/estimaciones` (`estimaciones.controller::integrarEstimacion`); `superintendente_id===user.id` (contratista) |
-| `enviada` | **Presentada** | `POST /estimaciones-ciclo/estimacion/:id/enviar` (`enviarEstimacion:122`); `superintendente_id===user.id`; arranca art. 54 |
+| `enviada` | **Presentada** | `POST /estimaciones-ciclo/estimacion/:id/enviar` (`enviarEstimacion`); `superintendente_id===user.id`; arranca art. 54; **asienta nota `sup_estimaciones`** (art. 125 fr. II-b, OLEADA B) si hay bitácora |
 | (turnado) | — | supervisión registra observaciones y **turna** (`turnarEstimacion:350`); `supervision_id===user.id` (el turnado se modela como `estimacion_observaciones.turnado_a='residencia'`, no como estado) |
-| `autorizada` | **Autorizada** | `.../autorizar` (`autorizarEstimacion:419`); `residente_id===user.id` + turnado previo |
+| `autorizada` | **Autorizada** | `.../autorizar` (`autorizarEstimacion`); `residente_id===user.id` + turnado previo; **asienta nota `res_estimaciones`** (art. 125 fr. I-b, OLEADA B) si hay bitácora |
 | `rechazada` | **Rechazada** | `.../rechazar` (`rechazarEstimacion:459`); `residente_id===user.id`; inserta obs `tipo='rechazo'` → `turnado_a='contratista'` |
 | (reingreso) | — | **HU-16** `.../reingresar` (`reingresarEstimacion`); `superintendente_id===user.id`; crea NUEVA estimación `'integrada'` (bloque indep., `numero` MAX+1, copia generadores+carátula) ligada a la rechazada por `reemplaza_a` (atómico). NO reinicia el plazo art. 54 (derivado en lectura desde la `enviada_en` de la rechazada). 1 rechazada → 1 reingreso (`UNIQUE reemplaza_a`) |
-| `pagada` | **Pagada** | `POST /api/pagos` (`pagos.controller::registrarPago`); `requireRole('finanzas')` (único gate por rol global) |
+| `pagada` | **Pagada** | `POST /api/pagos` (`pagos.controller::registrarPago`); `requireRole('finanzas')` + **SOLO estado `autorizada`** (art. 54, OLEADA PAGO) |
 
 - **Vocabulario cruzado a propósito:** estado interno `enviada` = etiqueta "Presentada", endpoint `/enviar`
   (por compatibilidad). No confundir.
-- **Gate de pago PERMISIVO** (`pagos.controller:71`): paga estados `['integrada','enviada','autorizada']` →
-  se puede pagar algo que **nunca pasó por autorización** de HU-15. Marcado `[validar profe] endurecer a
-  SOLO 'autorizada'`. Salvaguardas: `FOR UPDATE`, no-doble-pago, importe = `est.neto` server-side,
-  `fecha_pago ≥ integrada_en`.
+- **Gate de pago ESTRICTO** (`pagos.controller`, OLEADA PAGO 14-jun): paga **SOLO** el estado `autorizada`
+  (el art. 54 LOPSRM hace de la autorización de la residencia el disparador del pago); pagar una
+  `integrada`/`enviada` → **409**. Salvaguardas: `FOR UPDATE`, no-doble-pago, importe = `est.neto`
+  server-side, `fecha_pago ≥ integrada_en`.
 - **Fórmula del neto** (server-side, SQL, `estimaciones.controller:312`):
   `neto = subtotal − amortización − retención(5 al millar, art.191 LFD) − deductivas − retencion_atraso`.
-  `amortización = ROUND(subtotal×anticipo%/100,2)` (art. 138 fr. I RLOPSRM). `retencion_atraso` (art.
-  138/139 RLOPSRM, Etapa C) solo si hay pena pactada + programa + atraso. **Sin IVA**. Candados art. 118
+  `amortización = ROUND(subtotal×anticipo%/100,2)` (art. 143 fr. I RLOPSRM). `retencion_atraso` (art. 46
+  Bis LOPSRM / arts. 86-90 RLOPSRM, Etapa C) solo si hay pena pactada + programa + atraso. **Sin IVA**. Candados art. 118
   (acumulado ≤ contratado y ≤ planeado A2) y art. 54 (periodicidad).
 - **Historial (HU-14, `historialEstimaciones:22`)** deriva la línea de tiempo de la propia fila (Opción A,
   no hay tabla de transiciones). Hoy solo refleja `integrada` + `enviada`; **autorizada/rechazada/pagada NO
@@ -259,9 +259,12 @@ Núcleo: **`insertarNotaAtomica(client, ...)` (`:404`)** — recibe el `client` 
 vive en el MISMO BEGIN/COMMIT que el evento); toma advisory lock por bitácora y asigna folio
 `MAX(numero)+1`.
 - **Atómico (en vivo):** si el contrato tiene bitácora abierta, el evento asienta su nota en la misma tx y
-  liga `nota_id`. Cuatro emisores: sustitución (`roster:170`, emisor=JWT), avance (`trabajos:275`,
-  emisor=JWT), convenio (`convenios:237`, emisor=`residente_id` del contrato, art. 53), atraso
-  (`alertas:208`, emisor=`residente_id`; **única que EXIGE bitácora**, 409 si no hay).
+  (cuando aplica) liga `nota_id`. Emisores: sustitución (`roster`, emisor=JWT), avance (`trabajos`,
+  emisor=JWT), convenio (`convenios`, emisor=`residente_id`, art. 53), atraso (`alertas`, emisor=`residente_id`;
+  **única que EXIGE bitácora**, 409 si no hay), y **estimación (OLEADA B, `estimaciones-ciclo`): presentar →
+  `sup_estimaciones` (emisor=superintendente, art. 125 fr. II-b) y autorizar → `res_estimaciones`
+  (emisor=residente, fr. I-b)** — se ligan a la estimación (`estimacion_notas`) y, si NO hay bitácora, NO se
+  asientan (no se difieren ni bloquean la transición).
 - **Diferido:** sin bitácora, el evento NO se bloquea y deja `nota_id=NULL`; al **`abrirBitacora`** (`:47`)
   se asientan solas (3 barridos `WHERE nota_id IS NULL`: sustituciones, avances, convenios), numeradas tras
   la nota #1 'apertura'. El flag `diferida:true` solo añade al texto "ocurrida el …; asentada al abrir".
@@ -302,7 +305,7 @@ vive en el MISMO BEGIN/COMMIT que el evento); toma advisory lock por bitácora y
 |---|---|
 | O0 | Backup/restore de la BD de Render (expira 25-jun) |
 | O1 | Paquete de 7 fixes de la revisión del profe |
-| O2 | Plan de amortización del anticipo (art. 138) |
+| O2 | Plan de amortización (forma de aplicación) del anticipo (art. 138 párr. 3) |
 | O3 | Catálogo de empresas (autocomplete en registro) |
 | O4 | HU-06 v2: avance por periodo + nota automática + bloqueo vs programa |
 | O5 | HU-07 v2: panel automático de déficit por concepto (en unidades) |
@@ -339,10 +342,10 @@ vive en el MISMO BEGIN/COMMIT que el evento); toma advisory lock por bitácora y
   configurables/umbral/canal (la ficha vieja quedó obsoleta; ya actualizada).
 
 ### 7.3 `[validar profe]` abiertos (decisiones legales, NO las decide Code)
-- **Gate de pago permisivo** → endurecer a SOLO `'autorizada'`.
-- Amortización **Fase B** (¿la carátula obedece el plan editable o sigue proporcional?).
-- Ancla de periodo de los reportes (HU-19); fundamento de la pena por atraso (138/139 RLOPSRM); 2 al millar
-  CMIC (sin fundamento federal); emisor de notas de hecho (JWT vs residente).
+- ~~Gate de pago permisivo~~ → **RESUELTO (OLEADA PAGO): endurecido a SOLO `'autorizada'`** (art. 54).
+- Amortización **Fase B** (¿la carátula obedece el plan editable o sigue proporcional? — sigue proporcional, art. 143 fr. I).
+- Ancla de periodo de los reportes (HU-19); 2 al millar CMIC (sin fundamento federal, solo si el contrato lo
+  pacta); emisor de la nota DIFERIDA de hecho (JWT vs actor original) [C3, opcional].
 
 ### 7.4 PRs/ramas que NO existen (trabajo no empezado)
 `feat/e3-hu-16`, `feat/e3-hu-18`, `feat/e3-hu-20` y una rama e2 para HU-11/minutas: **ninguna existe** en
@@ -399,7 +402,7 @@ origin. Esas HU son maquetas que viven en `main` sin backend.
 | HU-18 | Portafolio ejecutivo con semáforos | ❌ maqueta |
 | HU-19 | Exportación de 7 reportes | ✅ (R4 observaciones pendiente) |
 | HU-20 | Tránsito a pago / suficiencia presupuestal | ❌ maqueta (DDL muerta) |
-| HU-21 | Registro del pago | ✅ (gate permisivo) |
+| HU-21 | Registro del pago | ✅ (gate ESTRICTO: solo `autorizada`, art. 54) |
 | Registro | Auto-registro con aprobación de dependencia | ✅ |
 | Por Firmar | Firma de aperturas pendientes | ✅ |
 | HU-22 | Sustitución de personas / roster (art. 125) | ✅ |
@@ -408,9 +411,9 @@ origin. Esas HU son maquetas que viven en `main` sin backend.
 ### Términos legales y de obra
 - **Estimación:** documento periódico que valoriza el avance ejecutado para cobro (art. 54 LOPSRM).
 - **Carátula:** resumen financiero de la estimación (subtotal, amortización, retenciones, deductivas, neto).
-- **Amortización del anticipo:** descuento proporcional del anticipo en cada estimación (art. 138 fr. I RLOPSRM).
+- **Amortización del anticipo:** descuento proporcional del anticipo en cada estimación (art. 143 fr. I RLOPSRM; el plan de aplicación del alta es art. 138 párr. 3).
 - **5 al millar:** retención fiscal 0.5% sobre el subtotal (art. 191 LFD) — para vigilancia SFP. NO es pena.
-- **Retención por atraso / pena convencional:** descuento por incumplimiento de programa (art. 138/139 RLOPSRM).
+- **Retención por atraso / pena convencional:** descuento por incumplimiento de programa (art. 46 Bis LOPSRM + arts. 86-90 RLOPSRM; 88 retención vía nota, 90 tope 20%).
 - **Deductivas:** retenciones económicas por trabajos mal ejecutados/penas (art. 46/46 Bis LOPSRM).
 - **Números generadores:** soporte de medición que justifica las cantidades de la estimación.
 - **Convenio modificatorio:** acuerdo que cambia monto/plazo/conceptos (art. 59 / 59 Bis LOPSRM).

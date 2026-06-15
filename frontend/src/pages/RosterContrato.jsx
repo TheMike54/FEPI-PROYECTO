@@ -39,6 +39,7 @@ export default function RosterContrato() {
   // Formulario de sustitución
   const [rolSust, setRolSust] = useState('');
   const [elegibles, setElegibles] = useState([]);
+  const [elegiblesError, setElegiblesError] = useState(null);
   const [nuevoId, setNuevoId] = useState('');
   const [motivo, setMotivo] = useState('');
   const [enviando, setEnviando] = useState(false);
@@ -61,17 +62,21 @@ export default function RosterContrato() {
     setRolSust(''); setNuevoId(''); setMotivo(''); setElegibles([]);
   }, [contratoId, cargarRoster]);
 
-  // Cargar cuentas elegibles para el rol elegido (para superintendente/supervisión usa
-  // /asignables; para residente, la lista de activos filtrada — puede venir vacía si el rol
-  // actual no tiene permiso de listarla, en cuyo caso se captura el ID manualmente).
+  // P1 (revisión 14-jun): TODOS los slots (residente/superintendente/supervisión) leen sus candidatos por
+  // /usuarios/asignables (el endpoint ya admite 'residente' y su gate permite residente Y dependencia, que
+  // son justo quienes operan la sustitución). NO se silencia el error con .catch(()=>[]): antes el selector
+  // quedaba vacío sin avisar (parecía "no hay candidatos") cuando en realidad era un 403 por gate cruzado.
   useEffect(() => {
-    if (!rolSust) { setElegibles([]); return; }
-    setNuevoId('');
-    const cuenta = ROL_CUENTA[rolSust];
-    const load = cuenta === 'residente'
-      ? api.listarUsuarios('activo').then((u) => (Array.isArray(u) ? u.filter((x) => x.rol === 'residente') : [])).catch(() => [])
-      : api.listarAsignables(cuenta).catch(() => []);
-    load.then((list) => setElegibles(Array.isArray(list) ? list : []));
+    if (!rolSust) { setElegibles([]); setElegiblesError(null); return; }
+    setNuevoId(''); setElegiblesError(null);
+    api.listarAsignables(ROL_CUENTA[rolSust])
+      .then((list) => setElegibles(Array.isArray(list) ? list : []))
+      .catch((e) => {
+        setElegibles([]);
+        setElegiblesError(e.status === 403
+          ? 'No tienes permiso para listar las cuentas elegibles de este rol.'
+          : (e.message || 'No se pudieron cargar las cuentas elegibles.'));
+      });
   }, [rolSust]);
 
   const sustituir = async () => {
@@ -197,6 +202,10 @@ export default function RosterContrato() {
                     <option value="">— Elige a la nueva persona —</option>
                     {elegibles.map((u) => <option key={u.id} value={u.id}>{u.nombre} ({u.email})</option>)}
                   </select>
+                ) : elegiblesError ? (
+                  <div data-testid="sust-elegibles-error" className="mb-3 bg-red-50 border-l-4 border-red-400 px-3 py-2 text-sm text-red-800 rounded-r-md">
+                    {elegiblesError}
+                  </div>
                 ) : (
                   <div data-testid="sust-sin-elegibles" className="mb-3 bg-aviso-bg border-l-4 border-aviso px-3 py-2 text-sm text-aviso rounded-r-md">
                     {rolSust

@@ -16,7 +16,7 @@
 //
 // RECONCILIACIÓN O7↔HU-15 (HU-19 ramificó antes de la reconciliación): los reportes muestran el ESTADO
 // con su ETIQUETA canónica (labelEstadoEstimacion: enviada→"Presentada", autorizada→"Autorizada", …),
-// no el valor crudo del esquema. La PENA POR ATRASO (art. 138/139 RLOPSRM) se DERIVA por identidad de la
+// no el valor crudo del esquema. La PENA POR ATRASO (art. 46 Bis LOPSRM / arts. 86–90 RLOPSRM) se DERIVA por identidad de la
 // carátula porque el endpoint del historial aún no expone `retencion_atraso` (ver penaAtrasoDerivada).
 
 import jsPDF from 'jspdf';
@@ -41,12 +41,12 @@ const baseName = (id, slug, periodo) => `reporte_${id}_${slug}_${periodo.toLower
 const rangoPeriodo = (ini, fin) => `${dISO(ini) || '—'} – ${dISO(fin) || '—'}`;
 const r2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
-// Pena por ATRASO (art. 138/139 RLOPSRM) DERIVADA por la identidad de la carátula que arma el server:
+// Pena por ATRASO (art. 46 Bis LOPSRM / arts. 86–90 RLOPSRM) DERIVADA por la identidad de la carátula que arma el server:
 //   neto = subtotal − amortización − retención(5 al millar) − deductivas − retencion_atraso
 //   ⟹ retencion_atraso = subtotal − amortización − retención − deductivas − neto
 // Es EXACTA (todos los términos vienen ROUNDed del backend; NO recalcula la carátula, sólo despeja el
 // renglón que el endpoint del historial aún no expone). Así las columnas de carátula CUADRAN al neto.
-// [validar profe] el fundamento legal de la pena (138/139 RLOPSRM).
+// [validar profe] el fundamento legal de la pena (art. 46 Bis LOPSRM / arts. 86–90 RLOPSRM).
 const penaAtrasoDerivada = (e) =>
   Math.max(0, r2((Number(e.subtotal) || 0) - (Number(e.amortizacion) || 0) - (Number(e.retencion) || 0) - (Number(e.deductivas) || 0) - (Number(e.neto) || 0)));
 
@@ -351,9 +351,9 @@ function modificatoriosExcel(d, contrato, periodo) {
 
 // ---------------------------------------------------------------------------
 // 7) Penalizaciones y deductivas (Excel). Distingue TRES conceptos que NO son lo mismo:
-//    · PENA POR ATRASO (art. 138/139 RLOPSRM): DERIVADA de la carátula (el historial no expone
+//    · PENA POR ATRASO (art. 46 Bis LOPSRM / arts. 86–90 RLOPSRM): DERIVADA de la carátula (el historial no expone
 //      `retencion_atraso`); ver penaAtrasoDerivada. [DECISIÓN LEGAL PENDIENTE — Nivel 1] el
-//      fundamento de la pena (138/139 RLOPSRM) lo confirma el profe, no Code.
+//      fundamento de la pena (art. 46 Bis LOPSRM / arts. 86–90 RLOPSRM) lo confirma el profe, no Code.
 //    · RETENCIÓN 5 AL MILLAR (art. 191 LFD): retención FISCAL, NO es una pena. `e.retencion`.
 //    · DEDUCTIVAS (art. 46/46 Bis): retenciones económicas / penas convencionales registradas.
 //    + Pena convencional % pactada del contrato (preparacionEstimacion).
@@ -364,7 +364,7 @@ function penalizacionesExcel(d, contrato, periodo) {
     Estimacion: `EST-${String(e.numero).padStart(3, '0')}`,
     Periodo: rangoPeriodo(e.periodo_inicio, e.periodo_fin),
     Estado: labelEstadoEstimacion(e.estado),
-    'Retencion por atraso (art.138/139 RLOPSRM)': penaAtrasoDerivada(e),
+    'Retencion por atraso (art. 46 Bis LOPSRM / 86-90 RLOPSRM)': penaAtrasoDerivada(e),
     'Retencion 5 al millar (art.191 LFD)': Number(e.retencion) || 0,
     Deductivas: Number(e.deductivas) || 0,
     'Pena convencional % (contrato)': penaPct == null ? 'No pactada' : penaPct
@@ -384,7 +384,7 @@ export const CATALOGO_REPORTES = [
   { id: 4, slug: 'observaciones', nombre: 'Listado de observaciones', descripcion: 'Sin fuente — falta un GET de observaciones a nivel contrato (HU-15 las expone por estimación).', formatos: ['Excel'], disponible: false },
   { id: 5, slug: 'bitacora', nombre: 'Bitácora completa', descripcion: 'Notas cronológicas con folio, fecha, tipo, emisor y firmas.', formatos: ['PDF'], disponible: true, requiereBitacora: true },
   { id: 6, slug: 'modificatorios', nombre: 'Histórico de modificatorios', descripcion: 'Convenios del contrato (art. 59 / 59 Bis LOPSRM) con deltas de monto y plazo.', formatos: ['Excel'], disponible: true },
-  { id: 7, slug: 'penalizaciones', nombre: 'Penalizaciones y deductivas', descripcion: 'Pena por atraso (derivada, art.138/139 RLOPSRM), 5 al millar fiscal (art.191 LFD), deductivas y pena % pactada.', formatos: ['Excel'], disponible: true }
+  { id: 7, slug: 'penalizaciones', nombre: 'Penalizaciones y deductivas', descripcion: 'Pena por atraso (derivada, art. 46 Bis LOPSRM / 86-90 RLOPSRM), 5 al millar fiscal (art.191 LFD), deductivas y pena % pactada.', formatos: ['Excel'], disponible: true }
 ];
 
 export const PERIODOS_REPORTE = ['Mensual', 'Trimestral', 'Acumulado'];

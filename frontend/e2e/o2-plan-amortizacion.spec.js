@@ -1,5 +1,5 @@
 // @ts-check
-// O2 — PLAN DE AMORTIZACIÓN del anticipo (criterio de HU-01; art. 138 fr. I RLOPSRM).
+// O2 — PLAN DE AMORTIZACIÓN (forma de aplicación) del anticipo (criterio de HU-01; art. 138 párr. 3 RLOPSRM).
 // El profe (revisión 8-9 jun): "es en qué mes voy a devolver el dinero… muy parecido al programa
 // de obra… No hay límites". Fase A: captura en el alta (default proporcional, editable, Σ =
 // anticipo al CENTAVO) + lectura en el expediente. La carátula (G2) sigue proporcional.

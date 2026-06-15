@@ -9,7 +9,7 @@
 //   bitácora restringe al residente_id en abrirBitacora).
 // - cantidad_anterior_acum se acumula de las estimaciones PREVIAS no rechazadas.
 // - art. 118 RLOPSRM (CA-3): por concepto, acumulado + periodo <= lo contratado.
-// - Sin IVA (art. 2 fr. XIX RLOPSRM). Amortización art. 138 fr. I; retención 5 al
+// - Sin IVA (art. 2 fr. XIX RLOPSRM). Amortización art. 143 fr. I; retención 5 al
 //   millar art. 191 LFD.
 const { pool } = require('../db/pool');
 const { esParteOSupervision } = require('../lib/acceso');
@@ -126,7 +126,7 @@ async function integrarEstimacion(req, res) {
       }
       // Sin % de anticipo definido => 0 (no hay amortización que aplicar).
       const anticipoPct = contrato.anticipo_pct == null ? 0 : Number(contrato.anticipo_pct);
-      // Etapa C: % de pena por atraso pactado en el contrato (art. 138/139 RLOPSRM). NULL = sin pena
+      // Etapa C: % de pena por atraso pactado en el contrato (art. 46 Bis LOPSRM / 86-90 RLOPSRM). NULL = sin pena
       // → retención por atraso = 0. monto del contrato para el avance físico/financiero (snapshot).
       const penaPct = contrato.pena_convencional_pct == null ? null : Number(contrato.pena_convencional_pct);
       const montoContrato = Number(contrato.monto) || 0;
@@ -305,7 +305,7 @@ async function integrarEstimacion(req, res) {
       const pPena = prm.push(penaPct);            // % pena por atraso (NULL si no pactada)
       const pEjec = prm.push(ejecPrevValor);      // ejecutado prev en valor (sin esta estimación)
       const pProg = prm.push(programadoValor);    // programado acumulado en valor al periodo
-      // Etapa C: EXTIENDE el neto con la retención por ATRASO (art. 138/139 RLOPSRM). Solo aplica si hay
+      // Etapa C: EXTIENDE el neto con la retención por ATRASO (art. 46 Bis LOPSRM / 86-90 RLOPSRM). Solo aplica si hay
       // pena pactada (pena_pct != NULL), hay programa (programado>0) y el contrato va atrasado
       // (ejecutado = ejec_prev + ESTA estimación < programado). retencion_atraso = ROUND(pena × bruto, 2).
       // El 5 al millar y la amortización NO cambian (G1-G8 intactos): solo se RESTA un renglón más.

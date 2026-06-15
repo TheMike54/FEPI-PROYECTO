@@ -30,6 +30,8 @@ todo lo demás vive en una subcarpeta.
 | `Contexto_Maestro_y_Plan_Correcciones_09jun.md` | Contexto maestro post-revisión del profe (hallazgos P/W, plan O0-O10, lista [validar]). |
 | `Guia_Pruebas_E2E_SIGECOP.md` | Guía de demo/pruebas manuales de las HU integradas (versión actual). |
 | `Plan_General_Trabajo_Restante.md` | Hoja de ruta al deadline del 25-jun (BD de Render). |
+| `PLAN_CORRECCIONES_POST_PRUEBAS_14jun.md` | Plan de correcciones del ciclo 14-jun (BUG / BRECHA-LEY / [VALIDAR] / UX), derivado del análisis de la revisión de Maiki. |
+| `PLAN_PRUEBAS_VALORES.md` | Guion manual E2E con valores pre-cuadrados (dataset OBRA-2026-PRUEBA-01) leídos del código. |
 | `DECISIONES.md` | Bitácora de decisiones de la fase prototipo. ⚠️ Parcialmente desactualizada. |
 | `Borrador_DDL_Tablas_Nuevas_SIGECOP.md` | DDL anticipado de tablas de los equipos (referencia citada por CLAUDE.md). |
 
@@ -46,8 +48,8 @@ todo lo demás vive en una subcarpeta.
 |---|---|
 | `fundacion/` | Pasadas de fundación de Maiki (A2, ALTA v2–v5, BITÁCORA v2, auditorías, ETAPA A/B/C, PLAN2, sustitución, convenios…), cada `*_Maiki.md` con su `*_DIFFS.patch`. |
 | `oleadas/` | Oleadas O0–O9, O-PROFE y reskin UI-1/UI-2 (09–10 jun). |
-| `revisiones-profe/` | Análisis de las revisiones del profe, hoja de reunión, contexto maestro superado (+ material gitignorado). |
-| `integraciones-equipos/` | Integración de los PR de E3: HU-15 y HU-19 (11-jun). |
+| `revisiones-profe/` | Análisis de las revisiones del profe, hojas de reunión y contexto maestro superado (+ material gitignorado). Incluye el ciclo 14-jun: `Hoja_Validacion_Profe_Lunes.md` + `Respuestas_Hoja_Validacion_Profe_Lunes.md` (validación legal punto por punto), `ANALISIS_REVISION_ola.md` y las evidencias `ola.docx` / `SIGECOP — …Obra Pública.pdf`. |
+| `integraciones-equipos/` | Integración de los PR de E3: HU-15 y HU-19 (11-jun) y HU-16 reingreso (14-jun). |
 | `sesiones/` | Reportes de sesiones de orden/mantenimiento (REPORTE_SESION_ORDEN, FIXES_AUDITORIAS). |
 | `planes/` | Planes ya ejecutados (Plan maestro UI estimación, Plan maestro 2, paralelización inicial). |
 | `contexto/` | Versiones superadas de contextos/guías. |
