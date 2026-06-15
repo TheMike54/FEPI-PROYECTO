@@ -57,17 +57,23 @@ export default function AppShell({ children }) {
             </div>
           </Link>
 
-          {/* Buscador global (presentacional en UI-1). */}
-          <div className="flex-1 max-w-xl hidden md:block">
-            <input
-              type="search"
-              placeholder="Buscar contrato, nota, estimación…"
-              aria-label="Buscar"
-              className="w-full h-9 px-3 rounded-md bg-white/10 border border-white/20 text-sm text-white placeholder-white/50 focus:outline-none focus:bg-white/20 focus:border-white/40 transition-colors"
-            />
-          </div>
+          {/* P9 (pulido UX 14-jun): se retiró el buscador global presentacional (no funcional) para no
+              mostrar un control muerto en la demo; se recableará cuando exista la búsqueda global real. */}
 
           <div className="flex items-center gap-2 sm:gap-3 ml-auto flex-shrink-0">
+            {/* P10 (pulido UX 14-jun): acceso directo a la bandeja "Por firmar" (aperturas/notas pendientes
+                de firma), junto a la campana. Solo para los roles que firman (residente/contratista/supervisión). */}
+            {['residente', 'contratista', 'supervision'].includes(rol) && (
+              <Link
+                to="/bitacora/por-firmar"
+                aria-label="Por firmar"
+                title="Bandeja: aperturas y notas por firmar"
+                data-testid="link-por-firmar"
+                className="w-9 h-9 rounded-md hover:bg-white/10 transition-colors text-base leading-none flex items-center justify-center"
+              >
+                ✍️
+              </Link>
+            )}
             {/* Campana de notificaciones. O5: para los roles con acceso a HU-07 enlaza al panel de
                 atraso y muestra el conteo de conceptos con déficit; para el resto sigue presentacional. */}
             {sinAccesoAtraso ? (

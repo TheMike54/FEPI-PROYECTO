@@ -31,13 +31,15 @@ export default function Inicio() {
 
   return (
     <div>
-      <div className="text-center mb-10">
-        <h1 className="font-serif text-5xl font-bold text-sigecop-blue mb-2">SIGECOP</h1>
-        <p className="text-slate-600 max-w-2xl mx-auto">
-          Sistema de Gestión Técnico-Administrativa de Contratos de Obra Pública
-        </p>
+      {/* Pulido UX 14-jun: encabezado de página sobrio (la marca SIGECOP ya vive en la barra superior);
+          se evita el hero gigante duplicado de prototipo. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-8">
+        <div>
+          <h1 className="text-2xl font-bold text-sigecop-blue">Inicio</h1>
+          <p className="text-sm text-slate-600">Gestión técnico-administrativa de contratos de obra pública (LOPSRM / RLOPSRM).</p>
+        </div>
         {rolActivo && (
-          <div className="mt-4 inline-block px-3 py-1 bg-sigecop-blue-light text-sigecop-blue text-xs font-semibold uppercase tracking-wider rounded-full">
+          <div className="inline-block px-3 py-1 bg-sigecop-blue-light text-sigecop-blue text-xs font-semibold uppercase tracking-wider rounded-full">
             Acceso: {rolActivo.nombre}
           </div>
         )}
@@ -57,6 +59,14 @@ export default function Inicio() {
         </Link>
       )}
 
+      {/* Pulido UX 14-jun: estado vacío explícito si el rol no tiene módulos (antes quedaba en blanco). */}
+      {tarjetas.length === 0 && (
+        <div className="bg-pagina border border-borde rounded-md px-4 py-8 text-center text-sm text-slate-600" data-testid="inicio-sin-modulos">
+          <div className="text-3xl mb-2">📭</div>
+          No tienes módulos disponibles con tu rol actual. Si crees que es un error, contacta a la dependencia.
+        </div>
+      )}
+      {tarjetas.length > 0 && (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {tarjetas.map((hu) => (
           <Link
@@ -67,8 +77,8 @@ export default function Inicio() {
             <div className="flex items-start justify-between mb-3">
               <div className="text-3xl">{hu.icono}</div>
               {hu.nivel === 'C' && (
-                <span className="text-[10px] uppercase tracking-wider bg-slate-200 text-slate-600 px-2 py-0.5 rounded">
-                  lectura
+                <span className="text-[10px] uppercase tracking-wider bg-sigecop-blue-light text-sigecop-blue font-semibold px-2 py-0.5 rounded">
+                  Solo lectura
                 </span>
               )}
             </div>
@@ -82,6 +92,7 @@ export default function Inicio() {
           </Link>
         ))}
       </div>
+      )}
 
     </div>
   );

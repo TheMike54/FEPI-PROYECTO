@@ -33,7 +33,7 @@ const OPCIONES_VINCULO = ['Todas', 'Vinculadas', 'Sin vínculo'];
 
 // Etiquetas legibles del estado de aceptación derivado por el backend.
 export const ETIQUETA_ACEPTACION = {
-  en_plazo: 'En plazo',
+  en_plazo: 'En plazo de firma',
   firmada: 'Firmada',
   aceptada_tacita: 'Aceptada (tácita)',
   respondida: 'Respondida',
@@ -245,7 +245,7 @@ export default function BuscadorNotas({
                       {onVerDocumento && (
                         <td className="p-3">
                           <button type="button" className="text-xs text-guinda font-semibold hover:underline whitespace-nowrap" onClick={() => onVerDocumento(n)} data-testid={tid(`btn-doc-${n.numero}`)}>
-                            📄 documento
+                            📄 Ver como documento
                           </button>
                         </td>
                       )}

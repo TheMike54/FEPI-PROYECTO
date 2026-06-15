@@ -62,6 +62,7 @@ function FormLogin({ onIrRegistro, mensaje, setMensaje }) {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             autoComplete="username"
+            autoFocus
             disabled={loading}
           />
         </div>

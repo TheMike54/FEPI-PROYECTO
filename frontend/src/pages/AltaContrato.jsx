@@ -334,7 +334,7 @@ function TabCatalogo({ rows, onCell, onPatch, onAdd, onRemove, soloLectura, errI
                   <td className="px-2 py-1 align-top"><input type="number" min="0" step="0.0001" className="sg-input text-right" value={c.pu} onChange={onPu(i)} disabled={soloLectura} data-testid={`concepto-pu-${i}`} /></td>
                   <td className="px-2 py-1 align-top"><input type="number" min="0" step="0.01" className="sg-input text-right font-semibold" value={c.importe || ''} onChange={onImporte(i)} onBlur={onImporteBlur(i)} disabled={soloLectura} data-testid={`concepto-importe-${i}`} /></td>
                   <td className="px-2 py-1 text-center align-top">
-                    <button type="button" onClick={() => onRemove(i)} disabled={soloLectura} className="text-red-500 hover:text-red-700 disabled:opacity-30" title="Quitar concepto">✕</button>
+                    <button type="button" onClick={() => onRemove(i)} disabled={soloLectura} className="text-red-500 hover:text-red-700 disabled:opacity-30" title="Quitar concepto" aria-label="Quitar concepto">✕</button>
                   </td>
                 </tr>
               );
@@ -637,7 +637,7 @@ function TabGarantias({ rows, onCell, onPatch, onAdd, onRemove, anticipoPct, set
                     {vencida && <span className="block text-xs text-amber-600 mt-1">⚠ vigencia vencida</span>}
                   </td>
                   <td className="px-2 py-1 text-center align-top">
-                    <button type="button" onClick={() => onRemove(i)} disabled={soloLectura} className="text-red-500 hover:text-red-700 disabled:opacity-30" title="Quitar póliza">✕</button>
+                    <button type="button" onClick={() => onRemove(i)} disabled={soloLectura} className="text-red-500 hover:text-red-700 disabled:opacity-30" title="Quitar póliza" aria-label="Quitar póliza">✕</button>
                   </td>
                 </tr>
               );
@@ -1377,6 +1377,21 @@ export default function AltaContrato() {
   }, [anticipoPct, montoDerivado]);
 
   useEffect(() => { setErrores(ERR0); }, [datosGenerales, datosJuridicos, anticipoPct, conceptos, celdas, ciclo, garantias, superintendenteId, supervisionId, dependenciaId]);
+
+  // P7 (pulido UX 14-jun): PREFILL de presentación de los datos jurídicos desde las cuentas seleccionadas
+  // (representante legal ← superintendente; firmante ← dependencia). SOLO rellena si el campo está VACÍO
+  // (no pisa lo que el usuario teclee) y siguen siendo editables. No agrega validación ni cambia lo que se
+  // guarda (datos_juridicos JSONB libre). [validar profe] si firmante/representante DEBEN ser esas personas.
+  useEffect(() => {
+    const sup = (asignablesContratista || []).find((u) => String(u.id) === String(superintendenteId));
+    const dep = (asignablesDependencia || []).find((u) => String(u.id) === String(dependenciaId));
+    setDatosJuridicos((prev) => {
+      const next = { ...prev };
+      if (!String(prev.representanteLegal || '').trim() && sup?.nombre) next.representanteLegal = sup.nombre;
+      if (!String(prev.firmanteDependencia || '').trim() && dep?.nombre) next.firmanteDependencia = dep.nombre;
+      return (next.representanteLegal === prev.representanteLegal && next.firmanteDependencia === prev.firmanteDependencia) ? prev : next;
+    });
+  }, [superintendenteId, dependenciaId, asignablesContratista, asignablesDependencia]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cuentas asignables al equipo (solo el residente puede consultarlas; si el rol
   // no es residente la API responde 403 y dejamos las listas vacías).

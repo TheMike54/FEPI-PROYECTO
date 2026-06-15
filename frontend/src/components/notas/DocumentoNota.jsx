@@ -50,7 +50,7 @@ export default function DocumentoNota({ nota, contrato, aperturaFirmantes, onCer
           <h3 className="text-sm font-bold uppercase tracking-wider text-tinta-sec">Documento de la nota</h3>
           <div className="flex items-center gap-3">
             <button type="button" className="sg-btn-primary" onClick={() => window.print()} data-testid="btn-imprimir-nota">
-              🖨 Ver como documento / Imprimir
+              🖨 Imprimir documento
             </button>
             <button type="button" className="text-slate-400 hover:text-slate-700 text-2xl leading-none" onClick={onCerrar} aria-label="Cerrar">×</button>
           </div>

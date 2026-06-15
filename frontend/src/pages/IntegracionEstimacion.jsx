@@ -185,7 +185,7 @@ function ModalDetalle({ estimacion, onCerrar, onVerDocumento }) {
                       <td className="p-2 text-right">{num(g.cantidad_periodo)}</td>
                       <td className="p-2 text-right">{num(g.acumulado)} <span className="text-slate-400 text-xs">/ {num(g.cantidad_contratada)}</span></td>
                       <td className="p-2 text-right font-mono">{moneda(g.importe)}</td>
-                      <td className="p-2 text-right">{g.avance_pct != null ? `${Number(g.avance_pct)}%` : '—'}</td>
+                      <td className="p-2 text-right">{g.avance_pct != null ? `${Number(g.avance_pct).toFixed(1)}%` : '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -214,13 +214,13 @@ function ModalDetalle({ estimacion, onCerrar, onVerDocumento }) {
                     {(e.notas || []).map((n) => (
                       <tr key={n.nota_id} className="border-t border-slate-200">
                         <td className="p-2 font-mono text-xs">#{n.numero}</td>
-                        <td className="p-2">{n.tipo}</td>
+                        <td className="p-2">{n.tipo_etiqueta || n.tipo}</td>
                         <td className="p-2">{fechaHora(n.fecha)}</td>
                         <td className="p-2 text-slate-700">{n.asunto || '—'}</td>
-                        <td className="p-2">{n.estado}</td>
+                        <td className="p-2">{n.estado === 'anulada' ? 'Anulada' : 'Emitida'}</td>
                         <td className="p-2">
                           <button type="button" className="text-xs text-guinda font-semibold hover:underline whitespace-nowrap" onClick={() => onVerDocumento(n)} data-testid={`btn-doc-detalle-${n.numero}`}>
-                            📄 documento
+                            📄 Ver como documento
                           </button>
                         </td>
                       </tr>
@@ -264,6 +264,7 @@ function TabGeneradores({ filas, onCantidad, tienePlan }) {
         <table className="w-full text-sm" data-testid="tabla-generadores">
           <thead className="bg-sigecop-blue-light text-sigecop-blue">
             <tr>
+              <th className="text-left px-3 py-2 w-20">Clave</th>
               <th className="text-left px-3 py-2">Concepto</th>
               <th className="text-left px-3 py-2 w-16">Unidad</th>
               <th className="text-right px-3 py-2 w-28">Contratado</th>
@@ -282,6 +283,7 @@ function TabGeneradores({ filas, onCantidad, tienePlan }) {
               const malo = f.excede || f.excedePlan;
               return (
               <tr key={f.contrato_concepto_id} className={`border-t border-slate-200 ${malo ? 'bg-red-50' : 'hover:bg-slate-50'}`} data-testid={`gen-fila-${f.contrato_concepto_id}`} data-excede-plan={f.excedePlan ? 'true' : undefined}>
+                <td className="px-3 py-2 font-mono text-xs text-slate-500" data-testid={`gen-clave-${f.contrato_concepto_id}`}>{f.clave || '—'}</td>
                 <td className="px-3 py-2">
                   {malo && <span title={f.excede ? 'Excede lo contratado (art. 118)' : 'Excede lo planeado para el periodo'} className="text-red-600 mr-1">⚠</span>}
                   {f.concepto}
@@ -471,7 +473,7 @@ function TabNotasVinculadas({ vinculadas, onAbrir, onQuitar, onVerDocumento, sol
                   <td className="p-3 text-slate-700">{n.asunto || '—'}</td>
                   <td className="p-3">
                     <button type="button" className="text-xs text-guinda font-semibold hover:underline whitespace-nowrap" onClick={() => onVerDocumento(n)} data-testid={`btn-doc-vinculada-${n.numero}`}>
-                      📄 documento
+                      📄 Ver como documento
                     </button>
                   </td>
                   <td className="p-3 text-center">
@@ -615,7 +617,7 @@ export default function IntegracionEstimacion() {
     const planeado = p && p.planeado_hasta_periodo != null ? Number(p.planeado_hasta_periodo) : null;
     const disponible = p ? Number(p.disponible_periodo) : Math.max(0, contratado - anterior);
     const excedePlan = planeado != null && periodo > disponible + EPS;
-    return { ...a, valor, periodo, contratado, anterior, pu, acumulado, excede,
+    return { ...a, clave: (p && p.clave) || a.clave || null, valor, periodo, contratado, anterior, pu, acumulado, excede,
       planeado, disponible, excedePlan, avancePct, importe: round2(periodo * pu) };
   }), [avance, cantidades, prepMap]);
 
@@ -815,6 +817,31 @@ export default function IntegracionEstimacion() {
           {!soloLectura && (
             <div className="bg-white border border-slate-200 rounded-md p-4 mb-6 max-w-2xl">
               <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">Apertura del periodo</h2>
+              {/* P5 (pulido UX 14-jun): selector de periodo del programa vigente. Al elegirlo autocompleta las
+                  fechas de abajo (que siguen editables para un ajuste fino). NO cambia el dato que se envía
+                  (periodo_inicio/periodo_fin) ni el cálculo; es solo una ayuda para no adivinar las fechas. */}
+              {Array.isArray(programa?.periodos) && programa.periodos.length > 0 && (
+                <div className="mb-4">
+                  <label className="sg-label">Periodo del programa</label>
+                  <select
+                    className="sg-input"
+                    data-testid="periodo-selector"
+                    value={programa.periodos.find((p) => String(p.fin).slice(0, 10) === periodoFin)?.numero ?? ''}
+                    onChange={(e) => {
+                      const p = programa.periodos.find((x) => String(x.numero) === e.target.value);
+                      if (p) { setPeriodoInicio(String(p.inicio).slice(0, 10)); setPeriodoFin(String(p.fin).slice(0, 10)); }
+                    }}
+                  >
+                    <option value="">— Elige un periodo del programa —</option>
+                    {programa.periodos.map((p) => (
+                      <option key={p.numero} value={p.numero}>
+                        Periodo {p.numero} ({String(p.inicio).slice(0, 10)} — {String(p.fin).slice(0, 10)})
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-slate-500 mt-1">Elige el periodo y las fechas se llenan solas; puedes afinarlas abajo.</p>
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="sg-label">Periodo — inicio</label>
