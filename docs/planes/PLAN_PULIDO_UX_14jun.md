@@ -58,7 +58,7 @@ solo anótalo. Trabaja por pantalla, en tandas, suite verde tras cada una.
 
 ## FASE 3 — Cierre
 - Suite completa **258/8/0** obligatorio.
-- Entrega `docs/REPORTE_PULIDO_UX_14jun.md` con: (a) qué aplicaste por pantalla, (b) capturas antes/después si
+- Entrega `docs/reportes/REPORTE_PULIDO_UX_14jun.md` con: (a) qué aplicaste por pantalla, (b) capturas antes/después si
   puedes, (c) una lista de "mejoras detectadas que NO apliqué por requerir lógica/decisión" para que Maiki las vea,
   (d) confirmación de que no se tocó zona congelada (diff de backend = solo lo permitido o nada).
 - Actualiza `ESTADO_ACTUAL.md` si cambió algo relevante. NO push.

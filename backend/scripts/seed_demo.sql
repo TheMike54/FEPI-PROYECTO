@@ -43,6 +43,7 @@ BEGIN
     DELETE FROM concepto_avance WHERE contrato_concepto_id IN
       (SELECT id FROM contrato_conceptos WHERE contrato_id = ANY(ids));     -- libera bitacora_notas
     DELETE FROM contrato_roster WHERE contrato_id = ANY(ids);              -- libera bitacora_notas
+    DELETE FROM convenios_modificatorios WHERE contrato_id = ANY(ids);     -- libera bitacora_notas (nota_id NO ACTION)
     DELETE FROM contratos WHERE id = ANY(ids);                             -- cascada: el resto
   END IF;
 END $$;
@@ -57,7 +58,7 @@ DECLARE
   v_id INTEGER;
   c1 INTEGER; c2 INTEGER; c3 INTEGER; c4 INTEGER; c5 INTEGER; c6 INTEGER; c7 INTEGER;
   p1 INTEGER; p2 INTEGER; p3 INTEGER; p4 INTEGER; p5 INTEGER; p6 INTEGER; p7 INTEGER;
-  v_bita INTEGER; v_nota1 INTEGER; v_nota2 INTEGER;
+  v_bita INTEGER; v_nota1 INTEGER; v_nota2 INTEGER; v_nota3 INTEGER; v_conv INTEGER;
   e1 INTEGER; e2 INTEGER; e3 INTEGER; e4 INTEGER; e5 INTEGER; e6 INTEGER;
 BEGIN
   SELECT id, nombre INTO v_resid,  v_nom_resid  FROM usuarios WHERE email='residente@sigecop.test';
@@ -157,6 +158,23 @@ BEGIN
   INSERT INTO bitacora_nota_firmas (nota_id, usuario_id, rol_en_firma) VALUES
     (v_nota1,v_resid,'residente'),(v_nota1,v_super,'superintendente'),(v_nota1,v_superv,'supervision'),
     (v_nota2,v_resid,'residente'),(v_nota2,v_super,'superintendente'),(v_nota2,v_superv,'supervision');
+
+  -- CONVENIO MODIFICATORIO de PLAZO (HU-03, art. 59 LOPSRM): nota de consecuencia emitida por el
+  -- residente (art. 53) + registro del convenio (211 → 241 días). La nota se liga al convenio
+  -- (nota_id) y el contrato refleja el nuevo plazo. Demuestra HU-03 sin capturar a mano.
+  INSERT INTO bitacora_notas (bitacora_id, tipo, numero, contenido, emisor_id, estado, fecha, tag)
+  VALUES (v_bita,'res_convenios',3,'Se formaliza convenio modificatorio de plazo: se amplía la vigencia del contrato de 211 a 241 días por causas no imputables al contratista (art. 59 LOPSRM).', v_resid,'emitida',TIMESTAMPTZ '2026-03-15 12:00:00-06','convenio')
+  RETURNING id INTO v_nota3;
+  INSERT INTO bitacora_nota_firmas (nota_id, usuario_id, rol_en_firma) VALUES
+    (v_nota3,v_resid,'residente'),(v_nota3,v_super,'superintendente'),(v_nota3,v_superv,'supervision');
+  INSERT INTO convenios_modificatorios (contrato_id, numero, tipo, fundamento, motivo, fecha,
+                                        plazo_anterior_dias, plazo_nuevo_dias, delta_plazo_pct,
+                                        autorizado_por, nota_id)
+  VALUES (v_id, 1, 'plazo', 'art59', 'Ampliación de plazo por lluvias atípicas (causa no imputable al contratista).',
+          DATE '2026-03-15', 211, 241, ROUND((241-211)::numeric/211*100, 2), v_dep, v_nota3)
+  RETURNING id INTO v_conv;
+  -- El contrato refleja el nuevo plazo (metadato; no cambia la matriz/periodos ni el cuadre).
+  UPDATE contratos SET plazo_dias = 241, fecha_termino = (DATE '2025-12-01' + 240) WHERE id = v_id;
 
   -- Avance físico (HU-06): cada concepto ejecutado al 100% en su periodo (contrato on-track → sin
   -- atraso falso). Coherente con el programa (Σ ejecutado = Σ programado por concepto).

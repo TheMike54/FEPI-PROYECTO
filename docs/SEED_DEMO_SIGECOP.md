@@ -1,6 +1,6 @@
 # SEED DEMO — Paquete de datos de prueba (SIGECOP)
 
-> **Origen:** revisión del profe del **15-jun-2026** (FASE 1 de `docs/PLAN_REVISION_PROFE_15jun.md`).
+> **Origen:** revisión del profe del **15-jun-2026** (FASE 1 de `docs/planes/PLAN_REVISION_PROFE_15jun.md`).
 > El profe pidió, literal: *"generen datos dummy… formen su paquete de datos… debes poder probar con
 > los datos que ya tienes"* sin capturar un contrato a mano cada vez, y *"hagan ese registro en la
 > base directa"*. Este seed carga **directo en la BD** (sin pasar por la API ni sus gates) un paquete
@@ -56,8 +56,9 @@ ciclo mensual, **7 periodos** (dic-2025 a jun-2026). Las **7 fases de obra** que
 Trae: **programa de obra al 100%** (cada concepto en su periodo), **plan de amortización
 proporcional al programa** (FASE 2, art. 143 fr. I), garantías (cumplimiento/anticipo/vicios), datos
 jurídicos, **PDF firmado**, **roster** (residente/superintendente/supervisión), **bitácora abierta**
-con apertura firmada por las 3 partes + 2 notas (apertura + avance, ambas firmadas), avance físico, y
-el **ciclo de estimación en TODOS los estados**:
+con apertura firmada por las 3 partes + 3 notas (apertura + avance + convenio, firmadas), **1 convenio
+modificatorio de plazo** (HU-03, art. 59: 211→241 días, ligado a su nota), avance físico, y el
+**ciclo de estimación en TODOS los estados** (el plazo final del contrato es 241 días por el convenio):
 
 | # | Concepto | Subtotal | Amortización (30%) | 5 al millar | **Neto** | Estado |
 |---:|---|---:|---:|---:|---:|---|
@@ -93,7 +94,8 @@ que el contrato completo → demuestran que el **catálogo de empresas (FASE 3) 
 |---|---|---|---|
 | HU-00 Login | cualquiera | Inicio | Entra sin elegir rol (usuario/contraseña); el rol se deduce. |
 | HU-01 Alta / expediente | residente | Contratos → OBRA-2026-DEMO-01 | Contrato completo: catálogo, programa, garantías, jurídicos, plan, PDF. |
-| HU-04 Expediente | residente | Expediente → OBRA-2026-DEMO-01 | Bloques + empresa del equipo + roster + estimaciones; **Exportar PDF** (1 solo doc). |
+| **HU-03 Convenios** | residente | Convenios → OBRA-2026-DEMO-01 | Convenio de **plazo** (211→241 días) con su nota de bitácora ligada. |
+| HU-04 Expediente | residente | Expediente → OBRA-2026-DEMO-01 | Bloques + empresa del equipo + roster + estimaciones + **convenio**; **Exportar PDF** (1 solo doc). |
 | HU-05 Curva de avance | residente | Programa/Curva → DEMO-01 | Curva S programado vs ejecutado (físico 100%). |
 | HU-06 Trabajos terminados | contratista | Avance por periodo → DEMO-01 | Avance registrado por concepto/periodo. |
 | **HU-07 Alertas de atraso** | residente | Alertas → ATRASO-01..04 | **Panel de déficit por concepto** (unidades) + badge al login. |
@@ -108,7 +110,7 @@ que el contrato completo → demuestran que el **catálogo de empresas (FASE 3) 
 | HU-19 Reportes | residente | Reportes → DEMO-01 | Exporta los 7 reportes (carátula, generadores, etc.). |
 | **HU-21 Pago** | finanzas | Pagos → DEMO-01 | Estimación **#1 Pagada** (pago registrado, importe = neto $69,500). |
 | HU-22 Roster | residente | Roster → DEMO-01 | Residente/superintendente/supervisión vigentes. |
-| **HU-23 Empresas** | — | Registro | Teclea una empresa existente con variante ("Constructora Demo SA de CV") → **"se usará la empresa ya registrada"** (no duplica, FASE 3). |
+| **HU-23 Empresas** | — | Registro | La empresa se **elige de un selector** del catálogo (no se teclea). "➕ Registrar nueva" solo si no existe; al teclear una variante ("Constructora Demo SA de CV") avisa **"ya existe… selecciónala"** (no duplica, FASE 1). |
 
 ---
 

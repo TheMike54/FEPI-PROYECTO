@@ -1,9 +1,11 @@
 # docs/ — Índice de la documentación de SIGECOP
 
 Documentación del proyecto **SIGECOP** (UAGRO, Etapa 1). Organizada por tipo.
-La raíz de `docs/` solo contiene este índice, el **[HISTORIAL_PROYECTO.md](HISTORIAL_PROYECTO.md)**
-(la historia completa del proyecto, narrada y enlazada) y los archivos personales gitignorados;
-todo lo demás vive en una subcarpeta.
+La raíz de `docs/` solo contiene los índices/entregables vivos —este **README**, el
+**[HISTORIAL_PROYECTO.md](HISTORIAL_PROYECTO.md)** (historia completa, narrada y enlazada),
+**[REQUERIMIENTOS_PROFE_CONSOLIDADO.md](REQUERIMIENTOS_PROFE_CONSOLIDADO.md)** (todo lo que el profe
+ha pedido, con cita y estado) y **[SEED_DEMO_SIGECOP.md](SEED_DEMO_SIGECOP.md)** (paquete de datos de
+prueba + guion por HU)— más los archivos personales gitignorados; todo lo demás vive en una subcarpeta.
 
 > **Para los equipos:** empiecen por `equipos/SETUP_LOCAL.md` (levantar el stack) →
 > `equipos/GUIA_TRABAJO_EQUIPOS.md` (git/PR día a día) → su bloque en
@@ -72,6 +74,32 @@ todo lo demás vive en una subcarpeta.
 | `Maquetas_SIGECOP.html`, `Maquetas_SIGECOP.pptx` | Maquetas (interactivas / presentación). |
 | `diagrama_arquitectura.png`, `Arquitectura_SIGECOP.svg` | Diagramas de arquitectura. |
 
+### `planes/` — Planes de trabajo por sesión (working plans)
+| Archivo | Contenido |
+|---|---|
+| `PLAN_REVISION_PROFE_15jun.md` | Plan de las 3 fases de la revisión del 15-jun (seed, amortización, empresas). |
+| `PLAN_SESION_AUTONOMA_EMPRESAS_15jun.md` | Plan de la sesión autónoma: empresas catálogo seleccionable + consolidar requerimientos. |
+| `PLAN_PULIDO_UX_14jun.md` | Plan de pulido UX (solo presentación). |
+| `PLAN_ORDEN_Y_ACTUALIZACION_EQUIPOS_13jun.md` | Plan de reorganización de docs + actualización de historias + limpieza. |
+
+### `reportes/` — Reportes y análisis (outputs de sesiones)
+| Archivo | Contenido |
+|---|---|
+| `ANALISIS_PROFESOR_DETALLADO.md` | Síntesis del estilo/criterios del profe (4 audios tempranos). |
+| `REPORTE_PULIDO_UX_14jun.md` | Reporte del pulido UX. |
+| `REPORTE_LIMPIEZA.md` | Reporte de la limpieza de código muerto. |
+| `REPORTE_SESION_AUTONOMA_EMPRESAS.md` | Reporte de la sesión autónoma de empresas (selector + seed). |
+
+### `referencias/` — Material de referencia y utilidades
+| Archivo | Contenido |
+|---|---|
+| `Acordeon_Defensa_SIGECOP.md` | Acordeón de defensa de Maiki (personal, gitignored). |
+| `comandos usuario.txt` | Comandos de utilidad (crear/borrar usuario, local y Render). |
+
+### `audios/` — Transcripciones de las revisiones del profe (gitignored)
+Transcripciones `*_transcript.txt` de los audios del profe (12, 18, 25, 26-may; 01, 04, 09, 15-jun) y de
+otras materias. Fuente de `REQUERIMIENTOS_PROFE_CONSOLIDADO.md`. **Gitignored** (nombran al profe).
+
 ### Otras
 `capturas-ui1/`, `capturas-ui2/` (capturas del reskin guinda) · `Referencias-estimaciones/` (formatos
 de carátula GACM/NAICM del profe, fotos).
@@ -83,7 +111,8 @@ de carátula GACM/NAICM del profe, fotos).
 Estos archivos existen en disco pero **están en `.gitignore`** y no se versionan
 (contraseñas, material interno que nombra al profe, backups, transcripciones, locks de Office):
 
-- `Cuentas_Prueba_SIGECOP.md`, `comandos usuario.txt`, `Acordeon_Defensa_SIGECOP.md` (raíz de docs/)
+- `Cuentas_Prueba_SIGECOP.md` (raíz de docs/) · `referencias/comandos usuario.txt` · `referencias/Acordeon_Defensa_SIGECOP.md`
+- `audios/*_transcript.txt` (transcripciones de los audios del profe)
 - `historial/revisiones-profe/Revision_Profesor_Sprint1-2_Analisis_y_Plan.md` y
   `…audio_profe_revision_01jun_transcript.txt` · `historial/_duplicados/Revision_Profesor_…_copia-exacta.md`
 - `backups/` (raíz del repo): respaldos de la BD de Render (`render_backup_*.sql/.json`) y de las

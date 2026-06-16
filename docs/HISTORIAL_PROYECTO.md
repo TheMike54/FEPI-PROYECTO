@@ -102,7 +102,7 @@ El profe revisó de nuevo (2 sesiones grabadas) + testing interno del equipo. To
 - **Vigente:** [contexto-claude/Contexto_Maestro_y_Plan_Correcciones_09jun.md](contexto-claude/Contexto_Maestro_y_Plan_Correcciones_09jun.md)
   (era `Contexto_Maestro_..._09jun_1.md`; incluye el plan de reskin UI-1/UI-2 que de hecho se ejecutó)
 - Superada: [historial/revisiones-profe/Contexto_Maestro_y_Plan_Correcciones_09jun_v1-superada.md](historial/revisiones-profe/Contexto_Maestro_y_Plan_Correcciones_09jun_v1-superada.md)
-- Material de defensa de Maiki: `docs/Acordeon_Defensa_SIGECOP.md` (personal, untracked, retrata el estado de sprint 1-3)
+- Material de defensa de Maiki: `docs/referencias/Acordeon_Defensa_SIGECOP.md` (personal, untracked, retrata el estado de sprint 1-3)
 
 ## 5. Las oleadas O0–O9 + O-PROFE + UI (09–10 jun)
 

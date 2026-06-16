@@ -282,12 +282,26 @@ function TabDatosGenerales({ datos, set, err, equipo, montoDerivado }) {
               <option value="">— Selecciona —</option>
               {(eq.asignablesContratista || []).map((u) => <option key={u.id} value={u.id}>{u.nombre} · {u.email}</option>)}
             </select>
+            {/* FASE 1 (profe 09-jun: "falta la empresa"): la empresa de la contraparte queda EXPLÍCITA
+                en el alta, derivada del catálogo de la cuenta elegida (no se recaptura). */}
+            {(() => {
+              const u = (eq.asignablesContratista || []).find((x) => String(x.id) === String(eq.superintendenteId));
+              return u && u.empresa
+                ? <p className="text-xs text-slate-500 mt-1" data-testid="empresa-contratista">Empresa (contratista): <strong>{u.empresa}</strong></p>
+                : null;
+            })()}
           </Field>
           <Field label="Supervisión (opcional)" hint="Cuenta de supervisión aprobada.">
             <select className="sg-input" value={eq.supervisionId || ''} onChange={(ev) => eq.setSupervisionId(ev.target.value)} data-testid="select-supervision">
               <option value="">— Sin supervisión —</option>
               {(eq.asignablesSupervision || []).map((u) => <option key={u.id} value={u.id}>{u.nombre} · {u.email}</option>)}
             </select>
+            {(() => {
+              const u = (eq.asignablesSupervision || []).find((x) => String(x.id) === String(eq.supervisionId));
+              return u && u.empresa
+                ? <p className="text-xs text-slate-500 mt-1" data-testid="empresa-supervision">Empresa (supervisión): <strong>{u.empresa}</strong></p>
+                : null;
+            })()}
           </Field>
         </div>
         {(eq.asignablesContratista || []).length === 0 && (

@@ -9,12 +9,15 @@
 > contexto previo**. Todo lo de aquí está **verificado contra el código/git real** (no asumido). Tono
 > honesto: lo que funciona y lo que es maqueta están marcados como tales.
 >
-> **Cabecera de versión:** fecha **2026-06-15**, `main = 75797e2` (oleadas A/CITAS/B/PAGO/C + pulido UX ya
-> commiteados) + **FASE 1/2/3 de la revisión del profe 15-jun LOCALES (sin commit)**
-> (`docs/PLAN_REVISION_PROFE_15jun.md`): FASE 2 reglas del plan de amortización (proporcional al
-> programa, art. 143 fr. I), FASE 3 deduplicación fuerte de empresas, FASE 1 seed de datos demo
-> (`backend/scripts/seed_demo.sql`, `docs/SEED_DEMO_SIGECOP.md`). **Actualízala** cuando edites este doc
-> tras un cambio de sistema.
+> **Cabecera de versión:** fecha **2026-06-16**, `main = 75797e2` (oleadas A/CITAS/B/PAGO/C + pulido UX ya
+> commiteados) + **cambios LOCALES sin commit** de dos sesiones:
+> (1) **Revisión del profe 15-jun** (`docs/planes/PLAN_REVISION_PROFE_15jun.md`): FASE 2 reglas del plan de
+> amortización (proporcional al programa, art. 143 fr. I), FASE 3 deduplicación fuerte de empresas, FASE 1
+> seed de datos demo (`backend/scripts/seed_demo.sql`, `docs/SEED_DEMO_SIGECOP.md`).
+> (2) **Sesión autónoma de empresas 16-jun** (`docs/planes/PLAN_SESION_AUTONOMA_EMPRESAS_15jun.md`): el
+> registro de empresa pasó de texto libre a **SELECTOR del catálogo** (imposible duplicar); consolidado de
+> requerimientos del profe (`docs/REQUERIMIENTOS_PROFE_CONSOLIDADO.md`); convenio HU-03 en el seed;
+> **reorganización de `docs/`** (planes/, reportes/, referencias/). **Actualízala** cuando edites este doc.
 >
 > **Docs hermanos:** historia completa → `docs/HISTORIAL_PROYECTO.md` · historias de usuario vigentes
 > (criterios = sistema real) → `docs/analisis-y-diseno/Historias_Usuario_ACTUALIZADAS_12jun.md` · auditoría
@@ -327,6 +330,7 @@ vive en el MISMO BEGIN/COMMIT que el evento); toma advisory lock por bitácora y
 | O-PROFE | Aterriza decisiones del profe (emisor notas=residente, exceso=aviso, cita 143→138) |
 | UI-1/UI-2 | Reskin institucional guinda (remapeo de tokens + componentes `ui/`) |
 | FASE 15-jun | Revisión del profe: (2) plan de amortización proporcional al programa + reglas R2/R3 (art. 143 fr. I); (3) deduplicación FUERTE de empresas (acentos/sufijos de razón social); (1) **seed de datos demo** (`backend/scripts/seed_demo.sql`) — paquete de 5 contratos (1 completo + 4 en atraso) para demostrar cualquier HU. LOCAL sin commit. |
+| Sesión autónoma 16-jun | EMPRESAS: el registro pasó de texto libre (`<datalist>`) a **SELECTOR del catálogo** + "➕ registrar nueva" (imposible duplicar, profe 09-jun: "ya la elijo, no la registro completo"); empresa explícita en el alta (derivada de la cuenta). Consolidado de TODOS los audios del profe (`docs/REQUERIMIENTOS_PROFE_CONSOLIDADO.md`). Convenio HU-03 en el seed. Reorg de `docs/` (planes/reportes/referencias). LOCAL sin commit. |
 
 > **Datos demo a demanda (FASE 1, 15-jun):** `backend/scripts/seed_demo.sql` (`npm run seed:demo`, idempotente,
 > NO corre en tests) carga `OBRA-2026-DEMO-01` (contrato completo: ciclo de estimación en los 5 estados +
@@ -424,7 +428,7 @@ origin. Esas HU son maquetas que viven en `main` sin backend.
 | Registro | Auto-registro con aprobación de dependencia | ✅ |
 | Por Firmar | Firma de aperturas pendientes | ✅ |
 | HU-22 | Sustitución de personas / roster (art. 125) | ✅ |
-| HU-23 | Catálogo de empresas | ✅ (deduplicación FUERTE: funde acentos/puntuación/sufijos de razón social; toma la existente, no duplica — FASE 3 15-jun) |
+| HU-23 | Catálogo de empresas | ✅ (registro por **SELECTOR del catálogo**, no texto libre — sesión autónoma 16-jun; + deduplicación FUERTE que funde acentos/puntuación/sufijos de razón social como segunda red — FASE 3 15-jun) |
 
 ### Términos legales y de obra
 - **Estimación:** documento periódico que valoriza el avance ejecutado para cobro (art. 54 LOPSRM).
