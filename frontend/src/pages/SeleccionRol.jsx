@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ROLES } from '../data/permisos.js';
+import { empresaExistentePorNombre } from '../data/empresa.js';
 import { useSesion } from '../context/SesionContext.jsx';
 import { api } from '../services/api.js';
 
@@ -102,10 +103,6 @@ function FormLogin({ onIrRegistro, mensaje, setMensaje }) {
 // (art. 123 RLOPSRM); se exige ≥2 palabras. Espejo de la validación del backend (auth.controller).
 const esNombreCompleto = (n) => (String(n || '').trim().match(/\p{L}{2,}/gu) || []).length >= 2;
 
-// O3: normalización de nombre de empresa, ESPEJO del backend (lower + trim + colapsa espacios).
-// Sirve para saber si lo tecleado YA está en el catálogo (y decidir si confirmar alta nueva).
-const normEmpresa = (s) => String(s || '').trim().replace(/\s+/g, ' ').toLowerCase();
-
 function FormRegistro({ onIrLogin, setMensaje }) {
   // Plan2 Pase3: el nombre se captura en DOS campos OBLIGATORIOS (nombre[s] + apellido[s]) y se
   // CONCATENAN al enviar; la columna `nombre` (fuente única) y todos los lugares que la muestran
@@ -159,12 +156,14 @@ function FormRegistro({ onIrLogin, setMensaje }) {
       setErrorLocal('Las contraseñas no coinciden.');
       return;
     }
-    // O3: si tecleó una empresa que NO está en el catálogo, confirmar el alta automática
-    // (principio del profe: "el primero la registra, el siguiente la elige"). Vacío = sin empresa.
+    // O3/FASE 3: si lo tecleado YA está en el catálogo (match FUERTE: ignora acentos, puntuación y
+    // sufijos de razón social), se REUTILIZA la existente sin preguntar (el meollo del profe: "si ya
+    // existe, toma los datos que ya están"). Solo si NO existe se confirma el alta nueva. El backend
+    // hace el mismo match fuerte (fuente de verdad); aquí es para el aviso temprano. Vacío = sin empresa.
     const empresaTrim = empresa.trim().replace(/\s+/g, ' ');
     if (empresaTrim) {
-      const existe = empresas.some((e) => normEmpresa(e.nombre) === normEmpresa(empresaTrim));
-      if (!existe && !window.confirm(`"${empresaTrim}" no está en el catálogo. ¿Registrarla como nueva empresa?`)) {
+      const yaExiste = empresaExistentePorNombre(empresas, empresaTrim);
+      if (!yaExiste && !window.confirm(`"${empresaTrim}" no está en el catálogo. ¿Registrarla como nueva empresa?`)) {
         return;
       }
     }
@@ -276,9 +275,14 @@ function FormRegistro({ onIrLogin, setMensaje }) {
           <datalist id="reg-empresas-lista">
             {empresas.map((e) => <option key={e.id} value={e.nombre} />)}
           </datalist>
-          <p className="text-xs text-slate-500 mt-1">
-            Si no está en la lista, se registra como empresa nueva (catálogo: la primera vez se da de alta).
-          </p>
+          {(() => {
+            // FASE 3: si lo tecleado coincide (match fuerte) con una empresa ya registrada, avisar
+            // que se usará la existente (no se crea un duplicado), aunque la haya escrito distinto.
+            const ya = empresa.trim() ? empresaExistentePorNombre(empresas, empresa) : null;
+            return ya
+              ? <p className="text-xs text-exito mt-1" data-testid="reg-empresa-existente">✓ Se usará la empresa ya registrada: «{ya.nombre}» (no se duplica).</p>
+              : <p className="text-xs text-slate-500 mt-1">Si no está en la lista, se registra como empresa nueva (catálogo: la primera vez se da de alta).</p>;
+          })()}
         </div>
         <div>
           <label className="sg-label" htmlFor="reg-password">Contraseña (mín. 8 caracteres)</label>

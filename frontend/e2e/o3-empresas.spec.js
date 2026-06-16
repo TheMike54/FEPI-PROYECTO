@@ -149,4 +149,37 @@ test.describe('O3 — catálogo de empresas', () => {
     expect(Number(n)).toBeLessThan(Number(m));     // y filtró los que no traen esa empresa
     await expect(page.getByText('Constructora Demo').first()).toBeVisible();
   });
+
+  test('FASE 3: variante de empresa existente (acento + sufijo de razón social) REUTILIZA, no duplica', async ({ request }) => {
+    // 'Constructora Demo' ya está sembrada en el catálogo.
+    const cat = await (await request.get(`${API}/auth/empresas`)).json();
+    const demo = cat.find((e) => e.nombre === 'Constructora Demo');
+    expect(demo, "'Constructora Demo' debe estar sembrada").toBeTruthy();
+    const totalAntes = cat.length;
+
+    // Registrar con una VARIANTE: acento + sufijo de razón social ("Constructóra Demo, S.A. de C.V.").
+    // El backend hace match FUERTE → vincula a la empresa EXISTENTE en vez de crear un duplicado.
+    const ts = Date.now();
+    const r = await (await registrarApi(request, {
+      nombre: `Vari Ante ${ts}`, email: `o3.var.${ts}@sigecop.test`,
+      password: 'Test1234!', rolSolicitado: 'contratista',
+      empresa: 'Constructóra Demo, S.A. de C.V.',
+    })).json();
+    expect(r.usuario.empresa_id, 'debe reutilizar el id de la empresa existente').toBe(demo.id);
+
+    const catDespues = await (await request.get(`${API}/auth/empresas`)).json();
+    expect(catDespues.length, 'el catálogo NO debe crecer con la variante').toBe(totalAntes);
+    // Acotado al efecto puntual: NO se creó una empresa con el nombre exacto de la variante registrada.
+    expect(catDespues.some((e) => e.nombre === 'Constructóra Demo, S.A. de C.V.'), 'no debe entrar la variante tecleada').toBe(false);
+  });
+
+  test('FASE 3 (UI): teclear una variante avisa "se usará la existente"', async ({ page }) => {
+    await freshHome(page);
+    await page.getByTestId('link-registro').click();
+    await expect(page.getByTestId('form-registro')).toBeVisible();
+    // Variante (sufijo de razón social) de 'Constructora Demo' → la UI reconoce la existente.
+    await page.getByTestId('reg-empresa').fill('Constructora Demo SA de CV');
+    await expect(page.getByTestId('reg-empresa-existente')).toBeVisible();
+    await expect(page.getByTestId('reg-empresa-existente')).toContainText('Constructora Demo');
+  });
 });

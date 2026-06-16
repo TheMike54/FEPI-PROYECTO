@@ -9,8 +9,12 @@
 > contexto previo**. Todo lo de aquí está **verificado contra el código/git real** (no asumido). Tono
 > honesto: lo que funciona y lo que es maqueta están marcados como tales.
 >
-> **Cabecera de versión:** fecha **2026-06-15**, `main = d6abfdd` + **correcciones post-pruebas LOCALES (sin commit): oleadas A/CITAS/B/PAGO/C** (`docs/contexto-claude/PLAN_CORRECCIONES_POST_PRUEBAS_14jun.md`). **Actualízala** cuando
-> edites este doc tras un cambio de sistema.
+> **Cabecera de versión:** fecha **2026-06-15**, `main = 75797e2` (oleadas A/CITAS/B/PAGO/C + pulido UX ya
+> commiteados) + **FASE 1/2/3 de la revisión del profe 15-jun LOCALES (sin commit)**
+> (`docs/PLAN_REVISION_PROFE_15jun.md`): FASE 2 reglas del plan de amortización (proporcional al
+> programa, art. 143 fr. I), FASE 3 deduplicación fuerte de empresas, FASE 1 seed de datos demo
+> (`backend/scripts/seed_demo.sql`, `docs/SEED_DEMO_SIGECOP.md`). **Actualízala** cuando edites este doc
+> tras un cambio de sistema.
 >
 > **Docs hermanos:** historia completa → `docs/HISTORIAL_PROYECTO.md` · historias de usuario vigentes
 > (criterios = sistema real) → `docs/analisis-y-diseno/Historias_Usuario_ACTUALIZADAS_12jun.md` · auditoría
@@ -217,7 +221,14 @@ el cliente puede saltarse). Wizard de 7 pasos (`AltaContrato.jsx:1221`): datos+e
   `dependenciaId` rol `dependencia`; `residente_id`/`created_by` salen del **JWT** (`:280-334`).
 - **Programa:** con matriz, exige cuadre Σ planeado = contratado por concepto (`guardarMatriz` →
   `PROGRAMA_DESCUADRE` 400).
-- **Plan de amortización:** Σ del plan = exactamente `ROUND(monto×anticipoPct/100, 2)` (`:255`).
+- **Plan de amortización (FASE 2, 15-jun):** Σ del plan = exactamente `ROUND(monto×anticipoPct/100, 2)`
+  (art. 138 párr. 3) **y** ligado al programa de obra (art. 143 fr. I RLOPSRM): **R3** ningún periodo
+  amortiza más que su importe programado (`Σ ROUND(cant×pu,2)` del periodo); **R2** todo periodo con obra
+  programada amortiza algo (rechaza el plan 0/0/todo-al-último). El **default** precargado es
+  **proporcional al programa** (no cuotas iguales). Validado en `crearContrato` (server) y
+  `AltaContrato.jsx::validarPaso`/`TabPlanAmortizacion` (cliente). La carátula G2 **sigue proporcional**
+  (no obedece el plan; Fase B `[validar profe]`). `[validar profe]`: proporcionalidad estricta vs. esta
+  banda editable.
 - Todo **transaccional** (BEGIN/COMMIT/ROLLBACK).
 
 ⚠️ **Solo-cliente (el backend NO los exige):** PDF firmado obligatorio, anticipo>30% exige PDF de
@@ -315,6 +326,13 @@ vive en el MISMO BEGIN/COMMIT que el evento); toma advisory lock por bitácora y
 | O9 | Expediente: un solo PDF (print) en vez de descargables prototipo |
 | O-PROFE | Aterriza decisiones del profe (emisor notas=residente, exceso=aviso, cita 143→138) |
 | UI-1/UI-2 | Reskin institucional guinda (remapeo de tokens + componentes `ui/`) |
+| FASE 15-jun | Revisión del profe: (2) plan de amortización proporcional al programa + reglas R2/R3 (art. 143 fr. I); (3) deduplicación FUERTE de empresas (acentos/sufijos de razón social); (1) **seed de datos demo** (`backend/scripts/seed_demo.sql`) — paquete de 5 contratos (1 completo + 4 en atraso) para demostrar cualquier HU. LOCAL sin commit. |
+
+> **Datos demo a demanda (FASE 1, 15-jun):** `backend/scripts/seed_demo.sql` (`npm run seed:demo`, idempotente,
+> NO corre en tests) carga `OBRA-2026-DEMO-01` (contrato completo: ciclo de estimación en los 5 estados +
+> reingreso, bitácora firmada, plan, garantías) + `OBRA-2026-ATRASO-01..04` (en atraso, para el tablero/
+> alertas), todos sobre las mismas cuentas/empresas demo. Guion de prueba por HU en `docs/SEED_DEMO_SIGECOP.md`.
+> Script de mantenimiento `consolidar_empresas.js` (dry-run/`--apply`) funde duplicados previos.
 
 - **Integraciones de equipo recientes:** **HU-15** (revisión técnica E3: supervisión observa/turna,
   residencia autoriza/rechaza; reconcilió O7) · **HU-19** (7 reportes client-side jsPDF/exceljs).
@@ -382,7 +400,7 @@ origin. Esas HU son maquetas que viven en `main` sin backend.
 | HU | Título | Estado |
 |---|---|---|
 | HU-00 | Inicio de sesión por rol | ✅ |
-| HU-01 | Alta de contratos | ✅ (enforcement parcial solo-cliente) |
+| HU-01 | Alta de contratos | ✅ (enforcement parcial solo-cliente; plan de amortización proporcional al programa + R2/R3, art. 143 fr. I — FASE 2 15-jun) |
 | HU-02 | Registro de fianzas y garantías | 🟡 pantalla dummy; persiste vía alta |
 | HU-03 | Convenios modificatorios | ✅ |
 | HU-04 | Expediente contractual | ✅ |
@@ -406,7 +424,7 @@ origin. Esas HU son maquetas que viven en `main` sin backend.
 | Registro | Auto-registro con aprobación de dependencia | ✅ |
 | Por Firmar | Firma de aperturas pendientes | ✅ |
 | HU-22 | Sustitución de personas / roster (art. 125) | ✅ |
-| HU-23 | Catálogo de empresas | ✅ |
+| HU-23 | Catálogo de empresas | ✅ (deduplicación FUERTE: funde acentos/puntuación/sufijos de razón social; toma la existente, no duplica — FASE 3 15-jun) |
 
 ### Términos legales y de obra
 - **Estimación:** documento periódico que valoriza el avance ejecutado para cobro (art. 54 LOPSRM).

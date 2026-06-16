@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ROLES } from '../data/permisos.js';
+import { empresaExistentePorNombre } from '../data/empresa.js';
 import { api } from '../services/api.js';
 
 // alta-v2 (4.3): página de SOLICITUD DE ACCESO ahora PÚBLICA (ruta /solicitud-acceso sin
@@ -11,8 +12,6 @@ import { api } from '../services/api.js';
 // Corrección profe (04-jun): el nombre completo (nombre + apellido[s]) aparece en la bitácora
 // (art. 123 RLOPSRM); se exige ≥2 palabras. Espejo de la validación del backend (auth.controller).
 const esNombreCompleto = (n) => (String(n || '').trim().match(/\p{L}{2,}/gu) || []).length >= 2;
-// O3: normalización de nombre de empresa, espejo del backend (lower + trim + colapsa espacios).
-const normEmpresa = (s) => String(s || '').trim().replace(/\s+/g, ' ').toLowerCase();
 
 export default function SolicitudRegistro() {
   // Plan2 Pase3: nombre dividido en dos campos OBLIGATORIOS (nombre[s] + apellido[s]); se CONCATENAN
@@ -65,11 +64,12 @@ export default function SolicitudRegistro() {
       setError('Las contraseñas no coinciden.');
       return;
     }
-    // O3: confirmar alta automática si la empresa tecleada no está en el catálogo.
+    // O3/FASE 3: si lo tecleado YA está en el catálogo (match FUERTE: ignora acentos/puntuación/
+    // sufijos de razón social), se REUTILIZA sin preguntar; solo si NO existe se confirma el alta.
     const empresaTrim = empresa.trim().replace(/\s+/g, ' ');
     if (empresaTrim) {
-      const existe = empresas.some((e) => normEmpresa(e.nombre) === normEmpresa(empresaTrim));
-      if (!existe && !window.confirm(`"${empresaTrim}" no está en el catálogo. ¿Registrarla como nueva empresa?`)) {
+      const yaExiste = empresaExistentePorNombre(empresas, empresaTrim);
+      if (!yaExiste && !window.confirm(`"${empresaTrim}" no está en el catálogo. ¿Registrarla como nueva empresa?`)) {
         return;
       }
     }
@@ -164,7 +164,12 @@ export default function SolicitudRegistro() {
                   <datalist id="sol-empresas-lista">
                     {empresas.map((e) => <option key={e.id} value={e.nombre} />)}
                   </datalist>
-                  <p className="text-xs text-slate-500 mt-1">Si no está en la lista, se registra como empresa nueva.</p>
+                  {(() => {
+                    const ya = empresa.trim() ? empresaExistentePorNombre(empresas, empresa) : null;
+                    return ya
+                      ? <p className="text-xs text-exito mt-1" data-testid="sol-empresa-existente">✓ Se usará la empresa ya registrada: «{ya.nombre}» (no se duplica).</p>
+                      : <p className="text-xs text-slate-500 mt-1">Si no está en la lista, se registra como empresa nueva.</p>;
+                  })()}
                 </div>
                 <div>
                   <label className="sg-label" htmlFor="sol-password">Contraseña (mín. 8 caracteres) *</label>

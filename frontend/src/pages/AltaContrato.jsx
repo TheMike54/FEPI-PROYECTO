@@ -125,6 +125,29 @@ const planProporcional = (montoAnticipo, numeros) => {
   return plan;
 };
 
+// FASE 2 (revisión profe 15-jun): default PROPORCIONAL AL PROGRAMA de obra (art. 143 fr. I
+// RLOPSRM) — la amortización de cada periodo es proporcional a su importe programado (lo que se
+// estima cobrar ese periodo); el residuo de redondeo se carga al periodo de mayor importe (lo
+// absorbe sin exceder su tope) para que Σ = monto del anticipo EXACTO. Es "igual que el plan de
+// obra" (palabras del profe) y cumple por construcción las reglas R2/R3 (cada periodo con obra
+// amortiza algo, sin pasarse de lo programado). Si no hay programa (Σ programado = 0) cae al
+// proporcional por número de periodos. Espejo del default del backend (crearContrato).
+const planProporcionalPrograma = (montoAnticipo, numeros, programadoPorNum) => {
+  if (!(montoAnticipo > 0) || numeros.length === 0) return {};
+  const total = round2(numeros.reduce((s, num) => round2(s + (Number(programadoPorNum[num]) || 0)), 0));
+  if (!(total > 0)) return planProporcional(montoAnticipo, numeros);
+  const provis = numeros.map((num) => round2(montoAnticipo * (Number(programadoPorNum[num]) || 0) / total));
+  // PISO de 1 centavo a todo periodo con obra programada: evita que el default se autorrechace por R2
+  // cuando la cuota proporcional de un periodo con obra mínima redondea a $0 (espejo del backend).
+  numeros.forEach((num, i) => { if ((Number(programadoPorNum[num]) || 0) > 0.005 && provis[i] < 0.01) provis[i] = 0.01; });
+  let sum = 0; provis.forEach((m) => { sum = round2(sum + m); });
+  let idxMax = 0; numeros.forEach((num, i) => { if ((Number(programadoPorNum[num]) || 0) > (Number(programadoPorNum[numeros[idxMax]]) || 0)) idxMax = i; });
+  provis[idxMax] = round2(provis[idxMax] + round2(montoAnticipo - sum));
+  const plan = {};
+  numeros.forEach((num, i) => { plan[num] = String(provis[i]); });
+  return plan;
+};
+
 // alta-v2 (4.2): valores iniciales VACÍOS (también usados por "Cancelar"). El contrato nuevo
 // arranca en blanco; el `tipo` mantiene la primera opción del select (campo obligatorio que
 // siempre tiene un valor válido).
@@ -678,14 +701,16 @@ function TabGarantias({ rows, onCell, onPatch, onAdd, onRemove, anticipoPct, set
   );
 }
 
-// O2 (10-jun) — Paso 5: PLAN DE AMORTIZACIÓN del anticipo (criterio de HU-01; el profe lo
-// definió en la revisión del 8-9 jun: "es en qué mes voy a devolver el dinero… muy parecido al
-// programa de obra: por estimación, qué cantidad va a amortizar. No hay límites"). Matriz por
-// periodo (patrón del programa): default PROPORCIONAL precargado, editable libre; el gate duro
-// (Σ = monto del anticipo al CENTAVO, art. 138 párr. 3 RLOPSRM) vive en validarPaso(5) y el
-// backend lo revalida. La carátula (G2) sigue amortizando proporcional:
-// [Fase B pendiente de validar con el profe].
-function TabPlanAmortizacion({ periodos, plan, onMonto, montoAnticipo, anticipoPct, sumaPlan, soloLectura, onRestablecer }) {
+// O2 (10-jun) / FASE 2 (15-jun) — Paso 5: PLAN DE AMORTIZACIÓN del anticipo (criterio de HU-01).
+// El profe lo definió como "en qué mes voy a devolver el dinero… muy parecido al programa de obra"
+// (8-9 jun). En la revisión del 15-jun REVIRTIÓ el "no hay límites": el plan debe ligarse al
+// programa ("no puedes amortizar todo en un solo mes; si en la última no alcanza para pagar, está
+// mal"). Por eso el default ahora es PROPORCIONAL AL PROGRAMA (art. 143 fr. I RLOPSRM) y, además
+// del cuadre Σ = anticipo al CENTAVO (art. 138 párr. 3), validarPaso/backend exigen: (R3) ningún
+// periodo amortiza más de lo que se estima cobrar ese periodo; (R2) todo periodo con obra
+// programada amortiza algo. La carátula (G2) sigue amortizando proporcional (Fase A; [Fase B
+// pendiente de validar con el profe: que la carátula obedezca este plan]).
+function TabPlanAmortizacion({ periodos, plan, onMonto, montoAnticipo, anticipoPct, sumaPlan, soloLectura, onRestablecer, importeProgramado = {} }) {
   const cuadra = sumaPlan === montoAnticipo;
   const dif = round2(montoAnticipo - sumaPlan);
   return (
@@ -693,14 +718,17 @@ function TabPlanAmortizacion({ periodos, plan, onMonto, montoAnticipo, anticipoP
       <h3 className="text-lg font-bold text-sigecop-blue mb-1">Plan de amortización del anticipo</h3>
       <p className="text-sm text-slate-600 mb-4 max-w-3xl">
         Define en qué periodos se devuelve el anticipo de <strong>{formatoMXN.format(montoAnticipo)}</strong>{' '}
-        ({anticipoPct}% del monto del contrato). Viene precargado <strong>proporcional</strong> entre los
-        periodos y es editable libremente; la suma debe ser <strong>exacta al centavo</strong> (art. 138 párr. 3 RLOPSRM).
+        ({anticipoPct}% del monto del contrato). Viene precargado <strong>proporcional al programa de obra</strong>{' '}
+        y es editable; la suma debe ser <strong>exacta al centavo</strong> (art. 138 párr. 3 RLOPSRM) y la
+        amortización de cada periodo <strong>no puede exceder lo que se estima cobrar</strong> ese periodo, ni
+        diferirse toda al final (art. 143 fr. I RLOPSRM).
       </p>
-      <Tabla className="mb-4 max-w-2xl" testid="plan-amortizacion-tabla">
+      <Tabla className="mb-4 max-w-3xl" testid="plan-amortizacion-tabla">
         <thead>
           <tr>
             <th className={thClass}>Periodo</th>
             <th className={thClass}>Del — al</th>
+            <th className={`${thClass} text-right`}>Programado (cobro)</th>
             <th className={`${thClass} text-right`}>Monto a amortizar</th>
             <th className={`${thClass} text-right`}>% del anticipo</th>
           </tr>
@@ -708,19 +736,26 @@ function TabPlanAmortizacion({ periodos, plan, onMonto, montoAnticipo, anticipoP
         <tbody>
           {periodos.map((p) => {
             const m = Number(plan[p.numero]) || 0;
+            const prog = round2(Number(importeProgramado[p.numero]) || 0);
+            const excede = prog > 0.005 && m > prog + 0.005;          // R3: amortiza más de lo cobrado
+            const faltaAmortizar = prog > 0.005 && !(m > 0);          // R2: periodo con obra sin amortizar
+            const malo = excede || faltaAmortizar;
             return (
               <tr key={p.numero} className="border-t border-borde">
                 <td className="px-3 py-2 font-medium">#{p.numero}</td>
                 <td className="px-3 py-2 text-slate-600 text-xs whitespace-nowrap">{fmtFechaES(p.inicio)} — {fmtFechaES(p.fin)}</td>
+                <td className="px-3 py-2 text-right text-slate-600 font-mono text-xs" data-testid={`plan-programado-${p.numero}`}>{formatoMXN.format(prog)}</td>
                 <td className="px-3 py-2 text-right">
                   <input
                     type="number" min="0" step="0.01"
-                    className="sg-input text-right w-40 inline-block"
+                    className={`sg-input text-right w-40 inline-block${malo ? ' border-peligro ring-1 ring-peligro/40' : ''}`}
                     value={plan[p.numero] ?? ''}
                     onChange={(e) => onMonto(p.numero, e.target.value)}
                     disabled={soloLectura}
                     data-testid={`plan-monto-${p.numero}`}
                   />
+                  {excede && <div className="text-peligro text-xs mt-1" data-testid={`plan-excede-${p.numero}`}>Excede lo programado del periodo</div>}
+                  {faltaAmortizar && <div className="text-peligro text-xs mt-1" data-testid={`plan-falta-${p.numero}`}>Debe amortizar algo (hay obra programada)</div>}
                 </td>
                 <td className="px-3 py-2 text-right text-slate-500 text-xs">
                   {montoAnticipo > 0 ? `${round2((m / montoAnticipo) * 100).toFixed(2)}%` : '—'}
@@ -731,7 +766,7 @@ function TabPlanAmortizacion({ periodos, plan, onMonto, montoAnticipo, anticipoP
         </tbody>
         <tfoot>
           <tr className="border-t border-borde-fuerte bg-pagina font-semibold">
-            <td className="px-3 py-2" colSpan={2}>Suma del plan</td>
+            <td className="px-3 py-2" colSpan={3}>Suma del plan</td>
             <td className="px-3 py-2 text-right font-mono" data-testid="plan-suma">{formatoMXN.format(sumaPlan)}</td>
             <td className="px-3 py-2" />
           </tr>
@@ -743,11 +778,13 @@ function TabPlanAmortizacion({ periodos, plan, onMonto, montoAnticipo, anticipoP
           : <span className="block text-peligro bg-peligro-bg border border-peligro/30 rounded px-3 py-2" data-testid="plan-descuadre">El plan debe sumar {formatoMXN.format(montoAnticipo)}: lleva {formatoMXN.format(sumaPlan)} ({dif > 0 ? `faltan ${formatoMXN.format(dif)}` : `sobran ${formatoMXN.format(-dif)}`}).</span>}
       </div>
       <Boton variante="secundario" onClick={onRestablecer} disabled={soloLectura} data-testid="plan-restablecer">
-        Restablecer proporcional
+        Restablecer proporcional al programa
       </Boton>
       <div className="mt-4 bg-guinda-soft border-l-4 border-guinda px-4 py-3 text-sm text-tinta max-w-3xl">
-        <strong>Fase A:</strong> el plan se captura aquí y se consulta en el expediente. La carátula de la
-        estimación sigue amortizando <strong>proporcional</strong> (art. 143 fr. I RLOPSRM).{' '}
+        <strong>Cómo se valida:</strong> el plan se liga al programa de obra (art. 143 fr. I RLOPSRM): cada
+        periodo amortiza una parte del anticipo, sin pasar de lo que se estima cobrar ese periodo, y el saldo
+        residual se liquida en la estimación final (art. 143 fr. III-d). La carátula de la estimación sigue
+        amortizando <strong>proporcional</strong> al avance.{' '}
         <span className="text-slate-500">[Fase B pendiente de validar con el profe: que la carátula obedezca este plan.]</span>
       </div>
     </div>
@@ -1320,16 +1357,27 @@ export default function AltaContrato() {
   }));
   const montoDerivado = round2(conceptos.reduce((s, c) => s + (Number(importeDe(c.cantidad, c.pu)) || 0), 0));
 
-  // --- O2: PLAN DE AMORTIZACIÓN del anticipo (paso 5, art. 138 párr. 3 RLOPSRM) ---
-  // montoAnticipo = ROUND(monto derivado × %anticipo, 2). El plan vive como { numero: 'monto' }
-  // y se PRECARGA PROPORCIONAL (editable libre por periodo, "no hay límites" — profe) cada vez
-  // que cambian el anticipo, el monto del contrato o los periodos: el plan DERIVA de esos tres
-  // (ediciones previas dejan de cuadrar y se reponen al default, predecible y siempre válido).
+  // --- O2/FASE 2: PLAN DE AMORTIZACIÓN del anticipo (paso 5) ---
+  // montoAnticipo = ROUND(monto derivado × %anticipo, 2). El plan vive como { numero: 'monto' }.
+  // FASE 2 (revisión profe 15-jun): se PRECARGA PROPORCIONAL AL PROGRAMA de obra (art. 143 fr. I
+  // RLOPSRM) — antes era libre ("no hay límites"); el profe lo revirtió: debe ligarse al programa
+  // ("no puedes amortizar todo en un solo mes; no te alcanza para pagar"). Se repone al default
+  // cuando cambian el anticipo, el monto, los periodos o el PROGRAMA (el plan deriva de ellos).
+  // El usuario puede editar, pero validarPaso exige R2 (cada periodo con obra amortiza algo) y
+  // R3 (no amortizar más de lo programado del periodo). importeProgramado = lo que se estima
+  // cobrar cada periodo = Σ ROUND(cantidad×pu, 2) de las celdas del programa de ese periodo.
+  const importeProgramado = useMemo(() => {
+    const m = {};
+    for (const p of periodos) {
+      m[p.numero] = round2(conceptos.reduce((s, c) => round2(s + round2((Number(celdas[`${c.rid}:${p.numero}`]) || 0) * (Number(c.pu) || 0))), 0));
+    }
+    return m;
+  }, [conceptos, celdas, periodos]);
   const montoAnticipo = round2(montoDerivado * ((Number(anticipoPct) || 0) / 100));
   const [planAmort, setPlanAmort] = useState({});
   useEffect(() => {
-    setPlanAmort(planProporcional(montoAnticipo, periodos.map((p) => p.numero)));
-  }, [montoAnticipo, periodos]);
+    setPlanAmort(planProporcionalPrograma(montoAnticipo, periodos.map((p) => p.numero), importeProgramado));
+  }, [montoAnticipo, periodos, importeProgramado]);
   const setPlanMonto = (numero, value) => setPlanAmort((prev) => ({ ...prev, [numero]: value }));
   // Σ actual del plan (round2 incremental, espejo del backend) — para el resumen y validarPaso(5).
   const sumaPlan = round2(periodos.reduce((s, p) => round2(s + (Number(planAmort[p.numero]) || 0)), 0));
@@ -1587,6 +1635,24 @@ export default function AltaContrato() {
         const dif = round2(montoAnticipo - sumaPlan);
         const detalle = dif > 0 ? `faltan ${formatoMXN.format(dif)}` : `sobran ${formatoMXN.format(-dif)}`;
         return { ok: false, msg: `El plan de amortización debe sumar exactamente el anticipo (${formatoMXN.format(montoAnticipo)}): lleva ${formatoMXN.format(sumaPlan)}, ${detalle} (art. 138 párr. 3 RLOPSRM).`, errores: { ...ERR0, planAmortError: true } };
+      }
+      // FASE 2 (revisión profe 15-jun): ligar el plan al PROGRAMA de obra (art. 143 fr. I RLOPSRM).
+      // R3 — un periodo no puede amortizar más de lo que se estima cobrar ese periodo (la
+      // amortización se descuenta de la estimación). R2 — todo periodo CON obra programada debe
+      // amortizar algo (se aplica en cada estimación; el saldo va a la final, art. 143 fr. III-d).
+      // Esto rechaza el plan 0/0/todo-al-último. Solo aplica si hay programa (Σ programado > 0).
+      const hayPrograma = round2(periodos.reduce((s, p) => round2(s + (Number(importeProgramado[p.numero]) || 0)), 0)) > 0;
+      if (hayPrograma) {
+        for (const p of periodos) {
+          const prog = round2(Number(importeProgramado[p.numero]) || 0);
+          const m = round2(Number(planAmort[p.numero]) || 0);
+          if (m > prog + 0.005) {
+            return { ok: false, msg: `Plan de amortización: el periodo ${p.numero} amortiza ${formatoMXN.format(m)}, más de lo que se estima cobrar ese periodo (${formatoMXN.format(prog)}). La amortización se descuenta de cada estimación (art. 143 fr. I RLOPSRM).`, errores: { ...ERR0, planAmortError: true } };
+          }
+          if (prog > 0.005 && !(m > 0)) {
+            return { ok: false, msg: `Plan de amortización: el periodo ${p.numero} tiene obra programada (${formatoMXN.format(prog)}) pero no amortiza nada. La amortización debe aplicarse en cada estimación, no diferirse toda al final (art. 143 fr. I RLOPSRM).`, errores: { ...ERR0, planAmortError: true } };
+          }
+        }
       }
       return { ok: true };
     }
@@ -1868,8 +1934,8 @@ export default function AltaContrato() {
     // navegación lo salta (irAPaso); el orden de índices NO cambia (gating intacto).
     { label: 'Plan de amortización', oculta: planOmitido, content: wrapTab(
       <TabPlanAmortizacion periodos={periodos} plan={planAmort} onMonto={setPlanMonto} montoAnticipo={montoAnticipo}
-        anticipoPct={Number(anticipoPct) || 0} sumaPlan={sumaPlan} soloLectura={soloLectura}
-        onRestablecer={() => setPlanAmort(planProporcional(montoAnticipo, periodos.map((p) => p.numero)))} />
+        anticipoPct={Number(anticipoPct) || 0} sumaPlan={sumaPlan} soloLectura={soloLectura} importeProgramado={importeProgramado}
+        onRestablecer={() => setPlanAmort(planProporcionalPrograma(montoAnticipo, periodos.map((p) => p.numero), importeProgramado))} />
     ) },
     { label: 'PDF firmado', content: wrapTab(<TabPdfFirmado contratoId={contratoGuardadoId} soloLectura={soloLectura} pendingFile={pdfFirmadoFile} onPickFile={setPdfFirmadoFile} />) },
     { label: 'Registrados', content: (
