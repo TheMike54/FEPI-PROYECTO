@@ -1096,56 +1096,26 @@ obra y la Dependencia solo **consultan**. La Supervisión **no tiene acceso** (n
 ni en el inicio).
 
 **Historia:**
-- **Como** Contratista / Superintendente o Finanzas (ejecutan); el Residente y la Dependencia consultan; la
-  Supervisión sin acceso
-- **Deseo** que, en una pantalla de prototipo, el sistema muestre y simule el tránsito a pago de una
-  estimación: (1) una verificación de suficiencia presupuestal que calcula 'disponible = techo −
-  comprometido' y avisa/bloquea cuando el monto excede ese disponible; (2) un semáforo del plazo de 20 días
-  calculado en vivo desde una fecha de autorización (de demostración, cae en ámbar) con cortes 0-10 verde /
-  11-17 ámbar / 18-20 rojo; (3) un checklist de tres soportes (factura, CFDI, fianza) que se marcan como
-  cargados; y al cumplir ambos controles, un botón que simula generar la instrucción de pago y muestra
-  avisos de 'instrucción generada' y 'notificación a Finanzas'
-- **A fin de** prototipar el flujo de tránsito a pago y los controles legales (art. 24 y art. 54 LOPSRM) en
-  la pantalla, dejando lista la base de datos (presupuesto anual, instrucción de pago) para la
-  implementación real posterior
+- **Como** Contratista / Superintendente o Finanzas (ejecutan); el Residente y la Dependencia consultan; la Supervisión sin acceso
+- **Deseo** seleccionar una estimación ya autorizada y gestionar su tránsito a pago sobre datos reales: (1) una verificación de suficiencia presupuestal que el sistema hace del lado del servidor ('disponible = techo − comprometido') y que bloquea la generación de la instrucción cuando el neto excede lo disponible (art. 24 LOPSRM); (2) un semáforo del plazo de 20 días anclado en la fecha real de autorización (tomada de la nota de autorización que queda en la bitácora), que avisa al entrar en ámbar; (3) un checklist de soportes (factura y CFDI, más el estado de la fianza de cumplimiento que se lee de las garantías del contrato) que condiciona la generación; y un botón que genera la instrucción de pago de verdad (se guarda, una por estimación) y notifica a Finanzas
+- **A fin de** ejecutar el tránsito a pago con los controles legales reales (art. 24 y art. 54 LOPSRM), cuadrados al centavo y sin datos de demostración
 
-**Criterios de aceptación:**
-1. La pantalla calcula y muestra 'disponible = techo − comprometido' sobre valores de demostración (techo
-   15M, comprometido 11.2M) y deshabilita el botón de generar cuando el monto (editable) excede el
-   disponible, mostrando un aviso (art. 24 LOPSRM); todo en la pantalla, sin verificación real.
-2. La pantalla muestra un semáforo de 20 días calculado en vivo (con una fecha de demostración que cae en
-   zona ámbar), con cortes 0-10 verde / 11-17 ámbar / 18-20 rojo; el 'aviso al entrar en amarillo' y la
-   'notificación a Finanzas' son texto fijo, no una notificación real.
-3. El botón 'Generar instrucción de pago' solo se habilita cuando los tres soportes (factura, CFDI, fianza)
-   están marcados como cargados (mediante un interruptor, sin subir el archivo de verdad); la fianza se
-   exige siempre (sin la condición 'cuando el contrato lo exija').
-4. Al pulsar generar, la pantalla muestra el aviso 'Instrucción de pago generada' y la sección
-   'Notificación a Finanzas' (fecha, hora, monto), sin guardar nada de verdad y congelando la vista (no se
-   puede generar una segunda).
-5. La pantalla respeta el acceso por rol: el Contratista y Finanzas ejecutan; el Residente y la Dependencia
-   ven la vista en solo-lectura (sin botón de generar); la Supervisión no ve la pantalla.
+**Criterios de aceptación (comportamiento actual del sistema):**
+1. **(art. 24)** El sistema calcula, del lado del servidor, 'disponible = techo anual − comprometido' —el comprometido suma el neto de las estimaciones ya autorizadas y pagadas de esa dependencia y ejercicio, sin contar la actual— y bloquea la generación si el neto excede lo disponible. Si no hay techo cargado, también la bloquea e indica que falta el presupuesto (no inventa una cifra). El techo lo carga Finanzas en la propia pantalla.
+2. **(art. 54)** Un semáforo de 20 días naturales, anclado en la fecha real de autorización (tomada de la nota de autorización que queda en la bitácora), con cortes 0-10 verde / 11-17 ámbar / 18-20 rojo [validar profe], y aviso al entrar en ámbar. Si el contrato no tenía bitácora al autorizar y no hay esa fecha, el semáforo queda deshabilitado con una etiqueta (no inventa la fecha); la fecha definitiva requiere un sello de autorización propio [PARA MAIKI].
+3. La instrucción solo se genera cuando los soportes obligatorios están completos: factura y CFDI (se registra el folio, sin subir el archivo) y la fianza de cumplimiento vigente, que el sistema lee de las garantías del contrato. "Cuando el contrato lo exija" se entiende hoy como "hay una garantía de cumplimiento registrada" [validar profe]. La subida del archivo en sí está deshabilitada con una etiqueta (todavía no hay dónde almacenarlo).
+4. La generación exige que la estimación esté autorizada (verificado en el servidor), guarda la instrucción de verdad (monto = neto, redondeado al centavo, con la notificación a Finanzas sellada) y no permite duplicarla: un segundo intento se rechaza.
+5. La pantalla respeta el acceso por rol: el Contratista y Finanzas ejecutan; el Residente y la Dependencia ven en solo-lectura (sin botón de generar); la Supervisión no ve la pantalla.
 
-**Fundamento legal:** art. 24 LOPSRM (suficiencia presupuestaria); art. 54 LOPSRM (plazo de pago de 20 días
-naturales); art. 55 LOPSRM (gastos financieros por incumplimiento del plazo — citado solo en la ficha
-vieja, no en el sistema).
+**Fundamento legal:** art. 24 LOPSRM (suficiencia presupuestaria); art. 54 LOPSRM (plazo de pago de 20 días naturales). El art. 55 LOPSRM (gastos financieros por mora) no está implementado.
 
 **Pendientes / [validar profe]:**
-- Toda la pantalla es prototipo de demostración: todavía no guarda nada. La base de datos (presupuesto
-  anual, instrucción de pago) ya existe pero nadie la usa. Falta implementar: cargar el techo real,
-  verificar que lo pagado más el neto no exceda el techo, guardar la instrucción y notificar a Finanzas.
-  [validar profe / Maiki: prioridad de implementación]
-- El monto de la estimación es un campo editable, no se toma de la estimación autorizada real; el 'Neto' y
-  la estimación del banner están fijos. Definir cómo enlazar con la estimación autorizada (flujo
-  HU-13/HU-15) y con la fecha de autorización real para el semáforo.
-- Los cortes del semáforo (verde ≤10 / ámbar 11-17 / rojo >17) son una decisión de pantalla, no del art.
-  54. Confirmar la regla de aviso (¿amarillo a qué día?).
-- La condición de la fianza ('cuando el contrato lo exija', art. 54 / garantías) no está implementada; hoy
-  la fianza se exige siempre. Definir la regla.
-- No hay carga real de soportes (factura/CFDI/fianza son interruptores en pantalla). Falta la subida real y
-  su almacenamiento.
-- La notificación a Finanzas y el aviso al entrar en amarillo (art. 54) son texto fijo, no notificaciones
-  reales. Definir el mecanismo de notificación de esta Etapa.
-- El art. 55 LOPSRM (gastos financieros por mora) que cita la ficha vieja no se refleja en el sistema.
+- 🔴 **PARA MAIKI:** montar la nueva ruta del tránsito a pago en el servidor (el snippet queda marcado en el archivo de rutas). Para la fecha de autorización definitiva del semáforo (art. 54), agregar un sello de autorización propio a la estimación y registrarlo al autorizar (toca la base de datos y el núcleo congelado); mientras tanto se usa la nota de la bitácora.
+- [validar profe] la definición de "comprometido" (suma del neto de autorizadas y pagadas); el enlace entre contrato y presupuesto se hace por nombre de dependencia y ejercicio, sin clave foránea (frágil).
+- [validar profe] los cortes del semáforo; la condición de la fianza ("cuando el contrato lo exija", ¿siempre, art. 48?); quién genera la instrucción (Contratista o Finanzas; hoy ambos); y si cargar el techo es parte de esta HU o un asunto aparte de administración presupuestal.
+- La subida del archivo de los soportes (factura/CFDI/fianza) no existe todavía (no hay dónde guardarlo); por ahora se registran solo los datos —marcado, no agregado en silencio.
+- La notificación a Finanzas queda como sello dentro del sistema (Etapa 1); todavía no hay correo real.
+- [validar profe] Esta ficha se actualizó respecto a la revisión del 16-jun: ahí HU-20 figuraba como prototipo de demostración; ahora describe la implementación real cableada en esta entrega.
 
 ---
 

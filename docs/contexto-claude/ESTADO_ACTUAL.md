@@ -54,10 +54,10 @@ núcleo (alta → bitácora → avance → estimación → autorización → pag
 real. Quedan 4 pantallas que son **maqueta pura sin backend**.
 
 **% funcional (por HU, honesto):** de 26 unidades (HU-00..21 + Registro + Por Firmar + HU-22 roster + HU-23
-empresas), **~23 funcionan end-to-end** (≈88%); **2 son maqueta sobre datos dummy** (HU-11 minutas,
-HU-20 tránsito a pago) — **HU-18 portafolio pasó a funcional** (integración 17-jun, `GET /api/portafolio`);
-**HU-02 fianzas** es parcial (la pantalla es dummy, pero las garantías SÍ persisten vía el alta HU-01).
-Detalle exacto en §7.
+empresas), **~23 funcionan end-to-end** (≈88%); **HU-11 minutas** sigue maqueta; **HU-20 tránsito a pago**
+está cableada a backend real en su rama `feat/e3-hu-20`, pendiente de montaje en `server.js` por Maiki —
+**HU-18 portafolio pasó a funcional** (integración 17-jun, `GET /api/portafolio`); **HU-02 fianzas** es
+parcial (la pantalla es dummy, pero las garantías SÍ persisten vía el alta HU-01). Detalle exacto en §7.
 
 ---
 
@@ -370,7 +370,14 @@ vive en el MISMO BEGIN/COMMIT que el evento); toma advisory lock por bitácora y
 | HU | Pantalla | Estado real | Bloqueado por |
 |---|---|---|---|
 | **HU-11** Minutas | `MinutasVisitas.jsx` | Todo en `useState` sobre dummies; el PDF solo captura el **nombre**; "adjuntar a nota" es modal informativo | Falta controller/route de minutas; `minutas.nota_id` huérfana |
-| **HU-20** Tránsito a pago | `TransitoPago.jsx` | Suficiencia/soportes 100% en memoria; monto editable hardcoded. **La DDL existe** (`presupuesto_anual` + `instruccion_pago`) pero **ningún controller la usa** | Falta TODO el backend (suficiencia presupuestal + instrucción de pago + upload de soportes) |
+
+> **HU-20 Tránsito a pago — YA NO es maqueta** (rama Equipo 3, pendiente de montaje en `server.js` por Maiki):
+> `TransitoPago.jsx` consume `GET/POST /api/instruccion-pago` (controller+route nuevos). Suficiencia
+> server-side (`presupuesto_anual` techo − comprometido, art. 24, bloquea 409 si excede), semáforo del plazo
+> anclado en la **nota de autorización de bitácora** (CA-2 derivado; el sello `autorizada_en` queda PARA
+> MAIKI), soportes (factura/CFDI metadato + fianza leída de garantías; **subida de archivos deshabilitada**,
+> sin infra), instrucción real en `instruccion_pago` (UNIQUE por estimación, `notificado_finanzas_en`).
+> Endpoint extra `POST /presupuesto` (finanzas) para cargar el techo. Umbrales/comprometido `[validar profe]`.
 
 > **HU-18 Portafolio ya NO es maqueta** (integración 17-jun): `GET /api/portafolio`
 > (`portafolio.controller.js`, solo lectura, acotado por participación vía `ROLES_VEN_TODO`/`lib/acceso`)
@@ -404,8 +411,9 @@ origin. Esas HU son maquetas que viven en `main` sin backend.
 
 - ⏰ **Reloj de la BD de Render:** el PostgreSQL **plan free expira ~25-jun-2026**. Decisión pendiente
   (pagar plan vs instancia nueva); runbook de backup/restore ensayado en O0. **Es el riesgo #1.**
-- **Tablas muertas** (DDL sin controller que las use): `instruccion_pago`, `presupuesto_anual` (HU-20),
-  `garantia_endosos` (HU-02). Existen con sus triggers pero nadie las escribe.
+- **Tablas muertas** (DDL sin controller que las use): `garantia_endosos` (HU-02). Existe con su trigger
+  pero nadie la escribe. *(`instruccion_pago`, `presupuesto_anual` y `estimacion_soportes` YA las usa HU-20
+  en la rama `feat/e3-hu-20`, pendiente de montaje por Maiki.)*
 - **Código muerto dudoso** (NO tocar sin decisión de Maiki, ver `docs/analisis-y-diseno/AUDITORIA_CODIGO_MUERTO.md`):
   componentes UI huérfanos `Card.jsx`, `Badge.jsx`, `CardCriterioAceptacion.jsx` (0 importadores);
   `BadgeSprint.jsx` es stub de compatibilidad intencional (retorna `null`); `api.health` sin caller.
@@ -448,7 +456,7 @@ origin. Esas HU son maquetas que viven en `main` sin backend.
 | HU-17 | Tablero de estimaciones | ✅ |
 | HU-18 | Portafolio ejecutivo con semáforos | ✅ (integración 17-jun: semáforo server-side `GET /api/portafolio`, acotado por participación; umbrales/avance físico `[validar profe]`) |
 | HU-19 | Exportación de 7 reportes | ✅ (R4 observaciones pendiente) |
-| HU-20 | Tránsito a pago / suficiencia presupuestal | ❌ maqueta (DDL muerta) |
+| HU-20 | Tránsito a pago / suficiencia presupuestal | ✅ cableada a backend real (suficiencia art. 24 + instrucción de pago); pendiente de montaje en `server.js` por Maiki |
 | HU-21 | Registro del pago | ✅ (gate ESTRICTO: solo `autorizada`, art. 54) |
 | Registro | Auto-registro con aprobación de dependencia | ✅ |
 | Por Firmar | Firma de aperturas pendientes | ✅ |
