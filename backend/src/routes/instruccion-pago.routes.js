@@ -1,0 +1,47 @@
+const express = require('express');
+const { authMiddleware, requireRole } = require('../middlewares/auth.middleware');
+const {
+  estadoTransito, cargarSoporte, generarInstruccion, consultarPresupuesto, crearPresupuesto,
+} = require('../controllers/instruccion-pago.controller');
+
+const router = express.Router();
+
+// HU-20 (Equipo 3): tránsito a pago. SOLO el control de PARTICIPACIÓN va en el controller
+// (lib/acceso.js), igual que tablero/portafolio; la matriz por rol (PERMISOS) la aplica el
+// frontend (contratista 'E', finanzas 'E', residente/dependencia 'C'). El POST de presupuesto
+// sí exige rol global finanzas (carga del techo anual).
+router.use(authMiddleware);
+
+// Presupuesto (techo art. 24). Carga = finanzas; consulta = cualquier sesión (acota la UI).
+router.get('/presupuesto', consultarPresupuesto);
+router.post('/presupuesto', requireRole('finanzas'), crearPresupuesto);
+
+// Tránsito por estimación.
+router.get('/estimacion/:id', estadoTransito);
+router.post('/estimacion/:id/soportes', cargarSoporte);
+router.post('/estimacion/:id', generarInstruccion);
+
+module.exports = router;
+
+// ============================================================================
+// PARA MAIKI — montaje permanente en server.js (ZONA CONGELADA; lo integra Maiki).
+// El smoke local montó esta ruta TEMPORALMENTE y se revirtió con `git checkout
+// backend/server.js`; server.js NO va en este PR. Snippet a aplicar:
+//
+//   // (junto a los demás require de routers)
+//   const instruccionPagoRoutes = require('./src/routes/instruccion-pago.routes');  // HU-20 (Equipo 3)
+//
+//   // (junto a los demás app.use, DESPUÉS de app.use(cors())) — solo lectura + escritura acotada
+//   app.use('/api/instruccion-pago', instruccionPagoRoutes);
+//
+// ----------------------------------------------------------------------------
+// PARA MAIKI — CA-2 (ancla canónica del plazo de pago, art. 54/55 LOPSRM):
+// Hoy el plazo se ancla en la NOTA de bitácora de autorización (derivado, [validar profe]); solo
+// existe si el contrato tenía bitácora abierta al autorizar. El ancla canónica sería un sello en
+// la estimación. Cambios (esquema + autorizar de HU-15, ambos congelados → Maiki):
+//   ALTER TABLE estimaciones ADD COLUMN IF NOT EXISTS autorizada_en  TIMESTAMPTZ;
+//   ALTER TABLE estimaciones ADD COLUMN IF NOT EXISTS autorizada_por INTEGER REFERENCES usuarios(id);
+//   -- y en autorizarEstimacion (estimaciones-ciclo.controller.js), en el mismo UPDATE:
+//   --   SET estado='autorizada', autorizada_en = NOW(), autorizada_por = $usuario
+// Con el sello, estadoTransito puede preferir estimaciones.autorizada_en sobre la nota.
+// ============================================================================

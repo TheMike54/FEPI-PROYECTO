@@ -101,6 +101,12 @@ export const api = {
   listarPagos: (contratoId) => request(`/pagos/contrato/${contratoId}`),
   // HU-17: tablero agregado de estimaciones (acotado por participación en el backend).
   tableroEstimaciones: () => request('/tablero/estimaciones'),
+  // HU-20: tránsito a pago (suficiencia art. 24 + soportes + semáforo plazo + instrucción de pago).
+  transitoEstimacion: (estimacionId) => request(`/instruccion-pago/estimacion/${estimacionId}`),
+  cargarSoporteTransito: (estimacionId, payload) => request(`/instruccion-pago/estimacion/${estimacionId}/soportes`, { method: 'POST', body: JSON.stringify(payload) }),
+  generarInstruccionPago: (estimacionId) => request(`/instruccion-pago/estimacion/${estimacionId}`, { method: 'POST' }),
+  consultarPresupuesto: (ejercicio, dependencia) => request(`/instruccion-pago/presupuesto?ejercicio=${encodeURIComponent(ejercicio)}&dependencia=${encodeURIComponent(dependencia)}`),
+  crearPresupuesto: (payload) => request('/instruccion-pago/presupuesto', { method: 'POST', body: JSON.stringify(payload) }),
   // HU-12: estimaciones (integración + consulta + avance para el preview).
   avanceContrato: (contratoId) => request(`/estimaciones/contrato/${contratoId}/avance`),
   estimacionesDeContrato: (contratoId) => request(`/estimaciones/contrato/${contratoId}`),
