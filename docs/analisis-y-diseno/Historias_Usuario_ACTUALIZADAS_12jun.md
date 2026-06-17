@@ -183,40 +183,40 @@ obra y Finanzas solo **consultan**. El Contratista / Superintendente y la Superv
 - **Deseo** capturar y editar en una pantalla las pólizas de fianza del contrato (tipo, afianzadora, número
   de póliza, monto, fecha de emisión y de vencimiento, y el nombre del archivo PDF), y ver para cada una un
   distintivo de color y unos contadores según los días que faltan para su vencimiento
-- **A fin de** tener a la vista el estado de vigencia de las garantías. Nota: hoy esta pantalla todavía
-  opera sobre una lista de demostración, no sobre el contrato real
+- **A fin de** tener a la vista y gestionar el estado de vigencia de las garantías del contrato
+
+**Estado:** ✅ **Funcional** (sesión E2 18-jun): la pantalla está cableada al backend real, sobre el contrato
+que se elige; ya no es maqueta.
 
 **Criterios de aceptación:**
-1. La pantalla lista las pólizas con tipo, folio, afianzadora, monto y fecha de vencimiento, y permite
-   agregar o editar pólizas en una ventana cuyo botón de guardar solo se habilita cuando están todos los
-   campos obligatorios. Los cambios viven solo durante la sesión y se pierden al recargar: esta pantalla
-   todavía opera sobre datos de demostración.
+1. La pantalla lista las pólizas del contrato con tipo, afianzadora, número de póliza, monto y fecha de
+   vencimiento, y permite agregar o editar pólizas. Los cambios se guardan en el sistema. Hay **una garantía
+   por tipo** (anticipo, cumplimiento, vicios ocultos): intentar crear una segunda del mismo tipo se rechaza
+   (se edita la existente).
 2. Cada fila muestra un distintivo de color según los días que faltan para vencer, con cortes fijos: rojo
    si está vencida o faltan 5 días o menos, ámbar a 15 días o menos, amarillo a 30 días o menos, verde a
    más de 30. Arriba se muestran tarjetas con el conteo de pólizas por vencer en 5/15/30 días. No se envía
    ninguna alerta ni hay umbral configurable.
-3. El botón 'Ver PDF' abre una ventana que muestra el nombre del archivo, no el documento; el PDF de la
-   póliza todavía no se sube ni se guarda.
+3. El botón 'Ver PDF' abre el **documento PDF real** de la póliza (el archivo se sube y se guarda en el
+   sistema). Cada garantía admite **endosos** (ajustes por ampliación de monto o prórroga de vigencia), que
+   quedan registrados sin alterar la garantía original.
 4. Solo la Dependencia ve los botones de agregar y editar; el Residente y Finanzas ven la pantalla en
    solo-consulta; el Contratista y la Supervisión no tienen acceso.
-5. El guardado real de garantías ocurre en el alta del contrato (HU-01) y se muestra de solo-lectura en el
-   expediente (HU-04); esta pantalla HU-02 todavía no está conectada a esos datos.
+5. Las garantías capturadas en el alta del contrato (HU-01) y las que se agregan aquí son las mismas: esta
+   pantalla las gestiona (lee, agrega, edita, endosa) y se muestran de solo-lectura en el expediente (HU-04).
 
-**Fundamento legal:** art. 48 LOPSRM (pie de página de la pantalla); art. 98 fr. I y fr. II RLOPSRM
-(citados en el alta y en la documentación de endosos de garantía; no operativos en HU-02).
+**Fundamento legal:** art. 48 LOPSRM (qué se garantiza: el anticipo —fr. I— y el cumplimiento del contrato
+—fr. II—, dentro de los 15 días naturales del fallo); art. 66 LOPSRM (garantía por defectos y vicios ocultos);
+art. 98 RLOPSRM (forma de la fianza y previsiones mínimas de la póliza); art. 91 RLOPSRM (garantía de
+cumplimiento de al menos el 10% del monto y su **ajuste/ampliación** por modificación de monto o plazo, que
+es el **endoso**).
 
 **Pendientes / [validar profe]:**
-- Conectar la pantalla a los datos reales: leer las garantías del contrato en sesión y guardar altas y
-  ediciones (hoy todo es de demostración) [validar profe / Maiki].
-- Guardar de verdad el PDF de la póliza (hoy no existe almacenamiento); definir dónde se guarda [validar
-  profe].
-- Emisión real de alertas de vencimiento (30/15/5 días) y su configurabilidad: hoy son distintivos y
-  contadores en pantalla con cortes fijos; no hay motor de notificación [validar profe].
-- Historial de fianzas y endosos por modificatorios (parte de la historia): la base de datos contempla los
-  endosos pero todavía no están construidos; decidir si se implementa el ciclo de endosos (art. 98 fr. II /
-  art. 99 RLOPSRM) [validar profe].
-- La historia dice 'Como Dependencia' y el sistema lo respeta; confirmar que el Residente y Finanzas deban
-  quedar en solo-consulta y el Contratista y la Supervisión sin acceso.
+- Emisión real de alertas de vencimiento (30/15/5 días) por un canal (correo/notificación): hoy son
+  distintivos y contadores en pantalla con cortes fijos; no hay motor de notificación. **[sin base legal —
+  criterio del profe; default conservador: no se notifica, solo se muestra]**.
+- Vincular el endoso al convenio modificatorio que lo origina (la base de datos lo soporta vía `convenio_id`):
+  hoy el endoso se registra suelto. Mejora opcional [validar Maiki].
 
 ---
 
@@ -638,47 +638,55 @@ firmada/tácita).
 
 ## HU-11 · Minutas, visitas y acuerdos
 
+**Estado:** ✅ **Funcional** (sesión autónoma E2, 18-jun) — cableada al backend real; antes era maqueta
+(todo `useState`).
+
 **Quién ve y quién hace:** El **Residente de obra** ejecuta. El Contratista / Superintendente y la
 Supervisión solo **consultan**. La Dependencia y Finanzas **no tienen acceso**.
 
 **Historia:**
 - **Como** Residente de obra
-- **Deseo** registrar minutas de reuniones (fecha, lugar, participantes, asunto y nombre del PDF), agendar
-  visitas o inspecciones de campo (fecha, lugar, responsable, propósito) y consultar una lista de acuerdos
-  filtrable por periodo, todo dentro de una pantalla con tres pestañas (Minutas, Agenda de visitas y
-  Acuerdos)
+- **Deseo** registrar minutas de reuniones (fecha, lugar, participantes, asunto y **PDF real** de la minuta),
+  agendar visitas o inspecciones de campo (fecha, lugar, responsable, propósito), **vincular cada minuta o
+  visita a una nota de la bitácora del contrato** y consultar la lista de acuerdos **derivada de esas
+  minutas**, todo dentro de una pantalla con tres pestañas (Minutas, Agenda de visitas y Acuerdos)
 - **A fin de** tener concentradas las reuniones, visitas y compromisos del contrato en un solo lugar para
   consulta
 
 **Criterios de aceptación:**
-1. La pantalla tiene 3 pestañas (Minutas, Agenda de visitas y Acuerdos); el Residente ejecuta y el
-   Contratista y la Supervisión solo consultan (los formularios aparecen deshabilitados con un aviso de
-   solo-consulta); la Dependencia y Finanzas no ven la pantalla.
-2. Registrar una minuta exige fecha, lugar, participantes, asunto y archivo PDF seleccionado; el botón
-   permanece deshabilitado hasta completarlos y, al registrar, agrega la minuta arriba de la tabla con
-   folio correlativo y resaltado verde. Nota: esto todavía vive solo durante la sesión (datos de
-   demostración).
-3. Agendar una visita exige fecha, lugar, responsable y propósito; al agendar agrega la visita con su folio
-   y estado 'Programada'. También vive solo durante la sesión.
-4. La pestaña Acuerdos muestra una lista (de demostración) filtrable por periodo (selector de mes); el
-   filtro sigue activo incluso en solo-consulta.
-5. El botón 'Adjuntar como referencia en nota' abre una ventana informativa que remite a HU-09; todavía no
-   crea ni vincula ninguna nota.
+1. La pantalla tiene 3 pestañas (Minutas, Agenda de visitas y Acuerdos), acotadas por **contrato** (selector);
+   el Residente ejecuta y el Contratista y la Supervisión solo consultan (los formularios aparecen
+   deshabilitados con un aviso de solo-consulta); la Dependencia y Finanzas no ven la pantalla.
+2. Registrar una minuta exige fecha, lugar, participantes, asunto y archivo **PDF** seleccionado; el botón
+   permanece deshabilitado hasta completarlos y, al registrar, **persiste en la BD** (tabla `minutas`,
+   acotada por contrato, autor tomado de la sesión) y agrega la minuta arriba de la tabla con folio
+   correlativo y resaltado verde. El **PDF se almacena real** (BYTEA) y se consulta con 👁 desde el listado.
+3. Agendar una visita exige fecha, lugar, responsable y propósito; al agendar **persiste** (tabla `visitas`,
+   con `registrada_por` de la sesión) y agrega la visita con su folio y estado 'Agendada'.
+4. La pestaña Acuerdos **deriva** de los acuerdos capturados en las minutas reales del contrato (ya no es una
+   lista estática); muestra vacío si ninguna minuta trae acuerdos.
+5. El botón 'Adjuntar como referencia en nota' abre un modal que lista las **notas reales de la bitácora del
+   contrato** y, al confirmar, **persiste el vínculo** (`minutas.nota_id` / `visitas.nota_id`) **sin
+   modificar la nota firmada** (es una relación, no una edición — el trigger de inmutabilidad queda intacto).
+
+**Fundamento legal (verificado contra el texto del RLOPSRM):**
+- **Art. 123 fr. X RLOPSRM** — *"Cuando se requiera, se podrán ratificar en la Bitácora las instrucciones
+  emitidas vía oficios, **minutas**, memoranda y circulares…"*: base literal del vínculo minuta/visita → nota.
+  (Corrige la cita previa a **fr. III**, que es la **nota especial de apertura**, no la ratificación de
+  minutas — error detectado en la verificación adversarial de esta sesión y corregido en código/seed/doc.)
+- **Art. 123 fr. VI RLOPSRM** — *"Se prohibirá la modificación de las notas ya firmadas…"*: por eso el vínculo
+  NO modifica la nota; solo escribe `nota_id` en la minuta/visita.
 
 **Pendientes / [validar profe]:**
-- Persistencia: hoy todo es de demostración (no se guarda nada). Falta construir el guardado real usando
-  las estructuras de minutas/visitas, limitando por contrato y tomando el autor de la sesión.
-- Subida real del PDF: hoy solo se captura el nombre del archivo; falta el almacenamiento real.
-- Vínculo real minuta/visita → nota de bitácora (criterio 3 de la ficha, hoy no construido): implementar el
-  enlace desde HU-09 o desde aquí. [validar profe]: qué tipo de nota (art. 125 fr. III inciso d RLOPSRM) y
-  si la minuta firmada se congela.
-- Acuerdos derivados: hoy son una lista estática sin origen real. Definir si los acuerdos se capturan o se
-  derivan de minutas, y si el filtro debe ser por contrato + periodo (la ficha pide ambos; hoy solo
-  periodo).
-- Discrepancia entre lo que muestra la pantalla y lo que prevé el diseño de datos (nombres de campos y
-  estados distintos). Reconciliar antes de construir el guardado real.
-- Fundamento legal: el diseño cita el art. 125 fr. III inciso d) RLOPSRM para minutas y deja las visitas
-  como operativas sin fundamento literal; el sistema no lo cita. Confirmar con el profe.
+- **[validar profe]** — el modal de vínculo lista **cualquier** nota del contrato (incluso `en_plazo` / sin
+  firmar). Si el profe exige que solo se vinculen notas **firmadas**, filtrar por `aceptacion in
+  ('firmada','aceptada_tacita')` tanto en el `select` del front como en `notaDelContrato` del backend. Default
+  conservador aplicado hoy: se permite vincular cualquier nota del contrato (el vínculo es **referencial**,
+  no co-firma, así que no altera la nota). **Sin base legal literal para el matiz** — criterio del profe.
+- **[validar profe]** — matiz **fr. X vs fr. II** del art. 123 (la fr. II describe los datos que debe contener
+  cada nota). El sistema cita fr. X (ratificación de minutas); confirmar si el profe prefiere fundar también
+  con fr. II.
+- Subida del PDF de la **visita** (hoy la visita no adjunta PDF, solo la minuta) — definir si se requiere.
 
 ---
 
@@ -1095,57 +1103,82 @@ LOPSRM (deductivas / penas convencionales).
 obra y la Dependencia solo **consultan**. La Supervisión **no tiene acceso** (no le aparece ni en el menú
 ni en el inicio).
 
+**Estado:** ✅ **Funcional** (integrada en la sesión grande del 18-jun, PR `feat/e3-hu-20`) — cableada al
+backend real (`/api/instruccion-pago`); antes era prototipo de demostración.
+
 **Historia:**
 - **Como** Contratista / Superintendente o Finanzas (ejecutan); el Residente y la Dependencia consultan; la
   Supervisión sin acceso
-- **Deseo** que, en una pantalla de prototipo, el sistema muestre y simule el tránsito a pago de una
-  estimación: (1) una verificación de suficiencia presupuestal que calcula 'disponible = techo −
-  comprometido' y avisa/bloquea cuando el monto excede ese disponible; (2) un semáforo del plazo de 20 días
-  calculado en vivo desde una fecha de autorización (de demostración, cae en ámbar) con cortes 0-10 verde /
-  11-17 ámbar / 18-20 rojo; (3) un checklist de tres soportes (factura, CFDI, fianza) que se marcan como
-  cargados; y al cumplir ambos controles, un botón que simula generar la instrucción de pago y muestra
-  avisos de 'instrucción generada' y 'notificación a Finanzas'
-- **A fin de** prototipar el flujo de tránsito a pago y los controles legales (art. 24 y art. 54 LOPSRM) en
-  la pantalla, dejando lista la base de datos (presupuesto anual, instrucción de pago) para la
-  implementación real posterior
+- **Deseo** seleccionar una estimación ya autorizada y gestionar su tránsito a pago sobre **datos reales**:
+  (1) una verificación de suficiencia presupuestal que el sistema hace del lado del servidor ('disponible =
+  techo − comprometido') y que **bloquea** la generación de la instrucción cuando el neto excede lo
+  disponible (art. 24 LOPSRM); (2) un semáforo del plazo de 20 días anclado en la **fecha real de
+  autorización** (tomada de la nota de autorización que queda en la bitácora), que avisa al entrar en ámbar;
+  (3) un checklist de soportes (factura y CFDI, más el estado de la fianza de cumplimiento que se lee de las
+  garantías del contrato) que condiciona la generación; y un botón que **genera la instrucción de pago de
+  verdad** (se guarda, una por estimación) y notifica a Finanzas
+- **A fin de** ejecutar el tránsito a pago con los controles legales reales (art. 24 y art. 54 LOPSRM),
+  cuadrados al centavo y sin datos de demostración
 
-**Criterios de aceptación:**
-1. La pantalla calcula y muestra 'disponible = techo − comprometido' sobre valores de demostración (techo
-   15M, comprometido 11.2M) y deshabilita el botón de generar cuando el monto (editable) excede el
-   disponible, mostrando un aviso (art. 24 LOPSRM); todo en la pantalla, sin verificación real.
-2. La pantalla muestra un semáforo de 20 días calculado en vivo (con una fecha de demostración que cae en
-   zona ámbar), con cortes 0-10 verde / 11-17 ámbar / 18-20 rojo; el 'aviso al entrar en amarillo' y la
-   'notificación a Finanzas' son texto fijo, no una notificación real.
-3. El botón 'Generar instrucción de pago' solo se habilita cuando los tres soportes (factura, CFDI, fianza)
-   están marcados como cargados (mediante un interruptor, sin subir el archivo de verdad); la fianza se
-   exige siempre (sin la condición 'cuando el contrato lo exija').
-4. Al pulsar generar, la pantalla muestra el aviso 'Instrucción de pago generada' y la sección
-   'Notificación a Finanzas' (fecha, hora, monto), sin guardar nada de verdad y congelando la vista (no se
-   puede generar una segunda).
-5. La pantalla respeta el acceso por rol: el Contratista y Finanzas ejecutan; el Residente y la Dependencia
-   ven la vista en solo-lectura (sin botón de generar); la Supervisión no ve la pantalla.
+**Criterios de aceptación (comportamiento actual del sistema):**
+1. **(art. 24)** El sistema calcula, del lado del servidor, 'disponible = techo anual − comprometido' —el
+   comprometido suma el neto de las estimaciones ya autorizadas y pagadas de esa dependencia y ejercicio,
+   sin contar la actual— y **bloquea** la generación si el neto excede lo disponible. Si no hay techo
+   cargado, también la bloquea e indica que falta el presupuesto (no inventa una cifra). El techo lo carga
+   Finanzas en la propia pantalla.
+2. **(art. 54)** Un semáforo de 20 días naturales, anclado en la fecha real de autorización (tomada de la
+   nota de autorización que queda en la bitácora), con cortes 0-10 verde / 11-17 ámbar / 18-20 rojo, y aviso
+   al entrar en ámbar. Si el contrato no tenía bitácora al autorizar y no hay esa fecha, el semáforo queda
+   **deshabilitado** con una etiqueta (no inventa la fecha); la fecha definitiva requiere un sello de
+   autorización propio [PARA MAIKI].
+3. La instrucción solo se genera cuando los soportes obligatorios están completos: factura y CFDI (se
+   registra el folio, sin subir el archivo) y la **fianza de cumplimiento vigente**, que el sistema lee de
+   las garantías del contrato. La subida del archivo en sí está deshabilitada con una etiqueta (todavía no
+   hay dónde almacenarlo).
+4. La generación exige que la estimación esté **autorizada** (verificado en el servidor), guarda la
+   instrucción de verdad (monto = neto, redondeado al centavo, con la notificación a Finanzas sellada) y
+   **no permite duplicarla**: un segundo intento se rechaza (UNIQUE por estimación).
+5. **(art. 64 / 170)** Si el contrato ya tiene **finiquito elaborado** (estado 'cerrado'), la generación de
+   una nueva instrucción de pago se **rechaza**: al determinarse el saldo del finiquito quedan extinguidos
+   los derechos y obligaciones del contrato (art. 64 LOPSRM) y la relación de estimaciones queda fija en el
+   documento de finiquito (art. 170 fr. VI RLOPSRM); el saldo se liquida por el finiquito.
+6. La pantalla respeta el acceso por rol: el Contratista y Finanzas ejecutan; el Residente y la Dependencia
+   ven en solo-lectura (sin botón de generar); la Supervisión no ve la pantalla.
 
-**Fundamento legal:** art. 24 LOPSRM (suficiencia presupuestaria); art. 54 LOPSRM (plazo de pago de 20 días
-naturales); art. 55 LOPSRM (gastos financieros por incumplimiento del plazo — citado solo en la ficha
-vieja, no en el sistema).
+**Fundamento legal (verificado contra el texto literal):** art. 24 LOPSRM (*"siempre y cuando cuenten
+previamente con la suficiencia presupuestaria en la partida o partidas específicas"*); art. 54 LOPSRM
+(*"deberán pagarse… en un plazo no mayor a veinte días naturales"*); art. 64 LOPSRM (finiquito —
+*"extinguidos los derechos y obligaciones asumidos por ambas partes"*) y art. 170 RLOPSRM (contenido del
+documento de finiquito, fr. VI relación de estimaciones). El art. 55 LOPSRM (gastos financieros por mora si
+se excede el plazo) **no está implementado** en esta Etapa.
 
-**Pendientes / [validar profe]:**
-- Toda la pantalla es prototipo de demostración: todavía no guarda nada. La base de datos (presupuesto
-  anual, instrucción de pago) ya existe pero nadie la usa. Falta implementar: cargar el techo real,
-  verificar que lo pagado más el neto no exceda el techo, guardar la instrucción y notificar a Finanzas.
-  [validar profe / Maiki: prioridad de implementación]
-- El monto de la estimación es un campo editable, no se toma de la estimación autorizada real; el 'Neto' y
-  la estimación del banner están fijos. Definir cómo enlazar con la estimación autorizada (flujo
-  HU-13/HU-15) y con la fecha de autorización real para el semáforo.
-- Los cortes del semáforo (verde ≤10 / ámbar 11-17 / rojo >17) son una decisión de pantalla, no del art.
-  54. Confirmar la regla de aviso (¿amarillo a qué día?).
-- La condición de la fianza ('cuando el contrato lo exija', art. 54 / garantías) no está implementada; hoy
-  la fianza se exige siempre. Definir la regla.
-- No hay carga real de soportes (factura/CFDI/fianza son interruptores en pantalla). Falta la subida real y
-  su almacenamiento.
-- La notificación a Finanzas y el aviso al entrar en amarillo (art. 54) son texto fijo, no notificaciones
-  reales. Definir el mecanismo de notificación de esta Etapa.
-- El art. 55 LOPSRM (gastos financieros por mora) que cita la ficha vieja no se refleja en el sistema.
+**[validar profe] resueltos en la integración (con base legal):**
+- **Comprometido = Σ neto de autorizadas + pagadas** (dependencia/ejercicio, sin la actual). **Base:** art.
+  24 LOPSRM exige suficiencia en la partida; la fórmula del "comprometido" es la interpretación conservadora
+  estándar de presupuesto (compromiso = lo ya autorizado/erogado). El detalle exacto es **criterio del
+  profe**; default conservador aplicado.
+- **Cortes del semáforo (verde ≤10 / ámbar 11-17 / rojo >17):** **sin base legal literal** — el art. 54
+  solo fija el plazo de 20 días; los cortes son **criterio del profe**, default conservador (ámbar antes de
+  la mitad final, rojo cerca del vencimiento).
+- **Exigibilidad de la fianza:** el sistema la exige si hay una garantía de cumplimiento registrada en el
+  contrato. **Base:** art. 48 fr. II LOPSRM (el cumplimiento se garantiza como regla general); si el
+  contrato no la tiene registrada (caso de excepción, p. ej. art. 50), no bloquea. Default conservador.
+- **Gate de finiquito (rechazar contrato 'cerrado'):** **resuelto con base legal** — art. 64 LOPSRM (extinción
+  de obligaciones) + art. 170 RLOPSRM (la relación de estimaciones queda en el finiquito). Implementado en
+  esta sesión.
+- **Quién genera la instrucción / carga soportes (Contratista o Finanzas):** **sin base legal literal** —
+  criterio del profe; default conservador = ambos roles ejecutores (coincide con la matriz de permisos).
+
+**Pendientes / [PARA MAIKI]:**
+- 🔴 **Ancla canónica del plazo (art. 54):** hoy la fecha de autorización se deriva de la nota de bitácora
+  (solo existe si había bitácora abierta al autorizar). El ancla definitiva sería un sello `autorizada_en`
+  en `estimaciones`, sellado en el `autorizar` de HU-15 (esquema + núcleo congelado → lo hace Maiki). El
+  snippet está marcado en `instruccion-pago.routes.js`.
+- **Enlace contrato→presupuesto por texto (dependencia) + ejercicio, sin FK** — frágil; conviene una clave
+  foránea a futuro. [validar técnico, no legal].
+- **Carga real del archivo de soportes** (factura/CFDI/fianza): hoy solo metadatos (no hay almacenamiento
+  binario); marcado, no agregado en silencio.
+- **Notificación a Finanzas:** sello dentro del sistema (Etapa 1); todavía sin correo real.
 
 ---
 

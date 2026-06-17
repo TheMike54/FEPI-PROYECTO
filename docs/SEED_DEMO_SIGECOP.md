@@ -99,6 +99,8 @@ que el contrato completo → demuestran que el **catálogo de empresas (FASE 3) 
 | HU-05 Curva de avance | residente | Programa/Curva → DEMO-01 | Curva S programado vs ejecutado (físico 100%). |
 | HU-06 Trabajos terminados | contratista | Avance por periodo → DEMO-01 | Avance registrado por concepto/periodo. |
 | **HU-07 Alertas de atraso** | residente | Alertas → ATRASO-01..04 | **Panel de déficit por concepto** (unidades) + badge al login. |
+| **HU-02 Fianzas** | dependencia | Fianzas → DEMO-01 | 3 garantías (cumplimiento/anticipo/vicios ocultos); la de **cumplimiento trae PDF real (👁 ver)** y **1 endoso** (prórroga). La dependencia agrega/edita/endosa; una garantía por tipo (art. 48 LOPSRM). |
+| **HU-11 Minutas/visitas** | residente | Minutas → DEMO-01 | 1 **minuta con PDF ligada a la nota de avance** (#) + 1 **visita agendada**; pestaña Acuerdos con el acuerdo de la minuta. El "Adjuntar a nota" persiste el vínculo (art. 123 fr. X RLOPSRM). |
 | HU-08/09/10 Bitácora | residente | Bitácora → DEMO-01 | Bitácora **abierta**, apertura firmada. La **nota de apertura está REDACTADA con todos los datos del alta** (objeto, **ubicación**, partes, monto, anticipo, plazo, fechas) y es **imprimible** (FASE 2). |
 | **HU-12 Integración estimación** | contratista | Estimaciones → DEMO-01 | Estimación **#4 Integrada**; nota firmada ligada a la #1. |
 | **HU-13 Presentación** | contratista | Estimaciones → #3 | Estimación **Presentada** (art. 54). Una estimación ya presentada/autorizada **no se vuelve a presentar** (candado por estado, FASE 0); una rechazada se reingresa (HU-16). |

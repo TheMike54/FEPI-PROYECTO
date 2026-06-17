@@ -66,6 +66,9 @@ test.describe('HU-02 — modo aplicacion (Dependencia: ejecuta)', () => {
 
   test('boton Agregar visible; sin aviso de solo consulta', async ({ page }) => {
     await goToViaSidebar(page, VIEW_PATH);
+    // E2 18-jun: la pantalla se cableó al backend real; el botón Agregar vive dentro del bloque de un
+    // contrato seleccionado (la dependencia ve todos los contratos). Se elige uno para que aparezca.
+    await page.getByTestId('select-contrato').selectOption({ index: 1 });
     await expect(page.getByTestId('btn-agregar-poliza')).toBeVisible();
     await expectSinAvisoSoloConsulta(page);
   });

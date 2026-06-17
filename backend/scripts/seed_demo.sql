@@ -44,7 +44,9 @@ BEGIN
       (SELECT id FROM contrato_conceptos WHERE contrato_id = ANY(ids));     -- libera bitacora_notas
     DELETE FROM contrato_roster WHERE contrato_id = ANY(ids);              -- libera bitacora_notas
     DELETE FROM convenios_modificatorios WHERE contrato_id = ANY(ids);     -- libera bitacora_notas (nota_id NO ACTION)
-    DELETE FROM contratos WHERE id = ANY(ids);                             -- cascada: el resto
+    DELETE FROM minutas WHERE contrato_id = ANY(ids);                      -- HU-11: minutas.nota_id NO ACTION → libera bitacora_notas
+    DELETE FROM visitas WHERE contrato_id = ANY(ids);                      -- HU-11: visitas.nota_id NO ACTION → libera bitacora_notas
+    DELETE FROM contratos WHERE id = ANY(ids);                             -- cascada: el resto (garantías/endosos CASCADE)
   END IF;
 END $$;
 
@@ -177,6 +179,26 @@ BEGIN
   RETURNING id INTO v_conv;
   -- El contrato refleja el nuevo plazo (metadato; no cambia la matriz/periodos ni el cuadre).
   UPDATE contratos SET plazo_dias = 241, fecha_termino = (DATE '2025-12-01' + 240) WHERE id = v_id;
+
+  -- (HU-02, E2 18-jun) PDF real en la póliza de cumplimiento + un ENDOSO (prórroga de vigencia, art. 91
+  -- RLOPSRM). %PDF mínimo. El endoso NO liga convenio_id (FK NO ACTION) para no complicar el reset.
+  UPDATE contrato_garantias SET pdf_nombre='Póliza cumplimiento DEMO.pdf', pdf_mime='application/pdf', pdf_tamano=15,
+         pdf_contenido=decode('255044462d312e340a25e2e3cfd30a','hex'), registrado_por=v_resid
+    WHERE contrato_id=v_id AND tipo='cumplimiento';
+  INSERT INTO garantia_endosos (garantia_id, motivo, nueva_vigencia, observaciones, registrado_por)
+    SELECT g.id, 'prorroga_vigencia', DATE '2028-06-30', 'Prórroga de la fianza por la ampliación de plazo del contrato (art. 91 RLOPSRM).', v_resid
+      FROM contrato_garantias g WHERE g.contrato_id=v_id AND g.tipo='cumplimiento';
+
+  -- (HU-11, E2 18-jun) Una MINUTA (con PDF, ligada a la nota de avance v_nota2) y una VISITA agendada.
+  INSERT INTO minutas (contrato_id, titulo, fecha, lugar, participantes, acuerdos, nota_id,
+                       pdf_nombre, pdf_mime, pdf_tamano, pdf_contenido, registrada_por)
+    VALUES (v_id, 'Reunión de avance mensual (marzo)', DATE '2026-03-20', 'Sala de juntas — Residencia',
+            'Residente, Superintendente, Supervisión',
+            'Acelerar las instalaciones eléctricas para no atrasar el periodo 4.', v_nota2,
+            'Minuta marzo DEMO.pdf', 'application/pdf', 15, decode('255044462d312e340a25e2e3cfd30a','hex'), v_resid);
+  INSERT INTO visitas (contrato_id, tipo, fecha_programada, lugar, responsable, proposito, estado)
+    VALUES (v_id, 'visita', DATE '2026-04-05', 'Frente de obra — cimentación', 'Supervisión',
+            'Verificar la calidad de la cimentación antes de colar.', 'agendada');
 
   -- FASE 0C (profe 16-jun): OFICIO DE APROBACIÓN del convenio (soporte de que fue aprobado, art. 59/99
   -- RLOPSRM). Se guarda en contrato_documentos ligado al convenio (convenio_id, tipo='oficio_convenio').

@@ -101,12 +101,54 @@ export const api = {
   listarPagos: (contratoId) => request(`/pagos/contrato/${contratoId}`),
   // HU-17: tablero agregado de estimaciones (acotado por participación en el backend).
   tableroEstimaciones: () => request('/tablero/estimaciones'),
+  // HU-20: tránsito a pago (suficiencia art. 24 + soportes + semáforo plazo + instrucción de pago).
+  transitoEstimacion: (estimacionId) => request(`/instruccion-pago/estimacion/${estimacionId}`),
+  cargarSoporteTransito: (estimacionId, payload) => request(`/instruccion-pago/estimacion/${estimacionId}/soportes`, { method: 'POST', body: JSON.stringify(payload) }),
+  generarInstruccionPago: (estimacionId) => request(`/instruccion-pago/estimacion/${estimacionId}`, { method: 'POST' }),
+  consultarPresupuesto: (ejercicio, dependencia) => request(`/instruccion-pago/presupuesto?ejercicio=${encodeURIComponent(ejercicio)}&dependencia=${encodeURIComponent(dependencia)}`),
+  crearPresupuesto: (payload) => request('/instruccion-pago/presupuesto', { method: 'POST', body: JSON.stringify(payload) }),
   // HU-18: portafolio ejecutivo con semáforos por contrato (agregado + acotado por participación).
   portafolio: () => request('/portafolio'),
   // HU-24 (FASE 4): finiquito y cierre del contrato (art. 64 LOPSRM / 168-172 RLOPSRM). El saldo lo
   // deriva el backend; ajustes_finales es parametrizable [validar profe].
   finiquitoPrep: (contratoId, ajustes) => request(`/finiquito/contrato/${contratoId}${ajustes != null && ajustes !== '' ? `?ajustes=${encodeURIComponent(ajustes)}` : ''}`),
   cerrarFiniquito: (contratoId, payload) => request(`/finiquito/contrato/${contratoId}`, { method: 'POST', body: JSON.stringify(payload || {}) }),
+  // HU-02 (sesión E2): fianzas y garantías (art. 48 LOPSRM / 91 RLOPSRM). CRUD + endosos + PDF de la póliza.
+  garantiasDeContrato: (contratoId) => request(`/garantias/contrato/${contratoId}`),
+  crearGarantia: (contratoId, payload) => request(`/garantias/contrato/${contratoId}`, { method: 'POST', body: JSON.stringify(payload) }),
+  editarGarantia: (garantiaId, payload) => request(`/garantias/${garantiaId}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  registrarEndoso: (garantiaId, payload) => request(`/garantias/${garantiaId}/endoso`, { method: 'POST', body: JSON.stringify(payload) }),
+  subirPdfGarantia: (garantiaId, file) => {
+    const fd = new FormData(); fd.append('documento', file);
+    const token = localStorage.getItem('sigecop_token');
+    return fetch(`${API_URL}/garantias/${garantiaId}/pdf`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd })
+      .then(async (res) => { const t = await res.text(); const d = t ? JSON.parse(t) : null; if (!res.ok) { const e = new Error(d?.error || `HTTP ${res.status}`); e.status = res.status; throw e; } return d; });
+  },
+  descargarPdfGarantia: async (garantiaId) => {
+    const token = localStorage.getItem('sigecop_token');
+    const res = await fetch(`${API_URL}/garantias/${garantiaId}/pdf`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) { let m = `HTTP ${res.status}`; try { m = JSON.parse(await res.text())?.error || m; } catch (_) { /* binario */ } const e = new Error(m); e.status = res.status; throw e; }
+    return res.blob();
+  },
+  // HU-11 (sesión E2): minutas, visitas y acuerdos (art. 123 fr. III RLOPSRM). CRUD + PDF + vínculo a nota.
+  minutasDeContrato: (contratoId) => request(`/minutas/contrato/${contratoId}`),
+  crearMinuta: (contratoId, payload) => request(`/minutas/contrato/${contratoId}`, { method: 'POST', body: JSON.stringify(payload) }),
+  vincularNotaMinuta: (minutaId, notaId) => request(`/minutas/${minutaId}/nota`, { method: 'PATCH', body: JSON.stringify({ nota_id: notaId }) }),
+  visitasDeContrato: (contratoId) => request(`/minutas/contrato/${contratoId}/visitas`),
+  crearVisita: (contratoId, payload) => request(`/minutas/contrato/${contratoId}/visitas`, { method: 'POST', body: JSON.stringify(payload) }),
+  vincularNotaVisita: (visitaId, notaId) => request(`/minutas/visita/${visitaId}/nota`, { method: 'PATCH', body: JSON.stringify({ nota_id: notaId }) }),
+  subirPdfMinuta: (minutaId, file) => {
+    const fd = new FormData(); fd.append('documento', file);
+    const token = localStorage.getItem('sigecop_token');
+    return fetch(`${API_URL}/minutas/${minutaId}/pdf`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd })
+      .then(async (res) => { const t = await res.text(); const d = t ? JSON.parse(t) : null; if (!res.ok) { const e = new Error(d?.error || `HTTP ${res.status}`); e.status = res.status; throw e; } return d; });
+  },
+  descargarPdfMinuta: async (minutaId) => {
+    const token = localStorage.getItem('sigecop_token');
+    const res = await fetch(`${API_URL}/minutas/${minutaId}/pdf`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) { let m = `HTTP ${res.status}`; try { m = JSON.parse(await res.text())?.error || m; } catch (_) { /* binario */ } const e = new Error(m); e.status = res.status; throw e; }
+    return res.blob();
+  },
   // HU-12: estimaciones (integración + consulta + avance para el preview).
   avanceContrato: (contratoId) => request(`/estimaciones/contrato/${contratoId}/avance`),
   estimacionesDeContrato: (contratoId) => request(`/estimaciones/contrato/${contratoId}`),

@@ -1658,3 +1658,31 @@ DROP TRIGGER IF EXISTS trg_finiquito_inmutable ON finiquitos;
 CREATE TRIGGER trg_finiquito_inmutable
   BEFORE UPDATE ON finiquitos
   FOR EACH ROW EXECUTE FUNCTION sigecop_finiquito_inmutable();
+
+-- =====================================================================
+-- (HU-02, sesión autónoma E2 18-jun) FIANZAS Y GARANTÍAS — cerrar la maqueta.
+-- contrato_garantias y garantia_endosos YA existen (las usa el alta HU-01). Aquí solo se agrega, de forma
+-- ADITIVA, el almacenamiento del PDF de la póliza (inline en BYTEA, MISMO patrón que la tabla `minutas`,
+-- que ya guarda pdf_nombre/pdf_mime/pdf_tamano/pdf_contenido) + auditoría de quién la registró por esta
+-- pantalla. Fundamento: art. 48 LOPSRM (garantía de anticipo fr. I y de cumplimiento fr. II); art. 66 LOPSRM
+-- (vicios ocultos); art. 91 RLOPSRM (garantía de cumplimiento ≥10% y su AJUSTE/ampliación por modificación de
+-- monto o plazo = el endoso). NO altera columnas existentes; las garantías del alta siguen igual.
+-- =====================================================================
+ALTER TABLE contrato_garantias ADD COLUMN IF NOT EXISTS pdf_nombre TEXT;
+ALTER TABLE contrato_garantias ADD COLUMN IF NOT EXISTS pdf_mime VARCHAR(100);
+ALTER TABLE contrato_garantias ADD COLUMN IF NOT EXISTS pdf_tamano INTEGER;
+ALTER TABLE contrato_garantias ADD COLUMN IF NOT EXISTS pdf_contenido BYTEA;
+ALTER TABLE contrato_garantias ADD COLUMN IF NOT EXISTS registrado_por INTEGER REFERENCES usuarios(id) ON DELETE SET NULL;
+
+-- =====================================================================
+-- (HU-11, sesión autónoma E2 18-jun) MINUTAS, VISITAS Y ACUERDOS — backend.
+-- Las tablas `minutas` (ya con pdf_nombre/pdf_mime/pdf_tamano/pdf_contenido + nota_id + registrada_por) y
+-- `visitas` YA existen. Aditivo: columnas que captura la pantalla. El `nota_id` LIGA la minuta/visita a una
+-- nota de bitácora (art. 123 fr. X RLOPSRM: ratificar minutas en la Bitácora) SIN modificar la nota: es una
+-- RELACIÓN, no una edición; la nota
+-- firmada sigue inmutable (art. 123 fr. VI RLOPSRM, trigger de inmutabilidad intacto).
+-- =====================================================================
+ALTER TABLE minutas ADD COLUMN IF NOT EXISTS participantes TEXT;
+ALTER TABLE visitas ADD COLUMN IF NOT EXISTS lugar TEXT;
+ALTER TABLE visitas ADD COLUMN IF NOT EXISTS responsable TEXT;
+ALTER TABLE visitas ADD COLUMN IF NOT EXISTS nota_id INTEGER REFERENCES bitacora_notas(id);

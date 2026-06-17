@@ -18,6 +18,9 @@ const trabajosRoutes = require('./src/routes/trabajos.routes');  // HU-06 (Equip
 const tableroRoutes = require('./src/routes/tablero.routes');  // HU-17 (Equipo 3): tablero agregado de estimaciones (solo lectura, acotado por participación)
 const portafolioRoutes = require('./src/routes/portafolio.routes');  // HU-18 (Equipo 3): portafolio ejecutivo con semáforos (solo lectura, acotado por participación)
 const finiquitoRoutes = require('./src/routes/finiquito.routes');  // HU-24 (FASE 4): finiquito y cierre del contrato (art. 64 LOPSRM / 168-172 RLOPSRM)
+const garantiasRoutes = require('./src/routes/garantias.routes');  // HU-02 (sesión E2): fianzas y garantías (art. 48 LOPSRM / 91 RLOPSRM)
+const minutasRoutes = require('./src/routes/minutas.routes');  // HU-11 (sesión E2): minutas, visitas y acuerdos (art. 123 fr. X RLOPSRM)
+const instruccionPagoRoutes = require('./src/routes/instruccion-pago.routes');  // HU-20 (Equipo 3): tránsito a pago (suficiencia art. 24 + instrucción de pago)
 const { initDb } = require('./src/db/init');
 
 const app = express();
@@ -56,6 +59,12 @@ app.use('/api/tablero', tableroRoutes);
 app.use('/api/portafolio', portafolioRoutes);
 // HU-24 (FASE 4): finiquito y cierre del contrato. Acotado por participación / autoridad en el controller.
 app.use('/api/finiquito', finiquitoRoutes);
+// HU-02 (sesión E2): fianzas y garantías. Acotado por participación / autoridad en el controller.
+app.use('/api/garantias', garantiasRoutes);
+// HU-11 (sesión E2): minutas, visitas y acuerdos. Acotado por participación / autoridad en el controller.
+app.use('/api/minutas', minutasRoutes);
+// HU-20 (Equipo 3): tránsito a pago. Lectura + escritura acotada por participación; techo presupuestal = rol finanzas.
+app.use('/api/instruccion-pago', instruccionPagoRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Ruta no encontrada' });

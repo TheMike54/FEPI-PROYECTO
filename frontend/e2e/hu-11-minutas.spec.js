@@ -97,18 +97,13 @@ for (const rol of [
       await expect(page.getByTestId('vis-proposito')).toBeDisabled();
     });
 
-    test('pestana Acuerdos es consultable: el filtro de periodo sigue editable', async ({ page }) => {
+    test('pestana Acuerdos es consultable (deriva de las minutas reales del contrato)', async ({ page }) => {
+      // E2 18-jun: la pantalla se cableó al backend real; la pestaña Acuerdos ya NO usa datos dummy con
+      // filtro de periodo, sino que deriva de los acuerdos capturados en las minutas del contrato. Sin un
+      // contrato seleccionado no hay acuerdos; la pestaña sigue siendo consultable para los roles 'C'.
       await goToViaSidebar(page, VIEW_PATH);
       await page.locator('button', { hasText: 'Acuerdos' }).first().click();
-
-      const periodo = page.locator('select').first();
-      await expect(periodo).toBeEnabled();
-
-      await periodo.selectOption({ label: 'Junio 2026' });
-      await expect(page.getByText('Sin acuerdos para el periodo seleccionado')).toBeVisible();
-
-      await periodo.selectOption({ label: 'Mayo 2026' });
-      await expect(page.locator('table tbody tr')).toHaveCount(3);
+      await expect(page.getByText('Sin acuerdos registrados en las minutas de este contrato')).toBeVisible();
     });
   });
 }

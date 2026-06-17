@@ -103,6 +103,108 @@ export default function Sidebar() {
                   <div className="text-sm leading-tight">Finiquito y cierre</div>
                 </div>
               </NavLink>
+              {/* BLOQUE B: ambiente de cierre por bloques (cascarón que envuelve HU-24, misma autoridad). */}
+              <NavLink to="/contratos/cierre" className={itemClass}>
+                <span className="text-base leading-none flex-shrink-0 mt-0.5">🧾</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm leading-tight">Cierre del contrato (por bloques)</div>
+                </div>
+              </NavLink>
+            </nav>
+          </div>
+        )}
+
+        {/* BLOQUE B: ambiente de bitácora por bloques (cascarón). Fuera del catálogo de HU (no altera
+            permisos.js); roles de la bitácora (residente ejecuta; contratista/supervisión participan). */}
+        {['residente', 'contratista', 'supervision'].includes(rol) && (
+          <div className="mt-6 pt-4 border-t border-borde">
+            <div className={seccionClass}>Bitácora</div>
+            <nav className="space-y-0.5">
+              <NavLink to="/bitacora/ambiente" className={itemClass}>
+                <span className="text-base leading-none flex-shrink-0 mt-0.5">📒</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm leading-tight">Recorrido de bitácora (por bloques)</div>
+                </div>
+              </NavLink>
+            </nav>
+          </div>
+        )}
+
+        {/* BLOQUE B: ambiente de expediente y reportes (cierre documental). Fuera del catálogo de HU; roles
+            que ven expediente Y reportes (finanzas fuera: solo reportes). */}
+        {['residente', 'contratista', 'supervision', 'dependencia'].includes(rol) && (
+          <div className="mt-6 pt-4 border-t border-borde">
+            <div className={seccionClass}>Expediente y reportes</div>
+            <nav className="space-y-0.5">
+              <NavLink to="/contratos/expediente-ambiente" className={itemClass}>
+                <span className="text-base leading-none flex-shrink-0 mt-0.5">📑</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm leading-tight">Cierre documental (por bloques)</div>
+                </div>
+              </NavLink>
+            </nav>
+          </div>
+        )}
+
+        {/* BLOQUE B: MACRO ciclo de vida del contrato (índice ordenado). Fuera del catálogo de HU; finanzas
+            excluida. */}
+        {['residente', 'contratista', 'supervision', 'dependencia'].includes(rol) && (
+          <div className="mt-6 pt-4 border-t border-borde">
+            <div className={seccionClass}>Ciclo del contrato</div>
+            <nav className="space-y-0.5">
+              <NavLink to="/contratos/ciclo-vida" className={itemClass}>
+                <span className="text-base leading-none flex-shrink-0 mt-0.5">🗺️</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm leading-tight">Ciclo de vida (recorrido completo)</div>
+                </div>
+              </NavLink>
+            </nav>
+          </div>
+        )}
+
+        {/* BLOQUE B: ambiente de avance físico y seguimiento. Fuera del catálogo de HU; ejecutores +
+            supervisión (dependencia fuera por decisión). */}
+        {['contratista', 'residente', 'supervision'].includes(rol) && (
+          <div className="mt-6 pt-4 border-t border-borde">
+            <div className={seccionClass}>Seguimiento</div>
+            <nav className="space-y-0.5">
+              <NavLink to="/seguimiento/ambiente" className={itemClass}>
+                <span className="text-base leading-none flex-shrink-0 mt-0.5">📈</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm leading-tight">Avance y seguimiento (por bloques)</div>
+                </div>
+              </NavLink>
+            </nav>
+          </div>
+        )}
+
+        {/* BLOQUE B: ambiente de convenio modificatorio (episódico). Fuera del catálogo de HU. */}
+        {['dependencia', 'residente', 'contratista', 'supervision'].includes(rol) && (
+          <div className="mt-6 pt-4 border-t border-borde">
+            <div className={seccionClass}>Convenios</div>
+            <nav className="space-y-0.5">
+              <NavLink to="/contratos/convenio-ambiente" className={itemClass}>
+                <span className="text-base leading-none flex-shrink-0 mt-0.5">📐</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm leading-tight">Convenio modificatorio (por bloques)</div>
+                </div>
+              </NavLink>
+            </nav>
+          </div>
+        )}
+
+        {/* BLOQUE B: ambiente de pago (ciclo de cobro). Fuera del catálogo de HU; roles de HU-20/HU-21
+            (supervisión excluida). */}
+        {['finanzas', 'contratista', 'residente', 'dependencia'].includes(rol) && (
+          <div className="mt-6 pt-4 border-t border-borde">
+            <div className={seccionClass}>Pago</div>
+            <nav className="space-y-0.5">
+              <NavLink to="/pagos/ambiente" className={itemClass}>
+                <span className="text-base leading-none flex-shrink-0 mt-0.5">💸</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm leading-tight">Ciclo de pago (por bloques)</div>
+                </div>
+              </NavLink>
             </nav>
           </div>
         )}

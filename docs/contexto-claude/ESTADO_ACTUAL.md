@@ -33,7 +33,32 @@
 > el **ambiente de estimación por bloques** como **CASCARÓN** (`AmbienteEstimacion.jsx`, envuelve la carátula
 > existente vía `estimacion-prep`; bloques de **generadores** y **soportes/fotos** son placeholders pendientes
 > de **E3**; integración/envío reales se delegan a HU-12/HU-13; historial aparte). Suite **265/8/0**.
-> **Actualízala** cuando edites este doc.
+> (5) **Sesión autónoma E2 (18-jun, `docs/planes/PLAN_SESION_AUTONOMA_E2_18jun.md`)**: cerró dos maquetas con
+> backend real. **HU-02 fianzas** → `garantias.controller` + `/api/garantias` (CRUD por pantalla, una garantía
+> por tipo art. 48 LOPSRM, **PDF real** en `contrato_garantias.pdf_*`, **endosos** art. 91 RLOPSRM);
+> `RegistroFianzas.jsx` cableado. **HU-11 minutas/visitas** → `minutas.controller` + `/api/minutas` (CRUD +
+> PDF + **vínculo minuta/visita↔nota** de bitácora art. 123 fr. X RLOPSRM, sin alterar la nota);
+> `MinutasVisitas.jsx` cableado. Schema **aditivo** (garantías pdf_*; minutas.participantes; visitas.lugar/
+> responsable/nota_id). Seed cubre ambas. Montaje: 2 routers en `server.js` (**`permisos.js`/`App.jsx` NO se
+> tocaron**: HU-02/HU-11 ya tenían ruta). Suite **267/8/0**. **Actualízala** cuando edites este doc.
+> (6) **Sesión grande (18-jun, BLOQUE A)**: integró **HU-20 Tránsito a pago** (PR `feat/e3-hu-20`):
+> `instruccion-pago.controller` + `/api/instruccion-pago` montado en `server.js`. Suficiencia presupuestal
+> server-side (art. 24), semáforo del plazo 20 días (art. 54) anclado en la nota de autorización, checklist
+> de soportes (factura/CFDI metadatos + fianza leída de garantías), instrucción de pago real (1×estimación,
+> UNIQUE). **Esta sesión añadió un gate de finiquito** (rechaza generar si el contrato está 'cerrado', art.
+> 64 LOPSRM / 170 RLOPSRM) y **resolvió todos los `[validar profe]`** con base legal (ver historia HU-20).
+> Usa tablas existentes (`presupuesto_anual`/`instruccion_pago`/`estimacion_soportes`), **sin DDL**. Se
+> consolidó el spec viejo de la maqueta (`hu-20-transito.spec.js` borrado; el del PR `hu-20-transito-pago`
+> queda). **`permisos.js`/`App.jsx` NO se tocaron** (HU-20 ya tenía ruta). Suite **268/8/0**.
+> **BLOQUE B — 7 AMBIENTES de sistema** (cascarones de navegación por bloques que ENVUELVEN las HU sin
+> fundirlas, patrón `AmbienteEstimacion`): **bitácora** (`/bitacora/ambiente`), **expediente/reportes**
+> (`/contratos/expediente-ambiente`), **pago** (`/pagos/ambiente`), **finiquito** (`/contratos/cierre`),
+> **convenios** (`/contratos/convenio-ambiente`), **avance** (`/seguimiento/ambiente`) y el **MACRO ciclo de
+> vida** (`/contratos/ciclo-vida`, 14 bloques, al final). Cada uno = página nueva en `src/pages/` + ruta
+> `<SoloRol>` en `App.jsx` + sección nueva en `Sidebar.jsx`, **fuera del catálogo de HU** (`permisos.js`
+> INTACTO; **NO son HU nuevas**, son navegación — como `AmbienteEstimacion`). Solo `Link` + lectura
+> read-only; cero lógica de negocio, cero DDL. Spec por ambiente (`ambiente-*.spec.js`, `ciclo-vida.spec.js`).
+> Suite final **305/8/0**. Reporte: `docs/reportes/REPORTE_SESION_GRANDE_18jun.md`.
 >
 > **Docs hermanos:** historia completa → `docs/HISTORIAL_PROYECTO.md` · historias de usuario vigentes
 > (criterios = sistema real) → `docs/analisis-y-diseno/Historias_Usuario_ACTUALIZADAS_12jun.md` · auditoría
@@ -51,13 +76,15 @@ el contrato. Proyecto académico (UAGRO, Etapa 1), 6 personas en 3 frentes.
 
 **Punto actual:** `main = d6abfdd` (2026-06-13). Desplegado en Render. Stack y esquema maduros; el **ciclo
 núcleo (alta → bitácora → avance → estimación → autorización → pago) funciona end-to-end** contra backend
-real. Quedan 4 pantallas que son **maqueta pura sin backend**.
+real. **Ya no quedan pantallas de maqueta pura:** todas las HU del catálogo tienen backend real.
 
-**% funcional (por HU, honesto):** de 26 unidades (HU-00..21 + Registro + Por Firmar + HU-22 roster + HU-23
-empresas), **~23 funcionan end-to-end** (≈88%); **2 son maqueta sobre datos dummy** (HU-11 minutas,
-HU-20 tránsito a pago) — **HU-18 portafolio pasó a funcional** (integración 17-jun, `GET /api/portafolio`);
-**HU-02 fianzas** es parcial (la pantalla es dummy, pero las garantías SÍ persisten vía el alta HU-01).
-Detalle exacto en §7.
+**% funcional (por HU, honesto):** de 27 unidades (HU-00..24 + Registro + Por Firmar + HU-22 roster + HU-23
+empresas), **~27 funcionan end-to-end** (≈100% del catálogo); **0 maquetas**. **HU-18 portafolio** pasó a
+funcional (17-jun); **HU-02 fianzas y HU-11 minutas** pasaron a funcional (sesión E2 18-jun: `GET/POST
+/api/garantias` y `/api/minutas`, PDF, endosos, vínculo a nota); **HU-20 tránsito a pago** pasó a funcional
+(sesión grande 18-jun, PR `feat/e3-hu-20`: `GET/POST /api/instruccion-pago`, suficiencia art. 24, semáforo
+art. 54, instrucción de pago real). **Único pendiente funcional dentro de una HU:** los números generadores
+de la estimación (HU-19, E3). Detalle exacto en §7.
 
 ---
 
@@ -366,21 +393,25 @@ vive en el MISMO BEGIN/COMMIT que el evento); toma advisory lock por bitácora y
 
 ## 7. Qué falta (honesto)
 
-### 7.1 Pantallas MAQUETA (sin backend, dummy puro) — nunca tuvieron rama de equipo
-| HU | Pantalla | Estado real | Bloqueado por |
-|---|---|---|---|
-| **HU-11** Minutas | `MinutasVisitas.jsx` | Todo en `useState` sobre dummies; el PDF solo captura el **nombre**; "adjuntar a nota" es modal informativo | Falta controller/route de minutas; `minutas.nota_id` huérfana |
-| **HU-20** Tránsito a pago | `TransitoPago.jsx` | Suficiencia/soportes 100% en memoria; monto editable hardcoded. **La DDL existe** (`presupuesto_anual` + `instruccion_pago`) pero **ningún controller la usa** | Falta TODO el backend (suficiencia presupuestal + instrucción de pago + upload de soportes) |
-
-> **HU-18 Portafolio ya NO es maqueta** (integración 17-jun): `GET /api/portafolio`
-> (`portafolio.controller.js`, solo lectura, acotado por participación vía `ROLES_VEN_TODO`/`lib/acceso`)
-> calcula el semáforo server-side desde datos reales. Umbrales y la definición de "avance físico" quedan
-> **`[validar profe]`** (6 puntos abiertos, ver historia HU-18).
+### 7.1 Pantallas MAQUETA (sin backend, dummy puro)
+**Ya no quedan.** Las tres últimas se cerraron en junio:
+- **HU-18 Portafolio** → funcional (17-jun): `GET /api/portafolio` (`portafolio.controller.js`, solo
+  lectura, acotado por participación vía `ROLES_VEN_TODO`/`lib/acceso`) calcula el semáforo server-side
+  desde datos reales. Umbrales y la definición de "avance físico" quedan **`[validar profe]`** (ver HU-18).
+- **HU-02 Fianzas / HU-11 Minutas** → funcionales (sesión E2 18-jun); ver §7.2.
+- **HU-20 Tránsito a pago** → funcional (sesión grande 18-jun, PR `feat/e3-hu-20`): `instruccion-pago.controller.js`
+  + `/api/instruccion-pago`. Suficiencia presupuestal server-side (art. 24), semáforo del plazo de 20 días
+  anclado en la nota de autorización (art. 54), checklist de soportes (factura/CFDI metadatos + fianza leída
+  de garantías), instrucción de pago real (1 por estimación, UNIQUE) y **gate de finiquito** (rechaza si el
+  contrato está 'cerrado', art. 64 LOPSRM / 170 RLOPSRM). `TransitoPago.jsx` cableado (ya no dummy).
+  `[validar profe]` resueltos con base legal en la historia HU-20 (comprometido, umbrales, exigibilidad de
+  fianza, finiquito, quién genera).
 
 ### 7.2 Parcial / brechas de criterio (auditoría: 69 criterios → 35✅/27🟡/**7❌**)
-- **HU-02 Fianzas:** la pantalla `RegistroFianzas.jsx` es dummy y el PDF de póliza solo guarda el **nombre**
-  (`ModalVerPdf` es placeholder). Las garantías SÍ persisten vía el **alta HU-01** y se leen en el
-  expediente HU-04. `garantia_endosos` existe (con trigger) pero está **muerta** (sin controller).
+- ~~**HU-02 Fianzas:** pantalla dummy~~ → **FUNCIONAL (sesión E2 18-jun):** `garantias.controller.js` +
+  `/api/garantias` (CRUD por la pantalla, **una garantía por tipo** UNIQUE, art. 48 LOPSRM; **PDF real** en
+  `contrato_garantias.pdf_*`; **endosos** vía `garantia_endosos`, art. 91 RLOPSRM). `RegistroFianzas.jsx`
+  cableado al backend (selector de contrato; ya no dummy).
 - **HU-13:** funcional contra backend, pero el **bloqueo de los 6 días (art. 54) es solo aviso ámbar**, no
   candado (el botón Presentar no consulta el plazo).
 - **HU-04:** la descarga individual por bloque se cambió (O9) por un PDF único — confirmar con el profe que
@@ -394,9 +425,10 @@ vive en el MISMO BEGIN/COMMIT que el evento); toma advisory lock por bitácora y
 - Ancla de periodo de los reportes (HU-19); 2 al millar CMIC (sin fundamento federal, solo si el contrato lo
   pacta); emisor de la nota DIFERIDA de hecho (JWT vs actor original) [C3, opcional].
 
-### 7.4 PRs/ramas que NO existen (trabajo no empezado)
-`feat/e3-hu-16`, `feat/e3-hu-18`, `feat/e3-hu-20` y una rama e2 para HU-11/minutas: **ninguna existe** en
-origin. Esas HU son maquetas que viven en `main` sin backend.
+### 7.4 PRs/ramas de equipo
+`feat/e3-hu-16`, `feat/e3-hu-18`, `feat/e3-hu-19`, `feat/e3-hu-20` **ya existen** en origin y están
+**integrados localmente** (pendientes de push por Maiki). HU-11/minutas se construyó directo en la sesión E2
+(sin rama de equipo). **Ya no hay maquetas pendientes de backend.**
 
 ---
 
@@ -404,8 +436,10 @@ origin. Esas HU son maquetas que viven en `main` sin backend.
 
 - ⏰ **Reloj de la BD de Render:** el PostgreSQL **plan free expira ~25-jun-2026**. Decisión pendiente
   (pagar plan vs instancia nueva); runbook de backup/restore ensayado en O0. **Es el riesgo #1.**
-- **Tablas muertas** (DDL sin controller que las use): `instruccion_pago`, `presupuesto_anual` (HU-20),
-  `garantia_endosos` (HU-02). Existen con sus triggers pero nadie las escribe.
+- ~~**Tablas muertas** (DDL sin controller): `instruccion_pago`, `presupuesto_anual` (HU-20),
+  `garantia_endosos` (HU-02)~~ → **YA SE USAN:** `garantia_endosos` por HU-02 (sesión E2) e
+  `instruccion_pago`/`presupuesto_anual` por HU-20 (PR `feat/e3-hu-20`). Sin tablas muertas pendientes de
+  esos dominios.
 - **Código muerto dudoso** (NO tocar sin decisión de Maiki, ver `docs/analisis-y-diseno/AUDITORIA_CODIGO_MUERTO.md`):
   componentes UI huérfanos `Card.jsx`, `Badge.jsx`, `CardCriterioAceptacion.jsx` (0 importadores);
   `BadgeSprint.jsx` es stub de compatibilidad intencional (retorna `null`); `api.health` sin caller.
@@ -430,7 +464,7 @@ origin. Esas HU son maquetas que viven en `main` sin backend.
 |---|---|---|
 | HU-00 | Inicio de sesión por rol | ✅ |
 | HU-01 | Alta de contratos | ✅ (enforcement parcial solo-cliente; plan de amortización proporcional al programa + R2/R3, art. 143 fr. I — FASE 2 15-jun) |
-| HU-02 | Registro de fianzas y garantías | 🟡 pantalla dummy; persiste vía alta |
+| HU-02 | Registro de fianzas y garantías | ✅ (sesión E2 18-jun: `/api/garantias` CRUD + PDF real + endosos art. 91 RLOPSRM; una garantía por tipo, art. 48 LOPSRM) |
 | HU-03 | Convenios modificatorios | ✅ |
 | HU-04 | Expediente contractual | ✅ |
 | HU-05 | Programa y curva de avance | ✅ |
@@ -439,7 +473,7 @@ origin. Esas HU son maquetas que viven en `main` sin backend.
 | HU-08 | Apertura de bitácora | ✅ |
 | HU-09 | Notas tipificadas con firma | ✅ |
 | HU-10 | Consulta/búsqueda de notas | ✅ |
-| HU-11 | Minutas, visitas y acuerdos | ❌ maqueta |
+| HU-11 | Minutas, visitas y acuerdos | ✅ (sesión E2 18-jun: `/api/minutas` CRUD minutas/visitas + PDF + vínculo a nota de bitácora art. 123 fr. X RLOPSRM, sin alterar la nota) |
 | HU-12 | Integración de estimación | ✅ |
 | HU-13 | Envío/presentación de estimación | ✅ (bloqueo 6 días = solo aviso) |
 | HU-14 | Historial de estimaciones | ✅ (línea de tiempo incompleta) |
@@ -448,7 +482,7 @@ origin. Esas HU son maquetas que viven en `main` sin backend.
 | HU-17 | Tablero de estimaciones | ✅ |
 | HU-18 | Portafolio ejecutivo con semáforos | ✅ (integración 17-jun: semáforo server-side `GET /api/portafolio`, acotado por participación; umbrales/avance físico `[validar profe]`) |
 | HU-19 | Exportación de 7 reportes | ✅ (R4 observaciones pendiente) |
-| HU-20 | Tránsito a pago / suficiencia presupuestal | ❌ maqueta (DDL muerta) |
+| HU-20 | Tránsito a pago / suficiencia presupuestal | ✅ (sesión grande 18-jun, PR `feat/e3-hu-20`: `GET/POST /api/instruccion-pago`; suficiencia art. 24 server-side, semáforo plazo 20 días art. 54 anclado en nota de autorización, soportes factura/CFDI + fianza leída de garantías, instrucción real 1×estimación UNIQUE, **gate de finiquito** art. 64/170; `[validar profe]` resueltos con base legal en la historia) |
 | HU-21 | Registro del pago | ✅ (gate ESTRICTO: solo `autorizada`, art. 54) |
 | Registro | Auto-registro con aprobación de dependencia | ✅ |
 | Por Firmar | Firma de aperturas pendientes | ✅ |
@@ -478,14 +512,15 @@ origin. Esas HU son maquetas que viven en `main` sin backend.
 ## 10. Coherencia con las historias de usuario (verificada 13-jun-2026)
 
 Pasada de coherencia entre **este doc** y `docs/analisis-y-diseno/Historias_Usuario_ACTUALIZADAS_12jun.md`:
-**concuerdan** (ambos leídos del código real). Las historias marcan honestamente como **maqueta/dummy** las
-mismas que aquí (HU-11, HU-20) y como **parcial** HU-02 (la pantalla es dummy; las garantías
-persisten vía el alta HU-01). Coinciden también en: HU-14 línea de tiempo incompleta (el backend solo
-empuja `integrada`/`enviada`), HU-13 bloqueo de 6 días = solo aviso, HU-07 rediseñado (panel automático),
-gate de pago permisivo.
+**concuerdan** (ambos leídos del código real). **Ya no hay maquetas:** HU-02, HU-11, HU-18 y HU-20 pasaron a
+funcionales (junio); las historias de cada una se actualizaron a su comportamiento real con su fundamento
+legal y sus `[validar profe]` resueltos. Coinciden también en: HU-14 línea de tiempo incompleta (el backend
+solo empuja `integrada`/`enviada`), HU-13 bloqueo de 6 días = solo aviso, HU-07 rediseñado (panel
+automático), gate de pago estricto (`autorizada`). **Único pendiente funcional:** generadores de la
+estimación (HU-19).
 
 **Sin discrepancias de fondo.** Salvedades menores anotadas:
 - Las historias son **criterio-por-criterio** (más granulares en los `[validar profe]`); este doc es la foto
   de sistema. Si divergen, **manda el código**; al actualizar uno, revisar el otro (ver regla en `CLAUDE.md`).
-- El siguiente número de HU libre es **HU-24** (HU-22 roster y HU-23 empresas ya existen).
+- El siguiente número de HU libre es **HU-25** (HU-24 ya es el finiquito; HU-22 roster y HU-23 empresas ya existen).
 - Las historias detectaron specs de **HU-08** desactualizados (`test.fixme`) — añadido a §8 de este doc.

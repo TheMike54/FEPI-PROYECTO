@@ -34,6 +34,13 @@ import ExportacionReportes from './pages/ExportacionReportes.jsx';
 import RosterContrato from './pages/RosterContrato.jsx';
 import Finiquito from './pages/Finiquito.jsx';  // HU-24 (FASE 4): finiquito y cierre del contrato
 import AmbienteEstimacion from './pages/AmbienteEstimacion.jsx';  // FASE 5: ambiente de estimación por bloques (cascarón)
+import AmbienteBitacora from './pages/AmbienteBitacora.jsx';  // BLOQUE B: ambiente de bitácora por bloques (cascarón, fuera del catálogo)
+import AmbienteExpediente from './pages/AmbienteExpediente.jsx';  // BLOQUE B: ambiente de expediente y reportes (cierre documental, cascarón)
+import AmbientePago from './pages/AmbientePago.jsx';  // BLOQUE B: ambiente de pago (ciclo de cobro, cascarón)
+import AmbienteFiniquito from './pages/AmbienteFiniquito.jsx';  // BLOQUE B: ambiente de cierre (finiquito por bloques, cascarón que delega a HU-24)
+import AmbienteConvenio from './pages/AmbienteConvenio.jsx';  // BLOQUE B: ambiente de convenio modificatorio (cascarón episódico)
+import AmbienteAvance from './pages/AmbienteAvance.jsx';  // BLOQUE B: ambiente de avance físico y seguimiento (cascarón)
+import CicloVidaContrato from './pages/CicloVidaContrato.jsx';  // BLOQUE B: MACRO ciclo de vida del contrato (índice ordenado, al final)
 
 // Mapa ruta -> código de HU (excluye HU-00, que es login/dashboard). Permite que la
 // guarda de ruta sepa qué HU corresponde a cada path para validar el acceso por rol.
@@ -96,6 +103,28 @@ export default function App() {
             {/* FASE 5: ambiente de estimación por bloques (cascarón que envuelve el flujo existente).
                 Fuera del catálogo de HU; SoloRol con los roles del ciclo de estimación (HU-12). */}
             <Route path="/estimaciones/ambiente" element={<SoloRol roles={['contratista', 'residente', 'supervision']}><AmbienteEstimacion /></SoloRol>} />
+            {/* BLOQUE B: ambiente de bitácora por bloques (cascarón que encadena apertura→firma→notas→
+                consulta→minutas, sin fundir las HU). Fuera del catálogo de HU (no altera permisos.js);
+                roles de la bitácora. */}
+            <Route path="/bitacora/ambiente" element={<SoloRol roles={['residente', 'contratista', 'supervision']}><AmbienteBitacora /></SoloRol>} />
+            {/* BLOQUE B: ambiente de expediente y reportes (cierre documental). Encadena HU-04 + HU-19 sin
+                fundirlas. Roles que ven expediente Y reportes (finanzas fuera: solo tiene reportes). */}
+            <Route path="/contratos/expediente-ambiente" element={<SoloRol roles={['residente', 'contratista', 'supervision', 'dependencia']}><AmbienteExpediente /></SoloRol>} />
+            {/* BLOQUE B: ambiente de pago (ciclo de cobro). Envuelve HU-20/HU-21 sin fundirlas. Roles de
+                HU-20/HU-21 (supervisión excluida: null en ambas). */}
+            <Route path="/pagos/ambiente" element={<SoloRol roles={['finanzas', 'contratista', 'residente', 'dependencia']}><AmbientePago /></SoloRol>} />
+            {/* BLOQUE B: ambiente de cierre (finiquito por bloques). Envuelve HU-24 sin fundirla y delega el
+                cierre a /contratos/finiquito. Roles de HU-24 (dependencia/residente). */}
+            <Route path="/contratos/cierre" element={<SoloRol roles={['dependencia', 'residente']}><AmbienteFiniquito /></SoloRol>} />
+            {/* BLOQUE B: ambiente de convenio modificatorio (episódico). Envuelve HU-03 + oficio + HU-04
+                sin fundirlas. Roles que participan del convenio. */}
+            <Route path="/contratos/convenio-ambiente" element={<SoloRol roles={['dependencia', 'residente', 'contratista', 'supervision']}><AmbienteConvenio /></SoloRol>} />
+            {/* BLOQUE B: ambiente de avance físico y seguimiento. Encadena HU-06→HU-05→HU-07 sin fundirlas.
+                Ejecutores + supervisión (dependencia, con 'C' en HU-05, queda fuera por decisión). */}
+            <Route path="/seguimiento/ambiente" element={<SoloRol roles={['contratista', 'residente', 'supervision']}><AmbienteAvance /></SoloRol>} />
+            {/* BLOQUE B: MACRO ciclo de vida del contrato (índice ordenado, enlaza a todas las HU y sub-
+                ambientes sin fundirlas). Finanzas excluida (su pago se muestra informativo). */}
+            <Route path="/contratos/ciclo-vida" element={<SoloRol roles={['residente', 'contratista', 'supervision', 'dependencia']}><CicloVidaContrato /></SoloRol>} />
             <Route path="/seguimiento/alertas" element={<WithLayout><AlertasAtraso /></WithLayout>} />
             <Route path="/seguimiento/curva-avance" element={<WithLayout><CurvaAvance /></WithLayout>} />
             <Route path="/seguimiento/trabajos-terminados" element={<WithLayout><TrabajosTerminados /></WithLayout>} />
