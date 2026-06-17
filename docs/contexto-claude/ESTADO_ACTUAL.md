@@ -24,8 +24,15 @@
 > estimación **por estado** (mensaje claro en HU-13); **FASE 1** historias reescritas a **lenguaje natural**
 > (sin jerga; evidencia técnica queda en `AUDITORIA_COHERENCIA_HU.md`); **FASE 2** campo **`contratos.ubicacion`**
 > (alta, opcional) + nota de apertura **redactada con todos los datos del alta** (objeto/ubicación/partes/
-> monto/anticipo/plazo/fechas), imprimible; **FASE 3** seed con ubicación + oficio del convenio. Suite
-> **265/8/0**. FASE 4 (finiquito HU-24) y FASE 5 (wizard) **no** ejecutadas (dependen del profe / E3).
+> monto/anticipo/plazo/fechas), imprimible; **FASE 3** seed con ubicación + oficio del convenio.
+> (4) **Integración + FASES 4-5 (17-jun)**: **PARTE A** integró **HU-18 Portafolio** (rama `feat/e3-hu-18`,
+> `GET /api/portafolio` montado en `server.js`, semáforo server-side acotado por participación; ya no es
+> maqueta); **PARTE B / FASE 4** construyó el **FINIQUITO (HU-24)** (DDL aditiva `finiquitos` + `contratos.estado`,
+> `controllers/finiquito` + `/api/finiquito`, saldo server-side, nota de bitácora, cierre, documento art. 170;
+> ruta `SoloRol` en `App.jsx` y link en Sidebar — **`permisos.js` NO se tocó**); **PARTE C / FASE 5** construyó
+> el **ambiente de estimación por bloques** como **CASCARÓN** (`AmbienteEstimacion.jsx`, envuelve la carátula
+> existente vía `estimacion-prep`; bloques de **generadores** y **soportes/fotos** son placeholders pendientes
+> de **E3**; integración/envío reales se delegan a HU-12/HU-13; historial aparte). Suite **265/8/0**.
 > **Actualízala** cuando edites este doc.
 >
 > **Docs hermanos:** historia completa → `docs/HISTORIAL_PROYECTO.md` · historias de usuario vigentes
@@ -47,9 +54,10 @@ núcleo (alta → bitácora → avance → estimación → autorización → pag
 real. Quedan 4 pantallas que son **maqueta pura sin backend**.
 
 **% funcional (por HU, honesto):** de 26 unidades (HU-00..21 + Registro + Por Firmar + HU-22 roster + HU-23
-empresas), **~22 funcionan end-to-end** (≈85%); **3 son maqueta sobre datos dummy** (HU-11 minutas,
-HU-18 portafolio, HU-20 tránsito a pago); **HU-02 fianzas** es parcial (la pantalla es dummy,
-pero las garantías SÍ persisten vía el alta HU-01). Detalle exacto en §7.
+empresas), **~23 funcionan end-to-end** (≈88%); **2 son maqueta sobre datos dummy** (HU-11 minutas,
+HU-20 tránsito a pago) — **HU-18 portafolio pasó a funcional** (integración 17-jun, `GET /api/portafolio`);
+**HU-02 fianzas** es parcial (la pantalla es dummy, pero las garantías SÍ persisten vía el alta HU-01).
+Detalle exacto en §7.
 
 ---
 
@@ -189,6 +197,9 @@ LFD) en cada validación, o marca `[validar profe]`.
    `WHERE vigente`) · `programa_version_concepto` + `programa_version_celda` (snapshots).
 9. **Empresas (O3):** `empresas` (índice único FUNCIONAL normalizado, mata duplicados).
 10. **Minutas/visitas (HU-11):** `minutas` · `visitas`. **Endosos (HU-02):** `garantia_endosos`.
+11. **Finiquito (HU-24, FASE 4):** `finiquitos` (1:1 contrato, append-only con trigger `sigecop_finiquito_inmutable`;
+    saldo + `a_favor_de` + `nota_id`) · `contratos.estado` (`vigente`/`cerrado`) + `cerrado_en` (aditivo) ·
+    tipo de nota `finiquito` en `bitacora_nota_tipos`.
 
 ### Triggers de inmutabilidad (**12**, todos `BEFORE UPDATE FOR EACH ROW`; ninguno toca DELETE)
 Dos clases: **bloqueo total** (cualquier UPDATE falla) y **transición controlada** (compara columna a
@@ -359,8 +370,12 @@ vive en el MISMO BEGIN/COMMIT que el evento); toma advisory lock por bitácora y
 | HU | Pantalla | Estado real | Bloqueado por |
 |---|---|---|---|
 | **HU-11** Minutas | `MinutasVisitas.jsx` | Todo en `useState` sobre dummies; el PDF solo captura el **nombre**; "adjuntar a nota" es modal informativo | Falta controller/route de minutas; `minutas.nota_id` huérfana |
-| **HU-18** Portafolio | `PortafolioEjecutivo.jsx` | 5 contratos hardcodeados; el semáforo se calcula pero sobre dummy; no filtra por usuario | Falta endpoint + filtro por participación |
 | **HU-20** Tránsito a pago | `TransitoPago.jsx` | Suficiencia/soportes 100% en memoria; monto editable hardcoded. **La DDL existe** (`presupuesto_anual` + `instruccion_pago`) pero **ningún controller la usa** | Falta TODO el backend (suficiencia presupuestal + instrucción de pago + upload de soportes) |
+
+> **HU-18 Portafolio ya NO es maqueta** (integración 17-jun): `GET /api/portafolio`
+> (`portafolio.controller.js`, solo lectura, acotado por participación vía `ROLES_VEN_TODO`/`lib/acceso`)
+> calcula el semáforo server-side desde datos reales. Umbrales y la definición de "avance físico" quedan
+> **`[validar profe]`** (6 puntos abiertos, ver historia HU-18).
 
 ### 7.2 Parcial / brechas de criterio (auditoría: 69 criterios → 35✅/27🟡/**7❌**)
 - **HU-02 Fianzas:** la pantalla `RegistroFianzas.jsx` es dummy y el PDF de póliza solo guarda el **nombre**
@@ -431,7 +446,7 @@ origin. Esas HU son maquetas que viven en `main` sin backend.
 | HU-15 | Revisión técnica y autorización | ✅ |
 | HU-16 | Reingreso tras rechazo | ✅ (reingreso real: nueva versión bloque indep. ligada por `reemplaza_a`; plazo art. 54 no se reinicia) |
 | HU-17 | Tablero de estimaciones | ✅ |
-| HU-18 | Portafolio ejecutivo con semáforos | ❌ maqueta |
+| HU-18 | Portafolio ejecutivo con semáforos | ✅ (integración 17-jun: semáforo server-side `GET /api/portafolio`, acotado por participación; umbrales/avance físico `[validar profe]`) |
 | HU-19 | Exportación de 7 reportes | ✅ (R4 observaciones pendiente) |
 | HU-20 | Tránsito a pago / suficiencia presupuestal | ❌ maqueta (DDL muerta) |
 | HU-21 | Registro del pago | ✅ (gate ESTRICTO: solo `autorizada`, art. 54) |
@@ -439,6 +454,7 @@ origin. Esas HU son maquetas que viven en `main` sin backend.
 | Por Firmar | Firma de aperturas pendientes | ✅ |
 | HU-22 | Sustitución de personas / roster (art. 125) | ✅ |
 | HU-23 | Catálogo de empresas | ✅ (registro por **SELECTOR del catálogo**, no texto libre — sesión autónoma 16-jun; + deduplicación FUERTE que funde acentos/puntuación/sufijos de razón social como segunda red — FASE 3 15-jun) |
+| HU-24 | Finiquito y cierre del contrato | ✅ (FASE 4, 17-jun: `GET/POST /api/finiquito/contrato/:id`; saldo server-side = Σ neto autorizada/pagada − pagos − anticipo no amortizado − `ajustes_finales` parametrizables `[validar profe]`; asienta nota de bitácora `finiquito` y cierra el contrato (`contratos.estado='cerrado'`); 1 por contrato, append-only; documento art. 170 imprimible. art. 64 LOPSRM / 168-172 RLOPSRM) |
 
 ### Términos legales y de obra
 - **Estimación:** documento periódico que valoriza el avance ejecutado para cobro (art. 54 LOPSRM).
@@ -463,7 +479,7 @@ origin. Esas HU son maquetas que viven en `main` sin backend.
 
 Pasada de coherencia entre **este doc** y `docs/analisis-y-diseno/Historias_Usuario_ACTUALIZADAS_12jun.md`:
 **concuerdan** (ambos leídos del código real). Las historias marcan honestamente como **maqueta/dummy** las
-mismas que aquí (HU-11, HU-16, HU-18, HU-20) y como **parcial** HU-02 (la pantalla es dummy; las garantías
+mismas que aquí (HU-11, HU-20) y como **parcial** HU-02 (la pantalla es dummy; las garantías
 persisten vía el alta HU-01). Coinciden también en: HU-14 línea de tiempo incompleta (el backend solo
 empuja `integrada`/`enviada`), HU-13 bloqueo de 6 días = solo aviso, HU-07 rediseñado (panel automático),
 gate de pago permisivo.

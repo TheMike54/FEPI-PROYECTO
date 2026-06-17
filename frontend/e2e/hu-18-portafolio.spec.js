@@ -1,21 +1,19 @@
 // @ts-check
-// E2E HU-18 — Portafolio ejecutivo.
+// E2E HU-18 — Portafolio ejecutivo con semáforos.
 //
-// Cubre el comportamiento del prototipo:
-//   · Semáforo CALCULADO en cliente (no leído del dummy) a partir de 3
-//     factores crudos: desviación de avance vs programado, días vencidos en
-//     plazos legales y pendientes sin atender.
-//   · Cada factor aporta 0/1/2 puntos; suma → verde (0-1), amarillo (2-3),
-//     rojo (≥4). Verificación cruzada importando calcularSemaforo y validando
-//     que cambiar los factores cambia el color.
-//   · Doble clic sobre una fila abre el panel de detalle.
-//   · Control "Agrupar por" (Contratista / Ejercicio fiscal / Tipo de
-//     contratación) reorganiza la tabla.
-//   · Badge "vs mes anterior" presente en cada fila.
+// REESCRITO al patrón real (sin dummy): el semáforo, el avance, los atrasos y los pendientes los
+// calcula el BACKEND (GET /api/portafolio, acotado por participación). Ya no hay lógica de semáforo
+// en cliente que testear unitariamente; se valida el CABLEADO real de la pantalla contra el backend.
+//   · Dependencia (ven todo) ve la tabla con el contrato demo, contadores y semáforo server-side.
+//   · Doble clic abre el panel de detalle (CA-2).
+//   · Control "Agrupar por": Contratista / Ejercicio fiscal habilitados; "Tipo de contratación"
+//     DESHABILITADO (procedimiento de adjudicación ausente en el esquema — [Nivel 1 profe]).
+//   · Residente/Supervisión: vista accesible (consulta, acotada por participación; puede ir vacía).
+//   · Contratista/Finanzas: sin acceso (PERMISOS[HU-18]).
 //
 // PERMISOS[HU-18]: residente='C' · supervision='C' · dependencia='E' · contratista/finanzas=null
 //
-// Helpers comunes: ver frontend/e2e/_helpers.js.
+// Requiere backend+BD (login real) → se salta en CI. Helpers: ver frontend/e2e/_helpers.js.
 
 import { test, expect } from '@playwright/test';
 import {
@@ -23,69 +21,32 @@ import {
   enterAppMode,
   goToViaSidebar,
   sidebarLinkFor,
-  cardInInicioFor,
   expectMetadataAcademicaOculta
 } from './_helpers.js';
-import { calcularSemaforo } from '../src/data/portafolioLogica.js';
 
-// alta-v2: la suite entra con login real → requiere backend+BD; se corre en local (no en CI).
-test.skip(!!process.env.CI, 'alta-v2: login real requiere backend+BD; se corre en local');
+// El skip condicional va DENTRO de cada beforeEach (NO en el tope del módulo ni en un beforeEach
+// de nivel de archivo: ambos lanzan en COLECCIÓN — "test.skip()/beforeEach() can only be called
+// inside test/describe/fixture"). Helper local para no repetir el mensaje en cada describe.
+const skipEnCI = () => test.skip(!!process.env.CI, 'alta-v2: login real requiere backend+BD; se corre en local');
 
 const VIEW_PATH = '/portafolio';
 const TITULO = 'Portafolio ejecutivo';
 const SPRINT = 'Sprint 9';
+const FOLIO_DEMO = 'OP-2026-DEMO-001'; // contrato semilla de schema.sql (visible para dependencia)
 
 // ---------------------------------------------------------------------------
-// LOGICA DEL SEMAFORO (test unitario importando la funcion)
-// ---------------------------------------------------------------------------
-
-test.describe('HU-18 — logica del semaforo', () => {
-  test('verde: todos los factores ok', () => {
-    const s = calcularSemaforo({ desviacionAvance: 0, diasVencidos: 0, pendientesSinAtender: 0 });
-    expect(s.color).toBe('verde');
-  });
-
-  test('amarillo: combinacion de alertas', () => {
-    const s = calcularSemaforo({ desviacionAvance: 10, diasVencidos: 5, pendientesSinAtender: 1 });
-    expect(s.color).toBe('amarillo');
-  });
-
-  test('rojo: 3 factores graves', () => {
-    const s = calcularSemaforo({ desviacionAvance: 25, diasVencidos: 18, pendientesSinAtender: 4 });
-    expect(s.color).toBe('rojo');
-  });
-
-  test('el color cambia cuando empeoran los factores', () => {
-    const base = calcularSemaforo({ desviacionAvance: 0, diasVencidos: 0, pendientesSinAtender: 0 });
-    const peor = calcularSemaforo({ desviacionAvance: 20, diasVencidos: 12, pendientesSinAtender: 3 });
-    expect(base.color).toBe('verde');
-    expect(peor.color).toBe('rojo');
-  });
-
-  test('desglose incluye los tres factores con puntos', () => {
-    const s = calcularSemaforo({ desviacionAvance: 10, diasVencidos: 5, pendientesSinAtender: 1 });
-    expect(s.desglose).toHaveLength(3);
-    expect(s.desglose.map((d) => d.factor)).toEqual([
-      'Avance vs programado',
-      'Atrasos en plazos',
-      'Pendientes sin atender'
-    ]);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// MODO APLICACION — Dependencia ejecuta
+// MODO APLICACIÓN — Dependencia ejecuta (ve todos los contratos)
 // ---------------------------------------------------------------------------
 
 test.describe('HU-18 — modo aplicacion (Dependencia: ejecuta)', () => {
   test.beforeEach(async ({ page }) => {
+    skipEnCI();
     await freshHome(page);
     await enterAppMode(page, 'dependencia');
+    await goToViaSidebar(page, VIEW_PATH);
   });
 
   test('sidebar muestra HU-18 y la vista carga sin metadata academica', async ({ page }) => {
-    await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
-    await goToViaSidebar(page, VIEW_PATH);
     await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
     await expectMetadataAcademicaOculta(page, {
       huId: 'HU-18',
@@ -93,10 +54,41 @@ test.describe('HU-18 — modo aplicacion (Dependencia: ejecuta)', () => {
       rolAcademicoLabel: 'Dependencia'
     });
   });
+
+  test('CA-1: la tabla lista contratos reales con semáforo server-side', async ({ page }) => {
+    // Los contadores agregados están presentes.
+    await expect(page.getByTestId('contador-verde')).toBeVisible();
+    await expect(page.getByTestId('contador-amarillo')).toBeVisible();
+    await expect(page.getByTestId('contador-rojo')).toBeVisible();
+    // El contrato demo aparece con su punto de semáforo y un color válido.
+    const dot = page.getByTestId(`semaforo-dot-${FOLIO_DEMO}`);
+    await expect(dot).toBeVisible();
+    const color = await dot.getAttribute('data-color');
+    expect(['verde', 'amarillo', 'rojo']).toContain(color);
+  });
+
+  test('CA-2: doble clic abre el panel de detalle', async ({ page }) => {
+    await page.getByTestId(`fila-portafolio-${FOLIO_DEMO}`).dblclick();
+    await expect(page.getByTestId('panel-detalle-contrato')).toBeVisible();
+    await page.getByTestId('btn-cerrar-detalle-contrato').click();
+    await expect(page.getByTestId('panel-detalle-contrato')).toHaveCount(0);
+  });
+
+  test('CA-3: agrupar habilita Contratista/Ejercicio; Tipo de contratación deshabilitado', async ({ page }) => {
+    const select = page.getByTestId('select-agrupar-por');
+    await expect(select).toBeVisible();
+    // La opción del procedimiento de adjudicación se ofrece pero deshabilitada (dato ausente).
+    const opcionTipo = select.locator('option[disabled]');
+    await expect(opcionTipo).toHaveCount(1);
+    await expect(opcionTipo).toContainText('Tipo de contratación');
+    // Agrupar por contratista crea al menos un grupo con encabezado.
+    await select.selectOption('Contratista');
+    await expect(page.locator('[data-testid^="grupo-"]').first()).toBeVisible();
+  });
 });
 
 // ---------------------------------------------------------------------------
-// MODO APLICACION — Residente / Supervisión consultan
+// MODO APLICACIÓN — Residente / Supervisión consultan (acceso C, acotado por participación)
 // ---------------------------------------------------------------------------
 
 for (const rol of [
@@ -105,20 +97,23 @@ for (const rol of [
 ]) {
   test.describe(`HU-18 — modo aplicacion (${rol.alias}: consulta)`, () => {
     test.beforeEach(async ({ page }) => {
+      skipEnCI();
       await freshHome(page);
       await enterAppMode(page, rol.id);
     });
 
-    test('la vista es accesible (vista 100% consultativa)', async ({ page }) => {
+    test('la vista es accesible (consulta acotada por participación)', async ({ page }) => {
       await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
       await goToViaSidebar(page, VIEW_PATH);
-      await expect(page.getByTestId('semaforo-dot-C-2026-0042')).toBeVisible();
+      // Accesible: el encabezado y el control de agrupado cargan aunque su portafolio pueda ir vacío.
+      await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
+      await expect(page.getByTestId('select-agrupar-por')).toBeVisible();
     });
   });
 }
 
 // ---------------------------------------------------------------------------
-// MODO APLICACION — Contratista / Finanzas sin acceso
+// MODO APLICACIÓN — Contratista / Finanzas sin acceso
 // ---------------------------------------------------------------------------
 
 for (const rol of [
@@ -127,6 +122,7 @@ for (const rol of [
 ]) {
   test.describe(`HU-18 — modo aplicacion (${rol.alias}: sin acceso)`, () => {
     test.beforeEach(async ({ page }) => {
+      skipEnCI();
       await freshHome(page);
       await enterAppMode(page, rol.id);
     });
