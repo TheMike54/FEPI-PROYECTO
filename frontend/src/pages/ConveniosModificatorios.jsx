@@ -100,6 +100,7 @@ export default function ConveniosModificatorios() {
   const [motivo, setMotivo] = useState('');
   const [folio, setFolio] = useState('');
   const [registrando, setRegistrando] = useState(false);
+  const [subiendoOficioId, setSubiendoOficioId] = useState(null); // FASE 0C: oficio de aprobación del convenio
 
   // Detalle de versión expandido (snapshot del programa).
   const [verVersionId, setVerVersionId] = useState(null);
@@ -345,6 +346,35 @@ export default function ConveniosModificatorios() {
       setRegistrando(false);
     }
   }, [puedeRegistrar, tipo, motivo, folio, tocaPlazo, tocaPrograma, plazoNuevoNum, cmConceptos, cmPeriodos, cmCeldas, contratoId, showToast, cargarContrato]);
+
+  // FASE 0C (profe 16-jun) — OFICIO DE APROBACIÓN del convenio: subir (PDF, append-only) y verlo.
+  const subirOficio = useCallback(async (convenioId, file) => {
+    if (!file || subiendoOficioId) return;
+    if (file.type !== 'application/pdf') { showToast('El oficio debe ser un PDF'); return; }
+    setSubiendoOficioId(convenioId);
+    try {
+      await api.subirOficioConvenio(convenioId, file);
+      showToast('Oficio de aprobación cargado. El convenio queda con su soporte documental.');
+      await cargarContrato(contratoId); // recarga el historial → tiene_oficio = true
+    } catch (e) {
+      showToast(e.status === 409 ? 'El convenio ya tiene su oficio (inmutable)'
+        : e.status === 403 ? 'Solo la dependencia o el residente asignado puede subir el oficio'
+          : (e.message || 'No se pudo subir el oficio'));
+    } finally {
+      setSubiendoOficioId(null);
+    }
+  }, [subiendoOficioId, showToast, cargarContrato, contratoId]);
+
+  const verOficio = useCallback(async (convenioId) => {
+    try {
+      const blob = await api.descargarOficioConvenio(convenioId);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      showToast(e.message || 'No se pudo abrir el oficio');
+    }
+  }, [showToast]);
 
   const verVersion = useCallback(async (versionId) => {
     if (verVersionId === versionId) { setVerVersionId(null); setDetalleVersion(null); return; }
@@ -593,12 +623,13 @@ export default function ConveniosModificatorios() {
                     <th className="text-left p-3 font-semibold">Motivo</th>
                     <th className="text-left p-3 font-semibold">Avisos</th>
                     <th className="text-left p-3 font-semibold">Autoriza</th>
+                    <th className="text-left p-3 font-semibold">Oficio de aprobación</th>
                   </tr>
                 </thead>
                 <tbody>
                   {convenios.length === 0 ? (
                     <tr>
-                      <td colSpan="7" className="p-8 text-center text-slate-400 italic" data-testid="conv-vacio">
+                      <td colSpan="8" className="p-8 text-center text-slate-400 italic" data-testid="conv-vacio">
                         Este contrato no tiene convenios modificatorios registrados.
                       </td>
                     </tr>
@@ -638,6 +669,31 @@ export default function ConveniosModificatorios() {
                           </div>
                         </td>
                         <td className="p-3 text-xs">{c.autorizado_por_nombre || '—'}</td>
+                        <td className="p-3 text-xs">
+                          {c.tiene_oficio ? (
+                            <button
+                              type="button"
+                              className="text-sigecop-accent hover:underline font-semibold"
+                              onClick={() => verOficio(c.id)}
+                              data-testid={`conv-oficio-ver-${c.id}`}
+                            >
+                              📎 Ver oficio
+                            </button>
+                          ) : soloLectura ? (
+                            <span className="text-slate-400">pendiente de oficio</span>
+                          ) : (
+                            <label className="inline-flex items-center gap-1 cursor-pointer text-sigecop-accent hover:underline" data-testid={`conv-oficio-subir-${c.id}`}>
+                              {subiendoOficioId === c.id ? 'Subiendo…' : '⬆ Subir oficio (PDF)'}
+                              <input
+                                type="file"
+                                accept="application/pdf"
+                                className="hidden"
+                                disabled={subiendoOficioId != null}
+                                onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; subirOficio(c.id, f); }}
+                              />
+                            </label>
+                          )}
+                        </td>
                       </tr>
                     ))
                   )}

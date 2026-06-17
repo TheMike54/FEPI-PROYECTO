@@ -8,6 +8,7 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "seed:demo": "node scripts/seed_demo.js",
+    "reset:demo": "node scripts/reset_demo.js",
     "consolidar:empresas": "node scripts/consolidar_empresas.js"
   },
   "dependencies": {

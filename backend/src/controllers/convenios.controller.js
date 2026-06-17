@@ -73,7 +73,10 @@ async function listarConvenios(req, res) {
     if (!esParteOSupervision(req.user, c.rows[0])) return res.status(403).json({ error: 'No tienes acceso a los convenios de este contrato' });
 
     const convenios = await pool.query(
-      `SELECT cm.*, u.nombre AS autorizado_por_nombre
+      // FASE 0C (profe 16-jun): tiene_oficio = el convenio ya tiene cargado su OFICIO DE APROBACIÓN
+      // (soporte documental, art. 59/99). Se guarda en contrato_documentos ligado por convenio_id.
+      `SELECT cm.*, u.nombre AS autorizado_por_nombre,
+              EXISTS (SELECT 1 FROM contrato_documentos d WHERE d.convenio_id = cm.id) AS tiene_oficio
          FROM convenios_modificatorios cm
          LEFT JOIN usuarios u ON u.id = cm.autorizado_por
         WHERE cm.contrato_id = $1 ORDER BY cm.numero`, [contratoId]);
@@ -303,4 +306,60 @@ async function crearConvenio(req, res) {
   }
 }
 
-module.exports = { listarConvenios, detalleVersion, crearConvenio };
+// POST /api/convenios/:convenioId/oficio — sube el OFICIO DE APROBACIÓN del convenio (PDF en BYTEA).
+// Revisión profe 16-jun: "el soporte es que te lo aprobaron… falta la sección del documento de
+// aprobación, es un oficio". Se REUSA contrato_documentos (tipo='oficio_convenio', ligado por
+// convenio_id). Append-only: UN oficio por convenio, inmutable. Autoridad = la misma que registra el
+// convenio (dependencia o residente/creador del contrato). El archivo lo recibe multer (req.file).
+async function subirOficioConvenio(req, res) {
+  try {
+    const convenioId = Number(req.params.convenioId);
+    if (!Number.isInteger(convenioId) || convenioId <= 0) return res.status(400).json({ error: 'convenio inválido' });
+    if (!req.file || !req.file.buffer) return res.status(400).json({ error: 'Falta el archivo PDF (campo "documento")' });
+    const { buffer, originalname, mimetype, size } = req.file;
+    // Backstop: revalidar magic bytes %PDF (no confiar solo en el mimetype declarado).
+    if (!(buffer.length >= 4 && buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46)) {
+      return res.status(400).json({ error: 'El archivo no es un PDF válido' });
+    }
+    const cv = await pool.query(
+      `SELECT cm.id, cm.contrato_id, c.created_by, c.residente_id, c.superintendente_id, c.supervision_id
+         FROM convenios_modificatorios cm JOIN contratos c ON c.id = cm.contrato_id WHERE cm.id = $1`, [convenioId]);
+    if (cv.rowCount === 0) return res.status(404).json({ error: 'Convenio no encontrado' });
+    const row = cv.rows[0];
+    // Autoridad (= crearConvenio): la aprobación la sustenta la dependencia o el residente/creador (art. 99).
+    const puede = req.user.rol === 'dependencia' || row.residente_id === req.user.id || row.created_by === req.user.id;
+    if (!puede) return res.status(403).json({ error: 'Solo la dependencia o el residente asignado puede subir el oficio de aprobación del convenio' });
+    // Append-only: un oficio por convenio (inmutable; el índice parcial uq_contrato_doc_oficio_convenio lo respalda).
+    const ya = await pool.query('SELECT id FROM contrato_documentos WHERE convenio_id = $1 LIMIT 1', [convenioId]);
+    if (ya.rowCount > 0) return res.status(409).json({ error: 'El convenio ya tiene su oficio de aprobación; es inmutable y no se reemplaza' });
+    const r = await pool.query(
+      `INSERT INTO contrato_documentos (contrato_id, convenio_id, tipo, nombre, mime, tamano, contenido)
+       VALUES ($1, $2, 'oficio_convenio', $3, $4, $5, $6)
+       RETURNING id, nombre, mime, tamano, subido_en`,
+      [row.contrato_id, convenioId, originalname, mimetype, size, buffer]);
+    return res.status(201).json(r.rows[0]);
+  } catch (err) { console.error('[subirOficioConvenio]', err); return res.status(500).json({ error: 'Error interno' }); }
+}
+
+// GET /api/convenios/:convenioId/oficio — visualiza/descarga el oficio de aprobación (acotado por participación).
+async function descargarOficioConvenio(req, res) {
+  try {
+    const convenioId = Number(req.params.convenioId);
+    if (!Number.isInteger(convenioId) || convenioId <= 0) return res.status(400).json({ error: 'convenio inválido' });
+    const cv = await pool.query(
+      `SELECT cm.contrato_id, c.created_by, c.residente_id, c.superintendente_id, c.supervision_id
+         FROM convenios_modificatorios cm JOIN contratos c ON c.id = cm.contrato_id WHERE cm.id = $1`, [convenioId]);
+    if (cv.rowCount === 0) return res.status(404).json({ error: 'Convenio no encontrado' });
+    if (!esParteOSupervision(req.user, cv.rows[0])) return res.status(403).json({ error: 'No tienes acceso a este convenio' });
+    const r = await pool.query(
+      'SELECT nombre, mime, tamano, contenido FROM contrato_documentos WHERE convenio_id = $1 ORDER BY subido_en DESC LIMIT 1', [convenioId]);
+    if (r.rowCount === 0) return res.status(404).json({ error: 'Este convenio no tiene oficio de aprobación cargado' });
+    const doc = r.rows[0];
+    res.setHeader('Content-Type', doc.mime || 'application/pdf');
+    res.setHeader('Content-Length', doc.tamano);
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(doc.nombre || 'oficio.pdf')}"`);
+    return res.status(200).send(doc.contenido);
+  } catch (err) { console.error('[descargarOficioConvenio]', err); return res.status(500).json({ error: 'Error interno' }); }
+}
+
+module.exports = { listarConvenios, detalleVersion, crearConvenio, subirOficioConvenio, descargarOficioConvenio };

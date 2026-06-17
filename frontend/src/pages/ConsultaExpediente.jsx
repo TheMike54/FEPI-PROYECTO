@@ -17,13 +17,13 @@ import MatrizProgramaLectura, { periodoQueContiene } from '../components/program
 // (print CSS) con TODOS los bloques, exportada con window.print desde un botón único. Es solo
 // presentación: NO cambia la lógica de datos (consolida lo que ya se consulta).
 
+// Revisión profe 16-jun: dentro del expediente de UN solo contrato, buscar por folio/contratista/
+// empresa/objeto NO tiene sentido (todos son únicos por contrato — "no voy a encontrar más que una
+// sola empresa, un solo folio"). Se dejan SOLO los criterios que navegan los bloques: tipo de
+// documento y periodo. (Las ramas viejas en haceMatch quedan inertes; no se alcanzan desde la UI.)
 const CAMPOS_BUSQUEDA = [
-  { id: 'folio',       label: 'Folio' },
-  { id: 'contratista', label: 'Contratista' },
-  { id: 'empresa',     label: 'Empresa' }, // O3: búsqueda por empresa (catálogo del profe)
-  { id: 'objeto',      label: 'Objeto' },
-  { id: 'periodo',     label: 'Periodo' },
-  { id: 'documento',   label: 'Tipo de documento' }
+  { id: 'documento',   label: 'Tipo de documento' },
+  { id: 'periodo',     label: 'Periodo' }
 ];
 
 // pg devuelve NUMERIC y DATE como strings; coercemos al mostrar/calcular.
@@ -141,6 +141,7 @@ function BloquePrograma({ programa, actividades, versiones }) {
         <MatrizProgramaLectura
           programa={programa}
           periodoResaltadoNumero={periodoQueContiene(periodos, new Date().toISOString().slice(0, 10))}
+          mostrarRestante={false}
         />
         <RefVersiones />
       </div>
@@ -363,6 +364,19 @@ const pctConv = (n) => (n == null ? null : `${Number(n) >= 0 ? '+' : ''}${Number
 function BloqueConvenios({ data, contratoId }) {
   const convenios = Array.isArray(data?.convenios) ? data.convenios : [];
   const versiones = Array.isArray(data?.versiones) ? data.versiones : [];
+  // FASE 0C (profe 16-jun): abre el OFICIO DE APROBACIÓN del convenio (PDF) en una pestaña nueva. El
+  // GET exige token, así que se baja como blob y se abre por object URL (no como link directo).
+  const verOficio = async (convenioId) => {
+    try {
+      const blob = await api.descargarOficioConvenio(convenioId);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      // eslint-disable-next-line no-alert
+      window.alert(e.message || 'No se pudo abrir el oficio de aprobación.');
+    }
+  };
   if (convenios.length === 0) {
     return <p className="text-sm text-slate-400 italic">Este contrato no tiene convenios modificatorios registrados.</p>;
   }
@@ -370,7 +384,8 @@ function BloqueConvenios({ data, contratoId }) {
     <div data-testid="convenios-expediente">
       <p className="text-xs text-slate-500 mb-3">
         Historial inmutable de convenios (art. 59 LOPSRM / art. 99 RLOPSRM): {convenios.length} registrado(s).
-        Cada convenio asienta su nota en la bitácora del contrato (art. 123 fr. III). Corregir = convenio nuevo.
+        Cada convenio asienta su nota en la bitácora del contrato (art. 123 fr. III) y su soporte de aprobación
+        es el <strong>oficio</strong> que lo autoriza. Corregir = convenio nuevo.
       </p>
       <div className="overflow-x-auto border border-slate-200 rounded-md">
         <table className="w-full text-sm">
@@ -382,6 +397,7 @@ function BloqueConvenios({ data, contratoId }) {
               <th className="text-left px-3 py-2">Motivo</th>
               <th className="text-left px-3 py-2 w-28">Fecha</th>
               <th className="text-center px-3 py-2 w-28">Bitácora</th>
+              <th className="text-center px-3 py-2 w-36">Oficio de aprobación</th>
             </tr>
           </thead>
           <tbody>
@@ -403,6 +419,14 @@ function BloqueConvenios({ data, contratoId }) {
                   {c.nota_id
                     ? <span className="text-sigecop-green-validation" title={`Nota de bitácora #${c.nota_id}`} data-testid={`convenio-nota-${c.id}`}>📝 asentada</span>
                     : <span className="text-sigecop-amber-attention" data-testid={`convenio-nota-${c.id}`}>pendiente al abrir</span>}
+                </td>
+                <td className="px-3 py-2 text-center text-xs">
+                  {c.tiene_oficio
+                    ? <>
+                        <button type="button" onClick={() => verOficio(c.id)} className="text-sigecop-accent hover:underline font-semibold print:hidden" data-testid={`convenio-oficio-${c.id}`}>📎 Ver oficio</button>
+                        <span className="hidden print:inline text-sigecop-green-validation">Oficio de aprobación cargado</span>
+                      </>
+                    : <span className="text-sigecop-amber-attention" data-testid={`convenio-oficio-${c.id}`}>pendiente de oficio</span>}
                 </td>
               </tr>
             ))}
@@ -493,7 +517,7 @@ export default function ConsultaExpediente() {
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
-  const [campo, setCampo] = useState('folio');
+  const [campo, setCampo] = useState('documento');
 
   useEffect(() => {
     if (sinSesion) return;
@@ -721,7 +745,7 @@ export default function ConsultaExpediente() {
                   <label className="sg-label">Buscar en el expediente</label>
                   <input
                     className="sg-input"
-                    placeholder="Folio, palabra del objeto, contratista, fecha..."
+                    placeholder="Tipo de documento (catálogo, programa, fianzas…) o periodo…"
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     data-testid="input-busqueda"
@@ -784,7 +808,7 @@ export default function ConsultaExpediente() {
           huId="HU-04"
           criterios={[
             { numero: 1, texto: 'El expediente muestra en una sola vista los bloques del contrato: configuración (con superintendente vigente), catálogo, programa, fianzas, plan de amortización, jurídicos, roster/sustituciones, convenios y resumen de estimaciones.' },
-            { numero: 2, texto: 'El buscador filtra los bloques por folio, contratista, objeto, periodo o tipo de documento, con lógica Y.' },
+            { numero: 2, texto: 'El buscador filtra los bloques por tipo de documento o periodo (los criterios que aplican dentro de un solo contrato), con lógica Y.' },
             { numero: 3, texto: 'El expediente completo se exporta como un solo PDF (Exportar expediente → impresión consolidada del navegador), sin descargas sueltas por bloque.' }
           ]}
         />

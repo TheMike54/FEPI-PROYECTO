@@ -214,12 +214,15 @@ test.describe('HU-03 — flujo real (Dependencia registra convenio de plazo)', (
     expect((await resp).status()).toBe(201);
     await expect(filasConvenios(page)).toHaveCount(1);
 
-    // La fila del convenio registrado es de SOLO LECTURA: no contiene NINGÚN control de
-    // edición/mutación (corregir = convenio nuevo; la inmutabilidad real es server-side: trigger
-    // append-only + ausencia de endpoint DELETE/PATCH en el router de convenios).
+    // La fila del convenio registrado NO ofrece editar / anular / eliminar el convenio (corregir =
+    // convenio nuevo; inmutabilidad server-side: trigger append-only + sin DELETE/PATCH en el router).
+    // EXCEPCIÓN legítima (FASE 0C, profe 16-jun): adjuntar/ver su OFICIO DE APROBACIÓN, que es un
+    // SOPORTE documental y NO muta el convenio. Ese es el único control interactivo permitido en la fila.
     const fila = filasConvenios(page).first();
     await expect(fila).toBeVisible();
-    await expect(fila.locator('button, input, select, textarea, [contenteditable="true"]')).toHaveCount(0);
+    const interactivos = await fila.locator('button, input, select, textarea, [contenteditable="true"]').count();
+    const delOficio = await fila.locator('[data-testid^="conv-oficio-ver-"], [data-testid^="conv-oficio-subir-"] input').count();
+    expect(interactivos - delOficio).toBe(0);
   });
 });
 

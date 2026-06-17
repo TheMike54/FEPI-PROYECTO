@@ -284,8 +284,10 @@ test.describe('HU-04 — O9: exportar expediente como un solo PDF', () => {
     await goToViaSidebar(page, VIEW_PATH);
     await seleccionarContratoPorFolio(page, folio);
 
-    // Buscar el folio (campo 'folio') → solo casa Configuración; el resto se oculta EN PANTALLA.
-    await page.getByTestId('input-busqueda').fill(folio);
+    // Revisión profe 16-jun: el buscador del expediente filtra por TIPO DE DOCUMENTO (criterio por
+    // defecto; se quitaron folio/contratista/empresa/objeto por carecer de sentido en un solo contrato).
+    // Buscar "contrato" solo casa el bloque de Configuración; el resto se oculta EN PANTALLA.
+    await page.getByTestId('input-busqueda').fill('contrato');
     await expect(page.getByTestId('bloque-configuracion')).toBeVisible();
     await expect(page.getByTestId('bloque-catalogo')).toBeHidden();
     await expect(page.getByTestId('bloque-estimaciones')).toBeHidden();

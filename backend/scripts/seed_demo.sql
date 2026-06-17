@@ -72,12 +72,14 @@ BEGIN
 
   -- Contrato. monto = Σ ROUND(cant×pu) del catálogo = 2,500,000.00. Anticipo 30% (= 750,000.00).
   -- pena convencional 0.10% (fracción 0.0010, art. 46 Bis LOPSRM / 86-90 RLOPSRM) [validar profe].
-  INSERT INTO contratos (folio, tipo, objeto, contratista, dependencia, monto, plazo_dias,
+  INSERT INTO contratos (folio, tipo, objeto, ubicacion, contratista, dependencia, monto, plazo_dias,
                          fecha_inicio, fecha_termino, created_by, datos_juridicos, anticipo_pct,
                          residente_id, superintendente_id, supervision_id, dependencia_id,
                          ciclo_estimacion, pena_convencional_pct)
   VALUES ('OBRA-2026-DEMO-01', 'Obra pública sobre la base de precios unitarios',
           'Construcción de edificio de laboratorios (demo SIGECOP)',
+          -- FASE 2 (profe 16-jun): ubicación de la obra → se redacta en la nota de apertura.
+          'Av. Lázaro Cárdenas s/n, Ciudad Universitaria, Chilpancingo, Guerrero',
           v_nom_super, (SELECT nombre FROM usuarios WHERE id=v_dep),
           2500000.00, 211, DATE '2025-12-01', DATE '2026-06-30', v_resid,
           '{"licitacion":"LO-DEMO-2025-001","fecha_fallo":"2025-11-15","ramo":"Obra educativa"}'::jsonb,
@@ -175,6 +177,13 @@ BEGIN
   RETURNING id INTO v_conv;
   -- El contrato refleja el nuevo plazo (metadato; no cambia la matriz/periodos ni el cuadre).
   UPDATE contratos SET plazo_dias = 241, fecha_termino = (DATE '2025-12-01' + 240) WHERE id = v_id;
+
+  -- FASE 0C (profe 16-jun): OFICIO DE APROBACIÓN del convenio (soporte de que fue aprobado, art. 59/99
+  -- RLOPSRM). Se guarda en contrato_documentos ligado al convenio (convenio_id, tipo='oficio_convenio').
+  -- PDF mínimo (%PDF). Así el expediente muestra "📎 Ver oficio" en el convenio del contrato demo.
+  INSERT INTO contrato_documentos (contrato_id, convenio_id, nombre, mime, tamano, contenido, tipo)
+  VALUES (v_id, v_conv, 'Oficio de aprobación CM-001 (DEMO).pdf', 'application/pdf', 15,
+          decode('255044462d312e340a25e2e3cfd30a','hex'), 'oficio_convenio');
 
   -- Avance físico (HU-06): cada concepto ejecutado al 100% en su periodo (contrato on-track → sin
   -- atraso falso). Coherente con el programa (Σ ejecutado = Σ programado por concepto).
@@ -280,11 +289,12 @@ BEGIN
     ('OBRA-2026-ATRASO-04','Rehabilitación de aulas (edificio B)','Rehabilitación integral de aulas','m2',2000.000,1000.00,DATE '2025-11-01',7,600.000)
   ) AS t(folio,objeto,concepto,unidad,cantidad,pu,inicio,nper,ejec)
   LOOP
-    INSERT INTO contratos (folio, tipo, objeto, contratista, dependencia, monto, plazo_dias,
+    INSERT INTO contratos (folio, tipo, objeto, ubicacion, contratista, dependencia, monto, plazo_dias,
                            fecha_inicio, fecha_termino, created_by, anticipo_pct,
                            residente_id, superintendente_id, supervision_id, dependencia_id,
                            ciclo_estimacion, pena_convencional_pct)
     VALUES (rec.folio, 'Obra pública sobre la base de precios unitarios', rec.objeto,
+            'Ciudad Universitaria, Chilpancingo, Guerrero',  -- FASE 2: ubicación de la obra
             v_nom_super, v_nom_dep, ROUND(rec.cantidad*rec.pu,2), rec.nper*30,
             rec.inicio, (rec.inicio + (rec.nper||' months')::interval - INTERVAL '1 day')::date, v_resid,
             0.00, v_resid, v_super, v_superv, v_dep, 'mensual', 0.0010)

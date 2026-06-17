@@ -68,7 +68,11 @@ function BitacoraReadOnly({ bitacora }) {
             <Dato label="Teléfono contratista" valor={ident.telefono_contratista} />
           </div>
         </Grupo>
-        <Grupo titulo="Objeto de los trabajos"><div className="text-sm text-slate-800">{acta.objeto || '—'}</div></Grupo>
+        <Grupo titulo="Objeto de los trabajos">
+          <div className="text-sm text-slate-800" data-testid="acta-objeto">{acta.objeto || '—'}</div>
+          {/* FASE 2 (profe 16-jun): ubicación de la obra ("la obra ubicada en…"). */}
+          {acta.ubicacion && <div className="text-sm text-slate-600 mt-1" data-testid="acta-ubicacion">Ubicación: {acta.ubicacion}</div>}
+        </Grupo>
         <Grupo titulo="Alcance de los trabajos y características del sitio (art. 123 fr. III RLOPSRM)">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <Dato label="Descripción de los trabajos" valor={acta.descripcion_trabajos} />

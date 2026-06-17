@@ -98,7 +98,7 @@ test.describe('O3 — catálogo de empresas', () => {
     await expect(page.getByTestId('aviso-misma-empresa')).toHaveCount(0);
   });
 
-  test('EXPEDIENTE: muestra la empresa del equipo y se puede buscar por empresa', async ({ page, request }) => {
+  test('EXPEDIENTE: muestra la empresa del equipo de cada persona', async ({ page, request }) => {
     // Contrato con el equipo demo (contratista=Constructora Demo, supervisión=Supervisión Externa Demo).
     const [R, S, V, D] = await Promise.all([
       loginApi(request, 'residente@sigecop.test'),
@@ -127,19 +127,8 @@ test.describe('O3 — catálogo de empresas', () => {
     await page.getByTestId('select-contrato').selectOption({ value: String(id) });
 
     // El bloque jurídicos (equipo) muestra la empresa del superintendente (Constructora Demo).
-    await expect(page.getByText('Constructora Demo').first()).toBeVisible();
-
-    // Buscar por EMPRESA: campo 'empresa' + "Constructora" deja visible el bloque del equipo y
-    // FILTRA los que no traen esa empresa (el contador baja del total). (Término sin acento para
-    // evitar diferencias de normalización Unicode entre el spec y el render.)
-    await page.locator('label:has-text("Buscar por") + select').selectOption('empresa');
-    await page.getByTestId('input-busqueda').fill('Constructora');
-    const aviso = page.getByText(/Mostrando (\d+) de (\d+) bloques/);
-    await expect(aviso).toBeVisible();
-    const texto = await aviso.textContent();
-    const [, n, m] = texto.match(/Mostrando (\d+) de (\d+)/);
-    expect(Number(n)).toBeGreaterThan(0);          // el bloque del equipo coincide
-    expect(Number(n)).toBeLessThan(Number(m));     // y filtró los que no traen esa empresa
+    // Revisión profe 16-jun: la BÚSQUEDA por empresa se retiró del expediente (no tiene sentido en un
+    // solo contrato); la empresa sigue VISIBLE en el bloque del equipo, que es lo que el catálogo aporta aquí.
     await expect(page.getByText('Constructora Demo').first()).toBeVisible();
   });
 

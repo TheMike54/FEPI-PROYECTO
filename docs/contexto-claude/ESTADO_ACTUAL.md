@@ -9,15 +9,24 @@
 > contexto previo**. Todo lo de aquí está **verificado contra el código/git real** (no asumido). Tono
 > honesto: lo que funciona y lo que es maqueta están marcados como tales.
 >
-> **Cabecera de versión:** fecha **2026-06-16**, `main = 75797e2` (oleadas A/CITAS/B/PAGO/C + pulido UX ya
-> commiteados) + **cambios LOCALES sin commit** de dos sesiones:
+> **Cabecera de versión:** fecha **2026-06-17**, `main = 75797e2` (oleadas A/CITAS/B/PAGO/C + pulido UX ya
+> commiteados) + **cambios LOCALES sin commit** de tres sesiones:
 > (1) **Revisión del profe 15-jun** (`docs/planes/PLAN_REVISION_PROFE_15jun.md`): FASE 2 reglas del plan de
 > amortización (proporcional al programa, art. 143 fr. I), FASE 3 deduplicación fuerte de empresas, FASE 1
 > seed de datos demo (`backend/scripts/seed_demo.sql`, `docs/SEED_DEMO_SIGECOP.md`).
 > (2) **Sesión autónoma de empresas 16-jun** (`docs/planes/PLAN_SESION_AUTONOMA_EMPRESAS_15jun.md`): el
 > registro de empresa pasó de texto libre a **SELECTOR del catálogo** (imposible duplicar); consolidado de
 > requerimientos del profe (`docs/REQUERIMIENTOS_PROFE_CONSOLIDADO.md`); convenio HU-03 en el seed;
-> **reorganización de `docs/`** (planes/, reportes/, referencias/). **Actualízala** cuando edites este doc.
+> **reorganización de `docs/`** (planes/, reportes/, referencias/).
+> (3) **Revisión del profe 16-jun, FASES 0-3** (`docs/planes/PLAN_REVISION_PROFE_16jun.md`): **FASE 0**
+> expediente HU-04 (programa sin "restante", buscador solo tipo-doc/periodo, **oficio de aprobación del
+> convenio** reusando `contrato_documentos` con `convenio_id`/`tipo='oficio_convenio'`) + presentar
+> estimación **por estado** (mensaje claro en HU-13); **FASE 1** historias reescritas a **lenguaje natural**
+> (sin jerga; evidencia técnica queda en `AUDITORIA_COHERENCIA_HU.md`); **FASE 2** campo **`contratos.ubicacion`**
+> (alta, opcional) + nota de apertura **redactada con todos los datos del alta** (objeto/ubicación/partes/
+> monto/anticipo/plazo/fechas), imprimible; **FASE 3** seed con ubicación + oficio del convenio. Suite
+> **265/8/0**. FASE 4 (finiquito HU-24) y FASE 5 (wizard) **no** ejecutadas (dependen del profe / E3).
+> **Actualízala** cuando edites este doc.
 >
 > **Docs hermanos:** historia completa → `docs/HISTORIAL_PROYECTO.md` · historias de usuario vigentes
 > (criterios = sistema real) → `docs/analisis-y-diseno/Historias_Usuario_ACTUALIZADAS_12jun.md` · auditoría
@@ -73,7 +82,7 @@ rol, no se elige). *(Doc interno con credenciales reales: `docs/Cuentas_Prueba_S
 
 ### Suite e2e (Playwright)
 ```bash
-cd frontend && npx playwright test            # 266 tests; objetivo: 258 passed / 8 skipped / 0 failed
+cd frontend && npx playwright test            # 273 tests; objetivo: 265 passed / 8 skipped / 0 failed
 npx playwright test hu-12-integracion-estimacion   # un spec
 ```
 - **Requiere el stack local arriba** (login real contra backend+BD). Los specs hacen `test.skip(!!CI)`:
@@ -332,6 +341,7 @@ vive en el MISMO BEGIN/COMMIT que el evento); toma advisory lock por bitácora y
 | UI-1/UI-2 | Reskin institucional guinda (remapeo de tokens + componentes `ui/`) |
 | FASE 15-jun | Revisión del profe: (2) plan de amortización proporcional al programa + reglas R2/R3 (art. 143 fr. I); (3) deduplicación FUERTE de empresas (acentos/sufijos de razón social); (1) **seed de datos demo** (`backend/scripts/seed_demo.sql`) — paquete de 5 contratos (1 completo + 4 en atraso) para demostrar cualquier HU. LOCAL sin commit. |
 | Sesión autónoma 16-jun | EMPRESAS: el registro pasó de texto libre (`<datalist>`) a **SELECTOR del catálogo** + "➕ registrar nueva" (imposible duplicar, profe 09-jun: "ya la elijo, no la registro completo"); empresa explícita en el alta (derivada de la cuenta). Consolidado de TODOS los audios del profe (`docs/REQUERIMIENTOS_PROFE_CONSOLIDADO.md`). Convenio HU-03 en el seed. Reorg de `docs/` (planes/reportes/referencias). LOCAL sin commit. |
+| FASES 0-3 17-jun (profe 16-jun) | **F0** expediente HU-04 (programa sin "restante" vía flag `mostrarRestante` en `MatrizProgramaLectura`; buscador solo tipo-doc/periodo; **oficio de aprobación del convenio**: migración aditiva en `contrato_documentos` (`convenio_id`, `tipo='oficio_convenio'`, índices parciales) + endpoints en `convenios.controller`/`routes` + UI en `ConveniosModificatorios`/`ConsultaExpediente`) + presentar **por estado** (mensajería en `EnvioEstimacion`). **F1** historias a lenguaje natural. **F2** `contratos.ubicacion` (aditivo; alta `crearContrato`) + apertura redactada con todos los datos del alta (`bitacora.controller::resumenApertura`, fix de fechas Date→ISO). **F3** seed con ubicación + oficio. Specs nuevos: `fase0c-oficio-convenio`, `fase2-apertura-redaccion`. LOCAL sin commit. |
 
 > **Datos demo a demanda (FASE 1, 15-jun):** `backend/scripts/seed_demo.sql` (`npm run seed:demo`, idempotente,
 > NO corre en tests) carga `OBRA-2026-DEMO-01` (contrato completo: ciclo de estimación en los 5 estados +

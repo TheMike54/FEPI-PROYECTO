@@ -26,7 +26,11 @@ export function periodoQueContiene(periodos, iso) {
   return p ? p.numero : null;
 }
 
-export default function MatrizProgramaLectura({ programa, periodoResaltadoNumero = null }) {
+// `mostrarRestante`: la columna "Restante" (contratado − Σ planeado) es un control de cuadre del
+// programa. En el EXPEDIENTE (HU-04) el profe pidió mostrar SOLO lo contratado/programado, no el
+// "restante" (revisión 16-jun: "lo contratado, no lo restante… la ejecución se ve en la curva, no aquí").
+// Por eso el expediente la pasa en false; las vistas de captura/cuadre (alta, estimación) la dejan en true.
+export default function MatrizProgramaLectura({ programa, periodoResaltadoNumero = null, mostrarRestante = true }) {
   const periodos = Array.isArray(programa?.periodos) ? programa.periodos : [];
   const conceptos = Array.isArray(programa?.conceptos) ? programa.conceptos : [];
   const celdas = Array.isArray(programa?.celdas) ? programa.celdas : [];
@@ -70,7 +74,7 @@ export default function MatrizProgramaLectura({ programa, periodoResaltadoNumero
               })}
               <th className="text-right px-2 py-2 w-24">Σ planeado</th>
               <th className="text-right px-2 py-2 w-24">Contratado</th>
-              <th className="text-right px-2 py-2 w-24">Restante</th>
+              {mostrarRestante && <th className="text-right px-2 py-2 w-24">Restante</th>}
             </tr>
           </thead>
           <tbody>
@@ -99,7 +103,7 @@ export default function MatrizProgramaLectura({ programa, periodoResaltadoNumero
                   })}
                   <td className="px-2 py-1 text-right font-semibold">{planeado}</td>
                   <td className="px-2 py-1 text-right text-slate-600">{contratado}</td>
-                  <td className={`px-2 py-1 text-right ${restCls}`}>{restante}</td>
+                  {mostrarRestante && <td className={`px-2 py-1 text-right ${restCls}`}>{restante}</td>}
                 </tr>
               );
             })}
