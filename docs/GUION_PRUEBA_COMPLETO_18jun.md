@@ -68,8 +68,9 @@ docker exec sigecop_backend npm run seed:demo
 | **HU-23** Empresas | — | Registro | La empresa se **elige de un selector** (no se teclea); avisa si ya existe. |
 | **HU-24** Finiquito | residente/dependencia | Finiquito → DEMO-01 | Cierre del contrato (append-only, inmutable). |
 
-> **Único pendiente funcional real:** los **números generadores** de la estimación (HU-19, equipo E3).
-> Todo lo demás del recorrido tiene backend real.
+> **Los números generadores SÍ funcionan** (se capturan en la integración de la estimación, HU-12, art. 132
+> RLOPSRM). Lo único pendiente es el **bloque de captura dedicado** del cascarón de estimación (FASE 5), que
+> hoy delega a HU-12 — un refinamiento de UX, no funcionalidad faltante. Todo el recorrido tiene backend real.
 
 ---
 
@@ -173,7 +174,8 @@ Fórmula de la carátula (server-side): `neto = subtotal − ROUND(subtotal×30%
 
 ## 5) Nota de cierre
 
-- **Único pendiente funcional real:** números generadores de la estimación (HU-19, E3).
+- **Números generadores:** funcionales (captura en HU-12, art. 132 RLOPSRM); el único pendiente es el bloque
+  de captura dedicado del cascarón de estimación (FASE 5), que delega a HU-12.
 - Todo el recorrido de la tabla §1 corre contra **backend real** (PostgreSQL); el seed lo deja cuadrado
   al centavo.
 - Si algo del recorrido no coincide con esta guía, lo más probable es que el seed no se haya recargado:

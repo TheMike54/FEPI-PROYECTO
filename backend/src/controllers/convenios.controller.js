@@ -19,8 +19,10 @@ const { guardarMatriz } = require('../lib/programa');
 // + la redacción del controller de bitácora (no se duplica la lógica de inmutabilidad de notas).
 const { insertarNotaAtomica, textoNotaConvenio } = require('./bitacora.controller');
 
-// Guardrail de variación PARAMETRIZABLE (NO es tope legal; el art. 59 vigente no tiene tope numérico).
-// Default 25 (= umbral de revisión del art. 102 RLOPSRM, reutilizado como guardrail). <=0 = sin tope.
+// Umbral de AVISO de variación, PARAMETRIZABLE (NO es tope legal; el art. 59 vigente no tiene tope numérico).
+// CRITERIO DEL EQUIPO: superar este % del monto o plazo original NO bloquea el convenio; marca un AVISO
+// (`aviso_variacion`, referido al art. 59 LOPSRM). Default 25 (= umbral de revisión del art. 102 RLOPSRM).
+// <=0 = sin aviso.
 const LIMITE_PCT = Number(process.env.CONVENIO_LIMITE_VARIACION_PCT ?? 25);
 const UMBRAL_SFP = 25;    // RLOPSRM art. 102 (revisión indirectos/SFP)
 const UMBRAL_AJUSTE = 50; // LOPSRM art. 59 Bis (ajuste de costos)
@@ -169,18 +171,12 @@ async function crearConvenio(req, res) {
         const clavesNuevas = new Set(clavesBody);
         const faltan = existentes.rows.filter((r) => !clavesNuevas.has(String(r.clave))).map((r) => r.clave);
         if (faltan.length) { await client.query('ROLLBACK'); return res.status(400).json({ error: `El catálogo nuevo debe incluir TODOS los conceptos existentes; faltan: ${faltan.join(', ')}` }); }
-        // Pre-check del guardrail con el monto del payload (== monto canónico tras mutar).
-        const montoPre = await montoDesdeConceptos(client, conceptos);
-        const dPre = (await client.query('SELECT CASE WHEN $2::numeric>0 THEN ABS(ROUND((($1::numeric-$2::numeric)/$2::numeric)*100,2)) ELSE NULL END AS d', [montoPre, montoAnterior])).rows[0].d;
-        if (LIMITE_PCT > 0 && dPre != null && Number(dPre) > LIMITE_PCT) {
-          await client.query('ROLLBACK');
-          return res.status(400).json({ error: `La variación de monto (${dPre}%) excede el límite configurado (${LIMITE_PCT}%). (Guardrail parametrizable, NO tope legal; ajusta CONVENIO_LIMITE_VARIACION_PCT.)` });
-        }
+        // Variación de monto: CRITERIO DEL EQUIPO — superar el 25% (LIMITE_PCT) ya NO bloquea. Se registra
+        // el convenio y se devuelve un AVISO (`aviso_variacion` en la respuesta), referido al art. 59 LOPSRM
+        // (modificación de contratos). La clasificación SFP (RLOPSRM art. 102) se calcula abajo (reqSfp).
       }
-      if (tocaPlazo && LIMITE_PCT > 0 && plazoAnterior > 0) {
-        const dp = Math.abs(((plazoNuevo - plazoAnterior) / plazoAnterior) * 100);
-        if (dp > LIMITE_PCT) { await client.query('ROLLBACK'); return res.status(400).json({ error: `La variación de plazo (${dp.toFixed(2)}%) excede el límite configurado (${LIMITE_PCT}%).` }); }
-      }
+      // Variación de plazo: mismo criterio — superar el 25% AVISA, no bloquea (art. 59 LOPSRM); ver
+      // `aviso_variacion` en la respuesta.
 
       // (B) Snapshot perezoso de v1 (estado VIVO ORIGINAL) ANTES de mutar — solo si toca el programa.
       let numeroVer = Number((await client.query('SELECT COALESCE(MAX(numero),0) AS m FROM programa_version WHERE contrato_id = $1', [contratoId])).rows[0].m);
@@ -225,6 +221,9 @@ async function crearConvenio(req, res) {
       const absP = deltaPlazoPct != null ? Math.abs(Number(deltaPlazoPct)) : null;
       const reqSfp = (absM != null && absM > UMBRAL_SFP) || (absP != null && absP > UMBRAL_SFP);
       const reqAjuste = (absM != null && absM > UMBRAL_AJUSTE) || (absP != null && absP > UMBRAL_AJUSTE);
+      // AVISO de variación (criterio del equipo): superar el 25% (LIMITE_PCT) del monto o el plazo NO
+      // bloquea; marca un aviso referido al art. 59 LOPSRM. Parametrizable (CONVENIO_LIMITE_VARIACION_PCT).
+      const avisoVariacion = (LIMITE_PCT > 0) && ((absM != null && absM > LIMITE_PCT) || (absP != null && absP > LIMITE_PCT));
       const fundamento = 'art59';
 
       // (E) Registrar el convenio (INMUTABLE) con el monto/delta CANÓNICOS.
@@ -289,6 +288,9 @@ async function crearConvenio(req, res) {
         monto_anterior: montoAnterior, monto_nuevo: montoNuevo, plazo_anterior_dias: plazoAnterior, plazo_nuevo_dias: plazoNuevoFinal,
         delta_monto_pct: deltaMontoPct != null ? Number(deltaMontoPct) : null, delta_plazo_pct: deltaPlazoPct != null ? Number(deltaPlazoPct) : null,
         requiere_revision_sfp: reqSfp, requiere_ajuste_costos: reqAjuste, programa_version_id: nuevaVerId,
+        aviso_variacion: avisoVariacion
+          ? `La variación supera el ${LIMITE_PCT}% del monto o plazo original: se registra el convenio (es un AVISO, no un bloqueo). Modificación fundada en el art. 59 LOPSRM; el umbral del 25% es referencia administrativa de revisión (RLOPSRM art. 102).`
+          : null,
         nota: notaConv ? { id: notaConv.id, numero: notaConv.numero, tipo: notaConv.tipo, tag: notaConv.tag } : null,
         nota_diferida: notaDiferida,
         aviso: notaDiferida ? 'El convenio quedó registrado; su nota de bitácora se asentará automáticamente al abrir la bitácora.' : null

@@ -20,13 +20,14 @@
 //     frontend la deshabilita; aquí solo se registran METADATOS (estimacion_soportes).
 const { pool } = require('../db/pool');
 const { esParteOSupervision } = require('../lib/acceso');
+const { PLAZO_DIAS_VENCIDOS } = require('../lib/umbrales-semaforo');
 
 // Plazo de pago: 20 días naturales — base legal LITERAL (art. 54 LOPSRM: "deberán pagarse… en un plazo no
 // mayor a veinte días naturales"). Si se excede, el art. 55 LOPSRM genera gastos financieros (mora).
 const PLAZO_PAGO_DIAS = 20;                 // art. 54 LOPSRM (20 días naturales)
-// Umbrales del semáforo (verde ≤10 · ámbar 11-17 · rojo >17): SIN base legal literal — criterio del profe,
-// default conservador (ámbar antes de la mitad final, rojo cerca del vencimiento del plazo del art. 54).
-const SEMAFORO = { verde_max: 10, ambar_max: 17 };
+// Semáforo del plazo en DÍAS VENCIDOS (días pasados de los 20 del art. 54): 0 VERDE · 1-10 ÁMBAR · > 10
+// ROJO. CRITERIO DEL EQUIPO (defaults provisionales, configurables); centralizado con el portafolio
+// (HU-18) en backend/src/lib/umbrales-semaforo.js → `PLAZO_DIAS_VENCIDOS`.
 
 // Soportes obligatorios capturables como metadato (la fianza se LEE aparte de garantías).
 const SOPORTE_FACTURA = 'Factura';
@@ -154,11 +155,13 @@ function semaforoPlazo(anclaISO) {
   const ancla = new Date(anclaISO);
   const hoy = new Date(new Date().toDateString());
   const dias = Math.max(0, Math.floor((hoy - new Date(ancla.toDateString())) / 86400000));
-  const color = dias <= SEMAFORO.verde_max ? 'verde' : (dias <= SEMAFORO.ambar_max ? 'ambar' : 'rojo');
+  const diasVencidos = Math.max(0, dias - PLAZO_PAGO_DIAS); // días pasados del plazo de pago de 20 (art. 54)
+  const color = diasVencidos <= PLAZO_DIAS_VENCIDOS.verde_max ? 'verde'
+    : (diasVencidos <= PLAZO_DIAS_VENCIDOS.ambar_max ? 'ambar' : 'rojo');
   return {
-    disponible: true, ancla: anclaISO, dia_actual: dias, plazo: PLAZO_PAGO_DIAS, color,
+    disponible: true, ancla: anclaISO, dia_actual: dias, dias_vencidos: diasVencidos, plazo: PLAZO_PAGO_DIAS, color,
     fuente: 'bitácora (nota de autorización res_estimaciones)',
-    nota: '[validar profe] ancla derivada de la bitácora; umbrales verde≤10/ámbar 11-17/rojo>17 provisionales',
+    nota: 'Días vencidos = días pasados del plazo de pago de 20 días (art. 54 LOPSRM). Umbrales 0 / 1-10 / >10 días vencidos: criterio del equipo (defaults provisionales, configurables).',
   };
 }
 

@@ -13,10 +13,10 @@ import { api } from '../services/api.js';
 // nada (las marcas SFP/ajuste de costos las pone el backend). NOTA: /bitacora/consulta (HU-10) y
 // /contratos/expediente (HU-04) NO preseleccionan contrato vía ?contrato= → el copy pide "elige el
 // contrato". HU-03 (/contratos/modificatorios) SÍ lee ?contrato=.
-// El guardrail del 25% (un convenio que rebasa el 25% del monto/plazo dispara aviso/revisión SFP) es
-// parametrizable; el convenio sembrado (+14.2% de plazo) queda por debajo → requiere_revision_sfp=false.
-// [validar profe: umbral del guardrail 25% y su efecto (aviso vs bloqueo) — sin fundamento legal literal
-// único; art. 59/59 Bis LOPSRM regula los convenios pero el % es criterio administrativo (SFP).]
+// Umbral del 25% (CRITERIO DEL EQUIPO, parametrizable): un convenio que rebasa el 25% del monto/plazo
+// original MARCA un AVISO (no bloquea — el backend lo registra con `aviso_variacion`), referido al art. 59
+// LOPSRM (modificación de contratos); el % en sí es referencia administrativa de revisión (RLOPSRM art.
+// 102). El convenio sembrado (+14.2% de plazo) queda por debajo → requiere_revision_sfp=false (sin aviso).
 //
 // Header sin HeaderVista (evita el aviso "solo lectura" de HU-03 para los roles 'C': es un ambiente de
 // navegación, no la pantalla de captura).
@@ -134,7 +134,7 @@ export default function AmbienteConvenio() {
               <div><div className="text-xs text-slate-500">Monto</div><div className="font-semibold">{ultimo.delta_monto_pct != null ? `${ultimo.delta_monto_pct > 0 ? '+' : ''}${ultimo.delta_monto_pct}%` : 'sin cambio'}</div></div>
               <div><div className="text-xs text-slate-500">Aviso SFP / 59 Bis</div><div className="font-semibold" data-testid="aviso-sfp">{ultimo.requiere_revision_sfp ? '⚠️ requiere revisión' : 'no aplica'}</div></div>
             </div>
-            <p className="text-xs text-slate-500 mt-2">El umbral del guardrail (≈25% de variación) es parametrizable; arriba de él se marca el aviso. El convenio no se recalcula aquí; solo se refleja lo que el backend determinó.</p>
+            <p className="text-xs text-slate-500 mt-2">Superar el 25% de variación <strong>marca un aviso</strong> (no bloquea el convenio), referido al art. 59 LOPSRM; el umbral es parametrizable (criterio del equipo). El convenio no se recalcula aquí; solo se refleja lo que el backend determinó.</p>
           </div>
         )}
       </Bloque>

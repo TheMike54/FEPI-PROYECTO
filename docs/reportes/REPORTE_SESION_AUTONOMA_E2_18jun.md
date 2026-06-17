@@ -108,7 +108,8 @@ Archivos **nuevos** (no congelados): `garantias.controller.js`, `garantias.route
 - **HU-02 Fianzas:** ✅ funcional.
 - **HU-11 Minutas/visitas:** ✅ funcional.
 - **Única maqueta restante:** HU-20 (Tránsito a pago) — se integra en el BLOQUE A siguiente.
-- **Único pendiente funcional dentro de una HU:** números generadores (HU-19, E3).
+- **Números generadores:** funcionales (captura en la integración HU-12, art. 132 RLOPSRM); el único
+  pendiente es el bloque de captura dedicado del cascarón de estimación (FASE 5), que delega a HU-12.
 
 Docs sincronizados: `ESTADO_ACTUAL.md` (HU-02/HU-11 → funcional, % actualizado, cabecera entrada 5) y
 `Historias_Usuario_ACTUALIZADAS_12jun.md` (HU-02 y HU-11 reescritas a funcional con fundamento legal).

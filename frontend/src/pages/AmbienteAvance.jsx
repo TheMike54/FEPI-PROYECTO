@@ -15,8 +15,10 @@ import { api } from '../services/api.js';
 //
 // Roles: contratista/residente/supervisión (ejecutores + supervisión). El rol 'superintendente' NO existe en
 // permisos.js (los 5 roles son residente/contratista/supervision/dependencia/finanzas; el superintendente ES
-// el contratista). La dependencia tiene 'C' en HU-05 pero queda FUERA del envolvente por decisión de diseño
-// (ejecutores + supervisión del avance físico) — [validar con Maiki/profe], no es un olvido.
+// el contratista). DECISIÓN DEL EQUIPO (confirmada): la DEPENDENCIA NO registra avance físico — solo consulta
+// la curva (HU-05, nivel 'C'); el registro de avance (HU-06) lo capturan residente/contratista/supervisión.
+// Está enforced en el backend: el router de trabajos exige `requireRole('contratista')` para POST/PATCH/DELETE
+// y HU-06 es `null` para dependencia en permisos.js, así que la dependencia queda fuera de este envolvente.
 // La evidencia fotográfica por periodo no existe todavía (HU-06 no sube fotos) → bloque 5 = placeholder E2.
 
 function Bloque({ n, titulo, estado = 'activo', placeholder = false, children }) {

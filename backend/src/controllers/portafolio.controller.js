@@ -19,19 +19,22 @@
 const { pool } = require('../db/pool');
 const { ROLES_VEN_TODO } = require('../lib/acceso');
 
-// --- Umbrales del semáforo: DEFAULTS PROVISIONALES. [validar profe] ---------------------------
-// No hay fundamento legal del número exacto (los puntos de corte son interpretativos, Nivel 1).
-// Centralizados aquí para ajustarlos en UN solo punto cuando el profe los confirme.
+// --- Umbrales del semáforo: CRITERIO DEL EQUIPO (defaults provisionales, configurables) -----------
+// No hay fundamento legal del número exacto (los puntos de corte son interpretativos, Nivel 1); son un
+// acuerdo del EQUIPO y se ajustan en UN SOLO punto: backend/src/lib/umbrales-semaforo.js. Siguen siendo
+// configurables si el profe pide otros valores.
+const { DESVIACION_PP, PLAZO_DIAS_VENCIDOS } = require('../lib/umbrales-semaforo');
 const UMBRALES = {
-  // Factor 1 — desviación = programado% − físico% (puntos porcentuales; positivo = atraso).
-  desviacion_pp: { ok: 5, alerta: 15 },
-  // Factor 2 — días de plazo legal vencido (fechable: ejecución/art.54).
-  dias_vencidos: { ok: 0, alerta: 10 },
-  // Factor 3 — pendientes sin atender (conteo).
+  // Factor 1 — avance vs programado: desviación = programado% − físico% (pp). Desviación ≤ 5pp ⟺ avance
+  // ≥ 95% del programado (VERDE); 5-15pp ⟺ 85-95% (ÁMBAR); > 15pp ⟺ < 85% (ROJO).
+  desviacion_pp: { ok: DESVIACION_PP.ok, alerta: DESVIACION_PP.alerta },
+  // Factor 2 — días de plazo legal VENCIDO (fechable: ejecución/art.54): 0 VERDE · 1-10 ÁMBAR · > 10 ROJO.
+  dias_vencidos: { ok: PLAZO_DIAS_VENCIDOS.verde_max, alerta: PLAZO_DIAS_VENCIDOS.ambar_max },
+  // Factor 3 — pendientes sin atender (conteo): 0 VERDE · 1-2 ÁMBAR · > 2 ROJO (criterio del equipo).
   pendientes: { ok: 0, alerta: 2 },
 };
-// art. 54 LOPSRM: la residencia revisa la estimación presentada; ventana de revisión en días
-// naturales antes de considerarla "vencida". DEFAULT PROVISIONAL. [validar profe].
+// art. 54 LOPSRM: la residencia revisa la estimación presentada en un plazo no mayor de 15 días naturales;
+// pasado ese plazo se considera "vencida". Base legal: art. 54 LOPSRM (los 15 días son de la ley).
 const PLAZO_ART54_REVISION_DIAS = 15;
 // Misma EPS de cantidad que trabajos/alertas: un déficit por debajo de esto es 0.
 const EPS_CANT = 1e-6;
@@ -79,7 +82,7 @@ async function portafolio(req, res) {
     if (contratos.length === 0) {
       return res.status(200).json({
         rol: req.user.rol,
-        umbrales: { ...UMBRALES, plazo_art54_revision_dias: PLAZO_ART54_REVISION_DIAS, nota: '[validar profe] defaults provisionales' },
+        umbrales: { ...UMBRALES, plazo_art54_revision_dias: PLAZO_ART54_REVISION_DIAS, nota: 'criterio del equipo (defaults provisionales, configurables); el plazo de revisión de 15 días es art. 54 LOPSRM' },
         totales: { contratos: 0, verde: 0, amarillo: 0, rojo: 0 },
         contratos: [],
       });
@@ -300,7 +303,7 @@ async function portafolio(req, res) {
 
     return res.status(200).json({
       rol: req.user.rol,
-      umbrales: { ...UMBRALES, plazo_art54_revision_dias: PLAZO_ART54_REVISION_DIAS, nota: '[validar profe] defaults provisionales' },
+      umbrales: { ...UMBRALES, plazo_art54_revision_dias: PLAZO_ART54_REVISION_DIAS, nota: 'criterio del equipo (defaults provisionales, configurables); el plazo de revisión de 15 días es art. 54 LOPSRM' },
       totales: { contratos: filas.length, ...cuenta },
       contratos: filas,
     });

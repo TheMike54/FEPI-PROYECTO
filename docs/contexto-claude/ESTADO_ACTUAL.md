@@ -31,8 +31,10 @@
 > `controllers/finiquito` + `/api/finiquito`, saldo server-side, nota de bitácora, cierre, documento art. 170;
 > ruta `SoloRol` en `App.jsx` y link en Sidebar — **`permisos.js` NO se tocó**); **PARTE C / FASE 5** construyó
 > el **ambiente de estimación por bloques** como **CASCARÓN** (`AmbienteEstimacion.jsx`, envuelve la carátula
-> existente vía `estimacion-prep`; bloques de **generadores** y **soportes/fotos** son placeholders pendientes
-> de **E3**; integración/envío reales se delegan a HU-12/HU-13; historial aparte). Suite **265/8/0**.
+> existente vía `estimacion-prep`; el bloque **dedicado** de **generadores** y el de **soportes/fotos** son
+> placeholders del cascarón que **delegan a HU-12** — los números generadores en sí SÍ se capturan y persisten
+> en la integración HU-12, art. 132 RLOPSRM; integración/envío reales se delegan a HU-12/HU-13; historial
+> aparte). Suite **265/8/0**.
 > (5) **Sesión autónoma E2 (18-jun, `docs/planes/PLAN_SESION_AUTONOMA_E2_18jun.md`)**: cerró dos maquetas con
 > backend real. **HU-02 fianzas** → `garantias.controller` + `/api/garantias` (CRUD por pantalla, una garantía
 > por tipo art. 48 LOPSRM, **PDF real** en `contrato_garantias.pdf_*`, **endosos** art. 91 RLOPSRM);
@@ -83,8 +85,10 @@ empresas), **~27 funcionan end-to-end** (≈100% del catálogo); **0 maquetas**.
 funcional (17-jun); **HU-02 fianzas y HU-11 minutas** pasaron a funcional (sesión E2 18-jun: `GET/POST
 /api/garantias` y `/api/minutas`, PDF, endosos, vínculo a nota); **HU-20 tránsito a pago** pasó a funcional
 (sesión grande 18-jun, PR `feat/e3-hu-20`: `GET/POST /api/instruccion-pago`, suficiencia art. 24, semáforo
-art. 54, instrucción de pago real). **Único pendiente funcional dentro de una HU:** los números generadores
-de la estimación (HU-19, E3). Detalle exacto en §7.
+art. 54, instrucción de pago real). **Sobre los números generadores (art. 132 RLOPSRM): SON funcionales** —
+se capturan en la integración de la estimación (HU-12) y se persisten; lo único pendiente es el **bloque de
+captura DEDICADO del cascarón de estimación (FASE 5)**, que hoy delega a HU-12 (es un refinamiento de UX, no
+funcionalidad faltante). Detalle exacto en §7.
 
 ---
 
@@ -516,8 +520,9 @@ Pasada de coherencia entre **este doc** y `docs/analisis-y-diseno/Historias_Usua
 funcionales (junio); las historias de cada una se actualizaron a su comportamiento real con su fundamento
 legal y sus `[validar profe]` resueltos. Coinciden también en: HU-14 línea de tiempo incompleta (el backend
 solo empuja `integrada`/`enviada`), HU-13 bloqueo de 6 días = solo aviso, HU-07 rediseñado (panel
-automático), gate de pago estricto (`autorizada`). **Único pendiente funcional:** generadores de la
-estimación (HU-19).
+automático), gate de pago estricto (`autorizada`). **Los números generadores SÍ son funcionales** (captura
+en HU-12, art. 132 RLOPSRM); el único pendiente es el bloque de captura dedicado del cascarón de estimación
+(FASE 5), que delega a HU-12.
 
 **Sin discrepancias de fondo.** Salvedades menores anotadas:
 - Las historias son **criterio-por-criterio** (más granulares en los `[validar profe]`); este doc es la foto

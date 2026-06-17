@@ -156,7 +156,8 @@ del catálogo del Sidebar.** **Montaje:** `CicloVidaContrato.jsx`; sección "Cic
 | Punto | Decisión aplicada | Fundamento |
 |---|---|---|
 | HU-20: comprometido = Σ neto autorizadas+pagadas | Aplicado (interpretación conservadora de "compromiso") | art. 24 LOPSRM (suficiencia en partida); el detalle exacto = criterio del profe |
-| HU-20: umbrales del semáforo (10/17/20) | Default conservador | **sin base legal literal** — criterio del profe (art. 54 solo fija 20 días) |
+| HU-20: umbrales del semáforo | ✅ **RESUELTO (criterio del equipo, 18-jun):** reframeado a **días vencidos** del plazo de pago — VERDE 0 · ÁMBAR 1-10 · ROJO > 10; centralizado en `lib/umbrales-semaforo.js`. [validar profe] removido. | criterio del equipo (defaults provisionales, configurables); el plazo de 20 días es art. 54 LOPSRM |
+| HU-18: umbrales del semáforo del portafolio | ✅ **RESUELTO (criterio del equipo, 18-jun):** avance vs programado VERDE ≥95% / ÁMBAR 85-95% / ROJO <85%; días vencidos 0 / 1-10 / >10; centralizado en `lib/umbrales-semaforo.js`. [validar profe] removido. | criterio del equipo; el plazo de revisión de 15 días es art. 54 LOPSRM |
 | HU-20: exigibilidad de la fianza | Exigible si hay garantía de cumplimiento registrada; si no, no bloquea | art. 48 fr. II LOPSRM (regla general) + excepción (art. 50) |
 | HU-20: gate de finiquito (rechazar contrato cerrado) | Implementado (409) | **art. 64 LOPSRM** (extinción de obligaciones) + **art. 170 fr. VI RLOPSRM** |
 | HU-20: quién genera la instrucción / carga soportes | Contratista o Finanzas (ambos) | **sin base legal literal** — criterio del profe (coincide con permisos) |
@@ -165,8 +166,8 @@ del catálogo del Sidebar.** **Montaje:** `CicloVidaContrato.jsx`; sección "Cic
 | Pago: plazo de 20 días ¿bloquea o avisa? | **AVISA** (es la fecha límite para pagar; vencerla genera mora) | art. 54 (plazo) + art. 55 LOPSRM (gastos financieros) |
 | Bitácora: cita del candado de emisión | art. 123 fr. III RLOPSRM (nota de apertura / plazo de firma) | art. 123 fr. III RLOPSRM |
 | HU-11: vínculo de minutas (corregido en E2) | fr. III → **fr. X** RLOPSRM | art. 123 fr. X RLOPSRM (ratificar minutas en la Bitácora) |
-| Convenios: guardrail del 25% | Parametrizable; arriba marca aviso SFP | **sin base legal literal del %** — art. 59/59 Bis regula convenios; el umbral es criterio SFP |
-| Avance: dependencia fuera del envolvente | Excluida por decisión (ejecutores + supervisión) | **criterio de diseño** [validar Maiki/profe], no legal |
+| Convenios: umbral del 25% | ✅ **RESUELTO (criterio del equipo, 18-jun):** superar el 25% del monto/plazo **AVISA, NO bloquea** (se quitó el bloqueo 400; el backend crea el convenio con `aviso_variacion`). Specs HU-03 actualizados (33%/30% → 201 + aviso). | referido al **art. 59 LOPSRM** (modificación de contratos); el % es referencia administrativa (RLOPSRM art. 102) |
+| Avance: dependencia no registra | ✅ **RESUELTO (criterio del equipo, 18-jun):** confirmado que la dependencia **NO registra avance** (solo consulta la curva, HU-05); está enforced en el backend (`trabajos.routes` exige `requireRole('contratista')` + HU-06 `null` para dependencia en `permisos.js`). [validar] removido del ambiente. | decisión del equipo; enforced por el router (no requiere cambio de código) |
 
 ## Verificación adversarial de los 7 ambientes (UltraCode)
 
@@ -191,5 +192,11 @@ citas legales reales**. Nada quedó rojo; **no se hizo push** — todo local par
 
 **Para integrar (orden sugerido):** (1) HU-20 (revisar el mount en `server.js` + el gate de finiquito + la tx
 del techo); (2) los 7 ambientes (revisar las 7 rutas `SoloRol` de `App.jsx` y las 6 secciones del `Sidebar`).
-Ninguno necesita migración de esquema. Los `[validar profe]` marcados "criterio del profe" (semáforo HU-20,
-guardrail 25% convenios, dependencia fuera del avance) son los únicos que conviene confirmar con el profe.
+Ninguno necesita migración de esquema.
+
+**Actualización (18-jun, criterio del equipo):** los 3 `[validar profe]` sin base legal que quedaban
+(umbrales del semáforo HU-18/HU-20, umbral del 25% en convenios, dependencia en avance) se **resolvieron como
+criterio del equipo** y se fijaron en código (ver la tabla de arriba): umbrales centralizados en
+`backend/src/lib/umbrales-semaforo.js` (avance ≥95/85-95/<85, días vencidos 0/1-10/>10); el convenio >25%
+**avisa, no bloquea** (art. 59 LOPSRM); la dependencia **no registra avance** (enforced por el router). Siguen
+siendo configurables si el profe pide otros valores.

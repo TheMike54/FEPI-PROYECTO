@@ -187,21 +187,23 @@ test.describe('HU-03 — flujo real (Dependencia registra convenio de plazo)', (
     await expect(page.locator('[data-testid^="badge-sfp-"]')).toHaveCount(0);
   });
 
-  test('guardrail del 25%: plazo 180→240 (+33%) muestra aviso y el backend RECHAZA (400)', async ({ page }) => {
+  test('umbral del 25%: plazo 180→240 (+33%) AVISA pero NO bloquea — el convenio SE REGISTRA (201)', async ({ page }) => {
     await page.getByTestId('cm-plazo-nuevo').fill('240');
-    await page.getByTestId('cm-motivo').fill('Ampliación mayor (prueba del guardrail art. 102).');
-    // La UI AVISA (no bloquea el botón): el aviso de SFP/guardrail es visible.
+    await page.getByTestId('cm-motivo').fill('Ampliación mayor (prueba del aviso de variación, art. 59 LOPSRM).');
+    // La UI AVISA: el aviso de SFP/variación es visible (la variación supera el 25%).
     await expect(page.getByTestId('aviso-sfp')).toBeVisible();
 
     const resp = page.waitForResponse((r) =>
       r.url().includes('/convenios/contrato/') && r.request().method() === 'POST');
     await page.getByTestId('btn-registrar-convenio').click();
-    // El backend rechaza por el guardrail parametrizable (default 25%).
-    expect((await resp).status()).toBe(400);
+    // CRITERIO DEL EQUIPO: superar el 25% AVISA, no bloquea → el backend lo CREA (201) con aviso_variacion.
+    const r = await resp;
+    expect(r.status()).toBe(201);
+    expect((await r.json()).aviso_variacion).toBeTruthy();
 
-    // NO se creó ningún convenio: el historial sigue vacío.
-    await expect(page.getByTestId('conv-vacio')).toBeVisible();
-    await expect(filasConvenios(page)).toHaveCount(0);
+    // El convenio SÍ se registró: el historial deja de estar vacío y aparece la fila.
+    await expect(page.getByTestId('conv-vacio')).toHaveCount(0);
+    await expect(filasConvenios(page)).toHaveCount(1);
   });
 
   test('inmutabilidad: el historial no ofrece editar / anular / eliminar', async ({ page }) => {
@@ -407,20 +409,23 @@ test.describe('HU-03 Fase 2 — editor de matriz (monto / programa)', () => {
     await expect(filasVersiones(page)).toHaveCount(1);
   });
 
-  test('guardrail del 25% sobre el MONTO: +30% muestra aviso y el backend RECHAZA (400)', async ({ page }) => {
+  test('umbral del 25% sobre el MONTO: +30% AVISA pero NO bloquea — el convenio SE REGISTRA (201)', async ({ page }) => {
     await page.getByTestId('cm-tipo').selectOption('monto');
     await expect(page.getByTestId('editor-programa-convenio')).toBeVisible();
-    await page.getByTestId('cm-motivo').fill('Incremento de precio unitario (prueba del guardrail de monto).');
+    await page.getByTestId('cm-motivo').fill('Incremento de precio unitario (prueba del aviso de variación de monto).');
     // CONC-01 pu 600 → 900 → monto 130,000 (+30%). Cuadre intacto (cantidad sin cambio).
     await page.getByTestId('cm-concepto-pu-0').fill('900');
     await expect(page.getByTestId('cm-monto-nuevo')).toContainText('130,000');
-    await expect(page.getByTestId('aviso-sfp')).toBeVisible(); // la UI avisa, no bloquea el botón
+    await expect(page.getByTestId('aviso-sfp')).toBeVisible(); // la UI avisa
 
     const resp = page.waitForResponse((r) => r.url().includes('/convenios/contrato/') && r.request().method() === 'POST');
     await page.getByTestId('btn-registrar-convenio').click();
-    expect((await resp).status()).toBe(400); // guardrail parametrizable (default 25%)
-    // No se creó convenio ni versión nueva.
-    await expect(filasConvenios(page)).toHaveCount(0);
-    await expect(filasVersiones(page)).toHaveCount(1); // sigue solo la v1 sembrada
+    // CRITERIO DEL EQUIPO: superar el 25% AVISA, no bloquea → el backend lo CREA (201) con aviso_variacion.
+    const r = await resp;
+    expect(r.status()).toBe(201);
+    expect((await r.json()).aviso_variacion).toBeTruthy();
+    // SÍ se creó el convenio; al tocar el programa (monto), se snapshotó una versión nueva (v2).
+    await expect(filasConvenios(page)).toHaveCount(1);
+    await expect(filasVersiones(page)).toHaveCount(2);
   });
 });
