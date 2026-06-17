@@ -23,7 +23,7 @@ const aprobarApi = (request, depToken, id, rol) =>
 
 test.describe('O3 — catálogo de empresas', () => {
 
-  test('registro con empresa NUEVA: confirma el alta y queda en el catálogo', async ({ page }) => {
+  test('FASE 1: registro con empresa NUEVA (selector → "registrar nueva") queda en el catálogo', async ({ page }) => {
     await freshHome(page);
     await page.getByTestId('link-registro').click();
     await expect(page.getByTestId('form-registro')).toBeVisible();
@@ -34,28 +34,23 @@ test.describe('O3 — catálogo de empresas', () => {
     await page.getByTestId('reg-apellidos').fill(`Empresa ${ts}`);
     await page.getByTestId('reg-email').fill(`o3.nueva.${ts}@sigecop.test`);
     await page.getByTestId('reg-rol').selectOption('contratista');
-    await page.getByTestId('reg-empresa').fill(empresaNueva);
+    // SELECTOR: elegir "➕ Registrar nueva empresa" y teclear el nombre (rama explícita).
+    await page.getByTestId('reg-empresa-select').selectOption('__nueva__');
+    await page.getByTestId('reg-empresa-nueva').fill(empresaNueva);
     await page.getByTestId('reg-password').fill('Test1234!');
     await page.getByTestId('reg-password2').fill('Test1234!');
-
-    // Empresa nueva → el form CONFIRMA antes de enviar (principio del profe: alta automática).
-    let preguntoAlta = false;
-    page.once('dialog', (d) => { preguntoAlta = /no está en el catálogo/i.test(d.message()); d.accept(); });
     await page.getByTestId('reg-submit').click();
 
     await expect(page.getByTestId('auth-mensaje')).toContainText('pendiente de aprobación');
-    expect(preguntoAlta, 'debió preguntar por el alta de la empresa nueva').toBe(true);
-
-    // La empresa quedó en el catálogo público (alta automática).
+    // La empresa quedó en el catálogo público (alta automática), disponible para los demás.
     const cat = await (await page.request.get(`${API}/auth/empresas`)).json();
     expect(cat.some((e) => e.nombre === empresaNueva)).toBe(true);
   });
 
-  test('registro eligiendo empresa EXISTENTE: no re-pregunta ni duplica', async ({ page }) => {
+  test('FASE 1: registro ELIGIENDO empresa existente del selector no duplica', async ({ page }) => {
     // 'Constructora Demo' ya está sembrada en el catálogo.
     const catAntes = await (await page.request.get(`${API}/auth/empresas`)).json();
-    const nDemo = catAntes.filter((e) => e.nombre === 'Constructora Demo').length;
-    expect(nDemo).toBe(1);
+    expect(catAntes.filter((e) => e.nombre === 'Constructora Demo').length).toBe(1);
 
     await freshHome(page);
     await page.getByTestId('link-registro').click();
@@ -64,16 +59,14 @@ test.describe('O3 — catálogo de empresas', () => {
     await page.getByTestId('reg-apellidos').fill(`Existente ${ts}`);
     await page.getByTestId('reg-email').fill(`o3.existe.${ts}@sigecop.test`);
     await page.getByTestId('reg-rol').selectOption('contratista');
-    await page.getByTestId('reg-empresa').fill('Constructora Demo'); // ya existe
+    // SELECTOR: elegir la empresa existente directamente (no hay forma de teclear un duplicado).
+    await page.getByTestId('reg-empresa-select').selectOption({ label: 'Constructora Demo' });
+    // Al elegir una existente, la rama "nueva" (y su input) NO aparece.
+    await expect(page.getByTestId('reg-empresa-nueva')).toHaveCount(0);
     await page.getByTestId('reg-password').fill('Test1234!');
     await page.getByTestId('reg-password2').fill('Test1234!');
-
-    // Empresa existente → NO debe dispararse el confirm.
-    let pregunto = false;
-    page.once('dialog', (d) => { pregunto = true; d.accept(); });
     await page.getByTestId('reg-submit').click();
     await expect(page.getByTestId('auth-mensaje')).toContainText('pendiente de aprobación');
-    expect(pregunto, 'no debió preguntar: la empresa ya está en el catálogo').toBe(false);
 
     // No se duplicó 'Constructora Demo'.
     const catDespues = await (await page.request.get(`${API}/auth/empresas`)).json();
@@ -148,5 +141,40 @@ test.describe('O3 — catálogo de empresas', () => {
     expect(Number(n)).toBeGreaterThan(0);          // el bloque del equipo coincide
     expect(Number(n)).toBeLessThan(Number(m));     // y filtró los que no traen esa empresa
     await expect(page.getByText('Constructora Demo').first()).toBeVisible();
+  });
+
+  test('FASE 3: variante de empresa existente (acento + sufijo de razón social) REUTILIZA, no duplica', async ({ request }) => {
+    // 'Constructora Demo' ya está sembrada en el catálogo.
+    const cat = await (await request.get(`${API}/auth/empresas`)).json();
+    const demo = cat.find((e) => e.nombre === 'Constructora Demo');
+    expect(demo, "'Constructora Demo' debe estar sembrada").toBeTruthy();
+    const totalAntes = cat.length;
+
+    // Registrar con una VARIANTE: acento + sufijo de razón social ("Constructóra Demo, S.A. de C.V.").
+    // El backend hace match FUERTE → vincula a la empresa EXISTENTE en vez de crear un duplicado.
+    const ts = Date.now();
+    const r = await (await registrarApi(request, {
+      nombre: `Vari Ante ${ts}`, email: `o3.var.${ts}@sigecop.test`,
+      password: 'Test1234!', rolSolicitado: 'contratista',
+      empresa: 'Constructóra Demo, S.A. de C.V.',
+    })).json();
+    expect(r.usuario.empresa_id, 'debe reutilizar el id de la empresa existente').toBe(demo.id);
+
+    const catDespues = await (await request.get(`${API}/auth/empresas`)).json();
+    expect(catDespues.length, 'el catálogo NO debe crecer con la variante').toBe(totalAntes);
+    // Acotado al efecto puntual: NO se creó una empresa con el nombre exacto de la variante registrada.
+    expect(catDespues.some((e) => e.nombre === 'Constructóra Demo, S.A. de C.V.'), 'no debe entrar la variante tecleada').toBe(false);
+  });
+
+  test('FASE 1/3 (UI): en "registrar nueva", teclear una variante avisa que ya existe', async ({ page }) => {
+    await freshHome(page);
+    await page.getByTestId('link-registro').click();
+    await expect(page.getByTestId('form-registro')).toBeVisible();
+    // Rama "nueva": teclear una variante (sufijo de razón social) de 'Constructora Demo' → la UI
+    // reconoce la existente y sugiere seleccionarla (segunda red; el backend igual no la duplicaría).
+    await page.getByTestId('reg-empresa-select').selectOption('__nueva__');
+    await page.getByTestId('reg-empresa-nueva').fill('Constructora Demo SA de CV');
+    await expect(page.getByTestId('reg-empresa-existente')).toBeVisible();
+    await expect(page.getByTestId('reg-empresa-existente')).toContainText('Constructora Demo');
   });
 });

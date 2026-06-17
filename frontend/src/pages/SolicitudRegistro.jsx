@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ROLES } from '../data/permisos.js';
+import { empresaExistentePorNombre } from '../data/empresa.js';
 import { api } from '../services/api.js';
 
 // alta-v2 (4.3): página de SOLICITUD DE ACCESO ahora PÚBLICA (ruta /solicitud-acceso sin
@@ -11,8 +12,6 @@ import { api } from '../services/api.js';
 // Corrección profe (04-jun): el nombre completo (nombre + apellido[s]) aparece en la bitácora
 // (art. 123 RLOPSRM); se exige ≥2 palabras. Espejo de la validación del backend (auth.controller).
 const esNombreCompleto = (n) => (String(n || '').trim().match(/\p{L}{2,}/gu) || []).length >= 2;
-// O3: normalización de nombre de empresa, espejo del backend (lower + trim + colapsa espacios).
-const normEmpresa = (s) => String(s || '').trim().replace(/\s+/g, ' ').toLowerCase();
 
 export default function SolicitudRegistro() {
   // Plan2 Pase3: nombre dividido en dos campos OBLIGATORIOS (nombre[s] + apellido[s]); se CONCATENAN
@@ -23,13 +22,16 @@ export default function SolicitudRegistro() {
   const [rolSolicitado, setRolSolicitado] = useState(ROLES[0].id);
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
-  const [empresa, setEmpresa] = useState('');       // O3
-  const [empresas, setEmpresas] = useState([]);     // O3: catálogo para el autocomplete
+  // O3/FASE 1 (profe 15-jun): empresa = SELECTOR del catálogo (no texto libre → imposible duplicar).
+  const EMPRESA_NUEVA = '__nueva__';
+  const [empresaSel, setEmpresaSel] = useState('');
+  const [empresaNueva, setEmpresaNueva] = useState('');
+  const [empresas, setEmpresas] = useState([]);     // O3: catálogo para el selector
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [exito, setExito] = useState(false);
 
-  // O3: catálogo de empresas (público) para el datalist. Falla en silencio.
+  // O3: catálogo de empresas (público) para el selector. Falla en silencio.
   useEffect(() => {
     api.listarEmpresas().then((l) => setEmpresas(Array.isArray(l) ? l : [])).catch(() => setEmpresas([]));
   }, []);
@@ -65,18 +67,15 @@ export default function SolicitudRegistro() {
       setError('Las contraseñas no coinciden.');
       return;
     }
-    // O3: confirmar alta automática si la empresa tecleada no está en el catálogo.
-    const empresaTrim = empresa.trim().replace(/\s+/g, ' ');
-    if (empresaTrim) {
-      const existe = empresas.some((e) => normEmpresa(e.nombre) === normEmpresa(empresaTrim));
-      if (!existe && !window.confirm(`"${empresaTrim}" no está en el catálogo. ¿Registrarla como nueva empresa?`)) {
-        return;
-      }
-    }
+    // FASE 1: empresa final = la ELEGIDA del catálogo, o la NUEVA tecleada, o vacío (sin texto libre
+    // que duplique; el backend deduplica con match fuerte la rama "nueva").
+    const empresaFinal = empresaSel === EMPRESA_NUEVA
+      ? empresaNueva.trim().replace(/\s+/g, ' ')
+      : (empresaSel ? (empresas.find((e) => String(e.id) === empresaSel)?.nombre || '') : '');
 
     setLoading(true);
     try {
-      await api.register({ nombre, email: email.trim(), password, rolSolicitado, empresa: empresaTrim });
+      await api.register({ nombre, email: email.trim(), password, rolSolicitado, empresa: empresaFinal });
       setExito(true);
     } catch (err) {
       setError(err.message || 'No se pudo completar el registro.');
@@ -155,16 +154,30 @@ export default function SolicitudRegistro() {
                   </select>
                   <p className="text-xs text-slate-500 mt-1">Informativo: la dependencia confirma el rol definitivo al aprobar.</p>
                 </div>
-                {/* O3: empresa de la persona (catálogo del profe), con autocomplete. */}
+                {/* O3/FASE 1 (profe 15-jun): empresa = SELECTOR del catálogo (no texto libre). */}
                 <div>
-                  <label className="sg-label" htmlFor="sol-empresa">Empresa (opcional)</label>
-                  <input id="sol-empresa" data-testid="sol-empresa" className="sg-input" list="sol-empresas-lista"
-                    placeholder="Escribe o elige tu empresa"
-                    value={empresa} onChange={(e) => setEmpresa(e.target.value)} disabled={loading} />
-                  <datalist id="sol-empresas-lista">
-                    {empresas.map((e) => <option key={e.id} value={e.nombre} />)}
-                  </datalist>
-                  <p className="text-xs text-slate-500 mt-1">Si no está en la lista, se registra como empresa nueva.</p>
+                  <label className="sg-label" htmlFor="sol-empresa-select">Empresa (opcional)</label>
+                  <select id="sol-empresa-select" data-testid="sol-empresa-select" className="sg-input"
+                    value={empresaSel} onChange={(e) => setEmpresaSel(e.target.value)} disabled={loading}>
+                    <option value="">— Sin empresa / elige tu empresa —</option>
+                    {empresas.map((e) => <option key={e.id} value={String(e.id)}>{e.nombre}</option>)}
+                    <option value={EMPRESA_NUEVA}>➕ Registrar nueva empresa…</option>
+                  </select>
+                  {empresaSel === EMPRESA_NUEVA ? (
+                    <div className="mt-2">
+                      <input id="sol-empresa-nueva" data-testid="sol-empresa-nueva" className="sg-input"
+                        placeholder="Nombre de la nueva empresa"
+                        value={empresaNueva} onChange={(e) => setEmpresaNueva(e.target.value)} disabled={loading} />
+                      {(() => {
+                        const ya = empresaNueva.trim() ? empresaExistentePorNombre(empresas, empresaNueva) : null;
+                        return ya
+                          ? <p className="text-xs text-exito mt-1" data-testid="sol-empresa-existente">✓ Ya existe «{ya.nombre}»: mejor selecciónala arriba (no se duplicará).</p>
+                          : <p className="text-xs text-slate-500 mt-1">Se dará de alta en el catálogo y quedará disponible para los demás.</p>;
+                      })()}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-500 mt-1">Elige tu empresa del catálogo; si no está, usa «Registrar nueva empresa».</p>
+                  )}
                 </div>
                 <div>
                   <label className="sg-label" htmlFor="sol-password">Contraseña (mín. 8 caracteres) *</label>

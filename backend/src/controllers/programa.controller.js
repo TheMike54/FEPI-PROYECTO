@@ -131,8 +131,8 @@ async function reemplazarPrograma(req, res) {
 // GET /api/contratos/:id/plan-amortizacion — filas {periodo_numero, monto} capturadas en el
 // alta (o derivadas proporcionales por el backend). Acotado por participación, igual que el
 // programa. La carátula (G2) NO usa este plan: [Fase B pendiente de validar con el profe]
-// (art. 138 fr. I RLOPSRM dice "proporcionalmente"; el profe decide si la carátula obedece
-// al plan capturado).
+// (art. 143 fr. I RLOPSRM dice "proporcional al porcentaje de anticipo otorgado"; el profe decide si la
+// carátula obedece al plan capturado). [El plan de aplicación capturado en el alta es art. 138 párr. 3.]
 // =====================================================================
 async function leerPlanAmortizacion(req, res) {
   try {

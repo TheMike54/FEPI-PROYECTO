@@ -33,6 +33,9 @@ export default function ConsultaNotas() {
   const [seleccionadas, setSeleccionadas] = useState(() => new Set());
   // O8 (b): nota abierta como documento imprimible.
   const [notaDoc, setNotaDoc] = useState(null);
+  // P2 (revisión 14-jun): firmantes de la APERTURA (firma conjunta) para que su documento muestre las
+  // firmas reales y no salga todo "Pendiente" si se abre la nota #1 desde el buscador de HU-10.
+  const [aperturaFirmantes, setAperturaFirmantes] = useState([]);
   const contratoSel = useMemo(() => contratos.find((c) => String(c.id) === String(contratoId)) || null, [contratos, contratoId]);
 
   // Carga inicial: contratos del usuario + catálogo REAL de tipos (art. 125).
@@ -45,6 +48,7 @@ export default function ConsultaNotas() {
   const seleccionarContrato = useCallback(async (id) => {
     setContratoId(id);
     setNotas([]);
+    setAperturaFirmantes([]);
     setSeleccionadas(new Set());
     setSinBitacora(false);
     if (!id) return;
@@ -52,6 +56,7 @@ export default function ConsultaNotas() {
     try {
       const data = await api.notasDeContrato(id);
       setNotas(Array.isArray(data?.notas) ? data.notas : []);
+      setAperturaFirmantes(Array.isArray(data?.apertura_firmantes) ? data.apertura_firmantes : []);
     } catch (e) {
       // 404 = el contrato no tiene bitácora aperturada (caso esperado, no error duro).
       if (e.status === 404) {
@@ -210,7 +215,7 @@ export default function ConsultaNotas() {
         ]}
       />
 
-      {notaDoc && <DocumentoNota nota={notaDoc} contrato={contratoSel} onCerrar={() => setNotaDoc(null)} />}
+      {notaDoc && <DocumentoNota nota={notaDoc} contrato={contratoSel} aperturaFirmantes={aperturaFirmantes} onCerrar={() => setNotaDoc(null)} />}
     </div>
   );
 }

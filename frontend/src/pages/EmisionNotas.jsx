@@ -310,6 +310,14 @@ export default function EmisionNotas() {
                       </button>
                     </div>
                   )}
+                  {/* P2 (revisión 14-jun): ver la apertura como documento desde su propio panel (antes solo
+                      se abría desde el libro, donde además salía duplicada). El documento toma las firmas
+                      reales de la apertura (firma conjunta), no las de una nota normal. */}
+                  <div className="mt-3">
+                    <button type="button" className="text-xs text-guinda font-semibold hover:underline" onClick={() => setNotaDoc(notaApertura)} data-testid="btn-doc-apertura">
+                      📄 Ver como documento
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -371,7 +379,7 @@ export default function EmisionNotas() {
               {/* PUNTO 6: el libro de bitácora va detrás de "Ver bitácora". */}
               <div>
                 <button type="button" className="sg-btn-secondary text-sm" onClick={() => setVerBitacora((v) => !v)} data-testid="btn-ver-bitacora">
-                  {verBitacora ? '▾ Ocultar bitácora' : `▸ Ver bitácora (${notas.length} nota${notas.length === 1 ? '' : 's'})`}
+                  {verBitacora ? '▾ Ocultar bitácora' : `▸ Ver bitácora (${notasResto.length} nota${notasResto.length === 1 ? '' : 's'} además de la apertura)`}
                 </button>
                 {verBitacora && (
                   <div className="mt-3 space-y-2" data-testid="lista-notas">
@@ -379,7 +387,8 @@ export default function EmisionNotas() {
                       <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700">Libro de bitácora</h2>
                       <span className="text-xs text-slate-500">Plazo de firma: <strong>{data.plazo_firma_dias} día(s)</strong></span>
                     </div>
-                    {notaApertura && NotaCard(notaApertura)}
+                    {/* P2 (revisión 14-jun): la apertura (nota #1) ya se muestra arriba en su panel dedicado
+                        (con la firma conjunta); NO se repite aquí para no salir duplicada. */}
                     {notasResto.length === 0 && <p className="text-sm text-slate-400 italic">Aún no hay notas además de la apertura.</p>}
                     {notasResto.map((n) => NotaCard(n))}
                   </div>
@@ -400,7 +409,7 @@ export default function EmisionNotas() {
       />
       <p className="mt-4 text-xs text-slate-500 italic text-center">Fundamento: arts. 122, 123 y 125 RLOPSRM.</p>
 
-      {notaDoc && <DocumentoNota nota={notaDoc} contrato={contratoSel} onCerrar={() => setNotaDoc(null)} />}
+      {notaDoc && <DocumentoNota nota={notaDoc} contrato={contratoSel} aperturaFirmantes={firmantesApertura} onCerrar={() => setNotaDoc(null)} />}
     </div>
   );
 }

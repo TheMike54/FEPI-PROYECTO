@@ -7,6 +7,7 @@ import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
 import { monedaMXN as moneda } from '../utils/formato.js';
+import { labelEstadoEstimacion } from '../data/estadoEstimacion.js';
 
 // HU-15 (Equipo 3) — cableado al backend real. Recepción, revisión técnica y autorización/
 // rechazo de la estimación. Fuente de la verdad = backend; aquí NO se calcula dinero ni se
@@ -602,7 +603,7 @@ export default function RevisionEstimacion() {
               <option value="">— Selecciona una estimación —</option>
               {estimaciones.map((e) => (
                 <option key={e.id} value={e.id}>
-                  EST-{String(e.numero).padStart(3, '0')} · {periodoLabel(e.periodo_inicio, e.periodo_fin)} · {cap(e.estado)}
+                  EST-{String(e.numero).padStart(3, '0')} · {periodoLabel(e.periodo_inicio, e.periodo_fin)} · {labelEstadoEstimacion(e.estado)}
                 </option>
               ))}
             </select>
@@ -625,7 +626,7 @@ export default function RevisionEstimacion() {
             folioLabel="Contrato"
             extra={[
               { label: 'Estimación', value: `EST-${String(revision.numero).padStart(3, '0')}`, resaltado: true },
-              { label: 'Estado', value: cap(revision.estado) },
+              { label: 'Estado', value: labelEstadoEstimacion(revision.estado) },
               { label: 'Neto', value: moneda(revision.neto), resaltado: true }
             ]}
             margenAbajo="mb-4"

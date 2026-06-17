@@ -15,6 +15,10 @@
 // controller congelado de HU-12: esto es un archivo nuevo del dominio E3.
 const { pool } = require('../db/pool');
 const { esParteOSupervision } = require('../lib/acceso');
+// OLEADA B (14-jun) — nota automática de bitácora ligada al ciclo de la estimación (art. 125 RLOPSRM,
+// confirmado por el profe): al PRESENTAR (sup_estimaciones, fr. II-b) y al AUTORIZAR (res_estimaciones,
+// fr. I-b). Reusa el folio atómico + inmutabilidad del controller de bitácora (no se duplica la lógica).
+const { insertarNotaAtomica } = require('./bitacora.controller');
 
 // GET /api/estimaciones-ciclo/contrato/:contratoId/historial
 // Acotado por participación. Orden cronológico de estimaciones por número correlativo
@@ -131,7 +135,7 @@ async function enviarEstimacion(req, res) {
 
     // (1) Estimación + equipo del contrato. 404 antes que 403 (espejo de HU-12).
     const e = await pool.query(
-      `SELECT e.id, e.numero, e.contrato_id, e.estado, e.enviada_en, e.enviada_por,
+      `SELECT e.id, e.numero, e.contrato_id, e.estado, e.periodo_inicio, e.periodo_fin, e.enviada_en, e.enviada_por,
               c.created_by, c.residente_id, c.superintendente_id, c.supervision_id
          FROM estimaciones e
          JOIN contratos c ON c.id = e.contrato_id
@@ -154,19 +158,44 @@ async function enviarEstimacion(req, res) {
       return res.status(409).json({ error: `No se puede presentar una estimación en estado '${row.estado}'` });
     }
 
-    // (4) Sello ATÓMICO: el WHERE estado='integrada' serializa y bloquea la doble-presentación en
-    //     carrera (si otro proceso la presentó entre el SELECT y el UPDATE, rowCount = 0).
-    const upd = await pool.query(
-      `UPDATE estimaciones
-          SET estado = 'enviada', enviada_en = NOW(), enviada_por = $2
-        WHERE id = $1 AND estado = 'integrada'
-        RETURNING id, numero, contrato_id, estado, enviada_en, enviada_por`,
-      [id, req.user.id]
-    );
-    if (upd.rowCount === 0) {
-      return res.status(409).json({ error: 'La estimación ya fue presentada' });
-    }
-    return res.status(200).json(upd.rows[0]);
+    // (4) Sello ATÓMICO + nota automática, en UNA transacción: el WHERE estado='integrada' serializa y
+    //     bloquea la doble-presentación en carrera (rowCount = 0 si otro la presentó antes).
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const upd = await client.query(
+        `UPDATE estimaciones
+            SET estado = 'enviada', enviada_en = NOW(), enviada_por = $2
+          WHERE id = $1 AND estado = 'integrada'
+          RETURNING id, numero, contrato_id, estado, enviada_en, enviada_por`,
+        [id, req.user.id]
+      );
+      if (upd.rowCount === 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'La estimación ya fue presentada' });
+      }
+      // OLEADA B — NOTA AUTOMÁTICA: la presentación es la "solicitud de aprobación de estimaciones" que
+      // registra el superintendente (art. 125 fr. II-b RLOPSRM). Atómica si hay bitácora abierta; si no
+      // hay, NO se bloquea la presentación (la nota simplemente no se asienta). Emisor = superintendente (JWT).
+      let nota = null;
+      const bit = await client.query('SELECT id FROM bitacora_aperturas WHERE contrato_id = $1', [row.contrato_id]);
+      if (bit.rowCount > 0) {
+        const asunto = `Solicitud de aprobación de la estimación No. ${row.numero}`;
+        const contenido =
+          `Solicitud de aprobación de la estimación No. ${row.numero} del periodo ` +
+          `${String(row.periodo_inicio).slice(0, 10)} a ${String(row.periodo_fin).slice(0, 10)}. ` +
+          `(art. 125 fr. II-b RLOPSRM; asiento automático del sistema al presentar la estimación.)`;
+        nota = await insertarNotaAtomica(client, {
+          bitacoraId: bit.rows[0].id, tipo: 'sup_estimaciones', asunto, contenido, emisorId: req.user.id, tag: 'estimacion'
+        });
+        await client.query('INSERT INTO estimacion_notas (estimacion_id, nota_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [id, nota.id]);
+      }
+      await client.query('COMMIT');
+      return res.status(200).json({ ...upd.rows[0], nota: nota ? { id: nota.id, numero: nota.numero, tipo: nota.tipo } : null });
+    } catch (e2) {
+      try { await client.query('ROLLBACK'); } catch (_) { /* el client pudo morir */ }
+      throw e2;
+    } finally { client.release(); }
   } catch (err) {
     console.error('[enviarEstimacion]', err);
     return res.status(500).json({ error: 'Error interno' });
@@ -441,17 +470,41 @@ async function autorizarEstimacion(req, res) {
     // Atómico (endurecido): el WHERE serializa la doble resolución (estado='enviada') Y exige el TURNADO
     // previo DENTRO del UPDATE (EXISTS turnado_a='residencia'), cerrando el TOCTOU entre el chequeo y el
     // UPDATE (que la supervisión turne entre estaTurnada() y el UPDATE no falsea la precondición).
-    const upd = await pool.query(
-      `UPDATE estimaciones SET estado = 'autorizada'
-        WHERE id = $1 AND estado = 'enviada'
-          AND EXISTS (SELECT 1 FROM estimacion_observaciones WHERE estimacion_id = $1 AND turnado_a = 'residencia')
-        RETURNING id, numero, contrato_id, estado`,
-      [id]
-    );
-    if (upd.rowCount === 0) {
-      return res.status(409).json({ error: 'La estimación ya fue resuelta o no está turnada' });
-    }
-    return res.status(200).json(upd.rows[0]);
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const upd = await client.query(
+        `UPDATE estimaciones SET estado = 'autorizada'
+          WHERE id = $1 AND estado = 'enviada'
+            AND EXISTS (SELECT 1 FROM estimacion_observaciones WHERE estimacion_id = $1 AND turnado_a = 'residencia')
+          RETURNING id, numero, contrato_id, estado`,
+        [id]
+      );
+      if (upd.rowCount === 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'La estimación ya fue resuelta o no está turnada' });
+      }
+      // OLEADA B — NOTA AUTOMÁTICA: la autorización de estimaciones la registra el residente
+      // (art. 125 fr. I-b RLOPSRM). Atómica si hay bitácora abierta; si no, no se bloquea la autorización.
+      let nota = null;
+      const bit = await client.query('SELECT id FROM bitacora_aperturas WHERE contrato_id = $1', [est.contrato_id]);
+      if (bit.rowCount > 0) {
+        const asunto = `Autorización de la estimación No. ${est.numero}`;
+        const contenido =
+          `Autorización de la estimación No. ${est.numero} del periodo ` +
+          `${String(est.periodo_inicio).slice(0, 10)} a ${String(est.periodo_fin).slice(0, 10)}, ` +
+          `por la residencia. (art. 125 fr. I-b RLOPSRM; asiento automático del sistema al autorizar la estimación.)`;
+        nota = await insertarNotaAtomica(client, {
+          bitacoraId: bit.rows[0].id, tipo: 'res_estimaciones', asunto, contenido, emisorId: req.user.id, tag: 'estimacion'
+        });
+        await client.query('INSERT INTO estimacion_notas (estimacion_id, nota_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [id, nota.id]);
+      }
+      await client.query('COMMIT');
+      return res.status(200).json({ ...upd.rows[0], nota: nota ? { id: nota.id, numero: nota.numero, tipo: nota.tipo } : null });
+    } catch (e2) {
+      try { await client.query('ROLLBACK'); } catch (_) { /* el client pudo morir */ }
+      throw e2;
+    } finally { client.release(); }
   } catch (err) {
     console.error('[autorizarEstimacion]', err);
     return res.status(500).json({ error: 'Error interno' });

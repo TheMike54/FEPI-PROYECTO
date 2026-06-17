@@ -18,8 +18,9 @@ function aImporte(v) { return Number(String(v).replace(/[$,\s]/g, '')); }
 // POST /api/pagos — SOLO finanzas (gate en la ruta). registrado_por = req.user.id (JWT).
 // ENDURECIDO (HU-21): el pago se AMARRA a una estimación REAL del contrato (estimacion_id), el
 // importe = NETO de esa estimación (no arbitrario), no se paga dos veces (UNIQUE parcial +
-// FOR UPDATE), solo estimaciones integradas/autorizadas (no rechazadas/pagadas), y al pagar la
-// estimación avanza a 'pagada' (cierra CA-1: marcar pagada + avance financiero), en UNA transacción.
+// FOR UPDATE), SOLO estimaciones AUTORIZADAS por la residencia (art. 54 LOPSRM; no integradas/
+// presentadas/rechazadas/pagadas), y al pagar la estimación avanza a 'pagada' (cierra CA-1: marcar
+// pagada + avance financiero), en UNA transacción.
 async function registrarPago(req, res) {
   const body = req.body || {};
   const contratoId = Number(body.contrato_id);
@@ -64,11 +65,11 @@ async function registrarPago(req, res) {
       if (est.contrato_id !== contratoId) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'La estimación no pertenece al contrato indicado' }); }
       if (est.estado === 'pagada') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'Esta estimación ya está pagada' }); }
       if (est.estado === 'rechazada') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'No se puede pagar una estimación rechazada' }); }
-      // Candado PERMISIVO (Opción A, decisión de Maiki — NO bloqueante esta fase): el conjunto pagable es
-      // ['integrada','enviada','autorizada']. Reconciliación O7↔HU-15: 'autorizada' = autorizada por la
-      // residencia (HU-15); 'enviada' = presentada por el contratista (HU-13). Se conserva 'integrada'
-      // (permisivo). [validar profe] endurecer luego a SOLO 'autorizada' cuando se decida bloquear.
-      if (!['integrada', 'enviada', 'autorizada'].includes(est.estado)) { await client.query('ROLLBACK'); return res.status(409).json({ error: `Solo puede pagarse una estimación presentada o autorizada (estado actual: ${est.estado})` }); }
+      // OLEADA PAGO (14-jun) — candado ESTRICTO confirmado por la ley: SOLO se paga lo AUTORIZADO por la
+      // residencia. El art. 54 LOPSRM hace de la AUTORIZACIÓN el disparador del pago (plazo de 20 días "a
+      // partir de la fecha en que hayan sido autorizadas por la residencia"). Antes el conjunto era
+      // permisivo ['integrada','enviada','autorizada']; pagar una 'integrada'/'enviada' contradecía el art. 54.
+      if (est.estado !== 'autorizada') { await client.query('ROLLBACK'); return res.status(409).json({ error: `Solo puede pagarse una estimación AUTORIZADA por la residencia (art. 54 LOPSRM); estado actual: ${est.estado}` }); }
       const dup = await client.query('SELECT 1 FROM pagos WHERE estimacion_id = $1 LIMIT 1', [estimacionId]);
       if (dup.rowCount > 0) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'Esta estimación ya tiene un pago registrado' }); }
 

@@ -110,7 +110,7 @@ Alcance permitido (bajo riesgo):
 2) DRY en frontend: extraer helpers duplicados (formato de moneda, fechas, etiquetas de estado — reusar estadoEstimacion.js; buscar lógica copiada entre páginas) a utilidades compartidas, sin cambiar comportamiento ni testids.
 3) Consistencia: imports sin usar, nombres inconsistentes, componentes casi-duplicados que se puedan unificar SIN tocar su comportamiento.
 4) En backend, SOLO refactors seguros y locales (extraer una función repetida idéntica, renombrar variable local, quitar import muerto) — NADA que cambie queries, validaciones, cálculos ni el flujo. Si un refactor de backend toca lógica o no estás seguro de que es 100% equivalente, NO lo hagas: anótalo como recomendación post-entrega.
-Documenta cada tanda (qué unificaste, por qué es equivalente) en docs/REPORTE_LIMPIEZA.md, y una lista de "refactors mayores recomendados para después de la entrega". NO push.
+Documenta cada tanda (qué unificaste, por qué es equivalente) en docs/reportes/REPORTE_LIMPIEZA.md, y una lista de "refactors mayores recomendados para después de la entrega". NO push.
 ```
 
 ---

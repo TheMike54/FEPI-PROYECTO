@@ -143,7 +143,7 @@ export default function AlertasAtraso() {
       )}
       {cargando && <p className="text-sm text-slate-500 mb-4">Cargando…</p>}
       {error && (
-        <div className="bg-amber-50 border-l-4 border-amber-400 px-4 py-3 mb-4 text-sm text-amber-800 rounded-r-md" data-testid="aviso-error">
+        <div className="bg-red-50 border-l-4 border-red-500 px-4 py-3 mb-4 text-sm text-red-800 rounded-r-md" data-testid="aviso-error">
           {error}
         </div>
       )}

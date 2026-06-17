@@ -79,7 +79,7 @@ async function crearContrato(req, res) {
   if (anticipoPct !== null && (anticipoPct < 0 || anticipoPct > 100)) {
     return res.status(400).json({ error: 'anticipoPct debe estar entre 0 y 100' });
   }
-  // Etapa C: % de pena por atraso (penas convencionales, art. 138/139 RLOPSRM), OPCIONAL: fracción 0–1
+  // Etapa C: % de pena por atraso (penas convencionales, art. 46 Bis LOPSRM / 86-90 RLOPSRM), OPCIONAL: fracción 0–1
   // (ej. 0.05 = 5%). Vacío/ausente → NULL (sin pena pactada → retención por atraso $0). No afecta el
   // gating del alta ni la regla del 100% (es un dato más de la cabecera). [validar tasa con el profe].
   const penaConvencionalPct = numOrNull(body.penaConvencionalPct);
@@ -226,7 +226,7 @@ async function crearContrato(req, res) {
     catch (e) { return res.status(400).json({ error: 'No se pudieron generar los periodos del ciclo: ' + e.message }); }
   }
 
-  // --- O2: PLAN DE AMORTIZACIÓN del anticipo (art. 138 fr. I RLOPSRM; plan EDITABLE pedido
+  // --- O2: PLAN DE AMORTIZACIÓN (forma de aplicación) del anticipo (art. 138 párr. 3 RLOPSRM; plan EDITABLE pedido
   // por el profe, revisión 09-jun). Solo aplica con anticipo > 0 Y periodos generados (el plan
   // es por periodo del ciclo). Si el cliente NO manda plan (p. ej. contratos creados por API),
   // se DERIVA el default PROPORCIONAL (mismo default que precarga el alta) — retrocompatible.
@@ -236,6 +236,25 @@ async function crearContrato(req, res) {
   const montoAnticipoPlan = anticipoPct !== null && anticipoPct > 0 ? r2plan(Number(monto) * anticipoPct / 100) : 0;
   const planRaw = Array.isArray(body.planAmortizacion) ? body.planAmortizacion : null;
   const planFilas = [];
+  // FASE 2 (revisión profe 15-jun) — IMPORTE PROGRAMADO por periodo, derivado del programa de
+  // obra (Σ ROUND(cantidad×pu, 2) por periodo; mismo motor de redondeo que el subtotal de las
+  // estimaciones). Es "lo que se estima cobrar" en cada periodo. La amortización del anticipo se
+  // descuenta del importe de CADA estimación y debe ser proporcional al % de anticipo (art. 143
+  // fr. I RLOPSRM); el saldo se liquida en la estimación final (art. 143 fr. III-d). De ahí dos
+  // reglas que ligan el plan al programa (lo que el profe pidió: "no puedes amortizar todo en un
+  // solo mes; no te alcanza para pagar"): (R2) todo periodo CON obra programada debe amortizar
+  // algo (>0); (R3) la amortización de un periodo no puede exceder su importe programado. Sin
+  // programa (precio alzado) el tope no se aplica.
+  const TOL_PLAN = 0.005; // tolerancia de redondeo al centavo
+  const puPorClave = new Map(conceptos.map((c) => [String(c.clave || '').trim(), Number(numOrNull(c.pu)) || 0]));
+  const programadoPorPeriodo = new Map();
+  for (const cell of programaCeldas) {
+    const pu = puPorClave.get(String(cell.clave).trim()) || 0;
+    const imp = r2plan(Number(cell.cantidad) * pu);
+    programadoPorPeriodo.set(cell.periodoNumero, r2plan((programadoPorPeriodo.get(cell.periodoNumero) || 0) + imp));
+  }
+  const totalProgramado = periodos.reduce((s, p) => r2plan(s + (programadoPorPeriodo.get(p.numero) || 0)), 0);
+  const hayPrograma = totalProgramado > TOL_PLAN;
   if (montoAnticipoPlan > 0 && periodos.length > 0) {
     if (planRaw && planRaw.length > 0) {
       const vistos = new Set();
@@ -253,10 +272,22 @@ async function crearContrato(req, res) {
         planFilas.push({ periodoNumero: pnum, monto: m });
       }
       if (suma !== montoAnticipoPlan) {
-        return res.status(400).json({ error: `El plan de amortización debe sumar exactamente el anticipo ($${montoAnticipoPlan.toFixed(2)}); suma $${suma.toFixed(2)} (art. 138 RLOPSRM)` });
+        return res.status(400).json({ error: `El plan de amortización debe sumar exactamente el anticipo ($${montoAnticipoPlan.toFixed(2)}); suma $${suma.toFixed(2)} (art. 138 párr. 3 RLOPSRM)` });
       }
+    } else if (hayPrograma) {
+      // Default PROPORCIONAL AL PROGRAMA (art. 143 fr. I): amortización de cada periodo proporcional
+      // a su importe programado. PISO de 1 centavo a todo periodo con obra (para que el default no se
+      // autorrechace por R2 cuando una cuota proporcional redondea a 0) y residuo al periodo de mayor
+      // importe (lo absorbe sin exceder su tope) → Σ = anticipo EXACTO. Cumple R2/R3 por construcción.
+      const nums = periodos.map((p) => p.numero);
+      const provis = nums.map((num) => r2plan(montoAnticipoPlan * (programadoPorPeriodo.get(num) || 0) / totalProgramado));
+      nums.forEach((num, i) => { if ((programadoPorPeriodo.get(num) || 0) > TOL_PLAN && provis[i] < 0.01) provis[i] = 0.01; });
+      let sumProv = 0; provis.forEach((m) => { sumProv = r2plan(sumProv + m); });
+      let idxMax = 0; nums.forEach((num, i) => { if ((programadoPorPeriodo.get(num) || 0) > (programadoPorPeriodo.get(nums[idxMax]) || 0)) idxMax = i; });
+      provis[idxMax] = r2plan(provis[idxMax] + r2plan(montoAnticipoPlan - sumProv));
+      nums.forEach((num, i) => planFilas.push({ periodoNumero: num, monto: provis[i] }));
     } else {
-      // Default PROPORCIONAL al centavo: n−1 cuotas iguales + ajuste de redondeo en la última.
+      // Sin programa (precio alzado): default proporcional por número de periodos (retrocompat API).
       const n = periodos.length;
       const cuota = r2plan(montoAnticipoPlan / n);
       let acum = 0;
@@ -264,6 +295,23 @@ async function crearContrato(req, res) {
         const m = k < n ? cuota : r2plan(montoAnticipoPlan - acum);
         acum = r2plan(acum + m);
         planFilas.push({ periodoNumero: k, monto: m });
+      }
+    }
+    // FASE 2 — R3/R2 sobre el plan FINAL (capturado O derivado), si hay programa. Así el API nunca
+    // persiste un default que violaría estas reglas (simetría con el plan que envía el cliente).
+    // R3: ningún periodo amortiza más que su importe programado. R2: todo periodo con obra amortiza
+    // algo (art. 143 fr. I RLOPSRM; el saldo residual va a la estimación final, art. 143 fr. III-d).
+    if (hayPrograma) {
+      const planPorPeriodo = new Map(planFilas.map((f) => [f.periodoNumero, f.monto]));
+      for (const p of periodos) {
+        const prog = programadoPorPeriodo.get(p.numero) || 0;
+        const m = planPorPeriodo.get(p.numero) || 0;
+        if (m > prog + TOL_PLAN) {
+          return res.status(400).json({ error: `Plan de amortización: el periodo ${p.numero} amortiza $${m.toFixed(2)}, más de lo que se estima cobrar ese periodo ($${prog.toFixed(2)}); la amortización se descuenta de cada estimación (art. 143 fr. I RLOPSRM)` });
+        }
+        if (prog > TOL_PLAN && !(m > 0)) {
+          return res.status(400).json({ error: `Plan de amortización: el periodo ${p.numero} tiene obra programada ($${prog.toFixed(2)}) pero no amortiza nada; la amortización debe aplicarse en cada estimación, no diferirse toda al final (art. 143 fr. I RLOPSRM)` });
+        }
       }
     }
   }

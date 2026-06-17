@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ROLES } from '../data/permisos.js';
+import { empresaExistentePorNombre } from '../data/empresa.js';
 import { useSesion } from '../context/SesionContext.jsx';
 import { api } from '../services/api.js';
 
@@ -62,6 +63,7 @@ function FormLogin({ onIrRegistro, mensaje, setMensaje }) {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             autoComplete="username"
+            autoFocus
             disabled={loading}
           />
         </div>
@@ -101,10 +103,6 @@ function FormLogin({ onIrRegistro, mensaje, setMensaje }) {
 // (art. 123 RLOPSRM); se exige ≥2 palabras. Espejo de la validación del backend (auth.controller).
 const esNombreCompleto = (n) => (String(n || '').trim().match(/\p{L}{2,}/gu) || []).length >= 2;
 
-// O3: normalización de nombre de empresa, ESPEJO del backend (lower + trim + colapsa espacios).
-// Sirve para saber si lo tecleado YA está en el catálogo (y decidir si confirmar alta nueva).
-const normEmpresa = (s) => String(s || '').trim().replace(/\s+/g, ' ').toLowerCase();
-
 function FormRegistro({ onIrLogin, setMensaje }) {
   // Plan2 Pase3: el nombre se captura en DOS campos OBLIGATORIOS (nombre[s] + apellido[s]) y se
   // CONCATENAN al enviar; la columna `nombre` (fuente única) y todos los lugares que la muestran
@@ -115,14 +113,18 @@ function FormRegistro({ onIrLogin, setMensaje }) {
   const [password, setPassword] = useState('');
   const [password2, setPassword2] = useState('');
   const [rolSolicitado, setRolSolicitado] = useState(ROLES[0].id);
-  // O3: empresa de la persona (catálogo del profe). `empresas` = catálogo para el autocomplete.
-  const [empresa, setEmpresa] = useState('');
+  // O3/FASE 1 (revisión profe 15-jun): la empresa se ELIGE de un catálogo (SELECTOR), no se teclea
+  // libre → imposible duplicarla ("el primero la crea, los siguientes la eligen", profe 09-jun).
+  // empresaSel = '' (sin empresa) | '<id>' (elegida del catálogo) | NUEVA (registrar una nueva).
+  // empresaNueva = nombre tecleado solo en la rama "nueva" (el backend deduplica con match fuerte).
+  const EMPRESA_NUEVA = '__nueva__';
+  const [empresaSel, setEmpresaSel] = useState('');
+  const [empresaNueva, setEmpresaNueva] = useState('');
   const [empresas, setEmpresas] = useState([]);
   const [loading, setLoading] = useState(false);
   const [errorLocal, setErrorLocal] = useState(null);
 
-  // Carga el catálogo de empresas (público) para el datalist. Falla en silencio (sin catálogo
-  // se puede teclear igual: el backend la da de alta).
+  // Carga el catálogo de empresas (público) para el selector. Falla en silencio.
   useEffect(() => {
     api.listarEmpresas().then((l) => setEmpresas(Array.isArray(l) ? l : [])).catch(() => setEmpresas([]));
   }, []);
@@ -158,20 +160,17 @@ function FormRegistro({ onIrLogin, setMensaje }) {
       setErrorLocal('Las contraseñas no coinciden.');
       return;
     }
-    // O3: si tecleó una empresa que NO está en el catálogo, confirmar el alta automática
-    // (principio del profe: "el primero la registra, el siguiente la elige"). Vacío = sin empresa.
-    const empresaTrim = empresa.trim().replace(/\s+/g, ' ');
-    if (empresaTrim) {
-      const existe = empresas.some((e) => normEmpresa(e.nombre) === normEmpresa(empresaTrim));
-      if (!existe && !window.confirm(`"${empresaTrim}" no está en el catálogo. ¿Registrarla como nueva empresa?`)) {
-        return;
-      }
-    }
+    // FASE 1: la empresa final = la ELEGIDA del catálogo (su nombre exacto), o la NUEVA tecleada, o
+    // vacío. Al elegir del catálogo es imposible duplicar; si es nueva, el backend resuelve-o-crea con
+    // match fuerte (no duplica aunque sea variante). La selección de "nueva" es explícita → sin confirm.
+    const empresaFinal = empresaSel === EMPRESA_NUEVA
+      ? empresaNueva.trim().replace(/\s+/g, ' ')
+      : (empresaSel ? (empresas.find((e) => String(e.id) === empresaSel)?.nombre || '') : '');
 
     setLoading(true);
     try {
       // Email normalizado a minúsculas+trim, simétrico con el login (el backend ya normaliza igual).
-      await api.register({ nombre, email: email.trim().toLowerCase(), password, rolSolicitado, empresa: empresaTrim });
+      await api.register({ nombre, email: email.trim().toLowerCase(), password, rolSolicitado, empresa: empresaFinal });
       // Vuelve al login mostrando el mensaje de cuenta pendiente.
       setMensaje({
         tipo: 'exito',
@@ -257,27 +256,46 @@ function FormRegistro({ onIrLogin, setMensaje }) {
             Informativo: la dependencia confirma el rol definitivo al aprobar.
           </p>
         </div>
-        {/* O3: empresa de la persona (catálogo del profe). Autocomplete con <datalist>: si la
-            empresa ya existe se ELIGE; si es nueva, el backend la da de alta (se confirma al enviar). */}
+        {/* O3/FASE 1 (profe 15-jun): empresa = SELECTOR del catálogo (imposible duplicar por texto
+            libre). Se ELIGE una existente; "Registrar nueva" solo si de verdad no existe. */}
         <div>
-          <label className="sg-label" htmlFor="reg-empresa">Empresa (opcional)</label>
-          <input
-            id="reg-empresa"
-            data-testid="reg-empresa"
-            type="text"
-            list="reg-empresas-lista"
+          <label className="sg-label" htmlFor="reg-empresa-select">Empresa (opcional)</label>
+          <select
+            id="reg-empresa-select"
+            data-testid="reg-empresa-select"
             className="sg-input"
-            placeholder="Escribe o elige tu empresa"
-            value={empresa}
-            onChange={(e) => setEmpresa(e.target.value)}
+            value={empresaSel}
+            onChange={(e) => setEmpresaSel(e.target.value)}
             disabled={loading}
-          />
-          <datalist id="reg-empresas-lista">
-            {empresas.map((e) => <option key={e.id} value={e.nombre} />)}
-          </datalist>
-          <p className="text-xs text-slate-500 mt-1">
-            Si no está en la lista, se registra como empresa nueva (catálogo: la primera vez se da de alta).
-          </p>
+          >
+            <option value="">— Sin empresa / elige tu empresa —</option>
+            {empresas.map((e) => <option key={e.id} value={String(e.id)}>{e.nombre}</option>)}
+            <option value={EMPRESA_NUEVA}>➕ Registrar nueva empresa…</option>
+          </select>
+          {empresaSel === EMPRESA_NUEVA ? (
+            <div className="mt-2">
+              <input
+                id="reg-empresa-nueva"
+                data-testid="reg-empresa-nueva"
+                type="text"
+                className="sg-input"
+                placeholder="Nombre de la nueva empresa"
+                value={empresaNueva}
+                onChange={(e) => setEmpresaNueva(e.target.value)}
+                disabled={loading}
+              />
+              {(() => {
+                // Segunda red (FASE 3): si lo tecleado como "nueva" coincide (match fuerte) con una ya
+                // existente, avisar para que mejor la seleccione (el backend igual no la duplicaría).
+                const ya = empresaNueva.trim() ? empresaExistentePorNombre(empresas, empresaNueva) : null;
+                return ya
+                  ? <p className="text-xs text-exito mt-1" data-testid="reg-empresa-existente">✓ Ya existe «{ya.nombre}» en el catálogo: mejor selecciónala arriba (no se duplicará).</p>
+                  : <p className="text-xs text-slate-500 mt-1">Se dará de alta en el catálogo y quedará disponible para los demás.</p>;
+              })()}
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500 mt-1">Elige tu empresa del catálogo; si no está, usa «Registrar nueva empresa».</p>
+          )}
         </div>
         <div>
           <label className="sg-label" htmlFor="reg-password">Contraseña (mín. 8 caracteres)</label>

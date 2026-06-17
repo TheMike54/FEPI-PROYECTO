@@ -684,7 +684,7 @@ export default function ConveniosModificatorios() {
                         <td className="p-3 text-center">
                           {v.vigente
                             ? <span className="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-exito-bg text-exito">Vigente</span>
-                            : <span className="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-slate-200 text-slate-600">Superseded</span>}
+                            : <span className="inline-block px-2 py-0.5 rounded text-xs font-semibold bg-slate-200 text-slate-600">Sustituida</span>}
                         </td>
                         <td className="p-3 text-right">{moneda(v.monto)}</td>
                         <td className="p-3 text-right">{v.plazo_dias != null ? `${v.plazo_dias} días` : '—'}</td>

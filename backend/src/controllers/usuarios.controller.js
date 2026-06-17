@@ -30,16 +30,19 @@ async function listarUsuarios(req, res) {
   }
 }
 
-// GET /api/usuarios/asignables?rol=contratista|supervision|dependencia — cuentas aprobadas de
-// ese rol, para que el residente arme el contrato. Solo datos públicos.
+// GET /api/usuarios/asignables?rol=contratista|supervision|dependencia|residente — cuentas aprobadas de
+// ese rol, para que el residente arme el contrato y para la sustitución del roster (HU-22). Solo datos públicos.
 // Corrección profe (04-jun): se añade 'dependencia' para que en el alta la dependencia se
 // SELECCIONE de una cuenta registrada (antes era texto libre). Misma query (filtra por rol+estado).
-const ROLES_ASIGNABLES = ['contratista', 'supervision', 'dependencia'];
+// P1 (revisión 14-jun): se añade 'residente' para que la SUSTITUCIÓN del roster (HU-22) pueda listar
+// candidatos del slot residente por el MISMO endpoint que los demás (antes ese slot caía en listarUsuarios,
+// gateado solo a dependencia → 403 silencioso para el residente). Solo expone datos públicos (id/nombre/email/empresa).
+const ROLES_ASIGNABLES = ['contratista', 'supervision', 'dependencia', 'residente'];
 async function listarAsignables(req, res) {
   try {
     const { rol } = req.query;
     if (!ROLES_ASIGNABLES.includes(rol)) {
-      return res.status(400).json({ error: 'rol debe ser contratista, supervision o dependencia' });
+      return res.status(400).json({ error: 'rol debe ser contratista, supervision, dependencia o residente' });
     }
     // O3: + empresa de la persona (catálogo) para el aviso de "misma empresa" del alta
     // (contratista vs supervisión). Aditivo: empresa_id/empresa pueden venir NULL.

@@ -208,7 +208,7 @@ export default function ExportacionReportes() {
                       {r.descripcion}
                       {!r.disponible && (
                         <span className="ml-2 inline-block text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5">
-                          Sin fuente — falta GET de observaciones a nivel contrato
+                          No disponible aún
                         </span>
                       )}
                       {r.disponible && r.requiereBitacora && sinBitacora && hayContrato && (
