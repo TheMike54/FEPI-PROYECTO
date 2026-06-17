@@ -274,8 +274,10 @@ RLOPSRM; art. 123 fr. III RLOPSRM; art. 45 fr. IX RLOPSRM.
   el menú solo da el botón a la Dependencia. Confirmar el conjunto exacto de roles autorizados [validar con
   el profe].
 - Emisor de la nota automática de bitácora = residente del contrato [validar profe].
-- El límite del 25% es una decisión de configuración, no un tope legal del art. 59 (que tras la reforma DOF
-  14-11-2025 no fija tope numérico). Confirmar valor y aplicabilidad con el profe.
+- ✅ **RESUELTO (criterio del equipo, 18-jun):** superar el 25% del monto/plazo **avisa, no bloquea** — el
+  convenio se registra con su aviso de variación (art. 59 referido). El 25% es **configuración**, no un tope
+  legal del art. 59 (que tras la reforma DOF 14-11-2025 no fija tope numérico; es referencia administrativa
+  RLOPSRM art. 102); el valor exacto sigue siendo ajustable y a confirmar con el profe.
 - Al cambiar el plazo, hoy el convenio conserva los periodos vigentes (no los recalcula); follow-on
   declarado.
 
@@ -995,8 +997,9 @@ contratos en que participa; la Dependencia vería todos.
 - [validar profe] Los indicadores son de cartera (todos los contratos visibles del usuario), no de un único
   contrato seleccionado como sugería la ficha. Hay desglose por contrato, pero no un selector de contrato
   único. Confirmar el alcance esperado.
-- [validar profe] El control de pago aguas abajo (HU-21) hoy es permisivo (acepta Integrada/Presentada/
-  Autorizada); el tablero asume el flujo del art. 54. Confirmar la secuencia de estados definitiva.
+- ✅ **Corregido (hecho desactualizado):** el control de pago (HU-21) es **estricto** — solo se paga lo
+  **autorizado** (art. 54 LOPSRM); el tablero refleja ese flujo. (La nota previa lo describía como permisivo;
+  el pago se endureció en la oleada de pago.)
 
 ---
 
@@ -1040,8 +1043,10 @@ Quedan abiertas las decisiones de criterio que siguen.
 - [validar profe] La comparación 'periodo actual vs. anterior' está solo como distintivo por fila, no como
   comparativa agregada del portafolio entre dos periodos seleccionables. Definir si se requiere selector de
   periodos y comparación a nivel grupo/total.
-- [validar profe] Los cortes del semáforo (desviación ≤5/≤15, días ≤10, pendientes ≤2) y el mapeo total →
-  color los definió Code; confirmar las reglas y las cotas de cada factor.
+- ✅ **RESUELTO (criterio del equipo, 18-jun):** los cortes del semáforo se **fijaron como criterio del
+  equipo** y se centralizaron (configurables) en `lib/umbrales-semaforo.js`: avance vs programado VERDE ≥95% /
+  ÁMBAR 85-95% / ROJO <85% (= desviación ≤5 / ≤15 pp), días vencidos 0 / 1-10 / >10, pendientes ≤2. Sin base
+  legal del número exacto; siguen siendo ajustables si el profe pide otros valores.
 - [validar profe] El factor 'atrasos en plazos legales' hoy se simula con un número fijo; definir contra
   qué plazo legal real se computa (entrega de obra, autorización de estimación art. 54, etc.).
 - [validar profe] Confirmar si la Residencia y la Supervisión deben tener acceso de solo-lectura (hoy lo
