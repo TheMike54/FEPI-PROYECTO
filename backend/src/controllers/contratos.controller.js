@@ -515,11 +515,13 @@ async function listarContratos(req, res) {
               ru.nombre AS residente_nombre,
               su.nombre AS superintendente_nombre,
               sv.nombre AS supervision_nombre,
+              du.empresa_id AS dependencia_empresa_id,
               EXISTS (SELECT 1 FROM contrato_documentos d WHERE d.contrato_id = c.id) AS tiene_documento`;
     const joins = `FROM contratos c
          LEFT JOIN usuarios ru ON ru.id = c.residente_id
          LEFT JOIN usuarios su ON su.id = c.superintendente_id
-         LEFT JOIN usuarios sv ON sv.id = c.supervision_id`;
+         LEFT JOIN usuarios sv ON sv.id = c.supervision_id
+         LEFT JOIN usuarios du ON du.id = c.dependencia_id`;
     // Acceso: dependencia/finanzas ven todos; operativos solo donde son parte.
     const result = ROLES_VEN_TODO.includes(u.rol)
       ? await pool.query(`SELECT ${cols} ${joins} ORDER BY c.created_at DESC`)
@@ -530,7 +532,11 @@ async function listarContratos(req, res) {
             ORDER BY c.created_at DESC`,
           [u.id]
         );
-    return res.status(200).json(result.rows);
+    // (Acotamiento por empresa) post-filtro con la MISMA regla de acceso.js: no cambia la forma de las
+    // filas, solo quita las que el usuario no debe ver. Para operativos es redundante (ya filtró el WHERE)
+    // y para finanzas es transparente (ve todo); SOLO activa para la dependencia ahora que la fila trae
+    // dependencia_empresa_id y el JWT trae empresa_id → cada dependencia ve solo sus contratos.
+    return res.status(200).json(result.rows.filter((row) => esParteOSupervision(u, row)));
   } catch (err) {
     console.error('[listarContratos]', err);
     return res.status(500).json({ error: 'Error interno' });

@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SIGECOP — Navegación modo sistema (propuesta · maqueta completa)</title>
+<!--
+  MAQUETA VISUAL — SOLO DISEÑO. Sin backend ni lógica real; datos de ejemplo (contrato demo OBRA-2026-DEMO-01).
+  Representa TODAS las pantallas del sistema (con sus pestañas/sub-secciones y campos reales) para aprobar el
+  diseño "modo sistema": sidebar por FLUJOS + barra de pasos encadenados + indicador discreto de HU + chip de
+  empresa + campana y "Por firmar" con pop-up. Fiel al sistema, NO conectado a producción. No cambia rutas.
+-->
+<style>
+  :root{
+    --guinda:#691C32; --guinda-osc:#511325; --dorado:#BC955C;
+    --bg:#F4F2EF; --card:#FFFFFF; --txt:#2C2C2A; --sec:#6B6660;
+    --linea:#E2DDD5; --verde:#2E7D32; --ambar:#B7860B; --rojo:#B23B3B; --azul:#34597A;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,Segoe UI,Roboto,sans-serif;}
+  body{background:var(--bg);color:var(--txt);}
+  .app{display:flex;min-height:100vh;}
+  a{color:inherit;text-decoration:none;} code{background:#F0ECE6;padding:1px 5px;border-radius:4px;font-size:.92em;}
+
+  .side{width:256px;background:var(--guinda);color:#fff;display:flex;flex-direction:column;flex-shrink:0;position:sticky;top:0;height:100vh;}
+  .brand{padding:16px 20px;font-weight:700;font-size:18px;letter-spacing:.5px;border-bottom:1px solid rgba(255,255,255,.12);}
+  .brand small{display:block;font-weight:400;font-size:11px;opacity:.7;margin-top:2px;}
+  .nav{padding:6px 0 30px;overflow-y:auto;}
+  .nav-group{font-size:10px;text-transform:uppercase;letter-spacing:1px;opacity:.55;padding:13px 20px 5px;}
+  .nav-item{display:flex;align-items:center;gap:10px;padding:8px 20px;font-size:13.5px;cursor:pointer;border-left:3px solid transparent;}
+  .nav-item:hover{background:rgba(255,255,255,.07);}
+  .nav-item.active{background:var(--guinda-osc);border-left:3px solid var(--dorado);font-weight:600;}
+  .nav-item.sub{padding-left:38px;font-size:12.5px;opacity:.85;}
+  .nav-item .ic{width:18px;text-align:center;opacity:.9;}
+  .nav-item .hu{margin-left:auto;font-size:10px;opacity:.5;}
+
+  .main{flex:1;display:flex;flex-direction:column;min-width:0;}
+  .topbar{background:var(--card);border-bottom:1px solid var(--linea);padding:10px 24px;display:flex;align-items:center;gap:14px;position:sticky;top:0;z-index:30;}
+  .crumb{font-size:13px;color:var(--sec);} .crumb b{color:var(--guinda);}
+  .topbar .right{margin-left:auto;display:flex;align-items:center;gap:13px;}
+  .chip-emp{background:#F3E9EC;color:var(--guinda);border:1px solid #E4CDD4;border-radius:20px;padding:3px 12px;font-size:12px;font-weight:600;}
+  .user{font-size:13px;color:var(--sec);}
+  .iconbtn{position:relative;cursor:pointer;font-size:18px;background:none;border:none;padding:4px 6px;border-radius:8px;}
+  .iconbtn:hover{background:#F3EEE8;}
+  .iconbtn .count{position:absolute;top:-2px;right:-2px;background:var(--rojo);color:#fff;font-size:9px;font-weight:700;border-radius:10px;padding:0 5px;line-height:14px;}
+  .firmar-link{font-size:12.5px;color:var(--guinda);font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;}
+  .firmar-link .b{background:var(--guinda);color:#fff;border-radius:10px;padding:0 7px;font-size:10px;}
+
+  .dropdown{position:absolute;top:50px;right:24px;width:330px;background:#fff;border:1px solid var(--linea);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.14);z-index:40;display:none;overflow:hidden;}
+  .dropdown.firmar{right:160px;}
+  .dropdown h4{font-size:13px;padding:12px 16px;border-bottom:1px solid var(--linea);background:#FBF9F7;}
+  .dropdown ul{list-style:none;max-height:320px;overflow:auto;}
+  .dropdown li{padding:11px 16px;border-bottom:1px solid #F0ECE6;font-size:12.5px;cursor:pointer;display:flex;gap:10px;align-items:flex-start;}
+  .dropdown li:hover{background:#FAF7F3;} .dropdown li .ic2{font-size:16px;}
+  .dropdown li .meta{color:var(--sec);font-size:11px;margin-top:2px;}
+  .dropdown .foot{padding:10px 16px;text-align:center;font-size:12px;color:var(--guinda);cursor:pointer;}
+
+  .content{padding:22px;flex:1;}
+  .flow{background:var(--card);border:1px solid var(--linea);border-radius:12px;padding:14px 18px;margin-bottom:18px;}
+  .flow h3{font-size:12px;color:var(--guinda);margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px;}
+  .steps{display:flex;align-items:center;gap:0;flex-wrap:wrap;}
+  .step{display:flex;align-items:center;gap:8px;cursor:pointer;}
+  .step .dot{width:25px;height:25px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11.5px;font-weight:700;flex-shrink:0;}
+  .step.done .dot{background:var(--verde);color:#fff;} .step.curr .dot{background:var(--guinda);color:#fff;box-shadow:0 0 0 4px #F3E9EC;}
+  .step.todo .dot{background:#EDE8E1;color:var(--sec);}
+  .step .lbl{font-size:12px;white-space:nowrap;} .step.todo .lbl{color:var(--sec);}
+  .step .lbl small{display:block;font-size:10px;opacity:.55;}
+  .arrow{color:#CFC8BD;margin:0 10px;font-size:13px;}
+
+  .panel{background:var(--card);border:1px solid var(--linea);border-radius:12px;padding:20px;margin-bottom:16px;}
+  .panel h2{font-size:17px;margin-bottom:3px;} .panel h2 .num{color:var(--guinda);}
+  .panel h3{font-size:13px;color:var(--guinda);margin:14px 0 8px;text-transform:uppercase;letter-spacing:.4px;}
+  .panel .desc{color:var(--sec);font-size:13px;margin-bottom:16px;}
+  .row{display:flex;gap:13px;margin-bottom:13px;flex-wrap:wrap;}
+  .field{flex:1;min-width:175px;} .field.w2{flex:2;}
+  .field label{display:block;font-size:11.5px;color:var(--sec);margin-bottom:4px;}
+  .field input,.field select,.field textarea{width:100%;padding:8px 10px;border:1px solid var(--linea);border-radius:8px;font-size:12.5px;background:#FCFBFA;font-family:inherit;}
+  .field input:disabled{background:#F2EFEB;color:#555;}
+  .btns{display:flex;gap:9px;margin-top:6px;flex-wrap:wrap;}
+  .btn{padding:8px 16px;border-radius:8px;border:none;font-size:12.5px;font-weight:600;cursor:pointer;}
+  .btn-pri{background:var(--guinda);color:#fff;} .btn-sec{background:#fff;color:var(--guinda);border:1px solid var(--guinda);}
+  .btn-ghost{background:#F3EEE8;color:var(--sec);} .btn-sm{padding:5px 11px;font-size:11.5px;}
+
+  table{width:100%;border-collapse:collapse;font-size:12px;}
+  th,td{padding:8px 9px;text-align:left;border-bottom:1px solid var(--linea);vertical-align:top;}
+  th{font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--sec);background:#FBF9F7;}
+  td.r,th.r{text-align:right;} td.c,th.c{text-align:center;}
+  .tot td{font-weight:700;background:#FBF6EC;border-top:2px solid #EAD9B8;}
+
+  .pill{display:inline-block;padding:2px 9px;border-radius:12px;font-size:11px;font-weight:600;}
+  .pill.v{background:#E7F2E8;color:var(--verde);} .pill.a{background:#FBF1DA;color:var(--ambar);}
+  .pill.r{background:#F6E2E2;color:var(--rojo);} .pill.b{background:#E3ECF3;color:var(--azul);}
+  .pill.g{background:#F3E9EC;color:var(--guinda);} .pill.gr{background:#EDE8E1;color:var(--sec);}
+  .dot-s{display:inline-block;width:12px;height:12px;border-radius:50%;}
+  .dot-s.v{background:var(--verde);} .dot-s.a{background:var(--ambar);} .dot-s.r{background:var(--rojo);}
+
+  .note{background:#FBF6EC;border:1px solid #EAD9B8;border-radius:8px;padding:9px 12px;font-size:12px;color:#6b5320;margin-top:12px;}
+  .note.blue{background:#EEF4F8;border-color:#CADEEC;color:#2c4a63;}
+  .note.red{background:#F6E2E2;border-color:#E4B7B7;color:#7a2a2a;}
+  .legal{font-size:11px;color:var(--sec);margin-top:7px;}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px;} .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}
+  .kpi{background:#FBF9F7;border:1px solid var(--linea);border-radius:10px;padding:13px;}
+  .kpi .v{font-size:20px;font-weight:700;color:var(--guinda);} .kpi small{color:var(--sec);font-size:11px;}
+  .tabs{display:flex;gap:5px;margin-bottom:14px;flex-wrap:wrap;border-bottom:1px solid var(--linea);}
+  .tab{padding:7px 14px;border-radius:8px 8px 0 0;font-size:12.5px;cursor:pointer;background:#F3EEE8;color:var(--sec);margin-bottom:-1px;}
+  .tab.on{background:#fff;color:var(--guinda);font-weight:600;border:1px solid var(--linea);border-bottom:1px solid #fff;}
+  .subpanel{display:none;} .subpanel.on{display:block;}
+  .libro{background:#FCFBF8;border:1px solid var(--linea);border-radius:10px;padding:16px 18px;font-size:12.5px;line-height:1.55;}
+  .libro .nfolio{display:flex;justify-content:space-between;font-size:11px;color:var(--sec);border-bottom:1px dashed var(--linea);padding-bottom:6px;margin-bottom:9px;}
+  .firmas{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;}
+  .firma{border:1px solid var(--linea);border-radius:8px;padding:7px 11px;font-size:11px;text-align:center;background:#fff;} .firma b{display:block;}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:13px;}
+  .modcard{background:var(--card);border:1px solid var(--linea);border-radius:10px;padding:14px;cursor:pointer;}
+  .modcard:hover{border-color:var(--dorado);} .modcard .t{font-weight:600;font-size:13.5px;margin:6px 0 2px;}
+  .modcard .d{font-size:11.5px;color:var(--sec);} .modcard .ico{font-size:22px;}
+  .matriz td,.matriz th{text-align:center;font-size:11px;padding:6px;}
+  .matriz .cl{text-align:left;}
+
+  .hu-badge{position:fixed;right:16px;bottom:14px;background:rgba(44,44,42,.88);color:#fff;font-size:11px;padding:6px 12px;border-radius:20px;display:flex;align-items:center;gap:7px;backdrop-filter:blur(4px);z-index:50;}
+  .hu-badge .pill2{background:var(--dorado);color:#3a2a12;border-radius:10px;padding:1px 7px;font-weight:700;font-size:10px;}
+  .screen{display:none;}
+  .proposal{display:inline-block;background:#FBF1DA;color:var(--ambar);border:1px solid #EAD9B8;border-radius:6px;padding:1px 8px;font-size:10.5px;font-weight:700;vertical-align:middle;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- SIDEBAR POR FLUJOS -->
+  <aside class="side">
+    <div class="brand">SIGECOP <small>Gestión de obra pública</small></div>
+    <nav class="nav">
+      <div class="nav-item" id="nav-inicio" onclick="go('inicio','—','Inicio','Ing. Iván Residente · <b>Residente</b>','Constructora Demo')"><span class="ic">🏠</span> Inicio</div>
+
+      <div class="nav-group">Flujos</div>
+      <div class="nav-item" id="nav-alta" onclick="go('alta','HU-01','<b>Alta de contrato</b>','Ing. Iván Residente · <b>Residente</b>','Constructora Demo')"><span class="ic">📄</span> Alta de contrato <span class="hu">HU 01</span></div>
+
+      <div class="nav-item" id="nav-estimacion" onclick="go('estimacion','HU-12','Ciclo de estimación › <b>Integración</b>','Arq. Carlos Contratista · <b>Contratista</b>','Constructora Demo')"><span class="ic">📐</span> Ciclo de estimación <span class="hu">HU 12–17</span></div>
+      <div class="nav-item sub" id="nav-envio" onclick="go('envio','HU-13','Ciclo › <b>Presentación</b>','Arq. Carlos Contratista · <b>Contratista</b>','Constructora Demo')">› Presentar</div>
+      <div class="nav-item sub" id="nav-revision" onclick="go('revision','HU-15','Ciclo › <b>Revisión técnica</b>','Ing. Iván Residente · <b>Residente</b>','Constructora Demo')">› Revisión / autorización</div>
+      <div class="nav-item sub" id="nav-reingreso" onclick="go('reingreso','HU-16','Ciclo › <b>Reingreso</b>','Arq. Carlos Contratista · <b>Contratista</b>','Constructora Demo')">› Reingreso</div>
+      <div class="nav-item sub" id="nav-historial" onclick="go('historial','HU-14','Ciclo › <b>Historial</b>','Ing. Iván Residente · <b>Residente</b>','Constructora Demo')">› Historial</div>
+
+      <div class="nav-item" id="nav-bitacora" onclick="go('bitacora','HU-08','Bitácora › <b>Apertura</b>','Ing. Iván Residente · <b>Residente</b>','Constructora Demo')"><span class="ic">📓</span> Bitácora <span class="hu">HU 8–11</span></div>
+      <div class="nav-item sub" id="nav-porfirmar" onclick="go('porfirmar','HU-08','Bitácora › <b>Por firmar</b>','Ing. Iván Residente · <b>Residente</b>','Constructora Demo')">› Por firmar</div>
+      <div class="nav-item sub" id="nav-emitir" onclick="go('emitir','HU-09','Bitácora › <b>Emitir notas</b>','Ing. Iván Residente · <b>Residente</b>','Constructora Demo')">› Emitir notas</div>
+      <div class="nav-item sub" id="nav-consulta" onclick="go('consulta','HU-10','Bitácora › <b>Consultar</b>','Ing. Iván Residente · <b>Residente</b>','Constructora Demo')">› Consultar / buscar</div>
+      <div class="nav-item sub" id="nav-minutas" onclick="go('minutas','HU-11','Bitácora › <b>Minutas</b>','Ing. Iván Residente · <b>Residente</b>','Constructora Demo')">› Minutas y visitas</div>
+
+      <div class="nav-item" id="nav-trabajos" onclick="go('trabajos','HU-06','Seguimiento › <b>Trabajos terminados</b>','Arq. Carlos Contratista · <b>Contratista</b>','Constructora Demo')"><span class="ic">🏗️</span> Avance y seguimiento <span class="hu">HU 5–7</span></div>
+      <div class="nav-item sub" id="nav-curva" onclick="go('curva','HU-05','Seguimiento › <b>Curva de avance</b>','Ing. Iván Residente · <b>Residente</b>','Constructora Demo')">› Curva de avance</div>
+      <div class="nav-item sub" id="nav-alertas" onclick="go('alertas','HU-07','Seguimiento › <b>Alertas</b>','Ing. Iván Residente · <b>Residente</b>','Constructora Demo')">› Alertas de atraso</div>
+
+      <div class="nav-item" id="nav-pago" onclick="go('pago','HU-20','Pago › <b>Tránsito a pago</b>','Lic. Fernanda Finanzas · <b>Finanzas</b>','Constructora Demo')"><span class="ic">💳</span> Pago y tránsito <span class="hu">HU 20–21</span></div>
+      <div class="nav-item sub" id="nav-regpago" onclick="go('regpago','HU-21','Pago › <b>Registro del pago</b>','Lic. Fernanda Finanzas · <b>Finanzas</b>','Constructora Demo')">› Registro del pago</div>
+
+      <div class="nav-item" id="nav-convenios" onclick="go('convenios','HU-03','<b>Convenios modificatorios</b>','Lic. Diana Dependencia · <b>Dependencia</b>','Constructora Demo')"><span class="ic">📝</span> Convenios <span class="hu">HU 03</span></div>
+      <div class="nav-item" id="nav-finiquito" onclick="go('finiquito','HU-24','Cierre › <b>Finiquito</b>','Lic. Diana Dependencia · <b>Dependencia</b>','Constructora Demo')"><span class="ic">🏁</span> Cierre / finiquito <span class="hu">HU 24</span></div>
+      <div class="nav-item" id="nav-expediente" onclick="go('expediente','HU-04','<b>Expediente del contrato</b>','Ing. Iván Residente · <b>Residente</b>','Constructora Demo')"><span class="ic">🗂️</span> Expediente <span class="hu">HU 04</span></div>
+
+      <div class="nav-group">Vistas ejecutivas</div>
+      <div class="nav-item" id="nav-portafolio" onclick="go('portafolio','HU-18','Portafolio ejecutivo','Lic. Diana Dependencia · <b>Dependencia</b>','—')"><span class="ic">📊</span> Portafolio <span class="hu">HU 18</span></div>
+      <div class="nav-item" id="nav-tablero" onclick="go('tablero','HU-17','Tablero de estimaciones','Ing. Iván Residente · <b>Residente</b>','—')"><span class="ic">📈</span> Tablero <span class="hu">HU 17</span></div>
+      <div class="nav-item" id="nav-reportes" onclick="go('reportes','HU-19','Reportes del contrato','Ing. Iván Residente · <b>Residente</b>','Constructora Demo')"><span class="ic">📤</span> Reportes <span class="hu">HU 19</span></div>
+
+      <div class="nav-group">Administración</div>
+      <div class="nav-item" id="nav-empresas" onclick="go('empresas','—','Administración › <b>Padrón de empresas</b>','Lic. Diana Dependencia · <b>Dependencia</b>','—')"><span class="ic">🏢</span> Empresas <span class="hu">propuesta</span></div>
+      <div class="nav-item" id="nav-roster" onclick="go('roster','HU-22','Roster del contrato','Lic. Diana Dependencia · <b>Dependencia</b>','Constructora Demo')"><span class="ic">👥</span> Roster <span class="hu">HU 22</span></div>
+      <div class="nav-item" id="nav-solicitudes" onclick="go('solicitudes','—','Administración › <b>Solicitudes de registro</b>','Lic. Diana Dependencia · <b>Dependencia</b>','—')"><span class="ic">✅</span> Solicitudes de registro</div>
+
+      <div class="nav-group">Acceso</div>
+      <div class="nav-item" id="nav-acceso" onclick="go('acceso','HU-00','Acceso al sistema','— sin sesión —','—')"><span class="ic">🔑</span> Login / Registro</div>
+    </nav>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="topbar">
+      <div class="crumb" id="crumb">Inicio</div>
+      <div class="right">
+        <span class="firmar-link" onclick="toggleDrop('drop-firmar',event)">✍️ Por firmar <span class="b">2</span></span>
+        <button class="iconbtn" onclick="toggleDrop('drop-camp',event)">🔔<span class="count">3</span></button>
+        <span class="chip-emp" id="chip-emp">🏢 Constructora Demo</span>
+        <span class="user" id="user">Ing. Iván Residente · <b>Residente</b></span>
+      </div>
+    </div>
+
+    <div class="dropdown firmar" id="drop-firmar">
+      <h4>✍️ Pendientes por firmar</h4>
+      <ul>
+        <li><span class="ic2">📝</span><div><b>Nota de apertura — OBRA-2026-DEMO-01</b><div class="meta">Folio #1 · te toca firmar como Residente · 2 de 3 firmas</div></div></li>
+        <li><span class="ic2">📝</span><div><b>Nota de avance — periodo 2</b><div class="meta">Folio #4 · emitida por Supervisión · falta tu firma</div></div></li>
+      </ul>
+      <div class="foot" onclick="go('porfirmar','HU-08','Bitácora › <b>Por firmar</b>','Ing. Iván Residente · <b>Residente</b>','Constructora Demo');closeDrops()">Ir a "Por firmar" →</div>
+    </div>
+    <div class="dropdown" id="drop-camp">
+      <h4>🔔 Notificaciones</h4>
+      <ul>
+        <li><span class="ic2">✍️</span><div><b>Tienes 2 notas pendientes por firmar</b><div class="meta">Bitácora de OBRA-2026-DEMO-01</div></div></li>
+        <li><span class="ic2">📐</span><div><b>Estimación #2 autorizada</b><div class="meta">La residencia autorizó · lista para pago (Finanzas)</div></div></li>
+        <li><span class="ic2">🚨</span><div><b>3 contratos en atraso</b><div class="meta">OBRA-2026-ATRASO-01..04 · revisa el portafolio</div></div></li>
+      </ul>
+      <div class="foot">Ver todas las notificaciones →</div>
+    </div>
+
+    <div class="content">
+
+      <!-- ===================== INICIO ===================== -->
+      <section class="screen" id="inicio">
+        <div class="panel">
+          <h2>Inicio</h2>
+          <p class="desc">Gestión técnico-administrativa de contratos de obra pública (LOPSRM / RLOPSRM). <span class="pill g">Acceso: Residente</span></p>
+          <div class="note red">🚨 Tienes <b>4 conceptos</b> con déficit en <b>3 contratos</b>. <a style="color:var(--rojo);font-weight:600" onclick="go('alertas','HU-07','Seguimiento › Alertas','Ing. Iván Residente · <b>Residente</b>','Constructora Demo')">Ver atraso por concepto →</a></div>
+          <h3>Tus módulos</h3>
+          <div class="cards">
+            <div class="modcard" onclick="go('alta','HU-01','<b>Alta de contrato</b>','Ing. Iván Residente · <b>Residente</b>','Constructora Demo')"><div class="ico">📄</div><div class="t">Alta de contrato</div><div class="d">Captura un contrato nuevo (7 pasos).</div></div>
+            <div class="modcard" onclick="go('expediente','HU-04','<b>Expediente</b>','Ing. Iván Residente · <b>Residente</b>','Constructora Demo')"><div class="ico">🗂️</div><div class="t">Expediente</div><div class="d">El contrato consolidado en bloques.</div></div>
+            <div class="modcard" onclick="go('bitacora','HU-08','Bitácora','Ing. Iván Residente · <b>Residente</b>','Constructora Demo')"><div class="ico">📓</div><div class="t">Bitácora</div><div class="d">Apertura, notas, consulta, minutas.</div></div>
+            <div class="modcard" onclick="go('revision','HU-15','Revisión','Ing. Iván Residente · <b>Residente</b>','Constructora Demo')"><div class="ico">📐</div><div class="t">Revisión de estimación</div><div class="d">Observa, turna, autoriza o rechaza.</div></div>
+            <div class="modcard" onclick="go('curva','HU-05','Curva','Ing. Iván Residente · <b>Residente</b>','Constructora Demo')"><div class="ico">📈</div><div class="t">Curva de avance</div><div class="d">Curva S y desviación.</div></div>
+            <div class="modcard" onclick="go('reportes','HU-19','Reportes','Ing. Iván Residente · <b>Residente</b>','Constructora Demo')"><div class="ico">📤</div><div class="t">Reportes <span class="pill gr">Solo lectura</span></div><div class="d">Exporta los 7 reportes.</div></div>
+          </div>
+          <div class="note">Cada rol ve solo sus módulos (matriz HU × rol). Esta cuadrícula equivale a la pantalla "Inicio" real.</div>
+        </div>
+      </section>
+
+      <!-- ===================== ACCESO (login / registro) ===================== -->
+      <section class="screen" id="acceso">
+        <div class="panel" style="max-width:460px;margin:0 auto">
+          <h2 style="text-align:center;color:var(--guinda)">SIGECOP</h2>
+          <p class="desc" style="text-align:center">Sistema de Gestión Técnico-Administrativa de Contratos de Obra Pública</p>
+          <div class="tabs"><div class="tab on" onclick="sub('acceso','ac-login',this)">Iniciar sesión</div><div class="tab" onclick="sub('acceso','ac-reg',this)">Crear cuenta</div></div>
+          <div class="subpanel on" id="ac-login">
+            <div class="row"><div class="field"><label>Correo</label><input value="residente@sigecop.test"></div></div>
+            <div class="row"><div class="field"><label>Contraseña</label><input type="password" value="••••••••"></div></div>
+            <div class="btns"><button class="btn btn-pri">Iniciar sesión</button></div>
+            <div class="legal">No hay selector de rol: el rol se deduce de la cuenta. La sesión expira (token 8 h).</div>
+          </div>
+          <div class="subpanel" id="ac-reg">
+            <p class="desc">Tu acceso queda <b>pendiente</b> hasta que la <b>Dependencia</b> lo apruebe.</p>
+            <div class="row"><div class="field"><label>Nombre(s) *</label><input></div><div class="field"><label>Apellido(s) *</label><input></div></div>
+            <div class="row"><div class="field"><label>Correo electrónico *</label><input></div><div class="field"><label>Rol que solicita *</label><select><option>Residente</option><option>Contratista</option><option>Supervisión</option><option>Dependencia</option><option>Finanzas</option></select></div></div>
+            <div class="row"><div class="field w2"><label>Empresa (se elige del catálogo)</label><select><option>— elige tu empresa —</option><option>Constructora Demo, S.A. de C.V.</option><option>➕ Registrar nueva empresa…</option></select></div></div>
+            <div class="row"><div class="field"><label>Contraseña (mín. 8) *</label><input type="password"></div><div class="field"><label>Confirmar contraseña *</label><input type="password"></div></div>
+            <div class="btns"><button class="btn btn-pri">Enviar solicitud</button></div>
+            <div class="note blue">La empresa se <b>elige</b>, no se teclea. Si registras una nueva y ya existe una parecida, el sistema avisa (dedup). <i>(Quién valida el padrón → ver "Empresas" / análisis.)</i></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== ALTA DE CONTRATO (HU-01) — 7 pasos clicables ===================== -->
+      <section class="screen" id="alta">
+        <div class="flow">
+          <h3>Alta de contrato · wizard de 7 pasos (haz clic en un paso)</h3>
+          <div class="steps" id="alta-steps">
+            <div class="step curr" onclick="altaPaso(1,this)"><div class="dot">1</div><div class="lbl">Datos generales</div></div><span class="arrow">→</span>
+            <div class="step todo" onclick="altaPaso(2,this)"><div class="dot">2</div><div class="lbl">Catálogo</div></div><span class="arrow">→</span>
+            <div class="step todo" onclick="altaPaso(3,this)"><div class="dot">3</div><div class="lbl">Programa</div></div><span class="arrow">→</span>
+            <div class="step todo" onclick="altaPaso(4,this)"><div class="dot">4</div><div class="lbl">Jurídicos</div></div><span class="arrow">→</span>
+            <div class="step todo" onclick="altaPaso(5,this)"><div class="dot">5</div><div class="lbl">Garantías</div></div><span class="arrow">→</span>
+            <div class="step todo" onclick="altaPaso(6,this)"><div class="dot">6</div><div class="lbl">Amortización</div></div><span class="arrow">→</span>
+            <div class="step todo" onclick="altaPaso(7,this)"><div class="dot">7</div><div class="lbl">Firma PDF</div></div>
+          </div>
+        </div>
+
+        <div class="panel subpanel on" id="alta-1">
+          <h2>Paso 1 · Datos generales</h2>
+          <p class="desc">El contrato arranca vacío. La empresa del equipo se deriva de las cuentas (no se teclea).</p>
+          <div class="row">
+            <div class="field"><label>Folio del contrato (único)</label><input value="OBRA-2026-DEMO-01"></div>
+            <div class="field w2"><label>Tipo de contrato</label><select><option>Obra pública sobre la base de precios unitarios</option><option>Obra pública a precio alzado</option><option>Servicios relacionados con obra pública</option></select></div>
+          </div>
+          <div class="row">
+            <div class="field w2"><label>Objeto del contrato</label><input value="Construcción de edificio de laboratorios"></div>
+            <div class="field"><label>Ubicación de la obra</label><input value="Chilpancingo, Gro."></div>
+          </div>
+          <div class="row">
+            <div class="field"><label>Dependencia (cuenta contratante)</label><select><option>Lic. Diana Dependencia Demo</option></select></div>
+            <div class="field"><label>Monto del contrato (derivado del catálogo)</label><input value="$2,500,000.00" disabled></div>
+            <div class="field"><label>% de pena por atraso (opcional)</label><input value="0.10"></div>
+          </div>
+          <div class="row">
+            <div class="field"><label>Plazo (días naturales)</label><input value="270"></div>
+            <div class="field"><label>Fecha de inicio</label><input type="date" value="2025-12-01"></div>
+            <div class="field"><label>Fecha de término (calculada)</label><input value="2026-08-27" disabled></div>
+          </div>
+          <h3>Equipo del contrato</h3>
+          <div class="row">
+            <div class="field"><label>Residente (tú)</label><input value="Ing. Iván Residente Demo" disabled></div>
+            <div class="field"><label>Contratista · superintendente</label><select><option>Arq. Carlos Contratista Demo</option></select></div>
+            <div class="field"><label>Supervisión (opcional)</label><select><option>Ing. Sofía Supervisión Demo</option></select></div>
+          </div>
+          <div class="note blue"><b>Empresas derivadas:</b> Contratista → <b>Constructora Demo</b> · Supervisión → <b>Supervisión Independiente Demo</b>. ✅ Terceros independientes (empresas distintas).</div>
+          <div class="btns"><button class="btn btn-sec">7. Registrados</button><button class="btn btn-pri" onclick="altaPaso(2)">Siguiente →</button></div>
+        </div>
+
+        <div class="panel subpanel" id="alta-2">
+          <h2>Paso 2 · Catálogo de conceptos <span class="num">(cuadre exacto al centavo)</span></h2>
+          <p class="desc">La <b>clave</b> la captura el usuario (art. 45 fr. IX RLOPSRM). El importe se deriva <code>Σ ROUND(cant×P.U.,2)</code>.</p>
+          <table>
+            <thead><tr><th>Clave</th><th>Concepto</th><th>Unidad</th><th class="r">Cantidad</th><th class="r">P.U.</th><th class="r">Importe</th></tr></thead>
+            <tbody>
+              <tr><td>CONC-01</td><td>Estudio de mecánica de suelos</td><td>est</td><td class="r">1</td><td class="r">$100,000.00</td><td class="r">$100,000.00</td></tr>
+              <tr><td>CONC-02</td><td>Remoción y movimiento de tierras</td><td>m³</td><td class="r">2,000</td><td class="r">$150.00</td><td class="r">$300,000.00</td></tr>
+              <tr><td>CONC-03</td><td>Cimentación</td><td>m³</td><td class="r">500</td><td class="r">$1,200.00</td><td class="r">$600,000.00</td></tr>
+              <tr><td>CONC-04</td><td>Instalaciones eléctricas</td><td>lote</td><td class="r">1</td><td class="r">$400,000.00</td><td class="r">$400,000.00</td></tr>
+              <tr><td>…</td><td>(CONC-05 hidrosanitarias, CONC-06 cableado, CONC-07 acabados)</td><td></td><td class="r"></td><td class="r"></td><td class="r">$1,100,000.00</td></tr>
+              <tr class="tot"><td colspan="5">Monto del contrato (Σ importes)</td><td class="r">$2,500,000.00</td></tr>
+            </tbody>
+          </table>
+          <div class="btns"><button class="btn btn-ghost">+ Agregar concepto</button><button class="btn btn-sec" onclick="altaPaso(1)">← Atrás</button><button class="btn btn-pri" onclick="altaPaso(3)">Siguiente →</button></div>
+        </div>
+
+        <div class="panel subpanel" id="alta-3">
+          <h2>Paso 3 · Programa de obra <span class="num">(matriz concepto × periodo · Gantt)</span></h2>
+          <p class="desc">Ciclo de estimación (art. 54): <b>Mensual</b> (~30 días) / Quincenal. La suma por concepto debe cuadrar al 100% de lo contratado.</p>
+          <table class="matriz">
+            <thead><tr><th class="cl">Clave</th><th class="cl">Concepto</th><th>P1</th><th>P2</th><th>P3</th><th>…</th><th>Σ planeado</th><th>Contratado</th><th>Restante</th></tr></thead>
+            <tbody>
+              <tr><td class="cl">CONC-01</td><td class="cl">Mecánica de suelos</td><td>1</td><td>—</td><td>—</td><td>…</td><td>1</td><td>1</td><td>0</td></tr>
+              <tr><td class="cl">CONC-02</td><td class="cl">Remoción de tierras</td><td>1,000</td><td>1,000</td><td>—</td><td>…</td><td>2,000</td><td>2,000</td><td>0</td></tr>
+              <tr><td class="cl">CONC-03</td><td class="cl">Cimentación</td><td>—</td><td>250</td><td>250</td><td>…</td><td>500</td><td>500</td><td>0</td></tr>
+            </tbody>
+          </table>
+          <div class="btns"><button class="btn btn-sec" onclick="altaPaso(2)">← Atrás</button><button class="btn btn-pri" onclick="altaPaso(4)">Siguiente →</button></div>
+        </div>
+
+        <div class="panel subpanel" id="alta-4">
+          <h2>Paso 4 · Datos jurídicos</h2>
+          <p class="desc">Firmantes de la dependencia y de la contraparte.</p>
+          <div class="row">
+            <div class="field"><label>Firmante autorizado de la dependencia</label><input value="Lic. Diana Dependencia"></div>
+            <div class="field"><label>Cargo del firmante</label><input value="Directora de Obras"></div>
+          </div>
+          <div class="row">
+            <div class="field"><label>Representante legal del contratista</label><input value="Arq. Carlos Contratista"></div>
+            <div class="field"><label>Cédula profesional del responsable técnico <span class="proposal">[validar profe]</span></label><input value="12345678"></div>
+          </div>
+          <div class="row">
+            <div class="field"><label>No. de poder notarial (opcional)</label><input></div>
+            <div class="field"><label>Notaría (opcional)</label><input></div>
+          </div>
+          <div class="btns"><button class="btn btn-sec" onclick="altaPaso(3)">← Atrás</button><button class="btn btn-pri" onclick="altaPaso(5)">Siguiente →</button></div>
+        </div>
+
+        <div class="panel subpanel" id="alta-5">
+          <h2>Paso 5 · Garantías y anticipo</h2>
+          <p class="desc">Cumplimiento + anticipo obligatorias (art. 48 LOPSRM). Anticipo &gt; 30% exige PDF de autorización.</p>
+          <div class="row"><div class="field"><label>% de anticipo otorgado</label><input value="30"></div>
+            <div class="field w2"><label>Autorización escrita (PDF) — si excede el umbral</label><input value="autorizacion_anticipo.pdf" disabled></div></div>
+          <table>
+            <thead><tr><th>Tipo de póliza</th><th>Afianzadora</th><th>No. de póliza</th><th class="r">Monto</th><th>Vigencia</th></tr></thead>
+            <tbody>
+              <tr><td>Cumplimiento</td><td>Afianzadora Demo</td><td>POL-CUMP-001</td><td class="r">$250,000.00</td><td>2027-08-27</td></tr>
+              <tr><td>Anticipo</td><td>Afianzadora Demo</td><td>POL-ANT-001</td><td class="r">$750,000.00</td><td>2026-08-27</td></tr>
+              <tr><td>Vicios ocultos</td><td>Afianzadora Demo</td><td>POL-VIC-001</td><td class="r">$250,000.00</td><td>2027-08-27</td></tr>
+            </tbody>
+          </table>
+          <div class="btns"><button class="btn btn-ghost">+ Agregar póliza</button><button class="btn btn-sec" onclick="altaPaso(4)">← Atrás</button><button class="btn btn-pri" onclick="altaPaso(6)">Siguiente →</button></div>
+        </div>
+
+        <div class="panel subpanel" id="alta-6">
+          <h2>Paso 6 · Plan de amortización del anticipo</h2>
+          <p class="desc">Cajitas mes a mes (art. 143 fr. I RLOPSRM). El sistema <b>no deja amortizar todo en el último mes</b>; proporcional al programa.</p>
+          <table>
+            <thead><tr><th>Periodo</th><th>Del — al</th><th class="r">Programado (cobro)</th><th class="r">Monto a amortizar</th><th class="r">% del anticipo</th></tr></thead>
+            <tbody>
+              <tr><td>P1</td><td>dic-2025</td><td class="r">$100,000</td><td class="r">$30,000</td><td class="r">4%</td></tr>
+              <tr><td>P2</td><td>ene-2026</td><td class="r">$300,000</td><td class="r">$90,000</td><td class="r">12%</td></tr>
+              <tr><td>P3</td><td>feb-2026</td><td class="r">$600,000</td><td class="r">$180,000</td><td class="r">24%</td></tr>
+              <tr class="tot"><td colspan="3">Suma del plan (= anticipo)</td><td class="r">$750,000</td><td class="r">100%</td></tr>
+            </tbody>
+          </table>
+          <div class="btns"><button class="btn btn-ghost">Restablecer proporcional al programa</button><button class="btn btn-sec" onclick="altaPaso(5)">← Atrás</button><button class="btn btn-pri" onclick="altaPaso(7)">Siguiente →</button></div>
+        </div>
+
+        <div class="panel subpanel" id="alta-7">
+          <h2>Paso 7 · PDF firmado del contrato</h2>
+          <p class="desc">Último paso obligatorio: adjuntar el contrato firmado para poder guardar.</p>
+          <div class="row"><div class="field w2"><label>Adjunta el PDF firmado del contrato</label><input value="contrato_firmado_OBRA-2026-DEMO-01.pdf" disabled></div></div>
+          <div class="btns"><button class="btn btn-sec" onclick="altaPaso(6)">← Atrás</button><button class="btn btn-pri">Guardar contrato</button></div>
+          <div class="note">Al guardar, el contrato pasa a la pestaña <b>Registrados</b> (Folio | Objeto | Contratista | Monto | Plazo | Inicio | Información | PDF firmado), con un modal "Ver info" de solo lectura.</div>
+        </div>
+      </section>
+
+      <!-- ===================== CICLO DE ESTIMACIÓN — INTEGRACIÓN (HU-12) con sub-tabs ===================== -->
+      <section class="screen" id="estimacion">
+        <div class="flow">
+          <h3>Flujo de la estimación · de inicio a fin</h3>
+          <div class="steps">
+            <div class="step curr"><div class="dot">1</div><div class="lbl">Integrar<small>HU-12</small></div></div><span class="arrow">→</span>
+            <div class="step todo" onclick="go('envio','HU-13','Ciclo › Presentación','Arq. Carlos Contratista · <b>Contratista</b>','Constructora Demo')"><div class="dot">2</div><div class="lbl">Presentar<small>HU-13</small></div></div><span class="arrow">→</span>
+            <div class="step todo" onclick="go('revision','HU-15','Ciclo › Revisión','Ing. Iván Residente · <b>Residente</b>','Constructora Demo')"><div class="dot">3</div><div class="lbl">Revisión<small>HU-15</small></div></div><span class="arrow">→</span>
+            <div class="step todo" onclick="go('pago','HU-20','Pago › Tránsito','Lic. Fernanda Finanzas · <b>Finanzas</b>','Constructora Demo')"><div class="dot">4</div><div class="lbl">Pago<small>HU-20/21</small></div></div>
+          </div>
+        </div>
+        <div class="panel">
+          <h2>Integración de la estimación <span class="num">#4</span></h2>
+          <p class="desc">Pestañas de la pantalla real de integración (HU-12).</p>
+          <div class="tabs">
+            <div class="tab on" onclick="sub('estimacion','est-apertura',this)">Apertura del periodo</div>
+            <div class="tab" onclick="sub('estimacion','est-gen',this)">1 · Generadores</div>
+            <div class="tab" onclick="sub('estimacion','est-car',this)">2 · Carátula viva</div>
+            <div class="tab" onclick="sub('estimacion','est-notas',this)">Notas vinculadas</div>
+            <div class="tab" onclick="sub('estimacion','est-hist',this)">Historial</div>
+          </div>
+          <div class="subpanel on" id="est-apertura">
+            <div class="row"><div class="field"><label>Contrato</label><select><option>OBRA-2026-DEMO-01</option></select></div>
+              <div class="field"><label>Periodo del programa</label><select><option>Periodo 4 (mar-2026)</option></select></div>
+              <div class="field"><label>Periodo — inicio</label><input type="date" value="2026-03-01" disabled></div>
+              <div class="field"><label>Periodo — fin</label><input type="date" value="2026-03-31" disabled></div></div>
+            <div class="grid3"><div class="kpi"><small>Avance físico</small><div class="v">100%</div></div><div class="kpi"><small>Programado</small><div class="v">100%</div></div><div class="kpi"><small>Financiero</small><div class="v">52%</div></div></div>
+          </div>
+          <div class="subpanel" id="est-gen">
+            <table><thead><tr><th>Clave</th><th>Concepto</th><th class="r">Contratado</th><th class="r">Ya estimado</th><th class="r">Disp. periodo</th><th class="r">P.U.</th><th class="r">Este periodo</th><th class="r">Importe</th><th class="r">% avance</th></tr></thead>
+              <tbody><tr><td>CONC-04</td><td>Instalaciones eléctricas</td><td class="r">1</td><td class="r">0</td><td class="r">1</td><td class="r">$400,000</td><td class="r"><input value="1" style="width:60px;text-align:right"></td><td class="r">$400,000</td><td class="r">100%</td></tr></tbody></table>
+            <div class="btns"><button class="btn btn-pri">Confirmar e integrar estimación</button></div>
+          </div>
+          <div class="subpanel" id="est-car">
+            <table><tbody>
+              <tr><td>Importe bruto del periodo</td><td class="r">$400,000.00</td></tr>
+              <tr><td>(−) Amortización de anticipo (30%)</td><td class="r">−$120,000.00</td></tr>
+              <tr><td>(−) Retención 5 al millar (0.5%)</td><td class="r">−$2,000.00</td></tr>
+              <tr><td>(−) Deductivas (manual)</td><td class="r">$0.00</td></tr>
+              <tr><td>(−) Retención por atraso</td><td class="r">$0.00</td></tr>
+              <tr class="tot"><td>(=) Neto a pagar</td><td class="r">$278,000.00</td></tr>
+            </tbody></table>
+            <div class="legal">Saldos: importe del contrato / estimado acumulado anterior / (+) esta estimación / (=) estimado acumulado / saldo por estimar.</div>
+          </div>
+          <div class="subpanel" id="est-notas">
+            <table><thead><tr><th>Folio</th><th>Tipo</th><th>Fecha</th><th>Firmante</th><th>Asunto</th><th>Documento</th></tr></thead>
+              <tbody><tr><td>#3</td><td>Avance</td><td>15/03/2026</td><td>Residente</td><td>Avance del periodo 4</td><td>📄 Ver</td></tr></tbody></table>
+            <div class="btns"><button class="btn btn-sec">🔍 Buscar y vincular notas firmadas</button></div>
+          </div>
+          <div class="subpanel" id="est-hist">
+            <table><thead><tr><th>#</th><th>Periodo</th><th>Estado</th><th class="r">Subtotal</th><th class="r">Neto</th><th>Integró</th></tr></thead>
+              <tbody><tr><td>1</td><td>dic-2025</td><td><span class="pill v">Pagada</span></td><td class="r">$100,000</td><td class="r">$69,500</td><td>Contratista</td></tr>
+              <tr><td>2</td><td>ene-2026</td><td><span class="pill b">Autorizada</span></td><td class="r">$300,000</td><td class="r">$208,500</td><td>Contratista</td></tr></tbody></table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== PRESENTAR (HU-13) ===================== -->
+      <section class="screen" id="envio">
+        <div class="panel">
+          <h2>Presentación de la estimación (HU-13)</h2>
+          <p class="desc">El contratista presenta la estimación integrada (art. 54). Selecciona el contrato.</p>
+          <div class="row"><div class="field"><label>Contrato</label><select><option>OBRA-2026-DEMO-01</option></select></div></div>
+          <table><thead><tr><th>Estimación</th><th>Periodo</th><th>Estado</th><th class="r">Neto</th><th>Plazo / acción</th></tr></thead>
+            <tbody>
+              <tr><td>#4</td><td>mar-2026</td><td><span class="pill a">Integrada</span></td><td class="r">$278,000.00</td><td><button class="btn btn-pri btn-sm">Presentar estimación</button></td></tr>
+              <tr><td>#5</td><td>abr-2026</td><td><span class="pill r">Rechazada</span></td><td class="r">$208,500.00</td><td><a style="color:var(--guinda)" onclick="go('reingreso','HU-16','Ciclo › Reingreso','Arq. Carlos Contratista · <b>Contratista</b>','Constructora Demo')">Reingreso (HU-16) →</a></td></tr>
+            </tbody></table>
+          <div class="legal">Al presentar se sella la fecha; el plazo de revisión (art. 54) corre desde ahí. Ya presentada/autorizada no se vuelve a presentar.</div>
+        </div>
+      </section>
+
+      <!-- ===================== REVISIÓN (HU-15) sub-tabs + observaciones + resolución ===================== -->
+      <section class="screen" id="revision">
+        <div class="panel">
+          <h2>Recepción, revisión técnica y autorización (HU-15)</h2>
+          <p class="desc">Supervisión observa → turna a residencia → residencia autoriza o rechaza.</p>
+          <div class="row"><div class="field"><label>Contrato</label><select><option>OBRA-2026-DEMO-01</option></select></div><div class="field"><label>Estimación</label><select><option>#3 · Presentada · neto $417,000</option></select></div></div>
+          <div class="flow" style="margin:0 0 16px"><div class="steps"><div class="step done"><div class="dot">✓</div><div class="lbl">Supervisión</div></div><span class="arrow">→</span><div class="step curr"><div class="dot">2</div><div class="lbl">Residencia</div></div><span class="arrow">→</span><div class="step todo"><div class="dot">3</div><div class="lbl">Resolución</div></div></div></div>
+          <div class="note blue">⏱ Plazo de revisión (art. 54 LOPSRM): 🟢 día 4 de 15.</div>
+          <div class="tabs">
+            <div class="tab on" onclick="sub('revision','rev-car',this)">Carátula</div>
+            <div class="tab" onclick="sub('revision','rev-gen',this)">Números generadores</div>
+            <div class="tab" onclick="sub('revision','rev-notas',this)">Notas vinculadas</div>
+          </div>
+          <div class="subpanel on" id="rev-car"><table><tbody>
+            <tr><td>Subtotal (Σ generadores)</td><td class="r">$600,000.00</td></tr><tr><td>Amortización de anticipo (30%)</td><td class="r">−$180,000.00</td></tr><tr><td>Retención 5 al millar (art. 191 LFD)</td><td class="r">−$3,000.00</td></tr><tr class="tot"><td>Importe neto del periodo</td><td class="r">$417,000.00</td></tr></tbody></table></div>
+          <div class="subpanel" id="rev-gen"><table><thead><tr><th>Concepto</th><th class="r">Contratado</th><th class="r">Este periodo</th><th class="r">Acumulado</th><th class="r">Importe</th><th class="r">% avance</th></tr></thead><tbody><tr><td>CONC-03 Cimentación</td><td class="r">500</td><td class="r">500</td><td class="r">500</td><td class="r">$600,000</td><td class="r">100%</td></tr></tbody></table></div>
+          <div class="subpanel" id="rev-notas"><table><thead><tr><th>Folio</th><th>Tipo</th><th>Fecha</th><th>Asunto</th></tr></thead><tbody><tr><td>#2</td><td>Avance</td><td>10/02/2026</td><td>Avance cimentación</td></tr></tbody></table></div>
+          <h3>Observaciones de esta sección</h3>
+          <div class="row"><div class="field w2"><label>Describe la observación…</label><textarea rows="2"></textarea></div>
+            <div class="field"><label>Tipo</label><select><option>Aclaración</option><option>Corrección</option><option>Rechazo</option></select></div>
+            <div class="field"><label>Severidad</label><select><option>Menor</option><option>Mayor</option><option>Crítica</option></select></div></div>
+          <div class="btns"><button class="btn btn-ghost btn-sm">+ Agregar observación</button></div>
+          <h3>Resolución</h3>
+          <label style="font-size:12.5px"><input type="checkbox"> Marcar la estimación sin observaciones (apta para autorización)</label>
+          <div class="btns" style="margin-top:10px"><button class="btn btn-sec">➡ Turnar a residencia</button><button class="btn" style="background:var(--rojo);color:#fff">✗ Rechazar</button><button class="btn btn-pri">✓ Autorizar</button></div>
+        </div>
+      </section>
+
+      <!-- ===================== REINGRESO (HU-16) ===================== -->
+      <section class="screen" id="reingreso">
+        <div class="panel">
+          <h2>Reingreso de estimación tras rechazo (HU-16)</h2>
+          <p class="desc">El reingreso es un <b>bloque nuevo completo</b> (no se marca qué observación se atendió).</p>
+          <div class="row"><div class="field"><label>Contrato</label><select><option>OBRA-2026-DEMO-01</option></select></div><div class="field"><label>Estimación rechazada</label><select><option>#5 · abr-2026 · RECHAZADA</option></select></div></div>
+          <div class="note">⚠️ El plazo de presentación (art. 54 LOPSRM) <b>no se reinicia</b> con el reingreso.</div>
+          <h3>Observaciones de la versión rechazada</h3>
+          <table><thead><tr><th>#</th><th>Sección</th><th>Tipo</th><th>Severidad</th><th>Observación</th></tr></thead><tbody><tr><td>1</td><td>Generadores</td><td>Corrección</td><td>Mayor</td><td>Volumen de CONC-05 no coincide con el avance.</td></tr></tbody></table>
+          <h3>Nueva versión</h3>
+          <div class="row"><div class="field w2"><label>Nota de atención a observaciones</label><textarea rows="2"></textarea></div></div>
+          <label style="font-size:12.5px"><input type="checkbox"> Confirmo que atendí las observaciones de la versión rechazada</label>
+          <h3>Trazabilidad de versiones</h3>
+          <table><thead><tr><th>Versión</th><th>Periodo</th><th>Estado</th><th>Vinculada a</th></tr></thead><tbody><tr><td>v1</td><td>abr-2026</td><td><span class="pill r">Rechazada</span></td><td>—</td></tr><tr><td>v2</td><td>abr-2026</td><td><span class="pill a">Integrada</span></td><td>reemplaza a v1</td></tr></tbody></table>
+          <div class="btns"><button class="btn btn-sec">⬇ Descargar PDF</button><button class="btn btn-sec">⬇ Descargar Excel</button><button class="btn btn-pri">Reingresar estimación</button></div>
+        </div>
+      </section>
+
+      <!-- ===================== HISTORIAL (HU-14) ===================== -->
+      <section class="screen" id="historial">
+        <div class="panel">
+          <h2>Historial de estimaciones del contrato (HU-14)</h2>
+          <div class="row"><div class="field"><label>Contrato</label><select><option>OBRA-2026-DEMO-01</option></select></div><div class="field"><label>Periodo</label><select><option>Todos</option></select></div><div class="field"><label>Estado</label><select><option>Todos</option></select></div></div>
+          <table><thead><tr><th>Estimación</th><th>Periodo</th><th>Versión</th><th>Estado</th><th class="r">Importe</th><th>Fecha de presentación</th></tr></thead>
+            <tbody>
+              <tr style="cursor:pointer"><td>#1</td><td>dic-2025</td><td>v1</td><td><span class="pill v">Pagada</span></td><td class="r">$69,500</td><td>05/01/2026</td></tr>
+              <tr style="cursor:pointer"><td>#2</td><td>ene-2026</td><td>v1</td><td><span class="pill b">Autorizada</span></td><td class="r">$208,500</td><td>03/02/2026</td></tr>
+              <tr style="cursor:pointer"><td>#5</td><td>abr-2026</td><td>v1 → v2</td><td><span class="pill r">Rechazada</span></td><td class="r">$208,500</td><td>04/05/2026</td></tr>
+            </tbody></table>
+          <div class="btns"><button class="btn btn-sec">⬇ Exportar historial</button></div>
+          <div class="legal">Click en una fila abre un <b>drawer</b> lateral con el expediente compacto (periodo, estado, importe, fecha de presentación/revisión/pago, observaciones).</div>
+        </div>
+      </section>
+
+      <!-- ===================== BITÁCORA — APERTURA (HU-08) ===================== -->
+      <section class="screen" id="bitacora">
+        <div class="flow"><h3>Bitácora del contrato · hilo legal</h3><div class="steps">
+          <div class="step curr"><div class="dot">1</div><div class="lbl">Apertura<small>HU-08</small></div></div><span class="arrow">→</span>
+          <div class="step todo" onclick="go('porfirmar','HU-08','Bitácora › Por firmar','Ing. Iván Residente · <b>Residente</b>','Constructora Demo')"><div class="dot">2</div><div class="lbl">Firmar<small>2/3</small></div></div><span class="arrow">→</span>
+          <div class="step todo" onclick="go('emitir','HU-09','Bitácora › Emitir','Ing. Iván Residente · <b>Residente</b>','Constructora Demo')"><div class="dot">3</div><div class="lbl">Emitir<small>HU-09</small></div></div><span class="arrow">→</span>
+          <div class="step todo" onclick="go('consulta','HU-10','Bitácora › Consultar','Ing. Iván Residente · <b>Residente</b>','Constructora Demo')"><div class="dot">4</div><div class="lbl">Consultar<small>HU-10</small></div></div><span class="arrow">→</span>
+          <div class="step todo" onclick="go('minutas','HU-11','Bitácora › Minutas','Ing. Iván Residente · <b>Residente</b>','Constructora Demo')"><div class="dot">5</div><div class="lbl">Minutas<small>HU-11</small></div></div>
+        </div></div>
+        <div class="panel">
+          <h2>Apertura de la bitácora (HU-08)</h2>
+          <p class="desc">Primera nota (folio 1), machote con los datos del contrato. Evento formal inalterable.</p>
+          <h3>Identificación del contrato</h3>
+          <div class="row"><div class="field"><label>Folio</label><input value="OBRA-2026-DEMO-01" disabled></div><div class="field"><label>Monto contractual</label><input value="$2,500,000.00" disabled></div><div class="field"><label>Plazo</label><input value="270 días" disabled></div></div>
+          <h3>Datos mínimos de la apertura — art. 123 fr. III RLOPSRM</h3>
+          <div class="row"><div class="field"><label>Entrega del sitio *</label><input type="date" value="2025-12-01"></div><div class="field"><label>Plazo de firma de notas (días naturales)</label><input value="2"></div></div>
+          <div class="row"><div class="field"><label>Domicilio de la dependencia *</label><input></div><div class="field"><label>Teléfono de la dependencia *</label><input></div></div>
+          <div class="row"><div class="field"><label>Domicilio del contratista *</label><input></div><div class="field"><label>Teléfono del contratista *</label><input></div></div>
+          <div class="row"><div class="field w2"><label>Alcance/descripción de los trabajos *</label><textarea rows="2"></textarea></div><div class="field w2"><label>Características del sitio *</label><textarea rows="2"></textarea></div></div>
+          <div class="note red">⚠️ Evento formal inalterable: una vez abierta, la apertura no se edita.</div>
+          <div class="btns"><button class="btn btn-pri">Iniciar apertura</button></div>
+        </div>
+      </section>
+
+      <!-- ===================== POR FIRMAR ===================== -->
+      <section class="screen" id="porfirmar">
+        <div class="panel">
+          <h2>Por firmar — aperturas de bitácora</h2>
+          <p class="desc">Cada quien firma su parte desde su cuenta.</p>
+          <table><thead><tr><th>Folio</th><th>Objeto</th><th>Tu parte</th><th>Aperturada</th><th>Acción</th></tr></thead>
+            <tbody><tr><td>OBRA-2026-DEMO-01</td><td>Edificio de laboratorios</td><td>Residente</td><td>01/12/2025</td><td><button class="btn btn-pri btn-sm">Firmar</button></td></tr></tbody></table>
+        </div>
+      </section>
+
+      <!-- ===================== EMITIR NOTAS (HU-09) + LIBRO ===================== -->
+      <section class="screen" id="emitir">
+        <div class="grid2">
+          <div class="panel" style="margin-bottom:0">
+            <h2>Libro de bitácora</h2>
+            <p class="desc">Append-only (art. 123 fr. VI RLOPSRM). Corregir = nota nueva ligada.</p>
+            <div class="libro">
+              <div class="nfolio"><span><b>Nota #1 · Apertura</b> · 01/12/2025 09:30</span><span>Emisor: <b>Residente</b></span></div>
+              En Chilpancingo, Gro., 01/12/2025, se abre la bitácora de la obra cuyo <b>objeto</b> es "Construcción de edificio de laboratorios", <b>ubicada</b> en Chilpancingo, monto $2,500,000.00, anticipo 30%, plazo 270 días…
+              <div class="firmas"><div class="firma">✅<b>Residente</b>firmó</div><div class="firma">✅<b>Superintendente</b>firmó</div><div class="firma" style="border-color:var(--ambar)">⏳<b>Supervisión</b>pendiente</div></div>
+            </div>
+            <div class="legal">Art. 46 últ. párr. / 52 Bis LOPSRM · 122/123 RLOPSRM.</div>
+          </div>
+          <div class="panel" style="margin-bottom:0">
+            <h2>Emitir nota</h2>
+            <p class="desc">El emisor no re-firma; firman las otras partes. Mostrado por rol.</p>
+            <div class="row"><div class="field"><label>Tipo de nota (tu rol: Residente)</label><select><option>Avance de obra</option><option>Instrucción</option><option>Otro</option></select></div></div>
+            <div class="row"><div class="field"><label>Tag de búsqueda</label><input value="avance"></div></div>
+            <div class="row"><div class="field"><label>Asunto</label><input value="Avance del periodo 2"></div></div>
+            <div class="row"><div class="field"><label>Contenido *</label><textarea rows="3"></textarea></div></div>
+            <div class="btns"><button class="btn btn-pri">Emitir nota</button><button class="btn btn-sec">▸ Ver bitácora</button></div>
+            <div class="note">Candado: no se emiten notas hasta que la apertura esté firmada por TODOS (art. 123 fr. III).</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== CONSULTAR NOTAS (HU-10) ===================== -->
+      <section class="screen" id="consulta">
+        <div class="panel">
+          <h2>Consulta y búsqueda de notas (HU-10)</h2>
+          <p class="desc">Filtros combinados (AND) + exportación a Excel.</p>
+          <div class="row"><div class="field"><label>Contrato</label><select><option>OBRA-2026-DEMO-01</option></select></div>
+            <div class="field"><label>Tipo</label><select><option>Todos</option></select></div>
+            <div class="field"><label>Fecha</label><input type="date"></div>
+            <div class="field"><label>Firmante</label><select><option>Todos</option></select></div>
+            <div class="field"><label>Palabra clave</label><input></div></div>
+          <table><thead><tr><th>Folio</th><th>Fecha</th><th>Tipo</th><th>Emisor</th><th>Vínculo</th><th>Asunto</th><th>Estado</th></tr></thead>
+            <tbody>
+              <tr><td>#1</td><td>01/12/2025</td><td>Apertura</td><td>Residente</td><td>—</td><td>Apertura de bitácora</td><td><span class="pill v">Firmada</span></td></tr>
+              <tr><td>#2</td><td>10/02/2026</td><td>Avance</td><td>Residente</td><td>—</td><td>Avance cimentación</td><td><span class="pill v">Firmada</span></td></tr>
+              <tr><td>#3</td><td>20/03/2026</td><td>Convenio</td><td>Dependencia</td><td>CM-001</td><td>Convenio de plazo</td><td><span class="pill v">Firmada</span></td></tr>
+            </tbody></table>
+          <div class="btns"><button class="btn btn-sec">⬇ Exportar a Excel</button></div>
+        </div>
+      </section>
+
+      <!-- ===================== MINUTAS (HU-11) 3 pestañas ===================== -->
+      <section class="screen" id="minutas">
+        <div class="panel">
+          <h2>Minutas, visitas y acuerdos (HU-11)</h2>
+          <div class="row"><div class="field"><label>Contrato</label><select><option>OBRA-2026-DEMO-01</option></select></div></div>
+          <div class="tabs"><div class="tab on" onclick="sub('minutas','min-min',this)">Minutas</div><div class="tab" onclick="sub('minutas','min-vis',this)">Agenda de visitas</div><div class="tab" onclick="sub('minutas','min-acu',this)">Acuerdos</div></div>
+          <div class="subpanel on" id="min-min">
+            <div class="row"><div class="field"><label>Fecha *</label><input type="date"></div><div class="field"><label>Lugar *</label><input></div><div class="field"><label>Participantes *</label><input></div></div>
+            <div class="row"><div class="field w2"><label>Asunto *</label><input></div><div class="field"><label>Adjuntar minuta (PDF)</label><input value="minuta.pdf" disabled></div></div>
+            <div class="btns"><button class="btn btn-pri">Registrar minuta</button></div>
+            <table style="margin-top:12px"><thead><tr><th>Folio</th><th>Fecha</th><th>Lugar</th><th>Asunto</th><th>Participantes</th><th>PDF</th><th>Nota</th><th>Acción</th></tr></thead>
+              <tbody><tr><td>M-1</td><td>10/03/2026</td><td>Sala de juntas</td><td>Reunión de avance</td><td>Residente, Supervisión</td><td>👁</td><td>#2</td><td>📎 Adjuntar a nota</td></tr></tbody></table>
+          </div>
+          <div class="subpanel" id="min-vis">
+            <div class="row"><div class="field"><label>Fecha *</label><input type="date"></div><div class="field"><label>Lugar *</label><input></div><div class="field"><label>Responsable *</label><input></div><div class="field"><label>Propósito *</label><input></div></div>
+            <div class="btns"><button class="btn btn-pri">Agendar visita</button></div>
+            <table style="margin-top:12px"><thead><tr><th>Folio</th><th>Fecha</th><th>Lugar</th><th>Responsable</th><th>Propósito</th><th>Estado</th><th>Acción</th></tr></thead>
+              <tbody><tr><td>V-1</td><td>20/03/2026</td><td>Frente norte</td><td>Supervisión</td><td>Verificar acabados</td><td><span class="pill b">Agendada</span></td><td>📎 Adjuntar a nota</td></tr></tbody></table>
+          </div>
+          <div class="subpanel" id="min-acu">
+            <table><thead><tr><th>Minuta</th><th>Fecha</th><th>Acuerdo</th><th>Nota vinculada</th></tr></thead>
+              <tbody><tr><td>M-1</td><td>10/03/2026</td><td>Acelerar la cimentación en el periodo 2.</td><td>#2</td></tr></tbody></table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== TRABAJOS TERMINADOS (HU-06) ===================== -->
+      <section class="screen" id="trabajos">
+        <div class="flow"><h3>Avance físico y seguimiento</h3><div class="steps">
+          <div class="step curr"><div class="dot">1</div><div class="lbl">Registrar avance<small>HU-06</small></div></div><span class="arrow">→</span>
+          <div class="step todo" onclick="go('curva','HU-05','Seguimiento › Curva','Ing. Iván Residente · <b>Residente</b>','Constructora Demo')"><div class="dot">2</div><div class="lbl">Curva<small>HU-05</small></div></div><span class="arrow">→</span>
+          <div class="step todo" onclick="go('alertas','HU-07','Seguimiento › Alertas','Ing. Iván Residente · <b>Residente</b>','Constructora Demo')"><div class="dot">3</div><div class="lbl">Alertas<small>HU-07</small></div></div>
+        </div></div>
+        <div class="panel">
+          <h2>Registro de trabajos terminados (HU-06)</h2>
+          <p class="desc">Por <b>periodo</b> del programa (no fecha libre). Vinculado a una nota de bitácora. Art. 118: no más de lo contratado.</p>
+          <div class="row"><div class="field"><label>Contrato</label><select><option>OBRA-2026-DEMO-01</option></select></div>
+            <div class="field"><label>Concepto del catálogo</label><select><option>CONC-03 Cimentación</option></select></div>
+            <div class="field"><label>Periodo del programa</label><select><option>Periodo 2</option></select></div></div>
+          <div class="row"><div class="field"><label>Cantidad ejecutada</label><input value="250"></div><div class="field w2"><label>Observaciones (opcional)</label><input></div></div>
+          <label style="font-size:12.5px"><input type="checkbox"> Ejecuté todo lo programado del periodo</label>
+          <div class="btns" style="margin-top:8px"><button class="btn btn-pri">Registrar avance</button></div>
+          <h3>Avance acumulado por concepto</h3>
+          <table><thead><tr><th>Clave</th><th>Concepto</th><th>Unidad</th><th class="r">Contratada</th><th class="r">Ejecutado acum.</th><th class="r">% avance</th></tr></thead>
+            <tbody><tr><td>CONC-03</td><td>Cimentación</td><td>m³</td><td class="r">500</td><td class="r">250</td><td class="r">50%</td></tr></tbody></table>
+        </div>
+      </section>
+
+      <!-- ===================== CURVA DE AVANCE (HU-05) ===================== -->
+      <section class="screen" id="curva">
+        <div class="panel">
+          <h2>Programa y curva de avance (HU-05)</h2>
+          <div class="row"><div class="field"><label>Contrato</label><select><option>OBRA-2026-DEMO-01</option></select></div>
+            <div class="field"><label>Concepto</label><select><option>Todos</option></select></div>
+            <div class="field"><label>Periodo</label><select><option>Todo el contrato</option><option>Últimos 3 periodos</option><option>Último periodo</option></select></div></div>
+          <div class="grid2" style="margin-bottom:14px"><div class="kpi"><small>Programado</small><div class="v">100%</div></div><div class="kpi"><small>Ejecutado</small><div class="v">100%</div></div></div>
+          <div class="grid2"><div class="kpi"><small>Financiero</small><div class="v">52%</div></div><div class="kpi"><small>Desviación a hoy</small><div class="v">0 pp</div></div></div>
+          <h3>Curva S — programado · ejecutado · financiero</h3>
+          <div style="height:140px;background:linear-gradient(180deg,#FBF9F7,#fff);border:1px solid var(--linea);border-radius:8px;display:flex;align-items:flex-end;padding:10px;gap:6px">
+            <div style="flex:1;height:20%;background:var(--dorado);border-radius:3px"></div><div style="flex:1;height:38%;background:var(--dorado);border-radius:3px"></div><div style="flex:1;height:60%;background:var(--dorado);border-radius:3px"></div><div style="flex:1;height:78%;background:var(--guinda);border-radius:3px"></div><div style="flex:1;height:100%;background:var(--guinda);border-radius:3px"></div>
+          </div>
+          <div class="legal">La curva programada <b>empieza en cero</b>; gráfica interactiva (tooltip al pasar el mouse). Abajo, la matriz concepto × periodo tipo Gantt.</div>
+        </div>
+      </section>
+
+      <!-- ===================== ALERTAS (HU-07) ===================== -->
+      <section class="screen" id="alertas">
+        <div class="panel">
+          <h2>Alertas de atraso por concepto (HU-07)</h2>
+          <p class="desc">Déficit en <b>unidades</b> (sin %, sin umbral): programado al periodo vigente − ejecutado.</p>
+          <div class="row"><div class="field"><label>Contrato</label><select><option>OBRA-2026-ATRASO-04</option></select></div><div class="field"><label>Periodo de medición</label><select><option>Periodo vigente</option></select></div></div>
+          <table><thead><tr><th>Concepto</th><th>Unidad</th><th class="r">Programado acum.</th><th class="r">Ejecutado acum.</th><th class="r">Déficit</th><th>Acciones</th></tr></thead>
+            <tbody><tr><td>Rehabilitación de aulas</td><td>m²</td><td class="r">2,000</td><td class="r">600</td><td class="r" style="color:var(--rojo);font-weight:700">1,400</td><td><button class="btn btn-ghost btn-sm">Asentar en bitácora</button></td></tr></tbody></table>
+          <div class="note red">🚨 No se han entregado <b>1,400 m²</b> comprometidos. (art. 53 LOPSRM, emisor residente.)</div>
+        </div>
+      </section>
+
+      <!-- ===================== PAGO — TRÁNSITO (HU-20) ===================== -->
+      <section class="screen" id="pago">
+        <div class="flow"><h3>Ciclo de pago de la estimación</h3><div class="steps">
+          <div class="step done"><div class="dot">✓</div><div class="lbl">Autorizada<small>art.54</small></div></div><span class="arrow">→</span>
+          <div class="step curr"><div class="dot">2</div><div class="lbl">Tránsito<small>HU-20 · art.24</small></div></div><span class="arrow">→</span>
+          <div class="step todo" onclick="go('regpago','HU-21','Pago › Registro','Lic. Fernanda Finanzas · <b>Finanzas</b>','Constructora Demo')"><div class="dot">3</div><div class="lbl">Registrar<small>HU-21</small></div></div><span class="arrow">→</span>
+          <div class="step todo" onclick="go('finiquito','HU-24','Cierre › Finiquito','Lic. Diana Dependencia · <b>Dependencia</b>','Constructora Demo')"><div class="dot">4</div><div class="lbl">Finiquito<small>HU-24</small></div></div>
+        </div></div>
+        <div class="panel">
+          <h2>Tránsito a pago · estimación <span class="num">#2</span> (autorizada)</h2>
+          <p class="desc">Suficiencia (art. 24) + soportes + semáforo del plazo (art. 54).</p>
+          <div class="row"><div class="field"><label>Contrato</label><select><option>OBRA-2026-DEMO-01</option></select></div><div class="field"><label>Estimación autorizada</label><select><option>#2 · neto $208,500</option></select></div></div>
+          <h3>Verificación de suficiencia presupuestal (art. 24 LOPSRM)</h3>
+          <table><tbody>
+            <tr><td>Techo anual (ejercicio 2026)</td><td class="r">$5,000,000.00</td></tr>
+            <tr><td>(−) Comprometido (autorizadas + pagadas)</td><td class="r">−$69,500.00</td></tr>
+            <tr><td>(=) Disponible antes de esta estimación</td><td class="r">$4,930,500.00</td></tr>
+            <tr><td>(−) Esta estimación (neto)</td><td class="r">−$208,500.00</td></tr>
+            <tr class="tot"><td>(=) Disponible tras pago</td><td class="r">$4,722,000.00</td></tr>
+          </tbody></table>
+          <h3>Soportes obligatorios</h3>
+          <table><thead><tr><th>Documento</th><th>Estado</th><th>Registrar (metadato)</th></tr></thead>
+            <tbody>
+              <tr><td>Factura del periodo</td><td><span class="pill v">✓</span></td><td>F-001</td></tr>
+              <tr><td>CFDI (folio fiscal)</td><td><span class="pill v">✓</span></td><td>ABCD-1234</td></tr>
+              <tr><td>Fianza de cumplimiento</td><td><span class="pill v">Vigente ✓</span></td><td>(de garantías)</td></tr>
+            </tbody></table>
+          <div class="note blue">🟢 Semáforo del plazo de pago (art. 54): 0 / 20 días vencidos. El sistema solo admite una instrucción por estimación; no se genera si el contrato está cerrado (art. 64).</div>
+          <div class="btns"><button class="btn btn-pri">💸 Generar instrucción de pago</button></div>
+        </div>
+      </section>
+
+      <!-- ===================== REGISTRO DEL PAGO (HU-21) ===================== -->
+      <section class="screen" id="regpago">
+        <div class="panel">
+          <h2>Registro del pago efectuado (HU-21)</h2>
+          <p class="desc">Es registro de pago ("pagada"). Gate estricto art. 54: solo se paga lo <b>autorizado</b>; importe = neto (no editable).</p>
+          <div class="row"><div class="field"><label>Contrato</label><select><option>OBRA-2026-DEMO-01</option></select></div>
+            <div class="field"><label>Estimación a pagar *</label><select><option>#1 · Autorizada</option></select></div>
+            <div class="field"><label>Importe a pagar (= neto, derivado)</label><input value="$69,500.00" disabled></div></div>
+          <div class="row"><div class="field"><label>Fecha de pago *</label><input type="date" value="2026-02-15"></div>
+            <div class="field"><label>Referencia bancaria (SPEI) *</label><input value="SPEI-00482"></div>
+            <div class="field"><label>Folio fiscal (CFDI) *</label><input value="ABCD-1234"></div></div>
+          <div class="row"><div class="field"><label>Fecha de la factura *</label><input type="date"></div><div class="field w2"><label>Observaciones</label><input></div></div>
+          <div class="btns"><button class="btn btn-ghost">Limpiar</button><button class="btn btn-pri">Registrar pago</button></div>
+          <h3>Pagos del contrato</h3>
+          <table><thead><tr><th>Estimación</th><th>Fecha pago</th><th class="r">Importe</th><th>Referencia</th><th>CFDI</th><th>Plazo (art. 54)</th></tr></thead>
+            <tbody><tr><td>#1</td><td>15/02/2026</td><td class="r">$69,500.00</td><td>SPEI-00482</td><td>ABCD-1234</td><td>🟢 dentro</td></tr></tbody></table>
+        </div>
+      </section>
+
+      <!-- ===================== CONVENIOS (HU-03) ===================== -->
+      <section class="screen" id="convenios">
+        <div class="panel">
+          <h2>Convenios modificatorios (HU-03)</h2>
+          <p class="desc">Liga/versiona (no sustituye). Lo crea la Dependencia (art. 59 LOPSRM).</p>
+          <div class="row"><div class="field"><label>Contrato</label><select><option>OBRA-2026-DEMO-01 · Monto vigente $2,500,000 · Plazo 241 d</option></select></div></div>
+          <h3>Nuevo convenio modificatorio</h3>
+          <div class="row"><div class="field"><label>Tipo de convenio *</label><select><option>Plazo</option><option>Monto</option><option>Programa</option><option>Mixto (combinado)</option></select></div>
+            <div class="field"><label>Plazo vigente</label><input value="211 días" disabled></div>
+            <div class="field"><label>Nuevo plazo (días) *</label><input value="241"></div>
+            <div class="field"><label>Folio del convenio (opcional)</label><input value="CM-001"></div></div>
+          <div class="row"><div class="field w2"><label>Motivo / dictamen técnico * (art. 99 RLOPSRM)</label><textarea rows="2">Ampliación por lluvias atípicas</textarea></div></div>
+          <div class="note blue">Avisos en vivo: variación &gt;25% → revisión SFP (RLOPSRM 102, <b>avisa, no bloquea</b>) · &gt;50% → ajuste de costos (art. 59 Bis).</div>
+          <div class="btns"><button class="btn btn-pri">Registrar convenio modificatorio</button></div>
+          <h3>Convenios del contrato (historial inmutable)</h3>
+          <table><thead><tr><th>N.º / folio</th><th>Tipo</th><th>Registrado</th><th>Cambio</th><th>Motivo</th><th>Avisos</th><th>Oficio</th></tr></thead>
+            <tbody><tr><td>CM-001</td><td>Plazo</td><td>20/03/2026</td><td>211→241 (+14.2%)</td><td>Lluvias</td><td>—</td><td>📎 Ver · ⬆ Subir</td></tr></tbody></table>
+          <h3>Versiones del programa de obra</h3>
+          <table><thead><tr><th>Versión</th><th>Estado</th><th class="r">Monto</th><th class="r">Plazo</th><th>Creada</th></tr></thead>
+            <tbody><tr><td>v1</td><td><span class="pill gr">Sustituida</span></td><td class="r">$2,500,000</td><td class="r">211 d</td><td>01/12/2025</td></tr>
+              <tr><td>v2</td><td><span class="pill v">Vigente</span></td><td class="r">$2,500,000</td><td class="r">241 d</td><td>20/03/2026</td></tr></tbody></table>
+        </div>
+      </section>
+
+      <!-- ===================== FINIQUITO (HU-24) ===================== -->
+      <section class="screen" id="finiquito">
+        <div class="panel">
+          <h2>Finiquito y cierre del contrato (HU-24)</h2>
+          <p class="desc">Es una nota de bitácora + el saldo (art. 64 LOPSRM / 168-172 RLOPSRM).</p>
+          <div class="row"><div class="field"><label>Contrato</label><select><option>OBRA-2026-DEMO-01</option></select></div></div>
+          <h3>Cálculo del saldo (art. 64 LOPSRM)</h3>
+          <table><tbody>
+            <tr><td>Importe real ejecutado (art. 170 fr. IV)</td><td class="r">$1,251,000.00</td></tr>
+            <tr><td>Importe neto estimado y autorizado (art. 54)</td><td class="r">$1,251,000.00</td></tr>
+            <tr><td>(−) Total pagado</td><td class="r">−$69,500.00</td></tr>
+            <tr><td>(−) Anticipo no amortizado (art. 143)</td><td class="r">−$330,000.00</td></tr>
+            <tr><td>(−) Ajustes finales <span class="proposal">[validar profe]</span> <input value="$0.00" style="width:90px;text-align:right;display:inline-block"></td><td class="r">$0.00</td></tr>
+            <tr class="tot"><td>Saldo resultante · a favor del contratista</td><td class="r">$851,500.00</td></tr>
+          </tbody></table>
+          <div class="row" style="margin-top:12px"><div class="field w2"><label>Observaciones (opcional)</label><textarea rows="2"></textarea></div></div>
+          <div class="btns"><button class="btn btn-sec">📄 Ver documento de finiquito (art. 170)</button><button class="btn btn-pri">🔒 Cerrar contrato (elaborar finiquito)</button></div>
+          <div class="note">Cierre append-only: 1 finiquito por contrato, inmutable. Quedan extinguidos los derechos y obligaciones (art. 64).</div>
+        </div>
+      </section>
+
+      <!-- ===================== EXPEDIENTE (HU-04) 9 bloques ===================== -->
+      <section class="screen" id="expediente">
+        <div class="panel">
+          <h2>Expediente del contrato (HU-04)</h2>
+          <p class="desc">El contrato consolidado en bloques colapsables; exporta a un solo PDF. Buscador por tipo de documento / periodo.</p>
+          <div class="row"><div class="field"><label>Contrato</label><select><option>OBRA-2026-DEMO-01</option></select></div>
+            <div class="field"><label>Buscar en el expediente</label><input></div>
+            <div class="field"><label>Buscar por</label><select><option>Tipo de documento</option><option>Periodo</option></select></div>
+            <div class="btns" style="margin-top:0;align-items:flex-end"><button class="btn btn-sec btn-sm">Exportar PDF</button></div></div>
+          <div class="cards" style="grid-template-columns:repeat(auto-fill,minmax(230px,1fr))">
+            <div class="modcard"><div class="t">⚙️ Configuración del contrato</div><div class="d">Folio, objeto, superintendente vigente, dependencia, monto, plazo, modalidad, vigencia.</div></div>
+            <div class="modcard"><div class="t">📋 Catálogo de conceptos</div><div class="d">Clave / Concepto / Unidad / Cantidad / P.U. / Importe.</div></div>
+            <div class="modcard"><div class="t">📅 Programa de obra</div><div class="d">Matriz concepto × periodo (solo lo contratado).</div></div>
+            <div class="modcard"><div class="t">🛡️ Fianzas y garantías</div><div class="d">Tipo / Afianzadora / Póliza / Monto / Vigencia.</div></div>
+            <div class="modcard"><div class="t">💰 Plan de amortización</div><div class="d">Periodo / Del—al / Monto a amortizar / Total (= anticipo).</div></div>
+            <div class="modcard"><div class="t">⚖️ Documentos jurídicos</div><div class="d">Firmantes y soportes.</div></div>
+            <div class="modcard"><div class="t">👥 Roster y sustituciones</div><div class="d">Rol / Persona / Desde / Hasta / Evento / Motivo / Bitácora.</div></div>
+            <div class="modcard"><div class="t">📝 Convenios modificatorios</div><div class="d">N.º / Tipo / Cambio / Motivo / Fecha / Bitácora / 📎 Oficio.</div></div>
+            <div class="modcard"><div class="t">📐 Resumen de estimaciones</div><div class="d">N.º / Periodo / Estado / Neto / Total neto estimado.</div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== PORTAFOLIO (HU-18) ===================== -->
+      <section class="screen" id="portafolio">
+        <div class="panel">
+          <h2>Portafolio ejecutivo · salud de los contratos (HU-18)</h2>
+          <div class="row"><div class="field"><label>Agrupar por</label><select><option>Ninguno</option><option>Contratista</option><option>Ejercicio fiscal</option></select></div></div>
+          <div class="grid2" style="margin-bottom:6px"><div class="kpi"><small>Contratos</small><div class="v">5</div></div><div class="kpi"><small>🟢 / 🟡 / 🔴</small><div class="v">1 / 1 / 3</div></div></div>
+          <table><thead><tr><th class="c">Salud</th><th>Folio</th><th>Contratista</th><th class="r">Avance físico</th><th class="r">vs mes ant.</th><th class="r">Pendientes</th><th>Semáforo</th></tr></thead>
+            <tbody>
+              <tr><td class="c"><span class="dot-s v"></span></td><td>OBRA-2026-DEMO-01</td><td>Constructora Demo</td><td class="r">100%</td><td class="r">+10%</td><td class="r">0</td><td><span class="pill v">Verde</span></td></tr>
+              <tr><td class="c"><span class="dot-s r"></span></td><td>OBRA-2026-ATRASO-01</td><td>Constructora Demo</td><td class="r">0%</td><td class="r">0%</td><td class="r">2</td><td><span class="pill r">Rojo</span></td></tr>
+              <tr><td class="c"><span class="dot-s a"></span></td><td>OBRA-2026-ATRASO-02</td><td>Constructora Demo</td><td class="r">50%</td><td class="r">+5%</td><td class="r">1</td><td><span class="pill a">Amarillo</span></td></tr>
+            </tbody></table>
+          <div class="note">Doble clic en una fila abre el detalle (avance físico/financiero, atrasos en días, penalizaciones, Δ avance). Umbrales: criterio del equipo (avance ≥95/85-95/&lt;85; días vencidos 0/1-10/&gt;10), configurables.</div>
+        </div>
+      </section>
+
+      <!-- ===================== TABLERO (HU-17) ===================== -->
+      <section class="screen" id="tablero">
+        <div class="panel">
+          <h2>Tablero de estimaciones (HU-17)</h2>
+          <div class="grid2" style="margin-bottom:10px"><div class="kpi"><small>Cartera · contratos</small><div class="v">5</div></div><div class="kpi"><small>Estimaciones en proceso</small><div class="v">5</div></div></div>
+          <div class="grid3" style="margin-bottom:12px"><div class="kpi"><small>Monto total estimado</small><div class="v">$1.6M</div></div><div class="kpi"><small>Monto pagado</small><div class="v">$69.5K</div></div><div class="kpi"><small>Monto pendiente</small><div class="v">$1.5M</div></div></div>
+          <div class="row"><div class="field"><label>Estado</label><select><option>Todos</option></select></div><div class="field"><label>Periodo</label><select><option>Todos</option></select></div><div class="field"><label>Responsable</label><select><option>Todos</option></select></div></div>
+          <table><thead><tr><th>#</th><th>Periodo</th><th class="r">Neto</th><th>Estado</th><th>Stepper</th></tr></thead>
+            <tbody>
+              <tr><td>1</td><td>dic-2025</td><td class="r">$69,500</td><td><span class="pill v">Pagada</span></td><td>Integrada→Presentada→Autorizada→<b>Pagada</b></td></tr>
+              <tr><td>2</td><td>ene-2026</td><td class="r">$208,500</td><td><span class="pill b">Autorizada</span></td><td>Integrada→Presentada→<b>Autorizada</b>→Pagada</td></tr>
+              <tr><td>5</td><td>abr-2026</td><td class="r">$208,500</td><td><span class="pill r">Rechazada</span></td><td>—</td></tr>
+            </tbody></table>
+          <div class="legal">Antigüedad promedio por estado (días). "Mis pendientes" según el rol.</div>
+        </div>
+      </section>
+
+      <!-- ===================== REPORTES (HU-19) 7 reportes ===================== -->
+      <section class="screen" id="reportes">
+        <div class="panel">
+          <h2>Exportación de reportes del contrato (HU-19)</h2>
+          <div class="row"><div class="field"><label>Contrato</label><select><option>OBRA-2026-DEMO-01</option></select></div><div class="field"><label>Periodo del reporte</label><select><option>Mensual</option><option>Trimestral</option><option>Acumulado</option></select></div></div>
+          <table><thead><tr><th>#</th><th>Reporte</th><th>Descripción</th><th class="c">Exportar</th></tr></thead>
+            <tbody>
+              <tr><td>R1</td><td>Avance físico vs programado</td><td>Curva y desviación</td><td class="c"><button class="btn btn-ghost btn-sm">⬇ PDF</button> <button class="btn btn-ghost btn-sm">⬇ Excel</button></td></tr>
+              <tr><td>R2</td><td>Avance financiero</td><td>Estimado/pagado vs programado</td><td class="c"><button class="btn btn-ghost btn-sm">⬇ Excel</button></td></tr>
+              <tr><td>R3</td><td>Listado de estimaciones</td><td>Todas con estado/neto</td><td class="c"><button class="btn btn-ghost btn-sm">⬇ Excel</button></td></tr>
+              <tr><td>R4</td><td>Listado de observaciones</td><td><span class="pill gr">No disponible aún</span></td><td class="c">—</td></tr>
+              <tr><td>R5</td><td>Bitácora completa</td><td>Requiere bitácora</td><td class="c"><button class="btn btn-ghost btn-sm">⬇ PDF</button></td></tr>
+              <tr><td>R6</td><td>Histórico de modificatorios</td><td>Convenios y versiones</td><td class="c"><button class="btn btn-ghost btn-sm">⬇ Excel</button></td></tr>
+              <tr><td>R7</td><td>Penalizaciones y deductivas</td><td>Retenciones por atraso</td><td class="c"><button class="btn btn-ghost btn-sm">⬇ Excel</button></td></tr>
+            </tbody></table>
+          <div class="legal">Los números <b>generadores</b> de la estimación se capturan en la integración (HU-12); aquí solo se exportan reportes.</div>
+        </div>
+      </section>
+
+      <!-- ===================== EMPRESAS (propuesta: la Dependencia administra) ===================== -->
+      <section class="screen" id="empresas">
+        <div class="panel">
+          <h2>Padrón de empresas <span class="proposal">PROPUESTA — sujeta a confirmación de Maiki</span></h2>
+          <p class="desc">Diseño según la recomendación de <code>docs/ANALISIS_EMPRESAS_quien_administra.md</code>: modelo <b>mixto con validación</b> — el contratista/supervisión <b>solicita</b> al registrarse y la <b>Dependencia valida e inscribe</b> (espejo del art. 43 RLOPSRM / art. 74 Bis LOPSRM). La dependencia se configura aparte. <i>No se implementa hasta tu aprobación.</i></p>
+          <div class="tabs">
+            <div class="tab on" onclick="sub('empresas','emp-padron',this)">Padrón de contratistas/supervisión</div>
+            <div class="tab" onclick="sub('empresas','emp-validar',this)">Por validar (3)</div>
+            <div class="tab" onclick="sub('empresas','emp-dep',this)">Dependencias</div>
+          </div>
+          <div class="subpanel on" id="emp-padron">
+            <div class="row"><div class="field w2"><label>Buscar empresa</label><input placeholder="nombre o razón social…"></div></div>
+            <table><thead><tr><th>Razón social</th><th>Tipo</th><th>Especialidad</th><th class="r">Contratos</th><th>Estado</th><th>Acciones</th></tr></thead>
+              <tbody>
+                <tr><td>Constructora Demo, S.A. de C.V.</td><td><span class="pill b">Contratista</span></td><td>Edificación</td><td class="r">5</td><td><span class="pill v">Validada</span></td><td><button class="btn btn-ghost btn-sm">Editar</button> <button class="btn btn-ghost btn-sm">Fusionar</button></td></tr>
+                <tr><td>Supervisión Independiente Demo</td><td><span class="pill g">Supervisión</span></td><td>Supervisión de obra</td><td class="r">5</td><td><span class="pill v">Validada</span></td><td><button class="btn btn-ghost btn-sm">Editar</button></td></tr>
+              </tbody></table>
+            <div class="note blue">El <b>tipo</b> (contratista / supervisión) separa las entidades; la "regla nueva" (cada cuenta ve los contratos de su empresa) se apoya en esta separación.</div>
+          </div>
+          <div class="subpanel" id="emp-validar">
+            <p class="desc">Solicitudes de inscripción al padrón (autoservicio al registrarse) que la Dependencia debe <b>validar</b> (art. 43 RLOPSRM).</p>
+            <table><thead><tr><th>Razón social (solicitada)</th><th>Tipo</th><th>Solicitó</th><th>Posible duplicado</th><th>Acciones</th></tr></thead>
+              <tbody>
+                <tr><td>Constructora Demo SA de CV</td><td><span class="pill b">Contratista</span></td><td>Ing. Pérez</td><td><span class="pill a">≈ "Constructora Demo, S.A. de C.V."</span></td><td><button class="btn btn-sec btn-sm">Fusionar</button> <button class="btn btn-pri btn-sm">Validar</button></td></tr>
+                <tr><td>Edificaciones del Sur</td><td><span class="pill b">Contratista</span></td><td>Arq. Luna</td><td>—</td><td><button class="btn btn-pri btn-sm">Validar</button> <button class="btn btn-ghost btn-sm">Rechazar</button></td></tr>
+              </tbody></table>
+          </div>
+          <div class="subpanel" id="emp-dep">
+            <p class="desc">Las <b>dependencias</b> (entidad pública contratante) NO van en el padrón de contratistas; se configuran aparte (por un administrador del sistema).</p>
+            <table><thead><tr><th>Dependencia</th><th class="r">Contratos</th><th>Acciones</th></tr></thead>
+              <tbody><tr><td>UAGRO — Universidad Autónoma de Guerrero</td><td class="r">5</td><td><button class="btn btn-ghost btn-sm">Editar</button></td></tr></tbody></table>
+            <div class="note">Configuración de dependencias: propuesta como tarea de superadmin (hoy por script). <span class="proposal">[validar Maiki]</span></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===================== ROSTER (HU-22) ===================== -->
+      <section class="screen" id="roster">
+        <div class="panel">
+          <h2>Roster del contrato (HU-22)</h2>
+          <p class="desc">Personas vigentes por rol. La sustitución conserva el histórico 1:N (art. 125 fr. I g RLOPSRM): se sustituye, no se borra.</p>
+          <div class="row"><div class="field"><label>Contrato</label><select><option>OBRA-2026-DEMO-01</option></select></div></div>
+          <table><thead><tr><th>Rol</th><th>Persona</th><th>Desde</th><th>Hasta</th><th>Evento</th><th>Motivo</th></tr></thead>
+            <tbody>
+              <tr><td>Residente de obra</td><td>Ing. Iván Residente Demo</td><td>01/12/2025</td><td>—</td><td>Alta</td><td>—</td></tr>
+              <tr><td>Superintendente</td><td>Arq. Carlos Contratista Demo</td><td>01/12/2025</td><td>—</td><td>Alta</td><td>—</td></tr>
+              <tr><td>Supervisión externa</td><td>Ing. Sofía Supervisión Demo</td><td>01/12/2025</td><td>—</td><td>Alta</td><td>—</td></tr>
+            </tbody></table>
+          <h3>Registrar una sustitución</h3>
+          <div class="row"><div class="field"><label>Rol a sustituir</label><select><option>Residente de obra</option><option>Superintendente (contratista)</option><option>Supervisión externa</option></select></div>
+            <div class="field"><label>Nueva persona</label><select><option>— elige —</option></select></div>
+            <div class="field"><label>Motivo (obligatorio)</label><input></div></div>
+          <div class="btns"><button class="btn btn-pri">Sustituir (conserva el histórico)</button></div>
+          <div class="note">La sustitución asienta automáticamente una nota en la bitácora (art. 123) en la misma transacción.</div>
+        </div>
+      </section>
+
+      <!-- ===================== SOLICITUDES DE REGISTRO ===================== -->
+      <section class="screen" id="solicitudes">
+        <div class="panel">
+          <h2>Solicitudes de registro</h2>
+          <p class="desc">Cuentas que se auto-registraron y esperan aprobación. Confirma el rol definitivo y aprueba, o rechaza. <span class="pill g">Exclusivo de la Dependencia</span></p>
+          <table><thead><tr><th>Nombre</th><th>Correo</th><th>Rol solicitado</th><th>Rol a asignar</th><th>Acciones</th></tr></thead>
+            <tbody>
+              <tr><td>Ing. Pérez López</td><td>perez@demo.test</td><td>Contratista</td><td><select><option>Elige rol</option><option selected>Contratista</option></select></td><td><button class="btn btn-pri btn-sm">Aprobar</button> <button class="btn btn-ghost btn-sm">Rechazar</button></td></tr>
+              <tr><td>Arq. Luna Soto</td><td>luna@demo.test</td><td>Supervisión</td><td><select><option>Elige rol</option><option selected>Supervisión</option></select></td><td><button class="btn btn-pri btn-sm">Aprobar</button> <button class="btn btn-ghost btn-sm">Rechazar</button></td></tr>
+            </tbody></table>
+          <div class="note blue">Este flujo (la Dependencia aprueba las cuentas) es el <b>modelo de validación</b> que el análisis propone extender al padrón de empresas.</div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<div class="hu-badge">Estás en <span id="hu-badge-text"><span class="pill2">—</span> Inicio</span></div>
+
+<script>
+  function go(id, hu, crumb, user, emp){
+    document.querySelectorAll('.screen').forEach(s=>s.style.display='none');
+    var el=document.getElementById(id); if(el) el.style.display='block';
+    document.querySelectorAll('.nav-item').forEach(n=>n.classList.remove('active'));
+    var nav=document.getElementById('nav-'+id); if(nav) nav.classList.add('active');
+    document.getElementById('hu-badge-text').innerHTML = '<span class="pill2">'+hu+'</span> '+crumb.replace(/<[^>]+>/g,'').replace(/.*›\s*/,'');
+    document.getElementById('crumb').innerHTML = crumb;
+    if(user) document.getElementById('user').innerHTML = user;
+    var chip=document.getElementById('chip-emp');
+    if(emp && emp!=='—'){ chip.style.display=''; chip.innerHTML='🏢 '+emp; } else { chip.style.display='none'; }
+    closeDrops(); window.scrollTo(0,0);
+  }
+  // sub-tabs dentro de una pantalla
+  function sub(screen, panelId, btn){
+    var sc=document.getElementById(screen);
+    sc.querySelectorAll('.subpanel').forEach(p=>p.classList.remove('on'));
+    document.getElementById(panelId).classList.add('on');
+    var tabs = btn.parentNode.querySelectorAll('.tab');
+    tabs.forEach(t=>t.classList.remove('on')); btn.classList.add('on');
+  }
+  // pasos del alta (clicables)
+  function altaPaso(n, el){
+    for(var i=1;i<=7;i++){ var p=document.getElementById('alta-'+i); if(p) p.classList.toggle('on', i===n); }
+    var steps=document.querySelectorAll('#alta-steps .step');
+    steps.forEach(function(s,idx){ s.classList.remove('curr','done','todo'); s.classList.add(idx+1<n?'done':(idx+1===n?'curr':'todo')); });
+    window.scrollTo(0,0);
+  }
+  function toggleDrop(id, ev){ if(ev) ev.stopPropagation();
+    document.querySelectorAll('.dropdown').forEach(d=>{ if(d.id!==id) d.style.display='none'; });
+    var d=document.getElementById(id); d.style.display=(d.style.display==='block')?'none':'block';
+  }
+  function closeDrops(){ document.querySelectorAll('.dropdown').forEach(d=>d.style.display='none'); }
+  document.addEventListener('click', function(e){
+    if(!e.target.closest('.dropdown') && !e.target.closest('.iconbtn') && !e.target.closest('.firmar-link')) closeDrops();
+  });
+  // arranque
+  go('inicio','—','Inicio','Ing. Iván Residente · <b>Residente</b>','Constructora Demo');
+</script>
+</body>
+</html>

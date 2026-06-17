@@ -107,6 +107,12 @@ export const api = {
   generarInstruccionPago: (estimacionId) => request(`/instruccion-pago/estimacion/${estimacionId}`, { method: 'POST' }),
   consultarPresupuesto: (ejercicio, dependencia) => request(`/instruccion-pago/presupuesto?ejercicio=${encodeURIComponent(ejercicio)}&dependencia=${encodeURIComponent(dependencia)}`),
   crearPresupuesto: (payload) => request('/instruccion-pago/presupuesto', { method: 'POST', body: JSON.stringify(payload) }),
+  // PLAN GRANDE BLOQUE 1: administración del padrón de empresas (solo dependencia).
+  padronEmpresas: () => request('/empresas/padron'),
+  empresasPorValidar: () => request('/empresas/por-validar'),
+  dependenciasCatalogo: () => request('/empresas/dependencias'),
+  validarEmpresa: (id) => request(`/empresas/${id}/validar`, { method: 'POST' }),
+  fusionarEmpresa: (id, canonicaId) => request(`/empresas/${id}/fusionar`, { method: 'POST', body: JSON.stringify({ canonica_id: canonicaId }) }),
   // HU-18: portafolio ejecutivo con semáforos por contrato (agregado + acotado por participación).
   portafolio: () => request('/portafolio'),
   // HU-24 (FASE 4): finiquito y cierre del contrato (art. 64 LOPSRM / 168-172 RLOPSRM). El saldo lo

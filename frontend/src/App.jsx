@@ -41,6 +41,7 @@ import AmbienteFiniquito from './pages/AmbienteFiniquito.jsx';  // BLOQUE B: amb
 import AmbienteConvenio from './pages/AmbienteConvenio.jsx';  // BLOQUE B: ambiente de convenio modificatorio (cascarón episódico)
 import AmbienteAvance from './pages/AmbienteAvance.jsx';  // BLOQUE B: ambiente de avance físico y seguimiento (cascarón)
 import CicloVidaContrato from './pages/CicloVidaContrato.jsx';  // BLOQUE B: MACRO ciclo de vida del contrato (índice ordenado, al final)
+import EmpresasPadron from './pages/EmpresasPadron.jsx';  // PLAN GRANDE BLOQUE 1: administración del padrón de empresas (solo dependencia)
 
 // Mapa ruta -> código de HU (excluye HU-00, que es login/dashboard). Permite que la
 // guarda de ruta sepa qué HU corresponde a cada path para validar el acceso por rol.
@@ -125,6 +126,8 @@ export default function App() {
             {/* BLOQUE B: MACRO ciclo de vida del contrato (índice ordenado, enlaza a todas las HU y sub-
                 ambientes sin fundirlas). Finanzas excluida (su pago se muestra informativo). */}
             <Route path="/contratos/ciclo-vida" element={<SoloRol roles={['residente', 'contratista', 'supervision', 'dependencia']}><CicloVidaContrato /></SoloRol>} />
+            {/* PLAN GRANDE BLOQUE 1: administración del padrón de empresas. Solo la Dependencia (art. 43 RLOPSRM). */}
+            <Route path="/admin/empresas" element={<SoloRol roles={['dependencia']}><EmpresasPadron /></SoloRol>} />
             <Route path="/seguimiento/alertas" element={<WithLayout><AlertasAtraso /></WithLayout>} />
             <Route path="/seguimiento/curva-avance" element={<WithLayout><CurvaAvance /></WithLayout>} />
             <Route path="/seguimiento/trabajos-terminados" element={<WithLayout><TrabajosTerminados /></WithLayout>} />

@@ -28,7 +28,8 @@ async function login(req, res) {
   }
 
   const result = await query(
-    'SELECT id, nombre, email, password_hash, rol, estado FROM usuarios WHERE email = $1 LIMIT 1',
+    // (Acotamiento por empresa) + empresa_id para firmarlo en el JWT (aditivo; no cambia el flujo).
+    'SELECT id, nombre, email, password_hash, rol, estado, empresa_id FROM usuarios WHERE email = $1 LIMIT 1',
     [email]
   );
   const usuario = result.rows[0];
@@ -51,7 +52,10 @@ async function login(req, res) {
   }
 
   const token = jwt.sign(
-    { id: usuario.id, rol: usuario.rol, nombre: usuario.nombre },
+    // ADITIVO: conserva {id, rol, nombre} idénticos; SOLO añade empresa_id (null si la cuenta no tiene).
+    // Token viejo sin empresa_id → req.user.empresa_id = undefined → comportamiento legado (acotamiento
+    // dormido), retrocompatible. Alimenta el acotamiento por empresa de lib/acceso.js.
+    { id: usuario.id, rol: usuario.rol, nombre: usuario.nombre, empresa_id: usuario.empresa_id ?? null },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || '8h' }
   );

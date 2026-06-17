@@ -61,6 +61,30 @@
 > INTACTO; **NO son HU nuevas**, son navegación — como `AmbienteEstimacion`). Solo `Link` + lectura
 > read-only; cero lógica de negocio, cero DDL. Spec por ambiente (`ambiente-*.spec.js`, `ciclo-vida.spec.js`).
 > Suite final **305/8/0**. Reporte: `docs/reportes/REPORTE_SESION_GRANDE_18jun.md`.
+> (7) **Plan Grande (18-jun, `docs/PLAN_GRANDE_IMPLEMENTACION_18jun.md`) — BLOQUES 1-2 hechos (de 4):**
+> **BLOQUE 1 (Empresas):** schema aditivo `empresas.tipo`/`estado`; backend del padrón
+> (`empresas.controller` + `/api/empresas/*` SOLO dependencia: padrón/por-validar con dedup/validar/fusionar);
+> **acotamiento por empresa** en `lib/acceso.js` **RETROCOMPATIBLE** (dormido hasta que el JWT traiga
+> `empresa_id`; finanzas transversal, operativos por participación, dependencia acota su dependencia si la
+> fila trae `dependencia_empresa_id` — el SELECT congelado `listarContratos` lo integra Maiki); pantalla
+> **`EmpresasPadron.jsx`** (`SoloRol dependencia` `/admin/empresas`). Citas art. 43 RLOPSRM / 74 Bis LOPSRM.
+> Verif adversarial **APROBADA**. Follow-on: registro *obligar* empresa + guard de roster + enforcement de
+> lista. **BLOQUE 2 (bugs):** nota del convenio visible (columna "Nota de bitácora", `convenios.controller`
+> +JOIN); apertura en libro y avance→nota auto **ya estaban**. Suite **309/8/0** (1 flaky). Reporte:
+> `docs/reportes/REPORTE_PLAN_GRANDE_18jun.md`. **Pendiente: BLOQUE 3** (limpiar ~160 `[validar profe]`) **y
+> BLOQUE 4** (navegación modo-sistema). **`lib/acceso.js` (core) tocado aditivo → revisión de Maiki.**
+> (8) **Acotamiento por empresa ENCENDIDO (18-jun, sesión dedicada, `docs/reportes/REPORTE_ACOTAMIENTO_EMPRESA_18jun.md`):**
+> el acotamiento de (7) dejó de estar dormido. **JWT (`auth.controller`) ahora firma `empresa_id`** (aditivo:
+> conserva `{id,rol,nombre}`, añade `empresa_id: usuario.empresa_id ?? null`; `auth.middleware` SIN cambios —
+> `req.user=payload` ya lo expone). **`listarContratos` y `portafolio`** traen `dependencia_empresa_id` en el
+> SELECT y aplican post-filtro `esParteOSupervision`. **Efecto:** cada **dependencia** ve solo los contratos de
+> SU empresa (A-no-ve-B probado con `Dependencia Norte`/`dep2`); operativos por participación y finanzas
+> transversal SIN cambio; token viejo/`empresa_id` NULL = legado (fail-open). Suite **309/8/0** (mismo flaky,
+> pasa aislado); verif adversarial **sin refutaciones**. **LIMITACIÓN (de alcance, decisión de Maiki):** el
+> acotamiento es **solo de LISTA**; los gates per-contrato (detalle, bitácora, estimaciones, convenios,
+> garantías, finiquito, pagos…) fetchan el contrato **sin** `dependencia_empresa_id` → siguen fail-open por id
+> directo. Extenderlo a esos gates = **follow-on**. **Zona congelada (`auth.controller`/`contratos.controller`)
+> tocada aditivo → revisión de Maiki; LOCAL sin push.**
 >
 > **Docs hermanos:** historia completa → `docs/HISTORIAL_PROYECTO.md` · historias de usuario vigentes
 > (criterios = sistema real) → `docs/analisis-y-diseno/Historias_Usuario_ACTUALIZADAS_12jun.md` · auditoría

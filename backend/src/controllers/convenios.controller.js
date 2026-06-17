@@ -77,10 +77,14 @@ async function listarConvenios(req, res) {
     const convenios = await pool.query(
       // FASE 0C (profe 16-jun): tiene_oficio = el convenio ya tiene cargado su OFICIO DE APROBACIÓN
       // (soporte documental, art. 59/99). Se guarda en contrato_documentos ligado por convenio_id.
+      // (PLAN GRANDE BLOQUE 2) + nota de bitácora vinculada (folio + asunto) para mostrar el vínculo en
+      // la UI: el convenio asienta su nota automática (art. 59 / art. 123 RLOPSRM) y la liga por nota_id.
       `SELECT cm.*, u.nombre AS autorizado_por_nombre,
+              bn.numero AS nota_numero, bn.asunto AS nota_asunto,
               EXISTS (SELECT 1 FROM contrato_documentos d WHERE d.convenio_id = cm.id) AS tiene_oficio
          FROM convenios_modificatorios cm
          LEFT JOIN usuarios u ON u.id = cm.autorizado_por
+         LEFT JOIN bitacora_notas bn ON bn.id = cm.nota_id
         WHERE cm.contrato_id = $1 ORDER BY cm.numero`, [contratoId]);
     const versiones = await pool.query(
       'SELECT id, numero, convenio_id, monto, plazo_dias, vigente, created_at, supersedido_en FROM programa_version WHERE contrato_id = $1 ORDER BY numero', [contratoId]);

@@ -21,6 +21,7 @@ const finiquitoRoutes = require('./src/routes/finiquito.routes');  // HU-24 (FAS
 const garantiasRoutes = require('./src/routes/garantias.routes');  // HU-02 (sesión E2): fianzas y garantías (art. 48 LOPSRM / 91 RLOPSRM)
 const minutasRoutes = require('./src/routes/minutas.routes');  // HU-11 (sesión E2): minutas, visitas y acuerdos (art. 123 fr. X RLOPSRM)
 const instruccionPagoRoutes = require('./src/routes/instruccion-pago.routes');  // HU-20 (Equipo 3): tránsito a pago (suficiencia art. 24 + instrucción de pago)
+const empresasRoutes = require('./src/routes/empresas.routes');  // PLAN GRANDE BLOQUE 1: administración del padrón de empresas (solo dependencia)
 const { initDb } = require('./src/db/init');
 
 const app = express();
@@ -65,6 +66,8 @@ app.use('/api/garantias', garantiasRoutes);
 app.use('/api/minutas', minutasRoutes);
 // HU-20 (Equipo 3): tránsito a pago. Lectura + escritura acotada por participación; techo presupuestal = rol finanzas.
 app.use('/api/instruccion-pago', instruccionPagoRoutes);
+// PLAN GRANDE BLOQUE 1: administración del padrón de empresas. Solo la dependencia (requireRole en el router).
+app.use('/api/empresas', empresasRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Ruta no encontrada' });

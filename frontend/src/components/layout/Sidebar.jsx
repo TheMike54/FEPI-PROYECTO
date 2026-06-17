@@ -146,6 +146,21 @@ export default function Sidebar() {
           </div>
         )}
 
+        {/* PLAN GRANDE BLOQUE 1: administración del padrón de empresas. Solo la Dependencia. */}
+        {rol === 'dependencia' && (
+          <div className="mt-6 pt-4 border-t border-borde">
+            <div className={seccionClass}>Administración</div>
+            <nav className="space-y-0.5">
+              <NavLink to="/admin/empresas" className={itemClass}>
+                <span className="text-base leading-none flex-shrink-0 mt-0.5">🏢</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm leading-tight">Padrón de empresas</div>
+                </div>
+              </NavLink>
+            </nav>
+          </div>
+        )}
+
         {/* BLOQUE B: MACRO ciclo de vida del contrato (índice ordenado). Fuera del catálogo de HU; finanzas
             excluida. */}
         {['residente', 'contratista', 'supervision', 'dependencia'].includes(rol) && (

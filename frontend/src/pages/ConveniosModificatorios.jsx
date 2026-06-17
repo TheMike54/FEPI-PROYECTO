@@ -623,13 +623,14 @@ export default function ConveniosModificatorios() {
                     <th className="text-left p-3 font-semibold">Motivo</th>
                     <th className="text-left p-3 font-semibold">Avisos</th>
                     <th className="text-left p-3 font-semibold">Autoriza</th>
+                    <th className="text-left p-3 font-semibold">Nota de bitácora</th>
                     <th className="text-left p-3 font-semibold">Oficio de aprobación</th>
                   </tr>
                 </thead>
                 <tbody>
                   {convenios.length === 0 ? (
                     <tr>
-                      <td colSpan="8" className="p-8 text-center text-slate-400 italic" data-testid="conv-vacio">
+                      <td colSpan="9" className="p-8 text-center text-slate-400 italic" data-testid="conv-vacio">
                         Este contrato no tiene convenios modificatorios registrados.
                       </td>
                     </tr>
@@ -669,6 +670,13 @@ export default function ConveniosModificatorios() {
                           </div>
                         </td>
                         <td className="p-3 text-xs">{c.autorizado_por_nombre || '—'}</td>
+                        <td className="p-3 text-xs" data-testid={`conv-nota-${c.id}`}>
+                          {c.nota_numero != null ? (
+                            <span className="inline-flex items-center gap-1 text-sigecop-accent font-semibold" title={c.nota_asunto || ''}>🔗 Nota #{c.nota_numero}</span>
+                          ) : (
+                            <span className="text-amber-700" data-testid={`conv-nota-pendiente-${c.id}`}>pendiente (al abrir bitácora)</span>
+                          )}
+                        </td>
                         <td className="p-3 text-xs">
                           {c.tiene_oficio ? (
                             <button

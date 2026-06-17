@@ -1686,3 +1686,29 @@ ALTER TABLE minutas ADD COLUMN IF NOT EXISTS participantes TEXT;
 ALTER TABLE visitas ADD COLUMN IF NOT EXISTS lugar TEXT;
 ALTER TABLE visitas ADD COLUMN IF NOT EXISTS responsable TEXT;
 ALTER TABLE visitas ADD COLUMN IF NOT EXISTS nota_id INTEGER REFERENCES bitacora_notas(id);
+
+-- =====================================================================
+-- (PLAN GRANDE 18-jun, BLOQUE 1) PADRÓN DE EMPRESAS — tipo y estado de validación.
+-- Decisión de Maiki (Opción mixta, base legal art. 43 RLOPSRM / 74 Bis LOPSRM): el contratista/
+-- supervisión PROPONE su empresa al registrarse; la DEPENDENCIA valida/administra el padrón; las
+-- dependencias van APARTE de las empresas privadas. ADITIVO e IDEMPOTENTE; retrocompatible.
+--   · tipo   = clasifica la entidad: 'dependencia' (pública) | 'contratista' | 'supervision' (privadas).
+--   · estado = 'por_validar' (auto-registrada, pendiente de la dependencia) | 'validada'.
+-- =====================================================================
+ALTER TABLE empresas ADD COLUMN IF NOT EXISTS tipo   VARCHAR(20) NOT NULL DEFAULT 'contratista';
+ALTER TABLE empresas ADD COLUMN IF NOT EXISTS estado VARCHAR(20) NOT NULL DEFAULT 'validada';
+-- CHECKs idempotentes (guard sobre pg_constraint para no fallar si ya existen).
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'empresas_tipo_check') THEN
+    ALTER TABLE empresas ADD CONSTRAINT empresas_tipo_check CHECK (tipo IN ('dependencia','contratista','supervision'));
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'empresas_estado_check') THEN
+    ALTER TABLE empresas ADD CONSTRAINT empresas_estado_check CHECK (estado IN ('por_validar','validada'));
+  END IF;
+END $$;
+-- Backfill del tipo de las empresas demo (solo si siguen en el default 'contratista').
+UPDATE empresas SET tipo = 'dependencia' WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g'))) = 'dependencia demo' AND tipo = 'contratista';
+UPDATE empresas SET tipo = 'supervision' WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g'))) = 'supervisión externa demo' AND tipo = 'contratista';
+-- Las empresas pre-existentes quedan 'validada' (ya están en uso); las que se registren después
+-- las marca 'por_validar' el backend (empresas.controller::resolverOCrearEmpresa) para que la
+-- dependencia las valide (art. 43 RLOPSRM).

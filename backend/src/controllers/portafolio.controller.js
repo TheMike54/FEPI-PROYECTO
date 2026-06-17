@@ -17,7 +17,7 @@
 //
 // Todo el cálculo y el SEMÁFORO se hacen SERVER-SIDE (fuente única de verdad).
 const { pool } = require('../db/pool');
-const { ROLES_VEN_TODO } = require('../lib/acceso');
+const { ROLES_VEN_TODO, esParteOSupervision } = require('../lib/acceso');
 
 // --- Umbrales del semáforo: CRITERIO DEL EQUIPO (defaults provisionales, configurables) -----------
 // No hay fundamento legal del número exacto (los puntos de corte son interpretativos, Nivel 1); son un
@@ -70,7 +70,9 @@ async function portafolio(req, res) {
     const cq = await pool.query(
       `SELECT id, folio, contratista, tipo, monto, fecha_inicio, fecha_termino,
               EXTRACT(YEAR FROM fecha_inicio)::int AS ejercicio,
-              GREATEST(0, CURRENT_DATE - fecha_termino) AS dias_post_termino
+              GREATEST(0, CURRENT_DATE - fecha_termino) AS dias_post_termino,
+              created_by, residente_id, superintendente_id, supervision_id,
+              (SELECT empresa_id FROM usuarios u WHERE u.id = contratos.dependencia_id) AS dependencia_empresa_id
          FROM contratos
         WHERE $2::boolean
            OR created_by = $1 OR residente_id = $1
@@ -78,7 +80,10 @@ async function portafolio(req, res) {
         ORDER BY created_at DESC`,
       [uid, venTodo]
     );
-    const contratos = cq.rows;
+    // (Acotamiento por empresa) mismo post-filtro que listarContratos: no cambia la forma de las filas,
+    // solo quita las ajenas. Operativos pasan por participación; finanzas transversal; la dependencia se
+    // acota a su propia dependencia ahora que la fila trae dependencia_empresa_id y el JWT trae empresa_id.
+    const contratos = cq.rows.filter((row) => esParteOSupervision(req.user, row));
     if (contratos.length === 0) {
       return res.status(200).json({
         rol: req.user.rol,
