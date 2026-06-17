@@ -527,22 +527,23 @@
 
 **Historia:**
 - **Como** dependencia (con acceso de solo lectura para residencia y supervision; contratista y finanzas sin acceso)
-- **Deseo** ver una lista de contratos del portafolio donde cada renglon muestra un semaforo de 3 colores (verde/amarillo/rojo) calculado en el cliente a partir de tres factores (desviacion de avance vs programado, dias vencidos en plazos y pendientes sin atender), con contadores agregados por color, badge de variacion del avance contra el mes anterior, agrupacion por contratista/ejercicio fiscal/tipo de contratacion, y panel de detalle (avance fisico, avance financiero, atrasos y penalizaciones) que se abre con doble clic
+- **Deseo** ver una lista de contratos del portafolio (acotada por participacion) donde cada renglon muestra un semaforo de 3 colores (verde/amarillo/rojo) calculado en el SERVIDOR a partir de tres factores (desviacion de avance vs programado, atrasos en plazos legales fechables y pendientes sin atender), con contadores agregados por color, badge de variacion del avance contra el mes anterior, agrupacion por contratista/ejercicio fiscal, y panel de detalle (avance fisico, avance financiero, atrasos y penalizaciones) que se abre con doble clic
 - **A fin de** identificar de un vistazo cuales contratos requieren atencion ejecutiva y abrir su detalle
 
 **Criterios de aceptación (comportamiento actual del sistema):**
-1. Cada renglon muestra un dot+badge de semaforo (verde total<=1, amarillo 2-3, rojo >=4) derivado en cliente sumando 0/1/2 puntos de los 3 factores (desviacionAvance, diasVencidos, pendientesSinAtender); el hover muestra el desglose factor:valor(+puntos)|Total.
-2. La cabecera muestra 4 contadores: Total de contratos y conteo de contratos verde/amarillo/rojo.
-3. El doble clic sobre un renglon abre un panel de detalle con avance fisico %, avance financiero %, atrasos (dias vencidos) y penalizaciones ($), con boton Cerrar.
-4. El control 'Agrupar por' reorganiza la tabla por Contratista, Ejercicio fiscal o Tipo de contratacion (o Ninguno), mostrando un encabezado de grupo con el conteo.
-5. Cada renglon muestra un badge de variacion del avance vs el mes anterior (↑/↓ N pp o '= igual').
+1. La vista esta CABLEADA al backend real (GET /api/portafolio, controller+route NUEVOS dominio E3, solo lectura, acotado por participacion via lib/acceso.js: dependencia/finanzas ven todos, residente/supervision solo los suyos). Cada renglon muestra un dot+badge de semaforo (verde total<=1, amarillo 2-3, rojo >=4) calculado SERVER-SIDE sumando 0/1/2 puntos de 3 factores: (1) desviacion = programado% − fisico% (avance por VALOR Σcant×pu/monto, reusa estimacion-prep); (2) atrasos fechables = dias vencidos de ejecucion (fecha_termino) y de revision art.54 (enviada_en) + conceptos en deficit (HU-07); (3) pendientes = observaciones abiertas + estimaciones rechazadas sin reingreso. El hover muestra el desglose factor:valor(puntos)|Total. Contrato SIN programa → semaforo PARCIAL (marcado con '*' y nota; el factor avance no se evalua, no se inventa).
+2. La cabecera muestra 4 contadores: Total de contratos y conteo de contratos verde/amarillo/rojo (agregados server-side).
+3. El doble clic sobre un renglon abre un panel de detalle con avance fisico %, avance financiero % (= pagado/monto, canonico HU-05), atrasos (dias vencidos) y penalizaciones; la penalizacion es REAL (Σ retencion_atraso+deductivas de la caratula) y muestra '—' cuando no hay retencion (sin inventar). Con boton Cerrar.
+4. El control 'Agrupar por' reorganiza la tabla por Contratista o Ejercicio fiscal (derivado del año de fecha_inicio) o Ninguno, con encabezado de grupo y conteo. 'Tipo de contratacion' aparece como opcion DESHABILITADA con etiqueta "no disponible (pendiente de definicion) [Nivel 1 profe]" (es el procedimiento de adjudicacion, ausente en el esquema; NO se sustituye por la modalidad de obra).
+5. Cada renglon muestra un badge de variacion del avance vs el mes anterior (↑/↓ N pp, '= igual' o 'sin dato'); es SOLO Δ de avance fisico real (cierre del mes actual vs anterior, recomputado server-side), NO una comparacion del semaforo completo.
 
 **Pendientes / [validar profe]:**
-- [validar profe] La vista opera 100% sobre datos DUMMY hardcodeados (5 contratos fijos en dummy.js); NO esta conectada a backend, no lee contratos reales ni 'mis contratos asignados' del usuario. Falta endpoint y cableado en api.js para que los semaforos/indicadores se deriven de datos reales (avance real, plazos LOPSRM/RLOPSRM, penalizaciones art.138/139).
-- [validar profe] CA-3 'comparar periodo actual vs anterior' esta solo como badge por fila (avance del mes vs mes anterior), no como comparativa agregada del portafolio entre dos periodos seleccionables. Definir si se requiere selector de periodos y comparacion a nivel grupo/total.
-- [validar profe] Los umbrales del semaforo (desviacion <=5/<=15, dias <=10, pendientes <=2) y el mapeo total->color son definidos por Code en portafolioLogica.js; confirmar las reglas y las cotas de cada factor.
-- [validar profe] El factor 'atrasos en plazos legales' se simula con un campo numerico diasVencidos del dummy; definir contra que plazo legal real se computa (entrega de obra, autorizacion de estimacion art.54, etc.).
-- [validar profe] Confirmar si residente y supervision deben tener acceso de solo lectura (hoy 'C' en permisos.js); la ficha vieja solo menciona a la dependencia.
+- [validar profe] Umbrales del semaforo (desviacion <=5/<=15 pp, dias <=0/<=10, pendientes <=0/<=2) y el plazo de revision art.54 (default 15 dias): DEFAULTS PROVISIONALES centralizados en constantes (UMBRALES, PLAZO_ART54_REVISION_DIAS) en portafolio.controller.js; sin fundamento legal del numero exacto (Nivel 1). La respuesta los expone marcados '[validar profe]'.
+- [validar profe] Conjunto exacto de 'pendientes sin atender' (hoy = observaciones abiertas + rechazadas sin reingreso) y de 'atrasos en plazos legales'.
+- DOCUMENTADO (omision honesta): el factor 2 NO incluye 'vencido en autorizacion/pago' porque faltan los sellos autorizada_en/pagada_en en el esquema (ver ESTADO_ACTUAL §5.2/§8). Solo se computan los plazos fechables hoy (ejecucion fecha_termino + revision art.54 enviada_en + deficit fisico HU-07).
+- [validar profe] 'Tipo de contratacion' (procedimiento de adjudicacion: licitacion/invitacion/adjudicacion directa) NO existe en el esquema; el agrupador queda deshabilitado. Si se requiere, es una columna nueva (esquema = Maiki).
+- [validar profe] Ejercicio fiscal se DERIVA del año de fecha_inicio (no hay columna dedicada); confirmar la regla.
+- Pendiente de integracion: la ruta NO esta montada en server.js (zona congelada); el montaje permanente lo aplica Maiki (snippet 'PARA MAIKI' en portafolio.routes.js).
 
 ---
 
