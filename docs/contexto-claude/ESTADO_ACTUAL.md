@@ -18,6 +18,8 @@
 > registro de empresa pasó de texto libre a **SELECTOR del catálogo** (imposible duplicar); consolidado de
 > requerimientos del profe (`docs/REQUERIMIENTOS_PROFE_CONSOLIDADO.md`); convenio HU-03 en el seed;
 > **reorganización de `docs/`** (planes/, reportes/, referencias/). **Actualízala** cuando edites este doc.
+> (3) **HU-18 portafolio (rama `feat/e3-hu-18`):** cableada a backend real (controller+route+página nuevos,
+> semáforo server-side); **pendiente de montaje en `server.js` por Maiki**, por lo que aún NO está en `main`.
 >
 > **Docs hermanos:** historia completa → `docs/HISTORIAL_PROYECTO.md` · historias de usuario vigentes
 > (criterios = sistema real) → `docs/analisis-y-diseno/Historias_Usuario_ACTUALIZADAS_12jun.md` · auditoría
@@ -38,9 +40,10 @@ núcleo (alta → bitácora → avance → estimación → autorización → pag
 real. Quedan 4 pantallas que son **maqueta pura sin backend**.
 
 **% funcional (por HU, honesto):** de 26 unidades (HU-00..21 + Registro + Por Firmar + HU-22 roster + HU-23
-empresas), **~22 funcionan end-to-end** (≈85%); **3 son maqueta sobre datos dummy** (HU-11 minutas,
-HU-18 portafolio, HU-20 tránsito a pago); **HU-02 fianzas** es parcial (la pantalla es dummy,
-pero las garantías SÍ persisten vía el alta HU-01). Detalle exacto en §7.
+empresas), **~22 funcionan end-to-end** (≈85%); **2 siguen maqueta sobre datos dummy** (HU-11 minutas,
+HU-20 tránsito a pago); **HU-18 portafolio** ya está cableada a backend real (controller+route+página
+nuevos) pero **pendiente de montaje en `server.js` por Maiki** (aún no en `main`); **HU-02 fianzas** es
+parcial (la pantalla es dummy, pero las garantías SÍ persisten vía el alta HU-01). Detalle exacto en §7.
 
 ---
 
@@ -349,8 +352,14 @@ vive en el MISMO BEGIN/COMMIT que el evento); toma advisory lock por bitácora y
 | HU | Pantalla | Estado real | Bloqueado por |
 |---|---|---|---|
 | **HU-11** Minutas | `MinutasVisitas.jsx` | Todo en `useState` sobre dummies; el PDF solo captura el **nombre**; "adjuntar a nota" es modal informativo | Falta controller/route de minutas; `minutas.nota_id` huérfana |
-| **HU-18** Portafolio | `PortafolioEjecutivo.jsx` | 5 contratos hardcodeados; el semáforo se calcula pero sobre dummy; no filtra por usuario | Falta endpoint + filtro por participación |
 | **HU-20** Tránsito a pago | `TransitoPago.jsx` | Suficiencia/soportes 100% en memoria; monto editable hardcoded. **La DDL existe** (`presupuesto_anual` + `instruccion_pago`) pero **ningún controller la usa** | Falta TODO el backend (suficiencia presupuestal + instrucción de pago + upload de soportes) |
+
+> **HU-18 Portafolio — YA NO es maqueta** (rama Equipo 3, pendiente de montaje en `server.js` por Maiki):
+> `PortafolioEjecutivo.jsx` consume `GET /api/portafolio` (controller+route nuevos, solo lectura, acotado
+> por participación). Semáforo de 3 factores calculado **server-side** reusando estimacion-prep (avance
+> físico/programado/financiero por valor), HU-07 (déficit) y la carátula (penalización real). Sin dummy
+> (semáforo parcial si no hay programa; "—" si no hay retención; comparación = solo Δ de avance). Umbrales
+> `[validar profe]`. Pendiente: montaje permanente en `server.js` (snippet "PARA MAIKI" en `portafolio.routes.js`).
 
 ### 7.2 Parcial / brechas de criterio (auditoría: 69 criterios → 35✅/27🟡/**7❌**)
 - **HU-02 Fianzas:** la pantalla `RegistroFianzas.jsx` es dummy y el PDF de póliza solo guarda el **nombre**
@@ -370,8 +379,9 @@ vive en el MISMO BEGIN/COMMIT que el evento); toma advisory lock por bitácora y
   pacta); emisor de la nota DIFERIDA de hecho (JWT vs actor original) [C3, opcional].
 
 ### 7.4 PRs/ramas que NO existen (trabajo no empezado)
-`feat/e3-hu-16`, `feat/e3-hu-18`, `feat/e3-hu-20` y una rama e2 para HU-11/minutas: **ninguna existe** en
-origin. Esas HU son maquetas que viven en `main` sin backend.
+`feat/e3-hu-20` y una rama e2 para HU-11/minutas: **no existen** en origin (siguen maqueta en `main`).
+**HU-16** ya integrada (`main = 18e7ddb`). **HU-18** construida en rama de Equipo 3 (controller+route+página
++ smoke), **pendiente de PR/montaje** por Maiki — aún no en `main`.
 
 ---
 
@@ -421,7 +431,7 @@ origin. Esas HU son maquetas que viven en `main` sin backend.
 | HU-15 | Revisión técnica y autorización | ✅ |
 | HU-16 | Reingreso tras rechazo | ✅ (reingreso real: nueva versión bloque indep. ligada por `reemplaza_a`; plazo art. 54 no se reinicia) |
 | HU-17 | Tablero de estimaciones | ✅ |
-| HU-18 | Portafolio ejecutivo con semáforos | ❌ maqueta |
+| HU-18 | Portafolio ejecutivo con semáforos | ✅ cableada a backend real (semáforo server-side); pendiente de montaje en `server.js` por Maiki |
 | HU-19 | Exportación de 7 reportes | ✅ (R4 observaciones pendiente) |
 | HU-20 | Tránsito a pago / suficiencia presupuestal | ❌ maqueta (DDL muerta) |
 | HU-21 | Registro del pago | ✅ (gate ESTRICTO: solo `autorizada`, art. 54) |

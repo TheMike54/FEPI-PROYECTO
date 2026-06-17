@@ -101,6 +101,8 @@ export const api = {
   listarPagos: (contratoId) => request(`/pagos/contrato/${contratoId}`),
   // HU-17: tablero agregado de estimaciones (acotado por participación en el backend).
   tableroEstimaciones: () => request('/tablero/estimaciones'),
+  // HU-18: portafolio ejecutivo con semáforos por contrato (agregado + acotado por participación).
+  portafolio: () => request('/portafolio'),
   // HU-12: estimaciones (integración + consulta + avance para el preview).
   avanceContrato: (contratoId) => request(`/estimaciones/contrato/${contratoId}/avance`),
   estimacionesDeContrato: (contratoId) => request(`/estimaciones/contrato/${contratoId}`),
