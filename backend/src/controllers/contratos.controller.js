@@ -356,6 +356,7 @@ async function crearContrato(req, res) {
   // El texto de las columnas `contratista`/`dependencia` se DERIVA del nombre de la cuenta (fuente
   // única; lo leen la lista de Registrados y el detalle). Ya no llega del body.
   const { folio, tipo, objeto, fechaInicio } = body;
+  const ubicacion = emptyToNull(body.ubicacion); // FASE 2 (profe 16-jun): ubicación de la obra (opcional)
   const contratista = sup.nombre;
   const dependencia = dep.nombre;
 
@@ -371,8 +372,8 @@ async function crearContrato(req, res) {
            (folio, tipo, objeto, contratista, dependencia, monto, plazo_dias,
             fecha_inicio, fecha_termino, created_by, datos_juridicos, anticipo_pct,
             residente_id, superintendente_id, supervision_id, ciclo_estimacion, dependencia_id,
-            pena_convencional_pct)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+            pena_convencional_pct, ubicacion)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
          RETURNING id`,
         [
           folio, tipo, objeto, contratista, dependencia, monto, plazoDias,
@@ -380,7 +381,7 @@ async function crearContrato(req, res) {
           juridicos ? JSON.stringify(juridicos) : null,
           anticipoPct,
           req.user.id, superintendenteId, supervisionId, ciclo, dependenciaId,
-          penaConvencionalPct
+          penaConvencionalPct, ubicacion
         ]
       );
       const contratoId = cab.rows[0].id;

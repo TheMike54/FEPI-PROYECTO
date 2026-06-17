@@ -132,6 +132,9 @@ ALTER TABLE contratos ADD COLUMN IF NOT EXISTS datos_juridicos JSONB;
 ALTER TABLE contratos ADD COLUMN IF NOT EXISTS anticipo_pct NUMERIC(5,2);
 ALTER TABLE contratos ADD COLUMN IF NOT EXISTS penalizacion JSONB;
 ALTER TABLE contratos ADD COLUMN IF NOT EXISTS amortizacion JSONB;
+-- (FASE 2, revisión profe 16-jun) UBICACIÓN/domicilio de la obra: el profe pidió que la nota de apertura
+-- diga "la obra ubicada en tal". Se captura en el alta y se redacta en la apertura. Aditivo, opcional.
+ALTER TABLE contratos ADD COLUMN IF NOT EXISTS ubicacion TEXT;
 DO $$ BEGIN
   ALTER TABLE contratos ADD CONSTRAINT chk_contratos_anticipo_pct
     CHECK (anticipo_pct IS NULL OR (anticipo_pct >= 0 AND anticipo_pct <= 100));
@@ -1570,3 +1573,30 @@ UPDATE usuarios SET empresa_id = (SELECT id FROM empresas WHERE lower(btrim(rege
   WHERE email = 'contratista@sigecop.test' AND empresa_id IS NULL;
 UPDATE usuarios SET empresa_id = (SELECT id FROM empresas WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g'))) = 'supervisión externa demo' LIMIT 1)
   WHERE email = 'supervision@sigecop.test' AND empresa_id IS NULL;
+
+-- =====================================================================
+-- (FASE 0C, revisión profe 16-jun) OFICIO DE APROBACIÓN del convenio modificatorio.
+-- El profe pidió en el expediente "la sección del documento de aprobación, es un oficio… el soporte
+-- es que te lo aprobaron". Se REUSA contrato_documentos (decisión de Maiki, no tabla nueva): el oficio
+-- se guarda con tipo='oficio_convenio' y se LIGA al convenio (convenio_id). Va al FINAL del schema
+-- porque referencia convenios_modificatorios (definida arriba). ADITIVO e IDEMPOTENTE.
+-- Nota de seguridad: subirDocumento/descargarDocumento (zona congelada) usan un check explícito +
+-- INSERT (NO ON CONFLICT) y filtran por (contrato_id,tipo); este cambio NO altera ese comportamiento.
+-- =====================================================================
+ALTER TABLE contrato_documentos ADD COLUMN IF NOT EXISTS convenio_id INTEGER
+  REFERENCES convenios_modificatorios(id) ON DELETE CASCADE;
+
+-- Extiende el CHECK de tipo para admitir 'oficio_convenio' (drop+recreate guardado = idempotente).
+ALTER TABLE contrato_documentos DROP CONSTRAINT IF EXISTS chk_contrato_documentos_tipo;
+ALTER TABLE contrato_documentos ADD CONSTRAINT chk_contrato_documentos_tipo
+  CHECK (tipo IN ('contrato','anticipo_autorizacion','oficio_convenio'));
+
+-- El UNIQUE (contrato_id,tipo) era para documentos SINGLETON (un PDF de contrato, una autorización de
+-- anticipo). Un contrato puede tener VARIOS convenios → varios oficios. Se reemplaza el UNIQUE por dos
+-- índices parciales: (a) unicidad de los tipos singleton, (b) un oficio por convenio.
+ALTER TABLE contrato_documentos DROP CONSTRAINT IF EXISTS uq_contrato_documentos_tipo;
+CREATE UNIQUE INDEX IF NOT EXISTS uq_contrato_doc_singleton
+  ON contrato_documentos (contrato_id, tipo) WHERE tipo IN ('contrato','anticipo_autorizacion');
+CREATE UNIQUE INDEX IF NOT EXISTS uq_contrato_doc_oficio_convenio
+  ON contrato_documentos (convenio_id) WHERE convenio_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_contrato_documentos_convenio ON contrato_documentos(convenio_id);

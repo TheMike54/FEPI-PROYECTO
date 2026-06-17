@@ -20,6 +20,8 @@ function construirActa(contrato, roster, cronograma, datos) {
       telefono_contratista: d.telefonoContratista || null
     },
     objeto: contrato.objeto,
+    // FASE 2 (profe 16-jun): ubicación/domicilio de la obra ("la obra ubicada en…").
+    ubicacion: contrato.ubicacion || null,
     // art. 123 fr. III RLOPSRM: alcances descriptivos de los trabajos y características del sitio.
     descripcion_trabajos: d.descripcionTrabajos || null,
     caracteristicas_sitio: d.caracteristicasSitio || null,
@@ -79,7 +81,7 @@ async function abrirBitacora(req, res) {
       await client.query('BEGIN');
 
       const cres = await client.query(
-        `SELECT id, folio, objeto, contratista, dependencia, monto, plazo_dias, anticipo_pct,
+        `SELECT id, folio, objeto, ubicacion, contratista, dependencia, monto, plazo_dias, anticipo_pct,
                 fecha_inicio, fecha_termino, residente_id, superintendente_id, supervision_id
            FROM contratos WHERE id = $1`,
         [contratoId]
@@ -155,11 +157,27 @@ async function abrirBitacora(req, res) {
       // registra COMO la nota #1 del libro (tipo 'apertura', art. 123 fr. III "se deberá iniciar
       // con una nota especial"); las notas emitidas después arrancan en #2. Su firma es la
       // CONJUNTA (bitacora_firmantes), no la del emisor → firmado_en NULL.
+      // FASE 2 (profe 16-jun): la nota de apertura se REDACTA con TODOS los datos del alta
+      // ("todo lo del alta de contrato debe estar ahí… la obra ubicada en tal"), para imprimirse/
+      // descargarse como documento. Narrativa formal con objeto, ubicación, partes, monto, anticipo,
+      // plazo y fechas; los datos mínimos del art. 123 fr. III constan en el acta.
+      const montoMXN = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Number(contrato.monto) || 0);
+      // pg devuelve DATE como objeto Date → String(Date) daría "Mon Jun 01 2026"; normalizamos a ISO YYYY-MM-DD.
+      const isoDate = (v) => (v == null ? '' : (v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, 10)));
+      const ubicacionTxt = contrato.ubicacion ? `, ubicada en ${contrato.ubicacion}` : '';
+      const anticipoTxt = (contrato.anticipo_pct != null && Number(contrato.anticipo_pct) > 0)
+        ? `con un anticipo del ${Number(contrato.anticipo_pct)}%` : 'sin anticipo';
       const resumenApertura =
-        `Apertura de bitácora del contrato ${contrato.folio}. Objeto: ${contrato.objeto}. ` +
-        `Partes: ${contrato.dependencia} (dependencia) / ${contrato.contratista} (contratista). ` +
-        `Inicio contractual ${String(contrato.fecha_inicio).slice(0, 10)}; entrega del sitio ${String(fechaEntregaSitio).slice(0, 10)}. ` +
-        `Datos mínimos (art. 123 fr. III RLOPSRM): domicilios, teléfonos y características del sitio registrados en el acta.`;
+        `Se levanta la presente acta de apertura de la bitácora del contrato ${contrato.folio}, ` +
+        `cuyo objeto es: ${contrato.objeto}${ubicacionTxt}. ` +
+        `El contrato se celebra entre ${contrato.dependencia} (dependencia contratante) y ` +
+        `${contrato.contratista} (contratista / superintendente), por un monto contractual de ${montoMXN} ` +
+        `${anticipoTxt}, con un plazo de ejecución de ${contrato.plazo_dias} días naturales, ` +
+        `del ${isoDate(contrato.fecha_inicio)} al ${isoDate(contrato.fecha_termino)}; ` +
+        `la entrega del sitio se realiza el ${isoDate(fechaEntregaSitio)}. ` +
+        `Se asientan los datos mínimos del art. 123 fr. III RLOPSRM (domicilios y teléfonos de las partes, ` +
+        `descripción de los trabajos y características del sitio), que constan en el acta. Esta es la primera ` +
+        `nota de la bitácora (art. 123 fr. III RLOPSRM) y vincula a las partes (art. 46 LOPSRM).`;
       await client.query(
         `INSERT INTO bitacora_notas (bitacora_id, numero, tipo, asunto, contenido, emisor_id, estado, firmado_en)
          VALUES ($1, 1, 'apertura', 'Nota de apertura de bitácora', $2, $3, 'emitida', NULL)`,

@@ -94,14 +94,14 @@ que el contrato completo → demuestran que el **catálogo de empresas (FASE 3) 
 |---|---|---|---|
 | HU-00 Login | cualquiera | Inicio | Entra sin elegir rol (usuario/contraseña); el rol se deduce. |
 | HU-01 Alta / expediente | residente | Contratos → OBRA-2026-DEMO-01 | Contrato completo: catálogo, programa, garantías, jurídicos, plan, PDF. |
-| **HU-03 Convenios** | residente | Convenios → OBRA-2026-DEMO-01 | Convenio de **plazo** (211→241 días) con su nota de bitácora ligada. |
-| HU-04 Expediente | residente | Expediente → OBRA-2026-DEMO-01 | Bloques + empresa del equipo + roster + estimaciones + **convenio**; **Exportar PDF** (1 solo doc). |
+| **HU-03 Convenios** | dependencia | Convenios → OBRA-2026-DEMO-01 | Convenio de **plazo** (211→241 días) con su nota ligada **+ 📎 oficio de aprobación cargado** (FASE 0C); la dependencia sube/ve el oficio. |
+| HU-04 Expediente | residente | Expediente → OBRA-2026-DEMO-01 | Bloques + roster + estimaciones + **convenio con 📎 Ver oficio**; el **programa muestra solo lo contratado** (sin "restante"); el **buscador filtra solo por tipo de documento / periodo** (FASE 0). **Exportar PDF** (1 solo doc). |
 | HU-05 Curva de avance | residente | Programa/Curva → DEMO-01 | Curva S programado vs ejecutado (físico 100%). |
 | HU-06 Trabajos terminados | contratista | Avance por periodo → DEMO-01 | Avance registrado por concepto/periodo. |
 | **HU-07 Alertas de atraso** | residente | Alertas → ATRASO-01..04 | **Panel de déficit por concepto** (unidades) + badge al login. |
-| HU-08/09/10 Bitácora | residente | Bitácora → DEMO-01 | Bitácora **abierta**, apertura firmada, 2 notas **firmadas** (apertura, avance). |
+| HU-08/09/10 Bitácora | residente | Bitácora → DEMO-01 | Bitácora **abierta**, apertura firmada. La **nota de apertura está REDACTADA con todos los datos del alta** (objeto, **ubicación**, partes, monto, anticipo, plazo, fechas) y es **imprimible** (FASE 2). |
 | **HU-12 Integración estimación** | contratista | Estimaciones → DEMO-01 | Estimación **#4 Integrada**; nota firmada ligada a la #1. |
-| **HU-13 Presentación** | contratista | Estimaciones → #3 | Estimación **Presentada** (art. 54). |
+| **HU-13 Presentación** | contratista | Estimaciones → #3 | Estimación **Presentada** (art. 54). Una estimación ya presentada/autorizada **no se vuelve a presentar** (candado por estado, FASE 0); una rechazada se reingresa (HU-16). |
 | HU-14 Historial | residente | Historial → DEMO-01 | Línea de tiempo de las estimaciones. |
 | **HU-15 Revisión/autorización** | residente | Revisión → #2 / #5 | **#2 Autorizada**, **#5 Rechazada** con observación. |
 | **HU-16 Reingreso** | contratista | Estimaciones → #6 | **Reingreso** de la #5 (nueva versión integrada, `reemplaza_a`). |
@@ -116,6 +116,11 @@ que el contrato completo → demuestran que el **catálogo de empresas (FASE 3) 
 
 ## Notas
 
+- **Demo "desde cero" (sesión del 24):** el contrato que se llena EN VIVO **no se siembra** — se crea
+  en el momento con las cuentas/empresas demo (que ya están listas). El paquete sembrado sirve para
+  demostrar el resto de las HU sin capturar a mano; el contrato en vivo demuestra el flujo de alta completo.
+- **FASE 2/3 (16-jun):** los contratos demo traen **ubicación de la obra** (se redacta en la nota de
+  apertura) y el contrato completo trae el **oficio de aprobación de su convenio** (FASE 0C) ya cargado.
 - **[validar profe]:** la tasa de pena convencional sembrada (0.10%) es de ejemplo.
 - La fecha "hoy" del sistema es **2026-06-15**; los periodos del paquete están calibrados respecto a
   esa fecha (los ATRASO-* tienen periodos vencidos para disparar alertas). Si se corre mucho después,

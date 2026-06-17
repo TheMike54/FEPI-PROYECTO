@@ -157,6 +157,7 @@ const DATOS_INICIALES = {
   folio: '',
   tipo: 'Obra pública sobre la base de precios unitarios',
   objeto: '',
+  ubicacion: '', // FASE 2 (profe 16-jun): ubicación/domicilio de la obra para la redacción de la apertura
   plazoDias: '',
   fechaInicio: '',
   penaConvencionalPct: '' // Etapa C: % de pena por atraso (opcional, fracción 0–1)
@@ -224,6 +225,13 @@ function TabDatosGenerales({ datos, set, err, equipo, montoDerivado }) {
         <div className="md:col-span-2">
           <Field label="Objeto del contrato" required>
             <input className={inputCls(e.objeto)} value={datos.objeto} onChange={set('objeto')} data-testid="dg-objeto" />
+          </Field>
+        </div>
+        {/* FASE 2 (profe 16-jun): ubicación/domicilio de la obra. Se redacta en la nota de apertura
+            ("la obra ubicada en…"). Opcional (no bloquea el alta), pero recomendado. */}
+        <div className="md:col-span-2">
+          <Field label="Ubicación de la obra" hint="Domicilio o referencia del sitio (se incluye en la nota de apertura).">
+            <input className={inputCls(false)} value={datos.ubicacion} onChange={set('ubicacion')} data-testid="dg-ubicacion" />
           </Field>
         </div>
         {/* Corrección profe (04-jun): la dependencia (parte contratante) se SELECCIONA de una cuenta
@@ -1761,6 +1769,7 @@ export default function AltaContrato() {
         folio: datosGenerales.folio,
         tipo: datosGenerales.tipo,
         objeto: datosGenerales.objeto,
+        ubicacion: datosGenerales.ubicacion, // FASE 2: ubicación de la obra (opcional)
         // Corrección profe (04-jun): contratista/dependencia ya no van como texto; el backend deriva
         // el texto del nombre de la cuenta (contratista = superintendente; dependencia = dependenciaId).
         plazoDias: Number(datosGenerales.plazoDias),

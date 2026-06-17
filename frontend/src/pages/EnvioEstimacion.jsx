@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import BannerContexto from '../components/vista/BannerContexto.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
@@ -286,8 +287,20 @@ export default function EnvioEstimacion() {
                               </div>
                             )}
 
-                            {!['integrada', 'enviada'].includes(e.estado) && (
-                              <span className="text-xs text-slate-400 italic">—</span>
+                            {/* Revisión profe 16-jun: la disponibilidad de "Presentar" se gobierna por
+                                ESTADO, no por la validación de montos. Una estimación se presenta UNA sola
+                                vez: ya autorizada/pagada no se vuelve a presentar; rechazada se vuelve a
+                                presentar mediante REINGRESO (HU-16), no aquí. */}
+                            {(e.estado === 'autorizada' || e.estado === 'pagada') && (
+                              <span className="text-xs text-slate-500 italic" data-testid={`no-presentable-${e.id}`}>
+                                Ya {labelEstadoEstimacion(e.estado).toLowerCase()} — una estimación se presenta una sola vez (art. 54 LOPSRM).
+                              </span>
+                            )}
+                            {e.estado === 'rechazada' && (
+                              <span className="text-xs text-slate-500" data-testid={`no-presentable-${e.id}`}>
+                                Rechazada — para volver a presentarla, créala de nuevo en{' '}
+                                <Link to="/estimaciones/reingreso" className="text-sigecop-accent hover:underline font-semibold">Reingreso</Link> (HU-16).
+                              </span>
                             )}
                           </td>
                         </tr>

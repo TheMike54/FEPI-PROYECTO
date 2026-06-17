@@ -159,5 +159,34 @@ export const api = {
   // y ajuste(art.59 Bis) son server-side; aquí solo se consume.
   convenios: (contratoId) => request(`/convenios/contrato/${contratoId}`),
   versionPrograma: (versionId) => request(`/convenios/version/${versionId}`),
-  crearConvenio: (contratoId, payload) => request(`/convenios/contrato/${contratoId}`, { method: 'POST', body: JSON.stringify(payload) })
+  crearConvenio: (contratoId, payload) => request(`/convenios/contrato/${contratoId}`, { method: 'POST', body: JSON.stringify(payload) }),
+  // FASE 0C (profe 16-jun): OFICIO DE APROBACIÓN del convenio. Subida multipart + descarga binaria
+  // (mismo patrón que el PDF del contrato: NO pasan por request(), que asume JSON).
+  subirOficioConvenio: (convenioId, file) => {
+    const fd = new FormData();
+    fd.append('documento', file);
+    const token = localStorage.getItem('sigecop_token');
+    return fetch(`${API_URL}/convenios/${convenioId}/oficio`, {
+      method: 'POST',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      body: fd
+    }).then(async (res) => {
+      const text = await res.text();
+      const data = text ? JSON.parse(text) : null;
+      if (!res.ok) { const err = new Error(data?.error || `HTTP ${res.status}`); err.status = res.status; throw err; }
+      return data;
+    });
+  },
+  descargarOficioConvenio: async (convenioId) => {
+    const token = localStorage.getItem('sigecop_token');
+    const res = await fetch(`${API_URL}/convenios/${convenioId}/oficio`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {}
+    });
+    if (!res.ok) {
+      let msg = `HTTP ${res.status}`;
+      try { msg = JSON.parse(await res.text())?.error || msg; } catch (_) { /* binario/vacio */ }
+      const err = new Error(msg); err.status = res.status; throw err;
+    }
+    return res.blob();
+  }
 };
