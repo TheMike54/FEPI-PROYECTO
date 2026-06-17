@@ -95,6 +95,30 @@ export default function Sidebar() {
                   <div className="text-sm leading-tight">Sustitución de personas</div>
                 </div>
               </NavLink>
+              {/* HU-24 (FASE 4): finiquito y cierre del contrato. Misma autoridad (dependencia/residente);
+                  fuera del catálogo de HU (no altera permisos.js), como el roster. */}
+              <NavLink to="/contratos/finiquito" className={itemClass}>
+                <span className="text-base leading-none flex-shrink-0 mt-0.5">🔒</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm leading-tight">Finiquito y cierre</div>
+                </div>
+              </NavLink>
+            </nav>
+          </div>
+        )}
+
+        {/* FASE 5: ambiente de estimación por bloques (cascarón). Fuera del catálogo de HU; roles del
+            ciclo de estimación (contratista integra; residente/supervisión consultan el flujo). */}
+        {['contratista', 'residente', 'supervision'].includes(rol) && (
+          <div className="mt-6 pt-4 border-t border-borde">
+            <div className={seccionClass}>Estimación</div>
+            <nav className="space-y-0.5">
+              <NavLink to="/estimaciones/ambiente" className={itemClass}>
+                <span className="text-base leading-none flex-shrink-0 mt-0.5">🧱</span>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm leading-tight">Nueva estimación (por bloques)</div>
+                </div>
+              </NavLink>
             </nav>
           </div>
         )}

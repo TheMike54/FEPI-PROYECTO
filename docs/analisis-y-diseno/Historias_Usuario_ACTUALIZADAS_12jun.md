@@ -49,6 +49,7 @@
 | Por Firmar | Firma de aperturas de bitácora pendientes | Quien tiene aperturas pendientes de firmar |
 | HU-22 | Sustitución de personas del roster | Dependencia y Residente de obra |
 | HU-23 | Catálogo de empresas | Todos (funcionalidad de implementación, sin permiso por rol) |
+| HU-24 | Finiquito y cierre del contrato | Dependencia / Contratante y Residente de obra |
 
 ---
 
@@ -737,6 +738,12 @@ de anticipo).
   marcado [validar].
 - Umbral del anticipo para exigir la autorización del titular (art. 50 fr. IV) y su configuración (30% por
   defecto) [validar profe].
+- **Ambiente de estimación por bloques (FASE 5, cascarón):** existe una nueva pantalla "Nueva estimación (por
+  bloques)" que presenta el flujo como pasos guiados (tipo el alta): nueva estimación → generadores →
+  carátula automática → complementar → soportes/notas/fotos → cierre con candado → envío a revisión. Hoy es un
+  **cascarón** que envuelve la carátula existente; el **bloque de generadores** y el de **soportes/fotos**
+  están pendientes del Equipo 3, y la integración/presentación reales se hacen en esta pantalla (HU-12) y en
+  HU-13. Cuando lleguen los generadores, se cablean dentro del ambiente.
 
 ---
 
@@ -1000,8 +1007,10 @@ contratos en que participa; la Dependencia vería todos.
 
 **Criterios de aceptación:**
 1. Cada renglón muestra un semáforo (verde si la suma es 1 o menos, amarillo 2-3, rojo 4 o más) obtenido al
-   sumar 0/1/2 puntos de los tres factores (desviación de avance, días vencidos y pendientes sin atender);
-   al pasar el cursor se ve el desglose de cada factor.
+   sumar 0/1/2 puntos de los tres factores (desviación de avance, días vencidos y pendientes sin atender),
+   **calculado en el servidor a partir de datos reales del contrato** (no de datos de demostración) y
+   acotado por participación: la Dependencia y Finanzas ven todos los contratos; un rol operativo solo los
+   suyos. Al pasar el cursor se ve el desglose de cada factor.
 2. La cabecera muestra 4 contadores: total de contratos y conteo de contratos en verde, amarillo y rojo.
 3. El doble clic sobre un renglón abre un panel de detalle con avance físico %, avance financiero %, atrasos
    (días vencidos) y penalizaciones ($), con botón Cerrar.
@@ -1010,10 +1019,13 @@ contratos en que participa; la Dependencia vería todos.
 5. Cada renglón muestra un distintivo de variación del avance vs. el mes anterior (↑/↓ N puntos o '=
    igual').
 
+**Estado:** ✅ **Funcional** (integración HU-18, 17-jun). La pantalla está conectada al portafolio real: los
+semáforos y los indicadores se derivan de los datos del contrato en el servidor, acotados por participación.
+Quedan abiertas las decisiones de criterio que siguen.
+
 **Pendientes / [validar profe]:**
-- [validar profe] La vista opera 100% sobre datos de demostración fijos (5 contratos); todavía no está
-  conectada a datos reales. Falta cablearla para que los semáforos e indicadores se deriven de información
-  real (avance real, plazos LOPSRM/RLOPSRM, penalizaciones art. 138/139).
+- [validar profe] Qué se entiende por **avance físico** y contra qué se compara (avance real registrado vs.
+  programado); hoy se deriva del avance por concepto registrado, falta confirmar la definición exacta.
 - [validar profe] La comparación 'periodo actual vs. anterior' está solo como distintivo por fila, no como
   comparativa agregada del portafolio entre dos periodos seleccionables. Definir si se requiere selector de
   periodos y comparación a nivel grupo/total.
@@ -1343,3 +1355,42 @@ las personas eligen o crean su empresa al registrarse.
   aceptable.
 - El catálogo de empresas es público (sin sesión) y expone todas las razones sociales; confirmar que eso es
   deseable (se asumió dato no sensible).
+
+---
+
+## HU-24 · Finiquito y cierre del contrato · 🆕 **NUEVA** (FASE 4, revisión profe 16-jun)
+
+**Quién ve y quién hace:** La **Dependencia / Contratante** y el **Residente de obra** elaboran el finiquito
+y cierran el contrato (la misma autoridad que registra convenios). El sistema revalida que solo ellos puedan
+cerrarlo; los demás roles no ven la pantalla.
+
+**Historia:**
+- **Como** Dependencia / Contratante o Residente de obra
+- **Deseo** elaborar el finiquito del contrato —el cálculo de lo que se le debe al contratista o de lo que él
+  debe reintegrar— y con ello cerrar formalmente el contrato, dejando una nota en la bitácora
+- **A fin de** dar por terminados los derechos y obligaciones de las partes conforme a la ley
+
+**Criterios de aceptación:**
+1. El sistema calcula el saldo del finiquito: toma el importe neto de las estimaciones ya autorizadas o
+   pagadas, le resta lo ya pagado y el anticipo que aún no se ha recuperado (amortizado), y muestra si el
+   saldo queda a favor del contratista (se le paga) o a favor de la dependencia (el contratista reintegra).
+2. Al elaborar el finiquito se asienta una nota de finiquito en la bitácora y el contrato queda **cerrado**;
+   el finiquito es inalterable y solo puede haber uno por contrato. Si el contrato no tiene bitácora abierta,
+   primero hay que aperturarla.
+3. El finiquito se puede ver e imprimir como documento con el contenido mínimo de ley (descripción del
+   contrato, importes, saldo resultante y la declaración de que se extinguen las obligaciones de las partes).
+
+**Fundamento legal:** art. 64 LOPSRM (elaboración del finiquito: créditos a favor y en contra, saldo
+resultante, y acta que da por extinguidos los derechos y obligaciones); RLOPSRM arts. 168-172 (168 finiquito
+y acta de recepción física; 169 notificación; 170 contenido mínimo del documento; 171 saldos a favor de cada
+parte —plazos art. 54/55 LOPSRM—; 172 acta de extinción); art. 143 RLOPSRM (amortización del anticipo);
+art. 66 LOPSRM (garantía por vicios ocultos que subsiste tras el finiquito).
+
+**Pendientes / [validar profe]:**
+- [validar profe] La fórmula base del saldo está verificada contra la ley, pero los conceptos que el profe
+  aún no confirma —deductivas finales, sobrecosto, 5-al-millar pendiente— se dejan en un campo de **ajustes
+  finales** parametrizable (default 0), no fijo. Confirmar cuáles entran y cómo se calculan.
+- [validar profe] El finiquito exige que el contrato tenga bitácora abierta (porque se asienta como nota);
+  confirmar si ese es el flujo deseado.
+- [validar profe] La recepción física de los trabajos (acta previa al finiquito, art. 64) no se modela como
+  un paso separado todavía; confirmar si se requiere.

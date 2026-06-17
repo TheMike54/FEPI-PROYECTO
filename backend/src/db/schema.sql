@@ -1600,3 +1600,61 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_contrato_doc_singleton
 CREATE UNIQUE INDEX IF NOT EXISTS uq_contrato_doc_oficio_convenio
   ON contrato_documentos (convenio_id) WHERE convenio_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_contrato_documentos_convenio ON contrato_documentos(convenio_id);
+
+-- =====================================================================
+-- (FASE 4 / HU-24, revisión profe 16-jun) FINIQUITO Y CIERRE DEL CONTRATO.
+-- Fundamento: LOPSRM art. 64 ("...elaborar el finiquito... en el que se hará constar los créditos a
+-- favor y en contra... y el saldo resultante... la dependencia pondrá a disposición el pago o solicitará
+-- el reintegro... levantando el acta administrativa que dé por extinguidos los derechos y obligaciones");
+-- RLOPSRM Sección IX arts. 168-172 (168 finiquito; 170 contenido mínimo del documento; 171 saldos a favor
+-- de cada parte; 172 acta de extinción). El finiquito ASIENTA una nota de bitácora y CIERRA el contrato.
+-- ADITIVO e IDEMPOTENTE. Va al final (referencia contratos y bitacora_notas, ya definidas).
+-- =====================================================================
+-- Estado del contrato: 'vigente' (default) → 'cerrado' al elaborar el finiquito. Aditivo.
+ALTER TABLE contratos ADD COLUMN IF NOT EXISTS estado VARCHAR(20) NOT NULL DEFAULT 'vigente';
+ALTER TABLE contratos ADD COLUMN IF NOT EXISTS cerrado_en TIMESTAMPTZ;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_contratos_estado') THEN
+    ALTER TABLE contratos ADD CONSTRAINT chk_contratos_estado CHECK (estado IN ('vigente','cerrado'));
+  END IF;
+END $$;
+
+-- Finiquito: 1 por contrato, append-only (registro formal, art. 64 / 170). El saldo se DERIVA server-side
+-- de las estimaciones autorizadas/pagadas + pagos + anticipo no amortizado (fuente única; NO recalcula la
+-- carátula). Los ajustes no confirmados por el profe (deductivas finales / sobrecosto / 5-al-millar
+-- pendiente) van en `ajustes_finales` (PARAMETRIZABLE, default 0) [validar profe].
+CREATE TABLE IF NOT EXISTS finiquitos (
+  id SERIAL PRIMARY KEY,
+  contrato_id INTEGER NOT NULL UNIQUE REFERENCES contratos(id) ON DELETE CASCADE,
+  importe_neto_aprobado NUMERIC(16,2) NOT NULL,   -- Σ neto de estimaciones autorizada/pagada (art. 54)
+  total_pagado NUMERIC(16,2) NOT NULL,            -- Σ pagos.importe
+  anticipo_no_amortizado NUMERIC(16,2) NOT NULL,  -- max(0, anticipo − Σ amortización aplicada), art. 143
+  ajustes_finales NUMERIC(16,2) NOT NULL DEFAULT 0,-- [validar profe]: deductivas finales/sobrecosto/etc.
+  saldo NUMERIC(16,2) NOT NULL,                   -- > 0 a favor del contratista; < 0 a favor de la dependencia
+  a_favor_de VARCHAR(12) NOT NULL,                -- 'contratista' | 'dependencia' | 'ninguno' (art. 171)
+  importe_real_ejecutado NUMERIC(16,2),           -- Σ ejecutado×pu (art. 170 fr. IV, informativo)
+  observaciones TEXT,
+  nota_id INTEGER REFERENCES bitacora_notas(id),  -- nota de bitácora del finiquito (NO ACTION, como convenios)
+  elaborado_por INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CONSTRAINT chk_finiquitos_afavor CHECK (a_favor_de IN ('contratista','dependencia','ninguno'))
+);
+CREATE INDEX IF NOT EXISTS idx_finiquitos_contrato ON finiquitos(contrato_id);
+
+-- Tipo de nota 'finiquito' en el catálogo (emisor = residente, art. 53 LOPSRM): la nota del finiquito
+-- en la bitácora. Aditivo e idempotente (la nota se asienta con insertarNotaAtomica, FK tipo→catálogo).
+INSERT INTO bitacora_nota_tipos (clave, rol_emisor, etiqueta)
+SELECT 'finiquito', 'residente', 'Finiquito y cierre del contrato (art. 64 LOPSRM)'
+WHERE NOT EXISTS (SELECT 1 FROM bitacora_nota_tipos WHERE clave = 'finiquito');
+
+-- Append-only: el finiquito no se edita una vez elaborado (registro formal, art. 64 / 170). BEFORE UPDATE
+-- (no veta DELETE, para preservar el ON DELETE CASCADE del contrato), igual que pagos/notas.
+CREATE OR REPLACE FUNCTION sigecop_finiquito_inmutable() RETURNS TRIGGER AS $$
+BEGIN
+  RAISE EXCEPTION 'Un finiquito elaborado es inalterable (art. 64 LOPSRM / 170 RLOPSRM); cierra el contrato y extingue las obligaciones.';
+END;
+$$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS trg_finiquito_inmutable ON finiquitos;
+CREATE TRIGGER trg_finiquito_inmutable
+  BEFORE UPDATE ON finiquitos
+  FOR EACH ROW EXECUTE FUNCTION sigecop_finiquito_inmutable();

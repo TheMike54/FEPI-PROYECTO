@@ -107,6 +107,12 @@ export const api = {
   generarInstruccionPago: (estimacionId) => request(`/instruccion-pago/estimacion/${estimacionId}`, { method: 'POST' }),
   consultarPresupuesto: (ejercicio, dependencia) => request(`/instruccion-pago/presupuesto?ejercicio=${encodeURIComponent(ejercicio)}&dependencia=${encodeURIComponent(dependencia)}`),
   crearPresupuesto: (payload) => request('/instruccion-pago/presupuesto', { method: 'POST', body: JSON.stringify(payload) }),
+  // HU-18: portafolio ejecutivo con semáforos por contrato (agregado + acotado por participación).
+  portafolio: () => request('/portafolio'),
+  // HU-24 (FASE 4): finiquito y cierre del contrato (art. 64 LOPSRM / 168-172 RLOPSRM). El saldo lo
+  // deriva el backend; ajustes_finales es parametrizable [validar profe].
+  finiquitoPrep: (contratoId, ajustes) => request(`/finiquito/contrato/${contratoId}${ajustes != null && ajustes !== '' ? `?ajustes=${encodeURIComponent(ajustes)}` : ''}`),
+  cerrarFiniquito: (contratoId, payload) => request(`/finiquito/contrato/${contratoId}`, { method: 'POST', body: JSON.stringify(payload || {}) }),
   // HU-12: estimaciones (integración + consulta + avance para el preview).
   avanceContrato: (contratoId) => request(`/estimaciones/contrato/${contratoId}/avance`),
   estimacionesDeContrato: (contratoId) => request(`/estimaciones/contrato/${contratoId}`),

@@ -789,64 +789,8 @@ export const pendientesEstimacionPorRol = {
   finanzas: []
 };
 
-// HU-18 — Contratos del portafolio. Es la unica vista del backlog que opera
-// sobre multiples contratos. El semaforo se DERIVA en el componente a partir
-// de los tres factores crudos del campo `factores`:
-//   · desviacionAvance — programado - real (positivo = atraso).
-//   · diasVencidos     — dias vencidos en estimaciones/pagos.
-//   · pendientesSinAtender — conteo de tareas sin cierre.
-// Cada factor aporta 0/1/2 puntos; suma -> verde (0-1), amarillo (2-3), rojo (≥4).
-// avanceMesAnterior alimenta el badge "vs mes anterior" del CA-3.
-export const portafolioContratosDummy = [
-  {
-    folio: 'C-2026-0042', contratista: 'Constructora XYZ',          avance:  90,
-    estado: 'Sin atraso',
-    avanceMesAnterior: 85,
-    ejercicioFiscal: '2026',
-    tipoContratacion: 'Licitación pública',
-    factores: { desviacionAvance:  -2, diasVencidos:  0, pendientesSinAtender: 0 },
-    indicadores: { avanceFisico: 90, avanceFinanciero: 88, penalizaciones: 0 }
-  },
-  {
-    folio: 'C-2026-0047', contratista: 'Constructora del Valle',    avance:  78,
-    estado: 'Al corriente',
-    avanceMesAnterior: 70,
-    ejercicioFiscal: '2026',
-    tipoContratacion: 'Invitación a 3',
-    factores: { desviacionAvance:   3, diasVencidos:  0, pendientesSinAtender: 1 },
-    indicadores: { avanceFisico: 78, avanceFinanciero: 75, penalizaciones: 0 }
-  },
-  {
-    folio: 'C-2026-0038', contratista: 'Edificaciones del Norte',   avance:  65,
-    estado: 'Atraso leve',
-    avanceMesAnterior: 65,
-    ejercicioFiscal: '2025',
-    tipoContratacion: 'Licitación pública',
-    factores: { desviacionAvance:  10, diasVencidos:  5, pendientesSinAtender: 1 },
-    indicadores: { avanceFisico: 65, avanceFinanciero: 60, penalizaciones: 25_000 }
-  },
-  {
-    folio: 'C-2026-0029', contratista: 'Obras y Proyectos SA',      avance: 100,
-    estado: 'Finiquito pendiente',
-    avanceMesAnterior: 100,
-    ejercicioFiscal: '2025',
-    tipoContratacion: 'Adjudicación directa',
-    factores: { desviacionAvance:   0, diasVencidos:  3, pendientesSinAtender: 2 },
-    indicadores: { avanceFisico: 100, avanceFinanciero: 95, penalizaciones: 0 }
-  },
-  {
-    folio: 'C-2026-0051', contratista: 'Infraestructura del Bajío', avance:  40,
-    estado: 'Atraso crítico + penalización',
-    avanceMesAnterior: 38,
-    ejercicioFiscal: '2026',
-    tipoContratacion: 'Licitación pública',
-    factores: { desviacionAvance:  25, diasVencidos: 18, pendientesSinAtender: 4 },
-    indicadores: { avanceFisico: 40, avanceFinanciero: 35, penalizaciones: 180_000 }
-  }
-];
-
-// HU-18 — Catalogo de opciones del control "Agrupar por".
-export const agruparPorPortafolioDummy = ['Ninguno', 'Contratista', 'Ejercicio fiscal', 'Tipo de contratación'];
+// HU-18 — Portafolio ejecutivo: CABLEADO al backend real (GET /api/portafolio). El dummy de
+// contratos del portafolio y su catálogo de agrupado se ELIMINARON (semáforo y datos server-side).
 
 // HU-19 — Los 7 reportes definidos en el alcance del proyecto. Cada uno con
 // los formatos en que se exporta (PDF, Excel o ambos). El catalogo cuadra con

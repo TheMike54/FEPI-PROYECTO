@@ -32,6 +32,8 @@ import TableroEstimaciones from './pages/TableroEstimaciones.jsx';
 import PortafolioEjecutivo from './pages/PortafolioEjecutivo.jsx';
 import ExportacionReportes from './pages/ExportacionReportes.jsx';
 import RosterContrato from './pages/RosterContrato.jsx';
+import Finiquito from './pages/Finiquito.jsx';  // HU-24 (FASE 4): finiquito y cierre del contrato
+import AmbienteEstimacion from './pages/AmbienteEstimacion.jsx';  // FASE 5: ambiente de estimación por bloques (cascarón)
 
 // Mapa ruta -> código de HU (excluye HU-00, que es login/dashboard). Permite que la
 // guarda de ruta sepa qué HU corresponde a cada path para validar el acceso por rol.
@@ -88,6 +90,12 @@ export default function App() {
             <Route path="/estimaciones/revision" element={<WithLayout><RevisionEstimacion /></WithLayout>} />
             <Route path="/pagos/transito" element={<WithLayout><TransitoPago /></WithLayout>} />
             <Route path="/contratos/modificatorios" element={<WithLayout><ConveniosModificatorios /></WithLayout>} />
+            {/* HU-24 (FASE 4): finiquito y cierre del contrato. Fuera del catálogo de HU (como el roster/
+                solicitudes): SoloRol dependencia/residente; la autoridad real la revalida el backend. */}
+            <Route path="/contratos/finiquito" element={<SoloRol roles={['dependencia', 'residente']}><Finiquito /></SoloRol>} />
+            {/* FASE 5: ambiente de estimación por bloques (cascarón que envuelve el flujo existente).
+                Fuera del catálogo de HU; SoloRol con los roles del ciclo de estimación (HU-12). */}
+            <Route path="/estimaciones/ambiente" element={<SoloRol roles={['contratista', 'residente', 'supervision']}><AmbienteEstimacion /></SoloRol>} />
             <Route path="/seguimiento/alertas" element={<WithLayout><AlertasAtraso /></WithLayout>} />
             <Route path="/seguimiento/curva-avance" element={<WithLayout><CurvaAvance /></WithLayout>} />
             <Route path="/seguimiento/trabajos-terminados" element={<WithLayout><TrabajosTerminados /></WithLayout>} />

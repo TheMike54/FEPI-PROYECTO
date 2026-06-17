@@ -16,6 +16,8 @@ const estimacionPrepRoutes = require('./src/routes/estimacion-prep.routes');  //
 const estimacionesCicloRoutes = require('./src/routes/estimaciones-ciclo.routes');  // HU-14 (Equipo 3): historial del ciclo de cobro
 const trabajosRoutes = require('./src/routes/trabajos.routes');  // HU-06 (Equipo 2): registro de trabajos terminados (avance por concepto, art. 118)
 const tableroRoutes = require('./src/routes/tablero.routes');  // HU-17 (Equipo 3): tablero agregado de estimaciones (solo lectura, acotado por participación)
+const portafolioRoutes = require('./src/routes/portafolio.routes');  // HU-18 (Equipo 3): portafolio ejecutivo con semáforos (solo lectura, acotado por participación)
+const finiquitoRoutes = require('./src/routes/finiquito.routes');  // HU-24 (FASE 4): finiquito y cierre del contrato (art. 64 LOPSRM / 168-172 RLOPSRM)
 const { initDb } = require('./src/db/init');
 
 const app = express();
@@ -50,6 +52,10 @@ app.use('/api/trabajos', trabajosRoutes);
 // HU-17 montado DESPUÉS de app.use(cors()) (línea 23): los headers de CORS deben aplicar a
 // /api/tablero. Solo lectura; el acotamiento por participación lo hace el controller.
 app.use('/api/tablero', tableroRoutes);
+// HU-18 (Equipo 3): portafolio ejecutivo. Solo lectura; acotado por participación en el controller.
+app.use('/api/portafolio', portafolioRoutes);
+// HU-24 (FASE 4): finiquito y cierre del contrato. Acotado por participación / autoridad en el controller.
+app.use('/api/finiquito', finiquitoRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Ruta no encontrada' });
