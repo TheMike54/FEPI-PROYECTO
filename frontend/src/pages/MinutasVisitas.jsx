@@ -9,7 +9,8 @@ import { api } from '../services/api.js';
 
 // HU-11 (sesión E2 18-jun) — MINUTAS, VISITAS Y ACUERDOS, cableado al backend real (antes era maqueta).
 // Minutas y visitas se persisten; el "adjuntar a nota" deja de ser informativo y LIGA la minuta/visita a una
-// nota de bitácora del contrato (art. 123 fr. X RLOPSRM) SIN modificar la nota (relación, no edición). El
+// nota de bitácora del contrato [validar con profe: fundamento legal, ver minutas.controller.js] SIN
+// modificar la nota (relación, no edición). El
 // PDF de la minuta es real. La pestaña Acuerdos deriva de los acuerdos capturados en las minutas del contrato.
 
 const folioMin = (id) => `MIN-${String(id).padStart(3, '0')}`;
@@ -34,7 +35,7 @@ function ModalAdjuntar({ abierto, tipo, item, notas, onCerrar, onVincular, guard
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4" data-testid="modal-adjuntar-referencia">
       <div className="bg-white rounded-md shadow-lg max-w-md w-full p-6">
         <h3 className="text-lg font-bold text-sigecop-blue mb-1">Adjuntar {tipo === 'minuta' ? 'la minuta' : 'la visita'} {folio} a una nota</h3>
-        <p className="text-xs text-slate-500 mb-3">Se liga a una nota de bitácora del contrato (art. 123 fr. X RLOPSRM). NO modifica la nota firmada; es solo una referencia.</p>
+        <p className="text-xs text-slate-500 mb-3">Se liga a una nota de bitácora del contrato. NO modifica la nota firmada; es solo una referencia.</p>
         {notas.length === 0 ? (
           <p className="text-sm text-amber-700">Este contrato no tiene notas de bitácora todavía. Abre la bitácora y emite notas (HU-08/HU-09) para poder vincular.</p>
         ) : (
@@ -280,7 +281,7 @@ export default function MinutasVisitas() {
       <SeccionCriterios huId="HU-11" criterios={[
         { numero: 1, texto: 'Las minutas (con su PDF y metadatos) y las visitas del contrato se registran y consultan desde la pantalla, ligadas al contrato.' },
         { numero: 2, texto: 'Los acuerdos capturados en las minutas se consultan en su pestaña, por contrato.' },
-        { numero: 3, texto: 'Una minuta o visita puede adjuntarse como referencia a una nota de bitácora del contrato (art. 123 fr. X RLOPSRM), sin modificar la nota.' },
+        { numero: 3, texto: 'Una minuta o visita puede adjuntarse como referencia a una nota de bitácora del contrato, sin modificar la nota.' },
       ]} />
     </div>
   );

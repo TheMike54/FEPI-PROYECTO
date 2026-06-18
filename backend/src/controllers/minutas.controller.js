@@ -1,9 +1,10 @@
 // HU-11 (sesión autónoma E2 18-jun) — MINUTAS, VISITAS Y ACUERDOS. Archivo NUEVO. Cierra la maqueta
 // (todo era useState) conectando minutas y visitas al backend real, con su PDF y el VÍNCULO a una nota de
 // bitácora. Las tablas `minutas` (con pdf_* + nota_id) y `visitas` ya existían; el "adjuntar a nota" deja de
-// ser informativo y persiste el vínculo (minutas/visitas.nota_id). Fundamento: art. 123 fr. X RLOPSRM
-// ("se podrán ratificar en la Bitácora las instrucciones emitidas vía oficios, MINUTAS, memoranda y
-// circulares…"). Inmutabilidad: vincular NO modifica la nota firmada (es una relación, no una edición;
+// ser informativo y persiste el vínculo (minutas/visitas.nota_id).
+// Fundamento [VALIDAR CON PROFE]: candidatos art. 123 fr. X vs art. 125 fr. III inc. d) RLOPSRM
+// (contradicción con schema.sql:1064). Visitas: sin fundamento literal confirmado.
+// Inmutabilidad: vincular NO modifica la nota firmada (es una relación, no una edición;
 // art. 123 fr. VI RLOPSRM — el trigger de inmutabilidad de la nota queda intacto).
 const { pool } = require('../db/pool');
 const { esParteOSupervision } = require('../lib/acceso');
