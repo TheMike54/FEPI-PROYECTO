@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { ROLES } from '../data/permisos.js';
-import { empresaExistentePorNombre } from '../data/empresa.js';
+import { empresaExistentePorNombre, empresaObligatoriaPara } from '../data/empresa.js';
 import { api } from '../services/api.js';
 
 // alta-v2 (4.3): página de SOLICITUD DE ACCESO ahora PÚBLICA (ruta /solicitud-acceso sin
@@ -72,6 +72,12 @@ export default function SolicitudRegistro() {
     const empresaFinal = empresaSel === EMPRESA_NUEVA
       ? empresaNueva.trim().replace(/\s+/g, ' ')
       : (empresaSel ? (empresas.find((e) => String(e.id) === empresaSel)?.nombre || '') : '');
+
+    // REGLA 1 (BLOQUE 1): empresa OBLIGATORIA para contratista/supervisión (empresas privadas).
+    if (empresaObligatoriaPara(rolSolicitado) && !empresaFinal) {
+      setError('Elige tu empresa: es obligatoria para contratista y supervisión.');
+      return;
+    }
 
     setLoading(true);
     try {
@@ -156,7 +162,9 @@ export default function SolicitudRegistro() {
                 </div>
                 {/* O3/FASE 1 (profe 15-jun): empresa = SELECTOR del catálogo (no texto libre). */}
                 <div>
-                  <label className="sg-label" htmlFor="sol-empresa-select">Empresa (opcional)</label>
+                  <label className="sg-label" htmlFor="sol-empresa-select">
+                    Empresa {empresaObligatoriaPara(rolSolicitado) ? '*' : '(opcional)'}
+                  </label>
                   <select id="sol-empresa-select" data-testid="sol-empresa-select" className="sg-input"
                     value={empresaSel} onChange={(e) => setEmpresaSel(e.target.value)} disabled={loading}>
                     <option value="">— Sin empresa / elige tu empresa —</option>

@@ -36,7 +36,9 @@ module.exports = router;
 //
 // ----------------------------------------------------------------------------
 // PARA MAIKI — CA-2 (ancla canónica del plazo de pago, art. 54/55 LOPSRM):
-// Hoy el plazo se ancla en la NOTA de bitácora de autorización (derivado, [validar profe]); solo
+// Hoy el plazo se ancla en la NOTA de bitácora de autorización (derivado de
+// estimacion_notas.fecha, sin columna nueva — criterio del equipo, default conservador; el plazo
+// es del art. 54 LOPSRM); solo
 // existe si el contrato tenía bitácora abierta al autorizar. El ancla canónica sería un sello en
 // la estimación. Cambios (esquema + autorizar de HU-15, ambos congelados → Maiki):
 //   ALTER TABLE estimaciones ADD COLUMN IF NOT EXISTS autorizada_en  TIMESTAMPTZ;

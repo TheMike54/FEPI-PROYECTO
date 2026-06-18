@@ -10,7 +10,8 @@ import { monedaMXN as moneda } from '../utils/formato.js';
 // El profe: "debe haber un cierre a fuerzas, hay que agregar finiquito… el finiquito es una nota de
 // bitácora y el cálculo de todo lo que te debo / lo que me debes". Fundamento: LOPSRM art. 64, RLOPSRM
 // arts. 168-172 (170 contenido mínimo del documento; 171 saldos a favor de cada parte). El saldo lo
-// DERIVA el backend (no se recalcula la carátula); ajustes_finales es parametrizable [validar profe].
+// DERIVA el backend (no se recalcula la carátula); ajustes_finales es parametrizable (criterio del equipo,
+// default conservador 0; el profe puede ajustar qué conceptos entran).
 
 const fechaLarga = () => new Date().toLocaleDateString('es-MX', { day: 'numeric', month: 'long', year: 'numeric' });
 const A_FAVOR_TXT = {
@@ -58,7 +59,7 @@ function DocumentoFiniquito({ contrato, desglose, finiquito, onCerrar }) {
             <Renglon etiqueta="Importe neto estimado y autorizado (art. 54)" valor={d.importe_neto_aprobado} />
             <Renglon etiqueta="(−) Total pagado" valor={d.total_pagado} signo="−" />
             <Renglon etiqueta="(−) Anticipo no amortizado (art. 143)" valor={d.anticipo_no_amortizado} signo="−" />
-            {!!d.ajustes_finales && <Renglon etiqueta="(−) Ajustes finales [validar profe]" valor={d.ajustes_finales} signo="−" />}
+            {!!d.ajustes_finales && <Renglon etiqueta="(−) Ajustes finales" valor={d.ajustes_finales} signo="−" />}
             <Renglon etiqueta="Saldo resultante" valor={Math.abs(d.saldo)} fuerte nota={A_FAVOR_TXT[d.a_favor_de]} />
           </div>
           {finiquito?.observaciones && <p><strong>Observaciones:</strong> {finiquito.observaciones}</p>}
@@ -176,7 +177,7 @@ export default function Finiquito() {
             <Renglon etiqueta="(−) Anticipo no amortizado" valor={d.anticipo_no_amortizado} signo="−" nota="anticipo − amortización aplicada (art. 143)" />
             {!cerrado && puedeCerrar && (
               <div className="flex items-baseline justify-between py-2 border-b border-borde text-sm">
-                <div className="text-slate-700">(−) Ajustes finales <span className="text-[11px] text-slate-400">[validar profe]: deductivas finales / sobrecosto / 5-al-millar pendiente</span></div>
+                <div className="text-slate-700">(−) Ajustes finales <span className="text-[11px] text-slate-400">parametrizable (default 0): deductivas finales / sobrecosto / 5-al-millar pendiente</span></div>
                 <input type="number" step="0.01" className="sg-input w-40 text-right font-mono" value={ajustes}
                   onChange={(e) => { setAjustes(e.target.value); cargar(contratoId, e.target.value); }} placeholder="0.00" data-testid="finiquito-ajustes" />
               </div>
@@ -243,7 +244,7 @@ export default function Finiquito() {
       />
 
       <p className="mt-4 text-xs text-slate-500 italic text-center">
-        Fundamento: art. 64 LOPSRM · arts. 168-172 RLOPSRM. Los ajustes finales (deductivas/sobrecosto/5-al-millar pendiente) son parametrizables [validar profe].
+        Fundamento: art. 64 LOPSRM · arts. 168-172 RLOPSRM. Los ajustes finales (deductivas/sobrecosto/5-al-millar pendiente) son parametrizables (criterio del equipo, default 0; el profe confirma qué conceptos entran).
       </p>
     </div>
   );

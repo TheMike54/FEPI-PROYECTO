@@ -21,7 +21,9 @@ function normalizarNombreEmpresa(nombre) {
 // empresa existente en vez de crear un duplicado ("si ya existe, toma los datos que ya están" —
 // el meollo que pidió el profe). Se usa como SEGUNDO nivel de match en resolverOCrearEmpresa; el
 // índice único débil de la BD queda como respaldo. El front (SolicitudRegistro) usa un espejo de
-// esta función. [validar profe]: las reglas exactas de normalización (qué sufijos, qué se funde).
+// esta función. Las reglas exactas de normalización (qué sufijos, qué se funde) son criterio del
+// equipo (default conservador): se unen solo variantes obvias (mayúsculas/acentos/puntuación/sufijos
+// de razón social), evitando fusionar empresas realmente distintas.
 const SUFIJOS_RAZON_SOCIAL = [
   's a p i de c v', 'sapi de cv', 's a b de c v', 'sab de cv', 's de r l de c v', 's de rl de cv',
   'sa de cv', 's a de c v', 's a s', 'sas', 's de r l', 's de rl', 's a b', 'sab', 's c', 'sc',

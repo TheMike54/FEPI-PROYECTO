@@ -65,7 +65,8 @@ async function portafolio(req, res) {
     const venTodo = ROLES_VEN_TODO.includes(req.user.rol);
 
     // 1) Contratos accesibles (misma regla que listarContratos). ejercicio fiscal DERIVADO del
-    //    año de fecha_inicio (no existe columna; regla [validar]); dias_post_termino para el plazo
+    //    año de fecha_inicio (no existe columna; criterio del equipo: año de inicio = ejercicio
+    //    presupuestal); dias_post_termino para el plazo
     //    de ejecución (art. 52/54): días transcurridos desde fecha_termino (0 si aún no vence).
     const cq = await pool.query(
       `SELECT id, folio, contratista, tipo, monto, fecha_inicio, fecha_termino,
@@ -250,7 +251,7 @@ async function portafolio(req, res) {
         folio: c.folio,
         contratista: c.contratista,
         tipo: c.tipo,                 // modalidad de obra (NO el procedimiento de adjudicación)
-        ejercicio: c.ejercicio,       // derivado de fecha_inicio [validar]
+        ejercicio: c.ejercicio,       // derivado de fecha_inicio (criterio del equipo: año de inicio = ejercicio presupuestal)
         monto: monto.toFixed(2),
         fecha_inicio: c.fecha_inicio,
         fecha_termino: c.fecha_termino,

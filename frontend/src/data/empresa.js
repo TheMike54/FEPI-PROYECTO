@@ -1,7 +1,16 @@
 // Normalización de nombres de empresa — ESPEJO del backend (empresas.controller.js). Se usa en el
 // registro para detectar si lo tecleado YA está en el catálogo y REUTILIZAR la existente en vez de
 // crear un duplicado (el meollo que pidió el profe: "si ya existe, toma los datos que ya están").
-// DEBE mantenerse idéntica a la del backend. [validar profe] las reglas exactas de normalización.
+// DEBE mantenerse idéntica a la del backend. Reglas de normalización = CRITERIO DEL EQUIPO (default
+// conservador): se unen solo variantes obvias (mayúsculas/acentos/puntuación/sufijos de razón social),
+// NO nombres "parecidos" — para no fusionar empresas realmente distintas (B3 de la tabla de criterios).
+
+// REGLA 1 (BLOQUE 1, empresa obligatoria): la empresa es OBLIGATORIA al registrarse para los roles de
+// empresa privada (contratista y supervisión); para los roles del lado de la dependencia
+// (residente/dependencia/finanzas) es opcional. De poco sirve el catálogo si una cuenta de empresa
+// privada queda sin empresa. Criterio del equipo (default conservador, B19 de la tabla).
+export const ROLES_EMPRESA_OBLIGATORIA = ['contratista', 'supervision'];
+export const empresaObligatoriaPara = (rol) => ROLES_EMPRESA_OBLIGATORIA.includes(rol);
 
 // DÉBIL: lower + trim + colapsa espacios (espejo del índice único funcional uq_empresas_nombre_norm).
 export const normEmpresa = (s) => String(s || '').trim().replace(/\s+/g, ' ').toLowerCase();

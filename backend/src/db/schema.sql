@@ -1135,11 +1135,13 @@ END $$;
 CREATE INDEX IF NOT EXISTS idx_estimaciones_reemplaza_a ON estimaciones(reemplaza_a);
 
 -- ---------------------------------------------------------------------
--- ETAPA C (Fundación) — Retención por ATRASO (penas convencionales, art. 138/139 RLOPSRM) +
+-- ETAPA C (Fundación) — Retención por ATRASO (penas convencionales, art. 46 Bis LOPSRM + arts. 86-88
+-- RLOPSRM mecánica; tope art. 90; corregido tras verificación literal 18-jun: NO "138/139") +
 -- avance físico/financiero snapshot en la estimación. Migración ADITIVA e idempotente.
 --   · contratos.pena_convencional_pct: % de pena por atraso pactado POR CONTRATO (fracción 0–1,
 --     ej. 0.05 = 5%). NULLABLE: NULL = sin pena pactada → retención por atraso = $0.
---     [validar tasa/regla de disparo (global vs por concepto; sobre bruto vs neto) con el profe].
+--     Regla de disparo = criterio del equipo (B7, default conservador): por concepto, en unidades
+--     (programado al periodo − ejecutado), sin umbral; la TASA la confirma el profe (parametrizable).
 --   · estimaciones.retencion_atraso: monto retenido por atraso en ESTA estimación (snapshot inmutable).
 --   · estimaciones.avance_fisico_pct / avance_financiero_pct: % de avance al integrar (snapshot).
 -- ---------------------------------------------------------------------
@@ -1622,14 +1624,15 @@ END $$;
 -- Finiquito: 1 por contrato, append-only (registro formal, art. 64 / 170). El saldo se DERIVA server-side
 -- de las estimaciones autorizadas/pagadas + pagos + anticipo no amortizado (fuente única; NO recalcula la
 -- carátula). Los ajustes no confirmados por el profe (deductivas finales / sobrecosto / 5-al-millar
--- pendiente) van en `ajustes_finales` (PARAMETRIZABLE, default 0) [validar profe].
+-- pendiente) van en `ajustes_finales` (PARAMETRIZABLE, default 0; criterio del equipo B8: no se
+-- hardcodea, el profe confirma qué conceptos entran).
 CREATE TABLE IF NOT EXISTS finiquitos (
   id SERIAL PRIMARY KEY,
   contrato_id INTEGER NOT NULL UNIQUE REFERENCES contratos(id) ON DELETE CASCADE,
   importe_neto_aprobado NUMERIC(16,2) NOT NULL,   -- Σ neto de estimaciones autorizada/pagada (art. 54)
   total_pagado NUMERIC(16,2) NOT NULL,            -- Σ pagos.importe
   anticipo_no_amortizado NUMERIC(16,2) NOT NULL,  -- max(0, anticipo − Σ amortización aplicada), art. 143
-  ajustes_finales NUMERIC(16,2) NOT NULL DEFAULT 0,-- [validar profe]: deductivas finales/sobrecosto/etc.
+  ajustes_finales NUMERIC(16,2) NOT NULL DEFAULT 0,-- deductivas finales/sobrecosto/etc. (criterio B8, parametrizable)
   saldo NUMERIC(16,2) NOT NULL,                   -- > 0 a favor del contratista; < 0 a favor de la dependencia
   a_favor_de VARCHAR(12) NOT NULL,                -- 'contratista' | 'dependencia' | 'ninguno' (art. 171)
   importe_real_ejecutado NUMERIC(16,2),           -- Σ ejecutado×pu (art. 170 fr. IV, informativo)

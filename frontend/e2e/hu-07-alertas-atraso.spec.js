@@ -164,7 +164,7 @@ test.describe('HU-07 v2 — modo aplicación (Residente: ejecuta)', () => {
   test('sidebar muestra HU-07 y la vista carga sin metadata académica', async ({ page }) => {
     await freshHome(page);
     await enterAppMode(page, 'residente');
-    await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
+    await expect(await sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
     await goToViaSidebar(page, VIEW_PATH);
     await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
     await expectMetadataAcademicaOculta(page, { huId: 'HU-07', sprintLabel: 'Sprint 6', rolAcademicoLabel: 'Residente' });

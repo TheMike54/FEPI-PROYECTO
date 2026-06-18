@@ -77,7 +77,7 @@ async function registrarPago(req, res) {
       // (integrada_en). No se paga antes de que la estimación exista formalmente. Comparación por DÍA
       // en UTC: fecha_pago es DATE (sin hora); integrada_en es TIMESTAMPTZ. El MISMO día de la
       // integración SÍ es válido (estricto <). fechaPago ya viene validada como 'AAAA-MM-DD' (string),
-      // por lo que la comparación lexicográfica equivale a la cronológica. [validar fundamento con el profe].
+      // por lo que la comparación lexicográfica equivale a la cronológica. Fundamento: art. 54 LOPSRM (derivado: no se paga antes de que la estimación exista formalmente).
       if (est.integrada_en) {
         const diaIntegracion = new Date(est.integrada_en).toISOString().slice(0, 10); // 'AAAA-MM-DD' (UTC)
         if (fechaPago < diaIntegracion) {
@@ -86,7 +86,7 @@ async function registrarPago(req, res) {
         }
       }
 
-      // El importe = NETO de la estimación (server-side, no arbitrario). [validar: parcial vs exacto].
+      // El importe = NETO de la estimación (server-side, no arbitrario). Pago exacto del neto (no parcial): criterio del equipo (default conservador), menos superficie de error; los ajustes van en otra estimación o el finiquito.
       const importe = est.neto;
       const estimacionRef = `Estimación #${est.numero}`;
       const ins = await client.query(

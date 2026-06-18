@@ -11,7 +11,7 @@ test.describe('Padrón de empresas — Dependencia (administra)', () => {
   test.beforeEach(async ({ page }) => { skipEnCI(); await freshHome(page); await enterAppMode(page, 'dependencia'); });
 
   test('el link aparece y la pantalla carga con sus 3 pestañas y el padrón', async ({ page }) => {
-    await expect(sidebarLinkFor(page, VIEW)).toBeVisible();
+    await expect(await sidebarLinkFor(page, VIEW)).toBeVisible();
     await goToViaSidebar(page, VIEW);
     await expect(page.getByRole('heading', { name: 'Padrón de empresas (administración)' })).toBeVisible();
     await expect(page.getByTestId('tab-padron')).toBeVisible();

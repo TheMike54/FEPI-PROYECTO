@@ -111,3 +111,67 @@ test.describe('Roster — Fix B-1: selección (sin input numérico de ID)', () =
     expect(r.status(), 'ID inexistente debe ser 400').toBe(400);
   });
 });
+
+// ---------------------------------------------------------------------------
+// BLOQUE 3c — REGLA 4: la sustitución reemplaza a la PERSONA, NUNCA a la EMPRESA del contrato. El
+// sustituto debe pertenecer a la MISMA empresa que la persona saliente. Criterio del equipo (B20,
+// default conservador): el contrato se liga a la empresa; art. 125 fr. I g RLOPSRM solo obliga a
+// registrar la sustitución. Negativo (otra empresa → 409) + positivo (misma empresa → 201).
+// ---------------------------------------------------------------------------
+test.describe('Roster — REGLA 4: el sustituto debe ser de la misma empresa', () => {
+  // Registra (pendiente) + aprueba (rol contratista) un usuario con la empresa dada. Email único por ts.
+  const crearContratista = async (request, depToken, email, empresa) => {
+    const reg = await request.post(`${API}/auth/register`, {
+      data: { nombre: 'Sustituto Prueba', email, password: PASS, rolSolicitado: 'contratista', empresa }
+    });
+    expect(reg.status(), `registro ${email}`).toBe(201);
+    const id = (await reg.json()).usuario.id;
+    const apr = await request.patch(`${API}/usuarios/${id}/aprobar`, {
+      headers: { Authorization: `Bearer ${depToken}` }, data: { rol: 'contratista' }
+    });
+    expect(apr.status(), `aprobar ${email}`).toBe(200);
+    return id;
+  };
+
+  test('sustituir por alguien de OTRA empresa → 409; por la MISMA empresa → 201', async ({ request }) => {
+    const ts = Date.now();
+    const D = await loginApi(request, 'dependencia@sigecop.test');
+    const R = await loginApi(request, 'residente@sigecop.test');
+    const empAlpha = `Empresa Alpha ${ts}`;
+    const empBeta = `Empresa Beta ${ts}`;
+
+    // A y C en la MISMA empresa (Alpha); B en una empresa DISTINTA (Beta).
+    const idA = await crearContratista(request, D.token, `regla4.a.${ts}@sigecop.test`, empAlpha);
+    const idB = await crearContratista(request, D.token, `regla4.b.${ts}@sigecop.test`, empBeta);
+    const idC = await crearContratista(request, D.token, `regla4.c.${ts}@sigecop.test`, empAlpha);
+
+    // Contrato con superintendente = A (empresa Alpha), creado por el residente (es parte).
+    const cr = await request.post(`${API}/contratos`, {
+      headers: { Authorization: `Bearer ${R.token}` },
+      data: {
+        folio: `E2E-REGLA4-${ts}`, tipo: 'Obra pública sobre la base de precios unitarios', objeto: 'Regla4',
+        plazoDias: 60, fechaInicio: '2026-06-01', superintendenteId: idA, supervisionId: null,
+        dependenciaId: D.user.id, anticipoPct: null, juridicos: {},
+        conceptos: [{ clave: 'A1', concepto: 'c', unidad: 'm³', cantidad: 100, pu: 50 }],
+        ciclo: 'mensual', programa: [{ clave: 'A1', periodoNumero: 1, cantidad: 100 }], garantias: []
+      }
+    });
+    expect(cr.status(), 'crear contrato regla4').toBe(201);
+    const contratoId = (await cr.json()).id;
+
+    // NEGATIVO: sustituir el superintendente (A, Alpha) por B (Beta) → 409 (empresa distinta).
+    const neg = await request.post(`${API}/roster/contrato/${contratoId}/sustituir`, {
+      headers: { Authorization: `Bearer ${R.token}` },
+      data: { rol: 'superintendente', nuevoUsuarioId: idB, motivo: 'intento de cambiar la empresa del contrato' }
+    });
+    expect(neg.status(), 'sustituto de OTRA empresa debe ser 409').toBe(409);
+    expect((await neg.json()).error.toLowerCase()).toContain('misma empresa');
+
+    // POSITIVO: sustituir por C (Alpha, misma empresa que A) → 201.
+    const pos = await request.post(`${API}/roster/contrato/${contratoId}/sustituir`, {
+      headers: { Authorization: `Bearer ${R.token}` },
+      data: { rol: 'superintendente', nuevoUsuarioId: idC, motivo: 'sustitución dentro de la misma empresa' }
+    });
+    expect(pos.status(), 'sustituto de la MISMA empresa debe ser 201').toBe(201);
+  });
+});

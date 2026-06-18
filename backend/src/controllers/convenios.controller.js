@@ -146,8 +146,8 @@ async function crearConvenio(req, res) {
       const cres = await client.query('SELECT id, created_by, residente_id, superintendente_id, supervision_id, monto, plazo_dias, fecha_inicio FROM contratos WHERE id = $1 FOR UPDATE', [contratoId]);
       if (cres.rowCount === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Contrato no encontrado' }); }
       const contrato = cres.rows[0];
-      // Autoridad [validar con el profe]: dependencia o residente asignado/creador (art. 99: el
-      // residente sustenta el dictamen técnico; el servidor que firmó el contrato lo suscribe).
+      // Autoridad (criterio del equipo, default conservador): dependencia o residente asignado/creador
+      // (art. 99: el residente sustenta el dictamen técnico; el servidor que firmó el contrato lo suscribe).
       const puede = req.user.rol === 'dependencia' || contrato.residente_id === req.user.id || contrato.created_by === req.user.id;
       if (!puede) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'Solo la dependencia o el residente asignado puede registrar convenios' }); }
 
@@ -238,7 +238,8 @@ async function crearConvenio(req, res) {
       // bitácora abierta se asienta EN VIVO (folio atómico) y se LIGA en el INSERT (nota_id) — se crea
       // ANTES del INSERT para NO necesitar un UPDATE (el trigger de inmutabilidad solo permite ligar la
       // nota una vez). Si NO hay bitácora, se DIFIERE (nota_id NULL) y se asentará al abrir la bitácora
-      // (abrirBitacora). Emisor = quien registra el convenio (del JWT) [validar profe]. Todo en la MISMA
+      // (abrirBitacora). Emisor = el RESIDENTE del contrato (nota de consecuencia, art. 53 LOPSRM +
+      // art. 125 fr. I g RLOPSRM; ver más abajo). Todo en la MISMA
       // transacción: si el re-cuadre (F) falla, también revierte la nota.
       const bit = await client.query('SELECT id FROM bitacora_aperturas WHERE contrato_id = $1', [contratoId]);
       let notaConv = null;

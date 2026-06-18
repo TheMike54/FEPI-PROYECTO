@@ -132,3 +132,38 @@ test('HU-Registro — exige nombre(s) Y apellido(s) por separado', async ({ page
   await expect(page.getByTestId('registro-error')).toContainText('nombre');
   await expect(page.getByTestId('form-registro')).toBeVisible();
 });
+
+// BLOQUE 3b — REGLA 1: la empresa es OBLIGATORIA para contratista y supervisión (empresas privadas);
+// para los roles del lado de la dependencia (residente/dependencia/finanzas) es opcional. Validación de
+// CLIENTE (espejo: el backend debe reforzarlo — diff entregado a Maiki). Criterio del equipo (B19).
+test('HU-Registro — REGLA 1: contratista/supervisión SIN empresa es rechazado; residente puede sin empresa', async ({ page }) => {
+  await freshHome(page);
+  await page.getByTestId('link-registro').click();
+  await expect(page.getByTestId('form-registro')).toBeVisible();
+
+  // Datos personales válidos comunes.
+  await page.getByTestId('reg-nombres').fill('Carla');
+  await page.getByTestId('reg-apellidos').fill('Méndez Ruiz');
+  await page.getByTestId('reg-email').fill(`reg.empresa.${Date.now()}@sigecop.test`);
+  await page.getByTestId('reg-password').fill(PWD_NUEVO);
+  await page.getByTestId('reg-password2').fill(PWD_NUEVO);
+
+  // (a) NEGATIVO: rol 'contratista' SIN elegir empresa → rechazo de cliente con mensaje claro.
+  await page.getByTestId('reg-rol').selectOption('contratista');
+  // El selector de empresa queda en "— Sin empresa —" (no se elige ninguna).
+  await page.getByTestId('reg-submit').click();
+  await expect(page.getByTestId('registro-error')).toBeVisible();
+  await expect(page.getByTestId('registro-error')).toContainText('empresa');
+  await expect(page.getByTestId('form-registro')).toBeVisible(); // no avanzó
+
+  // (b) NEGATIVO: lo mismo para 'supervision'. El label marca la empresa como requerida (*).
+  await page.getByTestId('reg-rol').selectOption('supervision');
+  await expect(page.locator('label[for="reg-empresa-select"]')).toContainText('*');
+  await page.getByTestId('reg-submit').click();
+  await expect(page.getByTestId('registro-error')).toContainText('empresa');
+
+  // (c) CONTRASTE: con rol 'residente' (lado dependencia) la empresa es OPCIONAL → el label cambia y la
+  //     validación de empresa ya NO marca requerido (robusto: no depende del backend).
+  await page.getByTestId('reg-rol').selectOption('residente');
+  await expect(page.locator('label[for="reg-empresa-select"]')).toContainText('(opcional)');
+});

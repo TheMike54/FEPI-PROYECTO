@@ -15,7 +15,8 @@ import { api } from '../services/api.js';
 // residente/contratista/supervisión/dependencia (Finanzas excluida: su única acción, el registro del pago,
 // se muestra como bloque INFORMATIVO). Cada bloque se GATEA por los roles que realmente pueden abrir su
 // destino (no se ofrece un enlace que rebota); donde no, se muestra como nota informativa.
-// [validar profe: el orden del ciclo de vida y que agrupar en un índice NO funde las HU.]
+// Criterio del equipo (default conservador): agrupar en un índice ORDENA por ciclo de vida sin fundir las HU
+// (cada bloque es un Link a la ruta real; si se borra, todo sigue intacto).
 
 // Bloques del ciclo de vida. `roles` = quién puede abrir el destino (su SoloRol, o dónde la HU no es null).
 // Se enlaza a los SUB-AMBIENTES donde existen (para no duplicar): bitácora, seguimiento, convenios,

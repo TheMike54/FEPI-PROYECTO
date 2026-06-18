@@ -48,7 +48,7 @@ test.describe('HU-12 — modo aplicacion (Contratista: ejecuta)', () => {
   });
 
   test('sidebar muestra HU-12 y la vista carga sin metadata academica', async ({ page }) => {
-    await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
+    await expect(await sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
     await goToViaSidebar(page, VIEW_PATH);
     await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
     await expectMetadataAcademicaOculta(page, {
@@ -77,7 +77,7 @@ for (const rol of [
     // (página cableada). Tras quitar el modo demo ya no hay form dummy sin datos. Pendiente:
     // convertir a integración (sembrar contrato + apertura/estimación). Ver entregable alta-v2 §6.
     test.fixme('aviso de solo consulta visible; inputs deshabilitados', async ({ page }) => {
-      await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
+      await expect(await sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
       await goToViaSidebar(page, VIEW_PATH);
 
       await expectAvisoSoloConsulta(page);

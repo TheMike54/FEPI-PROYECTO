@@ -13,8 +13,9 @@ import { labelEstadoEstimacion } from '../data/estadoEstimacion.js';
 //
 // Reconciliación O7↔HU-15 (art. 54 LOPSRM): el candado de pago queda PERMISIVO ('integrada','enviada',
 // 'autorizada'), como se decidió en O7. Con HU-15 integrado, 'autorizada' = la estimación AUTORIZADA por
-// la residencia (estado pagable natural). El endurecimiento a SOLO 'autorizada' queda [validar profe];
-// el candado real lo aplica el backend (pagos.controller).
+// la residencia (estado pagable natural). El endurecimiento a SOLO 'autorizada' es lo estricto (art. 54
+// LOPSRM: el pago procede de la estimación AUTORIZADA por la residencia); el candado real lo aplica el
+// backend (pagos.controller).
 
 const mxn = (n) => `$ ${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmtFecha = (s) => { if (!s) return '—'; const [y, m, d] = String(s).slice(0, 10).split('-'); return (y && m && d) ? `${d}/${m}/${y}` : '—'; };

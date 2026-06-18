@@ -13,7 +13,9 @@
 // Idempotente: tras --apply no quedan grupos con >1 → re-ejecutar no hace nada. NO borra a ciegas:
 // reapunta usuarios primero y solo borra empresas sin referencias. Local usa DB_* (docker), Render
 // usa DATABASE_URL. Solo Maiki lo corre en Render (runbook: backup → consolidar → verificar).
-// [validar profe]: las reglas de normalización (qué variantes se consideran "la misma empresa").
+// Reglas de normalización (qué variantes se consideran "la misma empresa"): criterio del equipo
+// (default conservador) — une solo variantes obvias: mayúsculas/acentos/puntuación/sufijos de razón
+// social, para evitar fusionar empresas realmente distintas.
 // =====================================================================
 const { pool } = require('../src/db/pool');
 const { normalizarNombreEmpresaFuerte } = require('../src/controllers/empresas.controller');

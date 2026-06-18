@@ -103,7 +103,7 @@ for (const rol of [
     });
 
     test('la vista es accesible (consulta acotada por participación)', async ({ page }) => {
-      await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
+      await expect(await sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
       await goToViaSidebar(page, VIEW_PATH);
       // Accesible: el encabezado y el control de agrupado cargan aunque su portafolio pueda ir vacío.
       await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();

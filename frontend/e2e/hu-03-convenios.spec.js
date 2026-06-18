@@ -92,7 +92,7 @@ test.describe('HU-03 — acceso por rol', () => {
   test('Dependencia (E): la vista está en el Sidebar, carga y ofrece el formulario', async ({ page }) => {
     await freshHome(page);
     await enterAppMode(page, 'dependencia');
-    await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
+    await expect(await sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
     await goToViaSidebar(page, VIEW_PATH);
     await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
     // (portado del antiguo spec) la metadata académica no se muestra en producto.
@@ -111,7 +111,7 @@ test.describe('HU-03 — acceso por rol', () => {
     test(`${rol.alias} (C): ve la vista en SOLO CONSULTA (banner, sin formulario)`, async ({ page }) => {
       await freshHome(page);
       await enterAppMode(page, rol.id);
-      await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
+      await expect(await sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
       await goToViaSidebar(page, VIEW_PATH);
       await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
       await expectAvisoSoloConsulta(page);
@@ -124,7 +124,7 @@ test.describe('HU-03 — acceso por rol', () => {
   test('Finanzas (sin acceso): HU-03 NO aparece en Sidebar ni en Inicio', async ({ page }) => {
     await freshHome(page);
     await enterAppMode(page, 'finanzas');
-    await expect(sidebarLinkFor(page, VIEW_PATH)).toHaveCount(0);
+    await expect(await sidebarLinkFor(page, VIEW_PATH)).toHaveCount(0);
     await expect(cardInInicioFor(page, VIEW_PATH)).toHaveCount(0);
   });
 

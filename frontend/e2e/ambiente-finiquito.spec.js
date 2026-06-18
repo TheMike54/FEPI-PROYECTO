@@ -21,7 +21,7 @@ for (const rol of ['dependencia', 'residente']) {
     });
 
     test('el link aparece en el Sidebar y el cascarón carga con sus 7 bloques', async ({ page }) => {
-      await expect(sidebarLinkFor(page, VIEW)).toBeVisible();
+      await expect(await sidebarLinkFor(page, VIEW)).toBeVisible();
       await goToViaSidebar(page, VIEW);
       await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
       await expect(page.getByTestId('select-contrato')).toBeVisible();

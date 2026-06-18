@@ -22,7 +22,9 @@
 --
 -- Reusa las cuentas DEMO (resueltas POR EMAIL): residente/contratista(superintendente)/supervisión/
 -- dependencia/finanzas @sigecop.test. Las empresas demo ya las siembra schema.sql.
--- [validar profe]: la tasa de pena convencional (0.10%) es de ejemplo; confírmala.
+-- La tasa de pena convencional (0.10%) es de ejemplo y parametrizable (criterio del equipo,
+-- default conservador): la pena por atraso es art. 46 Bis LOPSRM + arts. 86-88 RLOPSRM (mecánica)
+-- + art. 90 RLOPSRM (tope), y el procedimiento se pacta en el contrato (art. 46 fr. X LOPSRM).
 -- =====================================================================
 
 -- (0) Idempotencia: borra los contratos demo y sus hijos. La cascada directa de `contratos` NO
@@ -73,7 +75,8 @@ BEGIN
   END IF;
 
   -- Contrato. monto = Σ ROUND(cant×pu) del catálogo = 2,500,000.00. Anticipo 30% (= 750,000.00).
-  -- pena convencional 0.10% (fracción 0.0010, art. 46 Bis LOPSRM / 86-90 RLOPSRM) [validar profe].
+  -- pena convencional 0.10% (fracción 0.0010; parametrizable, criterio del equipo). Base: art. 46 Bis
+  -- LOPSRM + arts. 86-88 RLOPSRM (mecánica de cálculo) + art. 90 RLOPSRM (tope).
   INSERT INTO contratos (folio, tipo, objeto, ubicacion, contratista, dependencia, monto, plazo_dias,
                          fecha_inicio, fecha_termino, created_by, datos_juridicos, anticipo_pct,
                          residente_id, superintendente_id, supervision_id, dependencia_id,

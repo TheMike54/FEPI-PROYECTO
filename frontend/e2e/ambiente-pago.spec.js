@@ -22,7 +22,7 @@ for (const rol of ['finanzas', 'contratista', 'residente', 'dependencia']) {
     });
 
     test('el link aparece en el Sidebar y el cascarón carga con sus 5 bloques y enlaces reales', async ({ page }) => {
-      await expect(sidebarLinkFor(page, VIEW)).toBeVisible();
+      await expect(await sidebarLinkFor(page, VIEW)).toBeVisible();
       await goToViaSidebar(page, VIEW);
       await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
       await expect(page.getByTestId('select-contrato')).toBeVisible();

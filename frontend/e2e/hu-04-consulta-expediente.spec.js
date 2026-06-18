@@ -83,7 +83,7 @@ test.describe('HU-04 — modo aplicacion (Residente: ejecuta)', () => {
   });
 
   test('sidebar muestra HU-04 y la vista carga sin metadata academica', async ({ page }) => {
-    await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
+    await expect(await sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
     await goToViaSidebar(page, VIEW_PATH);
     await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
     await expectMetadataAcademicaOculta(page, {
@@ -111,7 +111,7 @@ for (const rol of [
 
     test('aviso de solo consulta visible; consulta el expediente real tras elegir contrato', async ({ page, request }) => {
       const folio = await crearContratoConsultable(request);
-      await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
+      await expect(await sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
       await goToViaSidebar(page, VIEW_PATH);
 
       // El aviso de solo lectura (HeaderVista) sigue visible para los roles de consulta.

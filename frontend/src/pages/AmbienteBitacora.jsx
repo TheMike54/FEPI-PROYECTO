@@ -18,8 +18,8 @@ import { api } from '../services/api.js';
 // El CANDADO de emisión de notas (bloque 4) usa SOLO `bitacora.completa` de api.bitacoraDeContrato y se
 // funda en el art. 123 fr. III RLOPSRM (la nota especial de apertura fija el plazo máximo de firma; las
 // notas solo se emiten sobre una bitácora abierta y firmada por todos) — mismo candado que ya implementa la
-// pantalla de emisión (no se reimplementa aquí). [validar profe: agrupar el ciclo en un ambiente NO funde
-// las HU; cada una conserva su ruta/ficha/criterios.]
+// pantalla de emisión (no se reimplementa aquí). Criterio del equipo (default conservador): agrupar el
+// ciclo en un ambiente NO funde las HU; cada una conserva su ruta/ficha/criterios.
 
 function Bloque({ n, titulo, estado = 'activo', candado = false, children }) {
   const color = candado ? 'border-amber-300' : estado === 'listo' ? 'border-sigecop-green-validation' : 'border-borde';

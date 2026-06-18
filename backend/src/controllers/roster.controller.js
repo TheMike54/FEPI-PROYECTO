@@ -21,7 +21,8 @@ const { insertarNotaAtomica, textoNotaSustitucion } = require('./bitacora.contro
 
 const ROLES_ROSTER = ['residente', 'superintendente', 'supervision'];
 // rol-de-roster → rol-de-cuenta esperado (convención del alta/HU-12: el superintendente es una
-// cuenta de rol 'contratista'). [validar con el profe la convención de cuentas]
+// cuenta de rol 'contratista'). Convención del equipo (criterio, default conservador): el "rol de
+// roster" técnico mapea al "rol de cuenta" del sistema; el profe puede renombrar las etiquetas.
 const ROL_CUENTA = { residente: 'residente', superintendente: 'contratista', supervision: 'supervision' };
 // Caché escalar en `contratos` por rol (lo lee lib/acceso.js). Whitelist fija (no user input).
 const COL_CACHE = { residente: 'residente_id', superintendente: 'superintendente_id', supervision: 'supervision_id' };
@@ -107,16 +108,17 @@ async function sustituirPersona(req, res) {
       if (cres.rowCount === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Contrato no encontrado' }); }
       const contrato = cres.rows[0];
 
-      // AUTORIDAD [validar con el profe]: la dependencia (autoridad contratante) o el residente
-      // asignado / creador del contrato (quien registra la nota art. 125 fr. I g). El residente
-      // solo sobre SU contrato; la dependencia sobre cualquiera.
+      // AUTORIDAD (criterio del equipo, default conservador — B15): la dependencia (autoridad
+      // contratante) o el residente asignado / creador del contrato; a este último le toca registrar
+      // la sustitución en la bitácora (art. 125 fr. I g RLOPSRM). El residente solo sobre SU contrato;
+      // la dependencia sobre cualquiera. (Quién la *autoriza* no es literal de ley → criterio.)
       const puede = req.user.rol === 'dependencia'
         || contrato.residente_id === req.user.id
         || contrato.created_by === req.user.id;
       if (!puede) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'Solo la dependencia o el residente asignado puede sustituir personas del roster' }); }
 
       // El nuevo debe existir, estar ACTIVO y tener el rol de cuenta esperado para el slot.
-      const ures = await client.query('SELECT id, rol, estado, nombre FROM usuarios WHERE id = $1', [nuevoUsuarioId]);
+      const ures = await client.query('SELECT id, rol, estado, nombre, empresa_id FROM usuarios WHERE id = $1', [nuevoUsuarioId]);
       if (ures.rowCount === 0) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'El usuario nuevo no existe' }); }
       const nuevo = ures.rows[0];
       if (nuevo.estado !== 'activo') { await client.query('ROLLBACK'); return res.status(400).json({ error: 'El usuario nuevo no está activo' }); }
@@ -147,6 +149,21 @@ async function sustituirPersona(req, res) {
       }
 
       if (anteriorUsuarioId === nuevoUsuarioId) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'La persona indicada ya ocupa ese rol' }); }
+
+      // REGLA 4 (BLOQUE 1 — empresa): la sustitución reemplaza a la PERSONA, NUNCA a la EMPRESA del
+      // contrato. El contrato se liga a la EMPRESA, no a la persona; por eso el sustituto debe pertenecer
+      // a la MISMA empresa que la persona saliente. Fundamento: criterio del equipo (default conservador);
+      // el art. 125 fr. I g RLOPSRM solo obliga a REGISTRAR la sustitución en bitácora — "no cambiar la
+      // empresa" no es literal de ley. Retrocompat: si la persona saliente no tiene empresa registrada
+      // (cuenta legada, empresa_id NULL), no se bloquea (fail-open, como el acotamiento de lib/acceso.js).
+      if (anteriorUsuarioId != null) {
+        const ant = await client.query('SELECT empresa_id FROM usuarios WHERE id = $1', [anteriorUsuarioId]);
+        const empAnterior = ant.rows[0] ? ant.rows[0].empresa_id : null;
+        if (empAnterior != null && nuevo.empresa_id !== empAnterior) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({ error: 'El sustituto debe pertenecer a la MISMA empresa que la persona saliente: la sustitución cambia a la persona, no la empresa del contrato (art. 125 RLOPSRM; el contrato se liga a la empresa).' });
+        }
+      }
 
       // (1) CERRAR la asignación anterior (si la hay) — NO se borra, queda en histórico.
       //     Primero cerrar y LUEGO insertar la nueva: el índice único parcial nunca ve 2 activas.
@@ -180,7 +197,8 @@ async function sustituirPersona(req, res) {
           nuevoNombre: nuevo.nombre, nuevoId: nuevoUsuarioId,
           motivo, fecha: nueva.rows[0].vigencia_desde, diferida: false
         });
-        // emisor = quien ejecuta (del JWT). [validar profe] si el emisor formal debe ser el residente.
+        // emisor = quien ejecuta la sustitución (del JWT): dependencia o residente. Criterio del equipo
+        // (default conservador) consistente con art. 125 fr. I g RLOPSRM (al residente le toca registrar).
         notaCreada = await insertarNotaAtomica(client, {
           bitacoraId: bit.rows[0].id, tipo: 'res_sustitucion', asunto, contenido,
           emisorId: req.user.id, tag: 'sustitucion'

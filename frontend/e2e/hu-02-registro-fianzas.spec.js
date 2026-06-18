@@ -55,7 +55,7 @@ test.describe('HU-02 — modo aplicacion (Dependencia: ejecuta)', () => {
   });
 
   test('sidebar muestra HU-02 y la vista carga sin metadata academica', async ({ page }) => {
-    await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
+    await expect(await sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
     await goToViaSidebar(page, VIEW_PATH);
     await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
     await expectMetadataAcademicaOculta(page, {
@@ -89,7 +89,7 @@ for (const rol of [
     });
 
     test('aviso de solo consulta visible; sin boton Agregar', async ({ page }) => {
-      await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
+      await expect(await sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
       await goToViaSidebar(page, VIEW_PATH);
 
       await expectAvisoSoloConsulta(page);

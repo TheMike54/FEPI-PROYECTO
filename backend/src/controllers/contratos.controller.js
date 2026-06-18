@@ -79,9 +79,10 @@ async function crearContrato(req, res) {
   if (anticipoPct !== null && (anticipoPct < 0 || anticipoPct > 100)) {
     return res.status(400).json({ error: 'anticipoPct debe estar entre 0 y 100' });
   }
-  // Etapa C: % de pena por atraso (penas convencionales, art. 46 Bis LOPSRM / 86-90 RLOPSRM), OPCIONAL: fracción 0–1
-  // (ej. 0.05 = 5%). Vacío/ausente → NULL (sin pena pactada → retención por atraso $0). No afecta el
-  // gating del alta ni la regla del 100% (es un dato más de la cabecera). [validar tasa con el profe].
+  // Etapa C: % de pena por atraso (penas convencionales, art. 46 Bis LOPSRM + arts. 86-88 RLOPSRM; tope
+  // art. 90), OPCIONAL: fracción 0–1 (ej. 0.05 = 5%). Vacío/ausente → NULL (sin pena pactada → retención
+  // por atraso $0). No afecta el gating del alta ni la regla del 100% (es un dato más de la cabecera). La
+  // TASA exacta la confirma el profe (parametrizable; criterio A5/B7, default conservador).
   const penaConvencionalPct = numOrNull(body.penaConvencionalPct);
   if (penaConvencionalPct !== null && (penaConvencionalPct < 0 || penaConvencionalPct > 1)) {
     return res.status(400).json({ error: 'penaConvencionalPct, si se envía, debe estar entre 0 y 1 (ej. 0.05 = 5%)' });

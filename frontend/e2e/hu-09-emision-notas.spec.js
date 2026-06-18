@@ -48,7 +48,7 @@ for (const rol of [
     });
 
     test('sidebar muestra HU-09 y la vista carga sin metadata academica', async ({ page }) => {
-      await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
+      await expect(await sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
       await goToViaSidebar(page, VIEW_PATH);
       await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
       await expectMetadataAcademicaOculta(page, {

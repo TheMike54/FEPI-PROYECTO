@@ -134,8 +134,9 @@ async function integrarEstimacion(req, res) {
       // (1b) GATING SERVER-SIDE del PDF firmado del contrato (antes solo era de UI, salteable por
       //      API directo). No se integra una estimación (carátula financiera append-only) sobre un
       //      contrato sin su PDF firmado ligado (formalización, HU-01). Si el anticipo supera el
-      //      umbral, además debe existir la autorización del titular (art. 50 fr. IV LOPSRM). Umbral
-      //      parametrizable (no se duplica el 30 hardcodeado de la UI). [validar art. 50 fr. IV con el profe].
+      //      umbral, además debe existir la autorización escrita del titular (art. 50 fr. IV LOPSRM,
+      //      ✓verificado: la autorización escrita se exige cuando el anticipo supera el 30% —el tope del
+      //      30% es la fr. II). Umbral parametrizable (no se duplica el 30 hardcodeado de la UI).
       const pdfC = await client.query("SELECT 1 FROM contrato_documentos WHERE contrato_id=$1 AND tipo='contrato' LIMIT 1", [contratoId]);
       if (pdfC.rowCount === 0) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'El contrato no tiene su PDF firmado ligado; no se pueden integrar estimaciones (formalización pendiente, HU-01)' }); }
       const ANTICIPO_UMBRAL_PDF = Number(process.env.ANTICIPO_UMBRAL_PDF ?? 30);
@@ -236,7 +237,8 @@ async function integrarEstimacion(req, res) {
       //      Solo aplica si el contrato tiene programa A2 (programa_obra); los contratos sin programa
       //      (legacy/precio alzado) se rigen solo por el art. 118 total de arriba. Fundamento: art. 45
       //      ap. A fr. X RLOPSRM (programa por periodos) + art. 52 LOPSRM (base del avance) + art. 118.
-      //      [validar con el profe: bloqueo duro vs alerta].
+      //      Bloqueo DURO (A7, criterio del equipo): el exceso sobre lo contratado/planeado se rechaza
+      //      (art. 118 ✓verificado: trabajos por mayor valor sin orden no dan derecho a pago ni a plazo).
       const tieneProg = await client.query('SELECT 1 FROM programa_obra po JOIN contrato_conceptos cc ON cc.id=po.contrato_concepto_id WHERE cc.contrato_id=$1 LIMIT 1', [contratoId]);
       if (tieneProg.rowCount > 0) {
         const plan = await client.query(
@@ -263,7 +265,8 @@ async function integrarEstimacion(req, res) {
       //      avance financiero. El contrato va ATRASADO si su EJECUTADO acumulado en valor
       //      (Σ ya_estimado×pu de toda la obra + esta estimación) es MENOR al PROGRAMADO acumulado al
       //      periodo (Σ planeado_hasta_periodo×pu). Global, sobre TODO el catálogo. Sin programa →
-      //      programado=0 → no medible → no atraso. [validar regla de disparo (global/concepto, bruto/neto)].
+      //      programado=0 → no medible → no atraso. Regla de disparo = criterio del equipo (B7, default
+      //      conservador): aquí GLOBAL en valor; el panel de déficit por concepto (O5) lo mide en unidades.
       const gv = await client.query(
         `SELECT
            COALESCE(SUM(prev.ejec * cc.pu), 0)::numeric(18,4)     AS ejec_prev_valor,

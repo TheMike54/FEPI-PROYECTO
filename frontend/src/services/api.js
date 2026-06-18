@@ -116,7 +116,7 @@ export const api = {
   // HU-18: portafolio ejecutivo con semáforos por contrato (agregado + acotado por participación).
   portafolio: () => request('/portafolio'),
   // HU-24 (FASE 4): finiquito y cierre del contrato (art. 64 LOPSRM / 168-172 RLOPSRM). El saldo lo
-  // deriva el backend; ajustes_finales es parametrizable [validar profe].
+  // deriva el backend; ajustes_finales es parametrizable (criterio del equipo, default conservador: 0).
   finiquitoPrep: (contratoId, ajustes) => request(`/finiquito/contrato/${contratoId}${ajustes != null && ajustes !== '' ? `?ajustes=${encodeURIComponent(ajustes)}` : ''}`),
   cerrarFiniquito: (contratoId, payload) => request(`/finiquito/contrato/${contratoId}`, { method: 'POST', body: JSON.stringify(payload || {}) }),
   // HU-02 (sesión E2): fianzas y garantías (art. 48 LOPSRM / 91 RLOPSRM). CRUD + endosos + PDF de la póliza.

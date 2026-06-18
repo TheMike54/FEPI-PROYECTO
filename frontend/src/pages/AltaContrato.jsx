@@ -33,9 +33,9 @@ const MAX_MONTO = 1e16;
 // --- 4.4 + alta-v4: umbral de % de anticipo que EXIGE el PDF de autorización ---
 // D-5 RESUELTA (Maiki): por ENCIMA del umbral el PDF de autorización es OBLIGATORIO (bloquea
 // avance y guardado del paso de garantías), igual que el PDF firmado. PARAMETRIZABLE: este es
-// el ÚNICO knob del umbral. El % exacto y su fundamento legal son [validar] con el profe — NO se
-// asume artículo del umbral (la exigencia de autorización escrita del titular se apoya, en la
-// vista, en art. 50 fr. IV LOPSRM, pero el valor 30 lo confirma el profe).
+// el ÚNICO knob del umbral. Tope 30% = art. 50 fr. II LOPSRM; la autorización escrita del titular
+// se exige CUANDO el anticipo supera 30% = art. 50 fr. IV LOPSRM. El valor 30 queda parametrizable
+// (criterio del equipo, default conservador alineado al tope legal del 30%).
 const ANTICIPO_UMBRAL_PDF = 30;
 
 // --- Reglas de dominio HU-01 ---
@@ -177,10 +177,12 @@ const JURIDICOS_INICIALES = {
 //  · representanteLegal: art. 46 fr. IV LOPSRM (acreditación de existencia y personalidad del
 //    licitante adjudicado) + RLOPSRM art. 61 fr. VI-b)/VII (facultades del representante para
 //    suscribir el contrato).
-//  · cedulaProfesional: [validar] — LOPSRM/RLOPSRM federal NO la exigen al alta (el responsable/DRO
-//    deriva de reglamentos de construcción locales y de la responsabilidad profesional). Se exige
-//    por decisión de la Fundación; confirmar el fundamento con el profe.
-// poderNotarial/notaria quedan OPCIONALES (una de varias formas de acreditar personalidad) [validar].
+//  · cedulaProfesional: criterio del equipo (default conservador) — LOPSRM/RLOPSRM federal NO la
+//    exigen al alta (el responsable/DRO deriva de reglamentos de construcción locales y de la
+//    responsabilidad profesional). Se exige por decisión de la Fundación (no se relaja un requisito
+//    ya pedido); el profe puede ajustar.
+// poderNotarial/notaria quedan OPCIONALES (una de varias formas de acreditar personalidad — criterio
+// del equipo, default conservador).
 const REQ_JURIDICOS = ['firmanteDependencia', 'cargoFirmante', 'representanteLegal', 'cedulaProfesional'];
 const ETIQUETA_JURIDICO = {
   firmanteDependencia: 'firmante de la dependencia',
@@ -317,14 +319,15 @@ function TabDatosGenerales({ datos, set, err, equipo, montoDerivado }) {
         )}
         {/* O3 — AVISO (no bloqueo) si el superintendente y la supervisión son de la MISMA empresa.
             El profe: "la supervisión es un tercero". Solo presentación: se deriva del empresa_id que
-            ahora traen los asignables (catálogo). [validar profe] si debe ser bloqueo. */}
+            ahora traen los asignables (catálogo). Criterio del equipo (default conservador): AVISA, no
+            bloquea. */}
         {(() => {
           const sup = (eq.asignablesContratista || []).find((u) => String(u.id) === String(eq.superintendenteId));
           const sv = (eq.asignablesSupervision || []).find((u) => String(u.id) === String(eq.supervisionId));
           if (!sup || !sv || !sup.empresa_id || sup.empresa_id !== sv.empresa_id) return null;
           return (
             <div className="mt-3 bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 text-sm text-slate-800 rounded-r-md" data-testid="aviso-misma-empresa">
-              ⚠️ El superintendente y la supervisión pertenecen a la misma empresa (<strong>{sup.empresa}</strong>). La supervisión debe ser un <strong>tercero independiente</strong> del contratista. <span className="text-slate-500">Puedes continuar; es un aviso. [validar con el profe]</span>
+              ⚠️ El superintendente y la supervisión pertenecen a la misma empresa (<strong>{sup.empresa}</strong>). La supervisión debe ser un <strong>tercero independiente</strong> del contratista. <span className="text-slate-500">Puedes continuar; es un aviso (criterio del equipo: no bloquea).</span>
             </div>
           );
         })()}
@@ -545,12 +548,12 @@ function TabJuridicos({ datos, set, err = {} }) {
         <Field label="Firmante autorizado de la dependencia" required><input className={inputCls(err.firmanteDependencia)} value={datos.firmanteDependencia} onChange={set('firmanteDependencia')} data-testid="jur-firmante" /></Field>
         <Field label="Cargo del firmante" required><input className={inputCls(err.cargoFirmante)} value={datos.cargoFirmante} onChange={set('cargoFirmante')} data-testid="jur-cargo" /></Field>
         <Field label="Representante legal del contratista" required><input className={inputCls(err.representanteLegal)} value={datos.representanteLegal} onChange={set('representanteLegal')} data-testid="jur-representante" /></Field>
-        <Field label="Cédula profesional del responsable técnico" required hint="Cédula vigente del responsable. [validar el fundamento con el profe — no exigida por LOPSRM/RLOPSRM federal al alta]"><input className={inputCls(err.cedulaProfesional)} value={datos.cedulaProfesional} onChange={set('cedulaProfesional')} data-testid="jur-cedula" /></Field>
+        <Field label="Cédula profesional del responsable técnico" required hint="Cédula vigente del responsable. Criterio del equipo (default conservador): se exige por decisión de la Fundación (no exigida por LOPSRM/RLOPSRM federal al alta)."><input className={inputCls(err.cedulaProfesional)} value={datos.cedulaProfesional} onChange={set('cedulaProfesional')} data-testid="jur-cedula" /></Field>
         <Field label="No. de poder notarial" hint="Opcional"><input className="sg-input" value={datos.poderNotarial} onChange={set('poderNotarial')} data-testid="jur-poder" /></Field>
         <Field label="Notaría" hint="Opcional"><input className="sg-input" value={datos.notaria} onChange={set('notaria')} data-testid="jur-notaria" /></Field>
       </div>
       <div className="mt-4 bg-guinda-soft border-l-4 border-guinda px-4 py-3 text-sm text-tinta">
-        <strong>Obligatorio para formalizar.</strong> El firmante de la dependencia y su cargo (art. 46 fr. I LOPSRM) y el representante legal del contratista (art. 46 fr. IV LOPSRM; RLOPSRM art. 61 fr. VI-b/VII) son mínimos de formalización. La cédula profesional se exige por decisión de la Fundación <span className="text-slate-500">[validar con el profe]</span>. Poder notarial y notaría son opcionales. Se guarda como un solo registro (<code>datos_juridicos</code>).
+        <strong>Obligatorio para formalizar.</strong> El firmante de la dependencia y su cargo (art. 46 fr. I LOPSRM) y el representante legal del contratista (art. 46 fr. IV LOPSRM; RLOPSRM art. 61 fr. VI-b/VII) son mínimos de formalización. La cédula profesional se exige por decisión de la Fundación <span className="text-slate-500">(criterio del equipo, default conservador)</span>. Poder notarial y notaría son opcionales. Se guarda como un solo registro (<code>datos_juridicos</code>).
       </div>
     </div>
   );
@@ -606,7 +609,7 @@ function AnticipoAutorizacionPDF({ contratoId, soloLectura, pendingFile, onPickF
       ) : (
         <>
           <input ref={inputRef} type="file" accept="application/pdf,.pdf" onChange={onArchivo} disabled={soloLectura || subiendo} className="block text-sm" data-testid="anticipo-pdf-input" />
-          {!contratoId && <p className="text-xs text-amber-700 mt-1" data-testid="anticipo-pdf-requerido"><strong>Obligatorio:</strong> sin este PDF no se puede avanzar ni guardar (anticipo &gt; {ANTICIPO_UMBRAL_PDF}%). <span className="text-slate-400">[validar el umbral con el profe]</span></p>}
+          {!contratoId && <p className="text-xs text-amber-700 mt-1" data-testid="anticipo-pdf-requerido"><strong>Obligatorio:</strong> sin este PDF no se puede avanzar ni guardar (anticipo &gt; {ANTICIPO_UMBRAL_PDF}%, art. 50 fr. IV LOPSRM). <span className="text-slate-400">Umbral parametrizable (criterio del equipo, alineado al tope del 30% del art. 50 fr. II LOPSRM).</span></p>}
           {subiendo && <p className="text-sm text-sigecop-accent mt-1">Subiendo…</p>}
         </>
       )}
@@ -876,7 +879,7 @@ function TabPdfFirmado({ contratoId, soloLectura, pendingFile, onPickFile }) {
           ) : (
             <>
               <input ref={inputRef} type="file" accept="application/pdf,.pdf" onChange={onArchivo} disabled={soloLectura} className="block text-sm" data-testid="pdf-firmado-input-precaptura" />
-              <p className="text-xs text-amber-700 mt-2" data-testid="pdf-firmado-requerido">Sin el PDF firmado <strong>no se puede registrar</strong> el contrato (se formaliza con la firma). <span className="text-slate-400">[validar el fundamento con el profe]</span></p>
+              <p className="text-xs text-amber-700 mt-2" data-testid="pdf-firmado-requerido">Sin el PDF firmado <strong>no se puede registrar</strong> el contrato (se formaliza con la firma). <span className="text-slate-400">Criterio del equipo (default conservador): el contrato existe una vez firmado.</span></p>
             </>
           )}
           <p className="text-xs text-slate-400 mt-3">PDF firmado por las partes (máx. 10 MB). Se guarda en la base de datos al crear el contrato; una vez ligado es inmutable.</p>
@@ -1407,7 +1410,7 @@ export default function AltaContrato() {
   const planOmitido = !((Number(anticipoPct) || 0) > 0) || montoAnticipo <= 0;
 
   // O1-P5a: excesos actuales de garantías vs el % esperado del monto del contrato.
-  //  · Cumplimiento: 10% del monto (lo que pidió el profe en P5a; [validar el tope exacto]).
+  //  · Cumplimiento: 10% del monto (lo que pidió el profe en P5a; criterio del equipo, default conservador para el tope).
   //  · Anticipo: %anticipo × monto (art. 48 fr. I LOPSRM: garantiza la totalidad del anticipo).
   //    Su monto es derivado/read-only, así que normalmente NO excede; se revisa por defensa.
   // Solo pólizas completas (las incompletas las detiene validarPaso(4) antes).
@@ -1451,7 +1454,8 @@ export default function AltaContrato() {
   // P7 (pulido UX 14-jun): PREFILL de presentación de los datos jurídicos desde las cuentas seleccionadas
   // (representante legal ← superintendente; firmante ← dependencia). SOLO rellena si el campo está VACÍO
   // (no pisa lo que el usuario teclee) y siguen siendo editables. No agrega validación ni cambia lo que se
-  // guarda (datos_juridicos JSONB libre). [validar profe] si firmante/representante DEBEN ser esas personas.
+  // guarda (datos_juridicos JSONB libre). Criterio del equipo (default conservador): solo prefill editable,
+  // no se obliga a que firmante/representante SEAN esas personas.
   useEffect(() => {
     const sup = (asignablesContratista || []).find((u) => String(u.id) === String(superintendenteId));
     const dep = (asignablesDependencia || []).find((u) => String(u.id) === String(dependenciaId));
@@ -1577,7 +1581,7 @@ export default function AltaContrato() {
     if (idx === 3) {
       // alta-v5: datos jurídicos OBLIGATORIOS (mínimo de formalización). Antes era opcional
       // (`{ ok: true }`). Fundamento por campo en REQ_JURIDICOS/ETIQUETA_JURIDICO (arriba):
-      // art. 46 fr. I y IV LOPSRM; RLOPSRM art. 61; cédula profesional [validar].
+      // art. 46 fr. I y IV LOPSRM; RLOPSRM art. 61; cédula profesional = criterio del equipo (default conservador).
       const faltan = REQ_JURIDICOS.filter((k) => String(datosJuridicos[k] ?? '').trim() === '');
       if (faltan.length) {
         const campos = {}; faltan.forEach((k) => { campos[k] = true; });
@@ -1592,7 +1596,8 @@ export default function AltaContrato() {
         // alta-v4 (BUG REPORTADO / D-5 resuelta): anticipo > umbral ⇒ el PDF de autorización del
         // anticipo es OBLIGATORIO. Bloquea el AVANCE del paso Y el GUARDADO (mismo candado que el
         // PDF firmado, vía validar()). pdfAnticipoFile = adjuntado en captura; contratoGuardadoId =
-        // ya-guardado (se subió al guardar). Fundamento del umbral [validar] con el profe.
+        // ya-guardado (se subió al guardar). Fundamento: autorización escrita art. 50 fr. IV LOPSRM
+        // sobre el tope del 30% (art. 50 fr. II); umbral parametrizable (criterio del equipo).
         if (a > ANTICIPO_UMBRAL_PDF && !pdfAnticipoFile && !contratoGuardadoId) {
           return { ok: false, msg: `Anticipo ${a}% supera el ${ANTICIPO_UMBRAL_PDF}%: adjunta el PDF de autorización del anticipo (obligatorio para avanzar y guardar).`, errores: { ...ERR0, anticipoPdfFalta: true } };
         }
@@ -1681,9 +1686,9 @@ export default function AltaContrato() {
     if (idx === 6) {
       // alta-v3: el PDF firmado es OBLIGATORIO para registrar el contrato. Debe estar
       // adjuntado (retenido durante la captura, 1.5) ANTES de guardar; el botón "Guardar"
-      // también queda deshabilitado sin él (doble gateo: vista + validación). [validar] — el
-      // fundamento (el contrato se formaliza/existe una vez firmado) lo CONFIRMA el profe;
-      // NO se asume número de artículo. `contratoGuardadoId` cubre el caso ya-guardado.
+      // también queda deshabilitado sin él (doble gateo: vista + validación). Criterio del equipo
+      // (default conservador): el contrato se formaliza/existe una vez firmado; NO se asume número de
+      // artículo. `contratoGuardadoId` cubre el caso ya-guardado.
       // (O2: era el paso 5; el plan de amortización lo recorrió al 6.)
       if (!pdfFirmadoFile && !contratoGuardadoId) {
         return { ok: false, msg: 'El PDF firmado del contrato es obligatorio: adjúntalo en el último paso para poder guardar.', errores: { ...ERR0, pdfFirmadoFalta: true } };
@@ -2050,7 +2055,7 @@ export default function AltaContrato() {
           </ul>
           <p className="text-xs text-slate-500">
             Es un aviso, no un bloqueo: puedes continuar si el monto es intencional.
-            <span className="text-slate-400"> [validar con el profe el % esperado de cumplimiento]</span>
+            <span className="text-slate-400"> El % esperado de cumplimiento es criterio del equipo (default conservador, parametrizable).</span>
           </p>
         </Modal>
       )}

@@ -18,7 +18,7 @@ test.describe('Ciclo de vida — residente (recorrido completo)', () => {
   });
 
   test('el link aparece en el Sidebar y los 14 bloques están presentes, con sus enlaces', async ({ page }) => {
-    await expect(sidebarLinkFor(page, VIEW)).toBeVisible();
+    await expect(await sidebarLinkFor(page, VIEW)).toBeVisible();
     await goToViaSidebar(page, VIEW);
     await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
     await expect(page.getByTestId('select-contrato')).toBeVisible();

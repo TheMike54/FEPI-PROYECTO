@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { ROLES } from '../data/permisos.js';
-import { empresaExistentePorNombre } from '../data/empresa.js';
+import { empresaExistentePorNombre, empresaObligatoriaPara } from '../data/empresa.js';
 import { useSesion } from '../context/SesionContext.jsx';
 import { api } from '../services/api.js';
 
@@ -167,6 +167,12 @@ function FormRegistro({ onIrLogin, setMensaje }) {
       ? empresaNueva.trim().replace(/\s+/g, ' ')
       : (empresaSel ? (empresas.find((e) => String(e.id) === empresaSel)?.nombre || '') : '');
 
+    // REGLA 1 (BLOQUE 1): empresa OBLIGATORIA para contratista/supervisión (empresas privadas).
+    if (empresaObligatoriaPara(rolSolicitado) && !empresaFinal) {
+      setErrorLocal('Elige tu empresa: es obligatoria para contratista y supervisión.');
+      return;
+    }
+
     setLoading(true);
     try {
       // Email normalizado a minúsculas+trim, simétrico con el login (el backend ya normaliza igual).
@@ -259,7 +265,9 @@ function FormRegistro({ onIrLogin, setMensaje }) {
         {/* O3/FASE 1 (profe 15-jun): empresa = SELECTOR del catálogo (imposible duplicar por texto
             libre). Se ELIGE una existente; "Registrar nueva" solo si de verdad no existe. */}
         <div>
-          <label className="sg-label" htmlFor="reg-empresa-select">Empresa (opcional)</label>
+          <label className="sg-label" htmlFor="reg-empresa-select">
+            Empresa {empresaObligatoriaPara(rolSolicitado) ? '*' : '(opcional)'}
+          </label>
           <select
             id="reg-empresa-select"
             data-testid="reg-empresa-select"

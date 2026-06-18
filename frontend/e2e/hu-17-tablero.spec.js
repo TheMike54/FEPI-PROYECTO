@@ -58,7 +58,7 @@ test.describe('HU-17 — Residente (es parte de SMK17-001)', () => {
   test.beforeEach(async ({ page }) => {
     await freshHome(page);
     await enterAppMode(page, 'residente');
-    await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
+    await expect(await sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
     await goToViaSidebar(page, VIEW_PATH);
     await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
   });

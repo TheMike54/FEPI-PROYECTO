@@ -131,7 +131,8 @@ async function abrirBitacora(req, res) {
 
       // fecha_apertura = fecha de INICIO del contrato: la bitácora se abre el MISMO día en que
       // arranca el contrato (hallazgo del profe, audio 2026-06-01). La entrega del sitio se
-      // conserva aparte (acta.cronograma.entrega_sitio). [validar] la regla "mismo día".
+      // conserva aparte (acta.cronograma.entrega_sitio). La regla "mismo día" es criterio del
+      // equipo (default conservador), tomada del hallazgo del profe en el audio 2026-06-01.
       const ins = await client.query(
         `INSERT INTO bitacora_aperturas
            (contrato_id, fecha_apertura, plazo_firma_dias, acta, aperturada_por,
@@ -187,8 +188,10 @@ async function abrirBitacora(req, res) {
       // Pase 2.3 — Asiento DIFERIDO: si hubo sustituciones del roster ANTES de abrir la bitácora
       // (filas con sustituye_a y sin nota), genera ahora sus notas (art. 125 fr. I g), numeradas
       // TRAS la #1 de apertura. El folio refleja el orden de ASIENTO; el contenido cita la fecha
-      // real del acto. El emisor es el residente que apertura. [validar profe] el asiento
-      // retroactivo de notas de sustitución (orden folio vs. fecha del hecho, art. 123 fr. V/VI).
+      // real del acto. El emisor es el residente que apertura (art. 125 fr. I g RLOPSRM, a quien
+      // toca registrar la sustitución). El asiento retroactivo respeta el orden de folio (art. 123
+      // fr. V RLOPSRM) e inmutabilidad (art. 123 fr. VI RLOPSRM); que el folio refleje el orden de
+      // asiento (no la fecha del hecho) es criterio del equipo (default conservador).
       const pendientesSust = await client.query(
         `SELECT r.id, r.rol, r.usuario_id, un.nombre AS nuevo_nombre, r.motivo, r.vigencia_desde,
                 ra.usuario_id AS anterior_id, ua.nombre AS anterior_nombre
@@ -217,7 +220,9 @@ async function abrirBitacora(req, res) {
       // (concepto_avance con cantidad>0 y sin nota). Mismo patrón que la sustitución: el registro
       // de avance genera su nota de bitácora (art. 125 fr. II); si no había bitácora, se difiere y se
       // asienta aquí, numerada TRAS la #1 de apertura. Reusa textoNotaAvance (consistente con el
-      // asiento en vivo de trabajos.controller). Emisor = quien apertura (residente). [validar profe].
+      // asiento en vivo de trabajos.controller). Emisor de la nota de avance = quien registra (en
+      // vivo el contratista; en el diferido, quien apertura), identificado en los datos de la nota
+      // (art. 123 fr. II RLOPSRM) — criterio del equipo (default conservador).
       const pendientesAvance = await client.query(
         `SELECT ca.id, ca.cantidad, cc.concepto, cc.unidad, cp.numero AS periodo_numero
            FROM concepto_avance ca
@@ -243,7 +248,7 @@ async function abrirBitacora(req, res) {
       // NULL). Mismo patrón que la sustitución/avance: el registro del convenio genera su nota; si no
       // había bitácora, se difiere y se asienta aquí, numerada TRAS la #1 de apertura. El UPDATE de
       // nota_id es la ÚNICA transición que el trigger de inmutabilidad del convenio permite (NULL→valor).
-      // Emisor = quien apertura (residente). [validar profe].
+      // Emisor de la nota de convenio (consecuencia) = el residente del contrato (art. 53 LOPSRM).
       const pendientesConvenio = await client.query(
         `SELECT id, numero, folio, tipo, delta_monto_pct, delta_plazo_pct, motivo
            FROM convenios_modificatorios
@@ -639,7 +644,8 @@ async function construirPayloadNotas(apertura, userId) {
   // El emisor firma al emitir (n.firmado_en); las contrapartes vía bitacora_nota_firmas. En
   // cuanto el conjunto de firmantes cubre al roster → 'firmada' (sin esperar al plazo). La
   // aceptación TÁCITA por vencimiento aplica SOLO si NO se completaron las firmas.
-  // [validar] alternativa: que baste la contraparte directa (no todo el roster).
+  // Criterio del equipo (default conservador): se exige al ROSTER COMPLETO (no basta la contraparte
+  // directa) para tener por 'firmada' la nota antes del plazo (art. 123 fr. III y fr. XII RLOPSRM).
   const rosterIds = [apertura.residente_id, apertura.superintendente_id, apertura.supervision_id].filter((x) => x != null);
 
   const notas = r.rows.map((n) => {
@@ -816,7 +822,7 @@ async function vincularNota(req, res) {
       if (!rolEnContrato) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'No eres parte firmante de este contrato; no puedes responder notas' }); }
 
       // B-2 (auditoría — art. 123 fr. VI RLOPSRM: trazabilidad/auditabilidad de las referencias de la
-      // bitácora) [validar texto literal con el profe]: la nota-respuesta DEBE quedar en la MISMA
+      // bitácora): la nota-respuesta DEBE quedar en la MISMA
       // bitácora que la nota referenciada. Hoy se DERIVA (la respuesta se crea en apertura.id, que es la
       // bitácora de la nota original), pero se hace EXPLÍCITO para VERIFICAR la invariante y que sea
       // inmune a refactors futuros del flujo de vinculación (que la nota destino no quede ligada a una

@@ -67,14 +67,35 @@ export async function loginComo(page, rolId) {
   await enterAppMode(page, rolId);
 }
 
-/** Navega a una vista con click SPA en su NavLink del Sidebar. */
+// BLOQUE 4 (acordeones del sidebar modo-sistema): los sub-pasos de cada flujo se ocultan al colapsar. Si el
+// enlace buscado no está visible, expande los flujos colapsados (clic en los chevrons `data-accordion-toggle`
+// que sigan en aria-expanded="false") hasta que el enlace aparezca. Plumbing de test: NO cambia la navegación
+// real, ni el href ni el gating del enlace.
+async function expandirSidebarHasta(page, path) {
+  const link = page.locator(`aside a[href="${path}"]`).first();
+  if (await link.isVisible().catch(() => false)) return;
+  const toggles = page.locator('aside [data-accordion-toggle]');
+  const n = await toggles.count();
+  for (let i = 0; i < n; i++) {
+    if (await link.isVisible().catch(() => false)) break;
+    const t = toggles.nth(i);
+    if ((await t.getAttribute('aria-expanded').catch(() => null)) === 'false') {
+      await t.click().catch(() => {});
+    }
+  }
+}
+
+/** Navega a una vista con click SPA en su NavLink del Sidebar (expande su acordeón si hace falta). */
 export async function goToViaSidebar(page, path) {
+  await expandirSidebarHasta(page, path);
   await page.locator(`aside a[href="${path}"]`).first().click();
   await page.waitForLoadState('networkidle');
 }
 
-/** Locator del enlace de la vista en el Sidebar (puede tener .count() 0 si el rol no la ve). */
-export function sidebarLinkFor(page, path) {
+/** Locator del enlace de la vista en el Sidebar. AHORA ASÍNCRONO: expande el acordeón antes de devolverlo.
+ *  Uso: `await sidebarLinkFor(page, path)`. (Puede tener .count() 0 si el rol no la ve.) */
+export async function sidebarLinkFor(page, path) {
+  await expandirSidebarHasta(page, path);
   return page.locator(`aside a[href="${path}"]`).first();
 }
 
@@ -99,11 +120,17 @@ export async function expectSinAvisoSoloConsulta(page) {
  * verifica simplemente que NO está presente (lo cual es cierto en todas las vistas).
  */
 export async function expectMetadataAcademicaOculta(page, { huId, sprintLabel, rolAcademicoLabel } = {}) {
-  if (huId) await expect(page.locator('span', { hasText: huId })).toHaveCount(0);
-  if (sprintLabel) await expect(page.locator('span', { hasText: sprintLabel })).toHaveCount(0);
-  await expect(page.getByText('Criterios de aceptación')).toHaveCount(0);
+  // BLOQUE 4 (navegación modo-sistema): la metadata ACADÉMICA (el panel de modo proyecto — HU id, sprint,
+  // criterios de aceptación, rol académico) se renderizaba dentro del CONTENIDO de la pantalla (<main>) y
+  // debe seguir OCULTA ahí. El indicador de HU de NAVEGACIÓN del mockup modo-sistema (pill en el sidebar /
+  // badge discreto) es intencional y vive FUERA de <main> (en <aside> o fijo), así que no es metadata
+  // académica. Por eso el chequeo se acota a <main>: conserva el invariante real sin chocar con el marco.
+  const main = page.locator('main');
+  if (huId) await expect(main.locator('span', { hasText: huId })).toHaveCount(0);
+  if (sprintLabel) await expect(main.locator('span', { hasText: sprintLabel })).toHaveCount(0);
+  await expect(main.getByText('Criterios de aceptación')).toHaveCount(0);
   if (rolAcademicoLabel) {
-    await expect(page.getByText(`Rol: ${rolAcademicoLabel}`)).toHaveCount(0);
+    await expect(main.getByText(`Rol: ${rolAcademicoLabel}`)).toHaveCount(0);
   }
 }
 
@@ -173,7 +200,7 @@ export async function altaAdjuntarPdfAnticipo(page, nombre = 'autorizacion-antic
 /**
  * alta-v5: rellena los DATOS JURÍDICOS obligatorios (paso 3). Requiere estar en el paso jurídicos.
  * Campos mínimos: firmante + cargo (art. 46 fr. I LOPSRM), representante legal (art. 46 fr. IV) y
- * cédula profesional (decisión Fundación, [validar]). Poder/notaría son opcionales (no se llenan).
+ * cédula profesional (criterio del equipo: default conservador, se mantiene exigida). Poder/notaría son opcionales (no se llenan).
  */
 export async function altaLlenarJuridicos(page, d = {}) {
   await page.getByTestId('jur-firmante').fill(d.firmante || 'Ing. Ana López Reyes');

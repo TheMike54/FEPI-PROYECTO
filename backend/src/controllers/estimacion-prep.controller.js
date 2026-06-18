@@ -132,7 +132,10 @@ async function preparacionEstimacion(req, res) {
       // Barras + retención por atraso (Etapa C): físico (ejecutado en valor) vs programado (curva S) vs
       // financiero (pagado/monto). atraso_previo = ya atrasado SIN la estimación actual; la carátula viva
       // recalcula el atraso REAL sumando el bruto del periodo (fisico_ejecutado + bruto < planeado_valor).
-      // [validar la definición físico/financiero y la regla de disparo con el profe].
+      // Definición físico/financiero: el avance financiero/monto se mide SIN IVA (art. 2 fr. XIX RLOPSRM).
+      // Regla de disparo del atraso = criterio del equipo (default conservador): por concepto, en unidades
+      // (programado al periodo − ejecutado); la pena por atraso es parametrizable (art. 46 Bis LOPSRM + arts.
+      // 86-88 RLOPSRM), default sin pena → retención $0 hasta fijar el %.
       avance: {
         fisico_ejecutado: fisicoValor.toFixed(2),
         fisico_pct: pct(fisicoValor, montoContrato),

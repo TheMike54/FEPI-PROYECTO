@@ -9,8 +9,10 @@
 > contexto previo**. Todo lo de aquí está **verificado contra el código/git real** (no asumido). Tono
 > honesto: lo que funciona y lo que es maqueta están marcados como tales.
 >
-> **Cabecera de versión:** fecha **2026-06-17**, `main = 75797e2` (oleadas A/CITAS/B/PAGO/C + pulido UX ya
-> commiteados) + **cambios LOCALES sin commit** de tres sesiones:
+> **Cabecera de versión:** fecha **2026-06-18**, `main = 75797e2` (oleadas A/CITAS/B/PAGO/C + pulido UX ya
+> commiteados) + **cambios LOCALES sin commit** de varias sesiones (entradas 1–10 abajo; las más recientes:
+> acotamiento por empresa **encendido** (8), **BLOQUE 3** `[validar profe]` a CERO + reglas empresa (9), y
+> **BLOQUE 4** navegación modo-sistema (10)):
 > (1) **Revisión del profe 15-jun** (`docs/planes/PLAN_REVISION_PROFE_15jun.md`): FASE 2 reglas del plan de
 > amortización (proporcional al programa, art. 143 fr. I), FASE 3 deduplicación fuerte de empresas, FASE 1
 > seed de datos demo (`backend/scripts/seed_demo.sql`, `docs/SEED_DEMO_SIGECOP.md`).
@@ -71,8 +73,8 @@
 > Verif adversarial **APROBADA**. Follow-on: registro *obligar* empresa + guard de roster + enforcement de
 > lista. **BLOQUE 2 (bugs):** nota del convenio visible (columna "Nota de bitácora", `convenios.controller`
 > +JOIN); apertura en libro y avance→nota auto **ya estaban**. Suite **309/8/0** (1 flaky). Reporte:
-> `docs/reportes/REPORTE_PLAN_GRANDE_18jun.md`. **Pendiente: BLOQUE 3** (limpiar ~160 `[validar profe]`) **y
-> BLOQUE 4** (navegación modo-sistema). **`lib/acceso.js` (core) tocado aditivo → revisión de Maiki.**
+> `docs/reportes/REPORTE_PLAN_GRANDE_18jun.md`. **BLOQUE 3 HECHO** (ver entrada 9); **pendiente BLOQUE 4**
+> (navegación modo-sistema). **`lib/acceso.js` (core) tocado aditivo → revisión de Maiki.**
 > (8) **Acotamiento por empresa ENCENDIDO (18-jun, sesión dedicada, `docs/reportes/REPORTE_ACOTAMIENTO_EMPRESA_18jun.md`):**
 > el acotamiento de (7) dejó de estar dormido. **JWT (`auth.controller`) ahora firma `empresa_id`** (aditivo:
 > conserva `{id,rol,nombre}`, añade `empresa_id: usuario.empresa_id ?? null`; `auth.middleware` SIN cambios —
@@ -85,6 +87,39 @@
 > garantías, finiquito, pagos…) fetchan el contrato **sin** `dependencia_empresa_id` → siguen fail-open por id
 > directo. Extenderlo a esos gates = **follow-on**. **Zona congelada (`auth.controller`/`contratos.controller`)
 > tocada aditivo → revisión de Maiki; LOCAL sin push.**
+> (9) **BLOQUE 3 del Plan Grande (18-jun, `docs/reportes/REPORTE_BLOQUES_3_4_18jun.md`):** **3a —
+> `[validar profe]` a CERO** en código vivo, historias y auditoría (159 marcas resueltas; tabla
+> `docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md` con A1-A18 citas + B1-B20 criterio; **citas
+> verificadas contra el texto literal de `docs/legal/`** — corrigió pena=46 Bis+86-88, art. 46 fr. I/III,
+> art. 123 fr. VI=inmutabilidad, art. 125=registro). Tocó comentarios en zona congelada
+> (`schema.sql`/`contratos`/`estimaciones`, CERO lógica). **1 excepción:** `auth.controller.js:13` intacta
+> (orden "NO tocar auth"); su fix va en el reporte. **3b — REGLA 1:** empresa OBLIGATORIA para
+> contratista/supervisión (frontend `SeleccionRol`/`SolicitudRegistro` + `ROLES_EMPRESA_OBLIGATORIA` en
+> `data/empresa.js`; backend = diff para Maiki, register congelado). **3c — REGLA 4:** la sustitución exige
+> MISMA empresa (`roster.controller` guard 409; retrocompat fail-open; verificado API 409/201; seed del
+> sustituto hereda la empresa de `contratista@`). Specs negativos nuevos (registro sin empresa; sustitución
+> de otra empresa). **`permisos.js`/`App.jsx`/auth NO se tocaron.** LOCAL sin push.
+> (10) **BLOQUE 4 — navegación modo-sistema (18-jun, `docs/reportes/REPORTE_BLOQUES_3_4_18jun.md`):** marco de
+> navegación del mockup `docs/mockups/sigecop-modo-sistema.html` sobre el real, en 4 tandas (suite verde tras
+> cada una). REGLA DE ORO: el marco ENVUELVE, NO reescribe contenido. **Sidebar.jsx** (no congelado) reescrito
+> a **grupos por flujo** (Flujos · Vistas ejecutivas · Administración + sub-pasos + ambientes "por bloques"),
+> conservando CADA `href` con su MISMO gating (HU por `nivelDe` —lee `permisos.js`, no lo toca—; rutas fijas
+> por rol) + red de seguridad "Otras pantallas" (ningún enlace desaparece; cada HU sigue identificable por su
+> pill, no se funden). **AppShell.jsx** (no congelado): **chip de empresa** (empresa_id del JWT → catálogo),
+> **indicador de HU** abajo-derecha (`useLocation`, FUERA de `<main>`), y **pop-ups** de "Por firmar"
+> (datos reales HU-08 `/bitacora/pendientes`) y **campana** (notificaciones + atraso), con backdrop;
+> `campana-atrasos` y su gating intactos. Helper `expectMetadataAcademicaOculta` acotado a `<main>` (el
+> indicador de HU de navegación vive fuera; el invariante real se conserva). Spec nuevo
+> `nav-modo-sistema.spec.js` (5). **Suite final 317/8/0.** **NO se tocó zona congelada** (permisos.js/App.jsx/
+> auth/SesionContext intactos). GOTCHA de sesión: limpié ~2050 contratos de prueba que polucionaron la BD
+> local (folios E2E-*/BITUI*/SMOKE-*/CHK*/NORTE-*) — hacían fallar el flaky `detalle-indicador-atraso:77`
+> (no es bug de BLOQUE 4, verificado revirtiendo AppShell). LOCAL sin push.
+> **PASE DE DISEÑO (después, solo UX, `docs/reportes/REPORTE_DISENO_NAV_BLOQUE4_18jun.md`):** `Sidebar.jsx`
+> → **guinda institucional** + **acordeones** (flujos con sub-pasos colapsables, default solo el flujo actual)
+> + ancho sin truncar; `Inicio.jsx` → **cuadrícula curada de módulos principales por rol** (deja de listar los
+> 15 sub-HU). Helpers de test expanden el acordeón (`sidebarLinkFor` async). Fix de gating: hijos accesibles
+> con padre inaccesible se **promueven a items planos** (ningún enlace se pierde). Suite **323/8/0**. Capturas
+> en `docs/reportes/screens-bloque4-diseno/`. NO tocó href/gating/permisos.js/App.jsx/auth/contenido.
 >
 > **Docs hermanos:** historia completa → `docs/HISTORIAL_PROYECTO.md` · historias de usuario vigentes
 > (criterios = sistema real) → `docs/analisis-y-diseno/Historias_Usuario_ACTUALIZADAS_12jun.md` · auditoría
@@ -305,8 +340,8 @@ el cliente puede saltarse). Wizard de 7 pasos (`AltaContrato.jsx:1221`): datos+e
   programada amortiza algo (rechaza el plan 0/0/todo-al-último). El **default** precargado es
   **proporcional al programa** (no cuotas iguales). Validado en `crearContrato` (server) y
   `AltaContrato.jsx::validarPaso`/`TabPlanAmortizacion` (cliente). La carátula G2 **sigue proporcional**
-  (no obedece el plan; Fase B `[validar profe]`). `[validar profe]`: proporcionalidad estricta vs. esta
-  banda editable.
+  (no obedece el plan; Fase B). Proporcionalidad estricta vs. esta banda editable = criterio del equipo
+  resuelto (§7.3 / tabla B-amortización): se mantiene la banda editable (cumple art. 143 fr. I).
 - Todo **transaccional** (BEGIN/COMMIT/ROLLBACK).
 
 ⚠️ **Solo-cliente (el backend NO los exige):** PDF firmado obligatorio, anticipo>30% exige PDF de
@@ -425,7 +460,8 @@ vive en el MISMO BEGIN/COMMIT que el evento); toma advisory lock por bitácora y
 **Ya no quedan.** Las tres últimas se cerraron en junio:
 - **HU-18 Portafolio** → funcional (17-jun): `GET /api/portafolio` (`portafolio.controller.js`, solo
   lectura, acotado por participación vía `ROLES_VEN_TODO`/`lib/acceso`) calcula el semáforo server-side
-  desde datos reales. Umbrales y la definición de "avance físico" quedan **`[validar profe]`** (ver HU-18).
+  desde datos reales. Umbrales y la definición de "avance físico" = criterio del equipo resuelto (§7.3 /
+  tabla B4/B7; umbrales parametrizables, avance medido sin IVA art. 2 fr. XIX RLOPSRM).
 - **HU-02 Fianzas / HU-11 Minutas** → funcionales (sesión E2 18-jun); ver §7.2.
 - **HU-20 Tránsito a pago** → funcional (sesión grande 18-jun, PR `feat/e3-hu-20`): `instruccion-pago.controller.js`
   + `/api/instruccion-pago`. Suficiencia presupuestal server-side (art. 24), semáforo del plazo de 20 días
@@ -447,11 +483,17 @@ vive en el MISMO BEGIN/COMMIT que el evento); toma advisory lock por bitácora y
 - **HU-07:** rediseñado (O5) a panel automático → se perdieron los criterios viejos de alertas
   configurables/umbral/canal (la ficha vieja quedó obsoleta; ya actualizada).
 
-### 7.3 `[validar profe]` abiertos (decisiones legales, NO las decide Code)
-- ~~Gate de pago permisivo~~ → **RESUELTO (OLEADA PAGO): endurecido a SOLO `'autorizada'`** (art. 54).
-- Amortización **Fase B** (¿la carátula obedece el plan editable o sigue proporcional? — sigue proporcional, art. 143 fr. I).
-- Ancla de periodo de los reportes (HU-19); 2 al millar CMIC (sin fundamento federal, solo si el contrato lo
-  pacta); emisor de la nota DIFERIDA de hecho (JWT vs actor original) [C3, opcional].
+### 7.3 `[validar profe]` — CERRADOS a CERO (BLOQUE 3a, 18-jun)
+**Ya NO quedan marcas `[validar profe]` en el código, las historias ni la auditoría** (verificado por grep).
+Cada una se resolvió con **cita legal verificada contra el texto literal** (LOPSRM/RLOPSRM/LFD en `docs/legal/`)
+o con **criterio del equipo (default conservador)** documentado. La tabla completa (punto · decisión · fundamento)
+está en **`docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md`** (A1-A18 con cita, B1-B20 criterio). Lo legal
+sigue siendo confirmable por el profe; esto fija el comportamiento por defecto, sin marcas sueltas. Defaults
+clave: pago solo `'autorizada'` (art. 54); amortización proporcional (art. 143 fr. I); pena por atraso = art. 46
+Bis + 86-88 RLOPSRM (corregido, NO "86-90"/"138/139"); 2 al millar CMIC parametrizable, default no aplica;
+ajustes del finiquito parametrizables (default 0). **Excepción:** 1 marca en `auth.controller.js` (regla del
+nombre ≥2 palabras) se dejó intacta por la orden "NO tocar auth"; su resolución va en el reporte para que Maiki
+la aplique.
 
 ### 7.4 PRs/ramas de equipo
 `feat/e3-hu-16`, `feat/e3-hu-18`, `feat/e3-hu-19`, `feat/e3-hu-20` **ya existen** en origin y están
@@ -508,7 +550,7 @@ vive en el MISMO BEGIN/COMMIT que el evento); toma advisory lock por bitácora y
 | HU-15 | Revisión técnica y autorización | ✅ |
 | HU-16 | Reingreso tras rechazo | ✅ (reingreso real: nueva versión bloque indep. ligada por `reemplaza_a`; plazo art. 54 no se reinicia) |
 | HU-17 | Tablero de estimaciones | ✅ |
-| HU-18 | Portafolio ejecutivo con semáforos | ✅ (integración 17-jun: semáforo server-side `GET /api/portafolio`, acotado por participación; umbrales/avance físico `[validar profe]`) |
+| HU-18 | Portafolio ejecutivo con semáforos | ✅ (integración 17-jun: semáforo server-side `GET /api/portafolio`, acotado por participación; umbrales/avance físico = criterio resuelto §7.3) |
 | HU-19 | Exportación de 7 reportes | ✅ (R4 observaciones pendiente) |
 | HU-20 | Tránsito a pago / suficiencia presupuestal | ✅ (sesión grande 18-jun, PR `feat/e3-hu-20`: `GET/POST /api/instruccion-pago`; suficiencia art. 24 server-side, semáforo plazo 20 días art. 54 anclado en nota de autorización, soportes factura/CFDI + fianza leída de garantías, instrucción real 1×estimación UNIQUE, **gate de finiquito** art. 64/170; `[validar profe]` resueltos con base legal en la historia) |
 | HU-21 | Registro del pago | ✅ (gate ESTRICTO: solo `autorizada`, art. 54) |
@@ -516,7 +558,7 @@ vive en el MISMO BEGIN/COMMIT que el evento); toma advisory lock por bitácora y
 | Por Firmar | Firma de aperturas pendientes | ✅ |
 | HU-22 | Sustitución de personas / roster (art. 125) | ✅ |
 | HU-23 | Catálogo de empresas | ✅ (registro por **SELECTOR del catálogo**, no texto libre — sesión autónoma 16-jun; + deduplicación FUERTE que funde acentos/puntuación/sufijos de razón social como segunda red — FASE 3 15-jun) |
-| HU-24 | Finiquito y cierre del contrato | ✅ (FASE 4, 17-jun: `GET/POST /api/finiquito/contrato/:id`; saldo server-side = Σ neto autorizada/pagada − pagos − anticipo no amortizado − `ajustes_finales` parametrizables `[validar profe]`; asienta nota de bitácora `finiquito` y cierra el contrato (`contratos.estado='cerrado'`); 1 por contrato, append-only; documento art. 170 imprimible. art. 64 LOPSRM / 168-172 RLOPSRM) |
+| HU-24 | Finiquito y cierre del contrato | ✅ (FASE 4, 17-jun: `GET/POST /api/finiquito/contrato/:id`; saldo server-side = Σ neto autorizada/pagada − pagos − anticipo no amortizado − `ajustes_finales` parametrizables (criterio resuelto §7.3, default 0); asienta nota de bitácora `finiquito` y cierra el contrato (`contratos.estado='cerrado'`); 1 por contrato, append-only; documento art. 170 imprimible. art. 64 LOPSRM / 168-172 RLOPSRM) |
 
 ### Términos legales y de obra
 - **Estimación:** documento periódico que valoriza el avance ejecutado para cobro (art. 54 LOPSRM).

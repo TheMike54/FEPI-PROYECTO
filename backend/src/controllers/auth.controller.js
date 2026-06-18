@@ -10,7 +10,8 @@ const ROLES_VALIDOS = ['residente', 'contratista', 'supervision', 'dependencia',
 // (nombre + apellido[s]); hoy se podía registrar con un solo token ("Iván"). Regla operativa para
 // que la bitácora identifique sin ambigüedad a quienes intervienen (art. 123 RLOPSRM exige asentar
 // a las personas que participan). NO es un requisito con artículo propio; el umbral exacto (≥2
-// palabras) lo fija la Fundación [validar redacción con el profe]. El frontend valida lo mismo
+// palabras) lo fija la Fundación (criterio del equipo, default conservador; el nombre completo
+// aparece en la bitácora, art. 123 fr. III RLOPSRM). El frontend valida lo mismo
 // (espejo en SeleccionRol.jsx / SolicitudRegistro.jsx); este es el candado del servidor.
 // /\p{L}{2,}/gu cuenta solo palabras de ≥2 letras seguidas: una INICIAL ('J.') no cuenta, así que
 // "Iván"→1 (rechaza), "José García"→2 (acepta). Es deliberado (nombre y apellido visibles, no
@@ -100,6 +101,13 @@ async function register(req, res) {
     let empresaId = null;
     if (typeof empresa === 'string' && empresa.trim()) {
       empresaId = await resolverOCrearEmpresa(query, empresa);
+    }
+
+    // (REGLA 1 — empresa obligatoria) Refuerzo server-side: contratista/supervisión NO pueden
+    // registrarse sin empresa (el frontend ya lo valida; esto es defensa en profundidad).
+    const ROLES_EMPRESA_OBLIGATORIA = ['contratista', 'supervision'];
+    if (ROLES_EMPRESA_OBLIGATORIA.includes(rolSol) && empresaId == null) {
+      return res.status(400).json({ error: 'La empresa es obligatoria para contratista y supervisión.' });
     }
 
     const result = await query(

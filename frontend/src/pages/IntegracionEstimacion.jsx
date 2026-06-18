@@ -387,8 +387,8 @@ function TabCaratula({ caratula, anticipoPct, deductivas, onDeductivas, acumulad
                 />
               </td>
             </tr>
-            {/* Etapa C (falta el % del profe, art. 46 Bis LOPSRM / 86-90 RLOPSRM [validar]): renglón PREVISTO en $0. */}
-            <tr className={`border-t border-slate-200 ${caratula.retencionAtraso > 0 ? 'text-red-700' : 'text-slate-400'}`} title="Penas convencionales por atraso (art. 46 Bis LOPSRM / 86-90 RLOPSRM). Aplica si hay % de pena pactado en el contrato y la obra va atrasada vs su programa al periodo.">
+            {/* Etapa C (pena convencional por atraso, art. 46 Bis LOPSRM + arts. 86-88 RLOPSRM, tope art. 90 RLOPSRM; parametrizable por contrato, default 0 hasta fijar el %): renglón PREVISTO en $0. */}
+            <tr className={`border-t border-slate-200 ${caratula.retencionAtraso > 0 ? 'text-red-700' : 'text-slate-400'}`} title="Penas convencionales por atraso (art. 46 Bis LOPSRM + arts. 86-88 RLOPSRM, tope art. 90 RLOPSRM). Aplica si hay % de pena pactado en el contrato y la obra va atrasada vs su programa al periodo.">
               <td className="px-4 py-3">(−) Retención por atraso {caratula.atraso && <span className="text-[10px] uppercase tracking-wide bg-red-100 text-red-700 border border-red-200 rounded px-1.5 py-0.5 ml-1" data-testid="badge-atraso">atraso</span>}</td>
               <td className="px-4 py-3 text-right font-mono" data-testid="caratula-retencion-atraso">{moneda(caratula.retencionAtraso)}</td>
             </tr>
@@ -634,7 +634,7 @@ export default function IntegracionEstimacion() {
   );
 
   // Carátula VIVA con el MISMO redondeo del backend (r2). Renglón "retención por atraso" PREVISTO
-  // pero en $0 (Etapa C: falta el % del profe — art. 46 Bis LOPSRM / 86-90 RLOPSRM [validar]); no se calcula aquí.
+  // pero en $0 (Etapa C: pena por atraso, art. 46 Bis LOPSRM + arts. 86-88 RLOPSRM, tope art. 90 RLOPSRM; parametrizable, default 0 hasta fijar el %); no se calcula aquí.
   // Etapa C: datos para la retención por atraso (del prep, solo lectura): % de pena pactado y los
   // valores para medir el atraso GLOBAL (ejecutado vs programado al periodo).
   const penaPct = prep?.contrato?.pena_convencional_pct != null ? Number(prep.contrato.pena_convencional_pct) : null;
@@ -869,7 +869,7 @@ export default function IntegracionEstimacion() {
                   <BarraAvance label="Avance financiero (pagado acumulado / monto)" pct={prep.avance?.financiero_pct} color="bg-emerald-400" testid="barra-financiero" />
                 </div>
                 <p className="text-xs text-slate-500 mt-2">
-                  Sin IVA (art. 2 fr. XIX RLOPSRM). Físico = obra ejecutada/estimada en valor; financiero = lo efectivamente pagado (HU-21). Al integrar se guarda el snapshot de ambos avances en la estimación. <span className="text-slate-400">[validar definición físico/financiero]</span>
+                  Sin IVA (art. 2 fr. XIX RLOPSRM). Físico = obra ejecutada/estimada en valor; financiero = lo efectivamente pagado (HU-21). Al integrar se guarda el snapshot de ambos avances en la estimación.
                 </p>
               </div>
             )}

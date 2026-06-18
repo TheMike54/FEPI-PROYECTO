@@ -14,7 +14,8 @@ import { monedaMXN as moneda } from '../utils/formato.js';
 // presupuestal y se emite la INSTRUCCIÓN (art. 24 LOPSRM, HU-20) → se REGISTRA el pago (HU-21). El plazo de
 // 20 días naturales del art. 54 es la FECHA LÍMITE para pagar (la dependencia debe pagar dentro de ese
 // plazo; vencerlo genera gastos financieros, art. 55) — por eso AVISA (semáforo), NO bloquea el pago: el
-// objetivo es pagar antes del vencimiento, no impedirlo. [validar profe: confirmar avisa vs bloquea.]
+// objetivo es pagar antes del vencimiento, no impedirlo. Criterio del equipo (default conservador): el
+// semáforo del plazo avisa, no bloquea (el bloqueo duro queda reservado al exceso del art. 118 RLOPSRM).
 //
 // CASCARÓN: bloques 2-3 (tránsito + instrucción) son HU-20, ya FUNCIONAL desde el BLOQUE A de esta sesión
 // (suficiencia art. 24 + instrucción de pago real); ya NO son placeholders. Cada bloque enlaza a su ruta

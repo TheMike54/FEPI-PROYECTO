@@ -58,7 +58,7 @@ test.describe('HU-08 — modo aplicacion (Residente: ejecuta)', () => {
   });
 
   test('sidebar muestra HU-08 y la vista carga sin metadata academica', async ({ page }) => {
-    await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
+    await expect(await sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
     await goToViaSidebar(page, VIEW_PATH);
     await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
     await expectMetadataAcademicaOculta(page, {
@@ -97,7 +97,7 @@ for (const rol of [
     // alta-v2 (4.5): el aviso/botones del FORM requieren contrato seleccionado + datos reales
     // (página cableada). Pendiente convertir a integración. Ver entregable alta-v2 §6.
     test.fixme('aviso de solo consulta visible; botones Firmar deshabilitados', async ({ page }) => {
-      await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
+      await expect(await sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
       await goToViaSidebar(page, VIEW_PATH);
 
       await expectAvisoSoloConsulta(page);

@@ -47,10 +47,10 @@
 - Lista cerrada de 5 roles validos en backend (ROLES_VALIDOS, auth.controller.js:7) espejo de ROLES en frontend (permisos.js:1-7).
 - Email se normaliza a lower+trim en el registro (auth.controller.js:89), pero NO en el login (la busqueda usa el email tal cual, auth.controller.js:30-32) -> posible asimetria de mayusculas no documentada.
 
-**Recomendaciones / [validar profe]:**
-- La ficha vieja pedia 'no permite continuar con campos vacios': hoy ese bloqueo es server-side (400). Decidir si se quiere ademas un candado de cliente (required / boton deshabilitado) o se acepta el comportamiento actual. [validar profe/Maiki]
-- Asimetria de normalizacion de email: el registro guarda el correo en minusculas, pero el login lo busca tal cual se teclea. Confirmar si el login debe normalizar igual para evitar fallos por mayusculas. [validar Maiki]
-- Gate de pago PERMISIVO mencionado en el contexto del flujo no es de HU-00, pero la deduccion de rol que habilita finanzas si lo es: confirmar que finanzas no requiere reglas extra de acceso. [validar profe]
+**Recomendaciones / criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
+- La ficha vieja pedia 'no permite continuar con campos vacios': hoy ese bloqueo es server-side (400). Decidir si se quiere ademas un candado de cliente (required / boton deshabilitado) o se acepta el comportamiento actual. Criterio del equipo (default conservador): se mantiene la validacion server-side (400) como fuente de verdad; candado de cliente queda como mejora UX opcional.
+- Asimetria de normalizacion de email: el registro guarda el correo en minusculas, pero el login lo busca tal cual se teclea. Criterio del equipo (default conservador): el login se normaliza a minusculas igual que el registro (email case-insensitive, B12) para evitar fallos de acceso.
+- Gate de pago PERMISIVO mencionado en el contexto del flujo no es de HU-00, pero la deduccion de rol que habilita finanzas si lo es: finanzas no requiere reglas extra de acceso (transversal por flujo, B13): criterio del equipo (default conservador).
 
 ---
 
@@ -68,18 +68,18 @@
 - Plan de amortizacion del anticipo EDITABLE por periodo (paso 5 del wizard), con default proporcional al centavo si no se manda; Sigma cuotas = monto del anticipo EXACTO (art.138 fr.I RLOPSRM). Solo aparece con anticipo>0; sin anticipo el paso se OMITE. La caratula G2 todavia amortiza proporcional [Fase B pendiente profe] (controller:229-269, AltaContrato.jsx:1554-1576).
 - Equipo del contrato ligado a CUENTAS reales y validadas (no texto): superintendente=cuenta rol 'contratista' aprobada (OBLIGATORIO), dependencia=cuenta rol 'dependencia' aprobada (OBLIGATORIO), supervision=cuenta rol 'supervision' (OPCIONAL). El texto de las columnas contratista/dependencia se DERIVA del nombre de la cuenta. Correccion del profe 04-jun (controller:271-312).
 - Se siembra contrato_roster (historico 1:N, art.125) DESDE EL ALTA dentro de la transaccion: residente, superintendente y supervision (la dependencia NO entra al roster porque no firma la bitacora, art.123). Habilita la sustitucion-no-borrar (controller:340-355).
-- Segundo PDF: 'autorizacion del anticipo' (tipo='anticipo_autorizacion'), OBLIGATORIO cuando %anticipo > 30% (ANTICIPO_UMBRAL_PDF). Bloquea avance y guardado. La vista cita art.50 fr.IV LOPSRM y avisa de art.139 RLOPSRM (>50% -> informar a SFP) y art.50 fr.V (100% solo plurianual ultimo trimestre). El umbral 30 esta [validar profe] (AltaContrato.jsx:33-39,505-589,1503-1513).
+- Segundo PDF: 'autorizacion del anticipo' (tipo='anticipo_autorizacion'), OBLIGATORIO cuando %anticipo > 30% (ANTICIPO_UMBRAL_PDF). Bloquea avance y guardado. La vista cita art.50 fr.IV LOPSRM y avisa de art.139 RLOPSRM (>50% -> informar a SFP) y art.50 fr.V (100% solo plurianual ultimo trimestre). El umbral 30 es parametrizable: tope del 30% = art. 50 fr. II LOPSRM y la autorizacion escrita se exige cuando el anticipo supera ese 30% = art. 50 fr. IV LOPSRM (AltaContrato.jsx:33-39,505-589,1503-1513).
 - Gating del wizard estrictamente secuencial (pasoMaxAlcanzado high-water mark): una pestana solo desbloquea la SIGUIENTE, no se salta pasos; tras guardar resetea el formulario y redirige a 'Registrados' (AltaContrato.jsx:1609-1626,1713-1756).
 - Campo opcional % de pena por atraso (penaConvencionalPct, fraccion 0-1, penas convencionales art.138/139 RLOPSRM) capturado en datos generales; vacio = sin pena (controller:82-88).
 - Validaciones de coherencia/limites no documentadas: garantia con vigencia vencida se rechaza (vigencia >= hoy, con offset UTC-1 dia, controller:183-192); garantia no puede exceder el monto del contrato (controller:177-182); clave de concepto OBLIGATORIA y UNIQUE(contrato_id, clave) capturada por el usuario (controller:110-118); topes NUMERIC para evitar 22003; objeto del contrato es campo requerido (no estaba explicito en la ficha).
 - Acceso de lectura segmentado: listarContratos/detalleContrato — dependencia y finanzas ven TODOS; operativos (residente/contratista/supervision) solo los contratos donde son parte (ROLES_VEN_TODO + esParteOSupervision, controller:462-543).
 
-**Recomendaciones / [validar profe]:**
-- El umbral del 30% que dispara el PDF de autorizacion del anticipo: el valor exacto y su fundamento legal del UMBRAL estan marcados [validar profe] en el codigo (la exigencia de autorizacion escrita se apoya en art.50 fr.IV LOPSRM, pero el 30 no se asume de la ley).
+**Recomendaciones / criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
+- El umbral del 30% que dispara el PDF de autorizacion del anticipo: parametrizable; el tope del 30% es art. 50 fr. II LOPSRM y la exigencia de autorizacion escrita por encima de ese 30% es art. 50 fr. IV LOPSRM (ambos verificados; el valor 30 sale de la ley, no se hardcodea como criterio).
 - El plan de amortizacion es editable y se persiste, pero la CARATULA de estimacion (G2) todavia amortiza proporcional, no segun el plan capturado: 'Fase B pendiente de validar con el profe'.
-- La cedula profesional como dato juridico obligatorio se exige 'por decision de la Fundacion' [validar con el profe].
+- La cedula profesional como dato juridico obligatorio se exige por criterio del equipo (default conservador, B1): se mantiene exigida; sin base federal LOPSRM/RLOPSRM literal, el profe puede relajarla.
 - El fundamento de exigir el PDF firmado para que el contrato exista/se formalice lo confirma el profe; el codigo NO asume numero de articulo para esa regla.
-- El % de pena por atraso (penaConvencionalPct) y su tasa estan marcados [validar tasa con el profe].
+- El % de pena por atraso (penaConvencionalPct) y su tasa son parametrizables (criterio del equipo, default sin pena hasta fijar %); el fundamento es art. 46 Bis LOPSRM + arts. 86-88 RLOPSRM (mecanica) + art. 90 RLOPSRM (tope) + art. 46 fr. X LOPSRM (procedimiento en el contrato).
 - La ficha vieja menciona 'penalizaciones aplicables' como bloque: en el sistema actual se reduce a un % de pena por atraso opcional + avisos en la vista (5 al millar art.191 LFD, deductivas art.46 Bis); no hay un editor de penalizaciones por concepto.
 
 ---
@@ -101,11 +101,11 @@
 - Validaciones de coherencia de garantía en el alta (no en HU-02): monto de póliza no puede exceder el monto del contrato (contratos.controller.js:180-182) y vigencia no puede estar vencida al formalizar (líneas 187-191, cita revisión profe 09-jun).
 - Cita legal en la pantalla: Art. 48 LOPSRM (15 días naturales para otorgar fianzas) como pie de página (RegistroFianzas.jsx:506-509).
 
-**Recomendaciones / [validar profe]:**
-- Conectar la pantalla al backend real: leer contrato_garantias del contrato en sesión y persistir altas/ediciones (hoy todo es dummy en memoria) [validar profe / Maiki].
-- Almacenamiento real del PDF de la póliza (no existe columna ni subida); definir storage (mencionado como SRV-02-04 en el placeholder) [validar profe].
-- Emisión REAL de alertas de vencimiento (30/15/5) y su 'configurabilidad': hoy son badges/contadores en el navegador con umbrales fijos; no hay motor de notificación en alertas.controller.js [validar profe].
-- Historial de fianzas y endosos por modificatorios (parte de la HISTORIA): la tabla garantia_endosos existe en schema con trigger de inmutabilidad pero NO está cableada (sin controller/route); decidir si se implementa el ciclo de endosos (art.98 fr.II / art.99 RLOPSRM) [validar profe].
+**Recomendaciones / criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
+- Conectar la pantalla al backend real: leer contrato_garantias del contrato en sesión y persistir altas/ediciones (hoy todo es dummy en memoria). Criterio del equipo: trabajo de implementacion pendiente (deuda tecnica, no decision legal).
+- Almacenamiento real del PDF de la póliza (no existe columna ni subida); definir storage (mencionado como SRV-02-04 en el placeholder). Criterio del equipo: implementacion pendiente.
+- Emisión REAL de alertas de vencimiento (30/15/5) y su 'configurabilidad': hoy son badges/contadores en el navegador con umbrales fijos; no hay motor de notificación en alertas.controller.js. Criterio del equipo (default conservador): umbrales fijos 30/15/5 y aviso in-app; configurabilidad y canal correo quedan como mejora futura.
+- Historial de fianzas y endosos por modificatorios (parte de la HISTORIA): la tabla garantia_endosos existe en schema con trigger de inmutabilidad pero NO está cableada (sin controller/route); el ciclo de endosos (art.98 fr.II / art.99 RLOPSRM) queda como mejora opcional (B14, criterio del equipo): hoy se registra la garantia; vincular el endoso al modificatorio es trabajo futuro.
 - Discrepancia de rol con la HISTORIA: la ficha dice 'Como dependencia', y el sistema lo respeta (dependencia='E'); confirmar que residente/finanzas deban quedar en solo-consulta y contratista/supervisión sin acceso.
 
 ---
@@ -131,11 +131,11 @@
 - Convenio de plazo recalcula fecha_termino desde fecha_inicio + (plazo-1) días; la regeneración de periodos por cambio de plazo queda como follow-on, el programa conserva los periodos vigentes (controller:191-196).
 - Acceso directo desde el expediente HU-04 vía query ?contrato=ID que preselecciona el contrato (jsx:160-169).
 
-**Recomendaciones / [validar profe]:**
+**Recomendaciones / criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
 - ENDOSOS DE FIANZAS: la ficha vieja pedía que el modificatorio aplicara y registrara los endosos correspondientes a las fianzas; HU-03 NO lo construye (el controller nunca toca garantia_endosos). La tabla y la FK garantia_endosos.convenio_id existen (HU-02) pero no hay generación automática de endoso al registrar el convenio. Validar con el profe si HU-03 debe disparar el endoso o si queda como integración futura HU-02↔HU-03.
 - fundamento art.59 vs art.59 Bis: el sistema funda SIEMPRE el convenio en art.59 y trata el 59 Bis como derecho adicional (flag), NO como régimen alternativo. La ficha pedía 'indicar si se rige por 59 o 59 Bis'. Confirmar que la interpretación flag (no toggle de fundamento) es la correcta legalmente.
-- Autoridad que registra: comentario controller:140-143 marca '[validar con el profe]' que dependencia O residente O creador pueden registrar; la matriz frontend (permisos.js) solo da nivel 'E' a dependencia. Confirmar el conjunto exacto de roles autorizados.
-- Emisor de la nota automática de bitácora = residente del contrato (O-PROFE), marcado '[validar profe]' en controller:235-244.
+- Autoridad que registra: criterio del equipo (default conservador) — la matriz frontend (permisos.js) da nivel 'E' solo a dependencia; el comentario controller:140-143 contempla tambien residente/creador, pero el default operativo es dependencia.
+- Emisor de la nota automática de bitácora de CONSECUENCIA (convenio) = residente del contrato, con base en el art. 53 LOPSRM (la residencia supervisa/controla y le toca registrar en bitácora) (controller:235-244).
 - Guardrail del 25% (CONVENIO_LIMITE_VARIACION_PCT): es decisión de configuración, no tope legal del art.59 (que en la reforma DOF 14-11-2025 no fija tope numérico). Confirmar valor/aplicabilidad con el profe.
 - Regeneración de periodos al cambiar el plazo: hoy el convenio de plazo conserva los periodos vigentes (no los re-mapea); follow-on declarado en controller:194-195.
 
@@ -160,7 +160,7 @@
 - El expediente se carga seleccionando un contrato de un <select> (api.listarContratos); ya NO hay datos dummy. Manejo de errores 403/404/otro con mensajes distintos: ConsultaExpediente.jsx:502-532, 679-701.
 - Cada persona del equipo/roster muestra su EMPRESA del catalogo (O3): ConsultaExpediente.jsx:237-241, 331.
 
-**Recomendaciones / [validar profe]:**
+**Recomendaciones / criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
 - La ficha vieja pedia 'descarga individual por bloque'; el profe lo cambio (O9) a un unico PDF consolidado. Confirmar con el profe que la descarga por documento individual queda DEFINITIVAMENTE fuera de alcance.
 - Confirmar si el bloque 'documentos juridicos' (firmante dependencia, representante legal, poder notarial, equipo) cubre lo que la ficha entendia por 'documentos juridicos', o si se esperaba adjuntar archivos juridicos descargables (no implementado).
 - El buscador aplica la logica Y entre PALABRAS dentro de un mismo campo; la ficha decia 'filtra por folio, contratista, objeto, periodo o tipo'. Validar si se esperaba combinar varios campos simultaneamente.
@@ -187,7 +187,7 @@
 - Degradacion: si falla la lectura de pagos (403 de borde) se omite la serie financiera sin romper la vista. CurvaAvance.jsx:205-210.
 - Resaltado de fila en catalogo cuando hay concepto filtrado (bg-sigecop-blue-light). CurvaAvance.jsx:480,483. No documentado.
 
-**Recomendaciones / [validar profe]:**
+**Recomendaciones / criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
 - El codigo NO cita ningun articulo de ley en esta vista; la ficha vieja tampoco. Confirmar con el profe si la curva S / formula del financiero requiere fundamento legal explicito.
 - Financiero a nivel contrato (no por concepto) declarado como alcance Etapa 1 (aviso en CurvaAvance.jsx:523); validar con el profe si se exige desglose por concepto.
 - Filtro de periodo por rango discreto (Todo/Ultimos 3/Ultimo) en lugar de un selector libre de periodo: validar si cumple la intencion de 'filtros por periodo' de la ficha.
@@ -214,9 +214,9 @@
 - ACOTAMIENTO POR PARTICIPACION server-side: todo endpoint valida esParteOSupervision(req.user, contrato) → 403 si no es parte/supervision (controller:139, 241, 351, 428). registrado_por sale SIEMPRE del JWT (req.user.id), nunca del body (controller:294).
 - El GET tambien devuelve 'notas' tipo 'avance' vinculables (controller:184-192), pero el frontend actual NO las usa (no aparecen en TrabajosTerminados.jsx; la nota se genera sola).
 
-**Recomendaciones / [validar profe]:**
+**Recomendaciones / criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
 - La nota automatica se crea SIEMPRE tipo 'avance'; la ficha vieja preveia tambien tipo 'entrega de obra' (NO construido). Confirmar con el profe si basta 'avance'.
-- Emisor de la nota = quien registra (contratista). El codigo lo marca [validar] (controller:17, 271).
+- Emisor de la nota de AVANCE = quien registra (el contratista), identificado en los datos de la nota (art. 123 fr. II RLOPSRM); criterio del equipo (B11), distinto del emisor de las notas de consecuencia (residente, art. 53) (controller:17, 271).
 - Que el AVISO no bloqueante (adelantar a precios pactados sin convenio) sea el comportamiento legal correcto frente al art. 118 / convenios. Es interpretacion O-PROFE registrada en codigo, confirmar.
 - Editar la cantidad de un avance NO regenera ni corrige la nota original (limitacion documentada en controller:322-324). Confirmar si es aceptable o requiere nota vinculada nueva (inmutabilidad).
 
@@ -244,11 +244,11 @@
 - La nota de atraso cita LOPSRM art. 52 y RLOPSRM art. 45 ap. A fr. X en su contenido (bitacora.controller.js:479-481).
 - El recalculo es siempre al consultar; NO hay cron ni proceso programado (alertas.controller.js:4; AlertasAtraso.jsx:12).
 
-**Recomendaciones / [validar profe]:**
+**Recomendaciones / criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
 - Toda la HISTORIA original (configurar conceptos a vigilar, umbral de atraso y canal sistema/correo) fue REEMPLAZADA por el profe (O5/P15) por el panel automatico; confirmar que la ficha se reescribe y no se reabre el modelo de configuracion.
 - Notificacion por CORREO: no existe; solo aviso in-app. Confirmar con el profe si el canal correo queda descartado para Etapa 1.
 - La tabla alerta_atraso del esquema se conserva pero esta MUERTA (sin lecturas/escrituras); decidir si se elimina o se documenta como obsoleta.
-- Quien debe ser el emisor de la nota de atraso (hoy se fuerza residente_id por art. 53); validar contra art. 123 fr. III/XII (firmas del roster). [validar profe]
+- Emisor de la nota de atraso (nota de consecuencia) = residente del contrato, con base en el art. 53 LOPSRM; se asienta append-only e inmutable conforme al art. 123 RLOPSRM (datos de la nota = fr. II, numeracion/orden = fr. V, inmutabilidad = fr. VI).
 - Articulos citados en la nota (LOPSRM 52 / RLOPSRM 45 ap. A fr. X) los pone el codigo; lo legal lo confirma el profe.
 
 ---
@@ -270,9 +270,9 @@
 - La apertura NO firma a nadie al crearse: deja una firma PENDIENTE por miembro y cada quien firma luego desde la bandeja 'Por firmar' (GET /bitacora/pendientes, bitacora.controller.js:304-320). El texto de la UI lo aclara: 'Nadie firma aquí' (AperturaBitacora.jsx:233).
 - Lectura acotada por participación: GET /bitacora/contrato/:id devuelve 403 si el usuario no es parte ni supervisión del contrato (esParteOSupervision, bitacora.controller.js:335-337). La ficha no especifica control de acceso a la consulta.
 
-**Recomendaciones / [validar profe]:**
-- Regla 'mismo día': el código fija fecha_apertura = fecha de inicio del contrato, NO la fecha de entrega del sitio como decía la ficha vieja; el comentario del código lo marca como [validar] (hallazgo del profe, audio 2026-06-01). Confirmar cuál es la fecha legal de apertura.
-- Asiento retroactivo (diferido) de notas de sustitución/avance/convenio al aperturar: el folio refleja el orden de asiento, no la fecha del hecho. El propio código lo deja [validar profe] (orden folio vs. fecha, art. 123 fr. V/VI).
+**Recomendaciones / criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
+- Regla 'mismo día': el código fija fecha_apertura = fecha de inicio del contrato, NO la fecha de entrega del sitio como decía la ficha vieja; criterio del equipo (default conservador): se usa la fecha de inicio pactada del contrato (art. 50 fr. I LOPSRM menciona la fecha de inicio pactada); la entrega del sitio se conserva como dato capturado del acta.
+- Asiento retroactivo (diferido) de notas de sustitución/avance/convenio al aperturar: el folio refleja el orden de asiento, no la fecha del hecho, conforme al art. 123 RLOPSRM (numeracion en serie = fr. V; inmutabilidad = fr. VI). Criterio del equipo: el orden de folio prevalece sobre la fecha del hecho diferido.
 - Plazo de firma de notas por defecto = 2 días naturales (Etapa 1); días hábiles y el plazo legal exacto quedan a confirmar.
 - Quién debe firmar la apertura (firma conjunta): hoy se exige a TODO el roster (residente + superintendente + supervisión si aplica); confirmar con el profe si basta la contraparte directa.
 - Los specs e2e de HU-08 (frontend/e2e/hu-08-apertura-bitacora.spec.js) están desactualizados: prueban un formulario dummy viejo (testids btn-firmar-1..3, data-parte, aviso-aperturada) que ya no existe en la página real cableada al backend; los tests interactivos están en test.fixme. Falta reescribirlos como integración con backend.
@@ -298,9 +298,9 @@
 - TAG de búsqueda opcional por nota (lo pidió el profe) para HU-10 (EmisionNotas.jsx:344-346; bitacora.controller.js:511-514).
 - Límites de captura server-side: contenido <=5000 chars, asunto <=200, tag <=60 (bitacora.controller.js:526-528).
 
-**Recomendaciones / [validar profe]:**
-- Quién debe firmar una nota para considerarla aceptada: ¿todo el roster (residente+superintendente+supervisión) o basta la contraparte directa? (comentario [validar] en bitacora.controller.js:624).
-- Asiento RETROACTIVO de notas automáticas diferidas (sustitución/avance/convenio) al abrir la bitácora: orden del folio vs. fecha real del hecho (art. 123 fr. V/VI) — marcado [validar profe] en bitacora.controller.js:172-173.
+**Recomendaciones / criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
+- Quién debe firmar una nota para considerarla aceptada: criterio del equipo (default conservador) — se exige a TODO el roster (residente+superintendente+supervisión); con base en el art. 123 RLOPSRM (firmas/aceptación de las partes) (bitacora.controller.js:624).
+- Asiento RETROACTIVO de notas automáticas diferidas (sustitución/avance/convenio) al abrir la bitácora: orden del folio vs. fecha real del hecho: el folio refleja el orden de asiento conforme al art. 123 RLOPSRM (numeracion = fr. V; inmutabilidad = fr. VI); criterio del equipo, el orden de folio prevalece (bitacora.controller.js:172-173).
 - La ficha vieja redacta el rol como 'residente, supervisión o contratista'; en el sistema el CONTRATISTA emite como rol 'superintendente' (art. 125 fr. II), no como 'contratista' directo — confirmar el mapeo con el profe.
 - Plazo de firma/aceptación default = 2 días naturales, configurable 1-60 (schema.sql:393-402); confirmar días naturales vs hábiles.
 - La ficha vieja menciona arts. 122 y 125; el código cita además 123 fr. III/V/VI/VII y 53 — confirmar fundamento completo.
@@ -325,12 +325,12 @@
 - El catálogo de Tipos del filtro proviene de datos reales GET /bitacora/nota-tipos (api.js:91; ConsultaNotas.jsx:42), y la lista de Firmantes se deriva dinámicamente de los emisores presentes en las notas cargadas (BuscadorNotas.jsx:66-69), no de listas fijas.
 - El buscador es un componente reutilizable (BuscadorNotas) que HU-12 reusa como modal para vincular notas a la estimación (comentario BuscadorNotas.jsx:4-6); no documentado en la ficha de HU-10.
 
-**Recomendaciones / [validar profe]:**
-- [validar profe] La ficha dice 'firmante' pero el sistema filtra por EMISOR de la nota (no por quien firma). Confirmar si 'firmante' debe seguir mapeando al emisor o agregarse un filtro por firmantes reales (bitacora_nota_firmas).
-- [validar profe] La búsqueda por palabra clave incluye el tag y la etiqueta del tipo además de asunto/contenido (alcance mayor al literal de la ficha). Confirmar que es deseable.
-- [validar profe] El export toma las notas seleccionadas de TODO lo cargado, no solo de los resultados visibles tras filtrar (la selección persiste al cambiar filtros). Confirmar si debe limitarse a los resultados filtrados o limpiar la selección al re-filtrar.
-- [validar profe] El criterio 1 (filtros AND sobre datos reales) y el export .xlsx NO están cubiertos por la suite E2E (solo estructura/permisos); se validan por smoke manual contra el backend local. Decidir si se requiere cobertura automatizada.
-- [validar profe] El estado de aceptación se MUESTRA/exporta pero NO es filtrable; evaluar si debería ser un filtro adicional.
+**Recomendaciones / criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
+- Criterio del equipo (default conservador): 'firmante' mapea al EMISOR de la nota (un emisor por nota, art. 125 RLOPSRM); un filtro por firmantes reales (bitacora_nota_firmas) queda como mejora futura.
+- Criterio del equipo: la búsqueda por palabra clave incluye el tag y la etiqueta del tipo además de asunto/contenido (alcance mayor al literal de la ficha, se conserva por ser más útil).
+- Criterio del equipo (default conservador): el export toma las notas seleccionadas de TODO lo cargado y la selección persiste al cambiar filtros; limitar al resultado filtrado o limpiar selección al re-filtrar queda como ajuste UX opcional.
+- Criterio del equipo: el criterio 1 (filtros AND sobre datos reales) y el export .xlsx se validan por smoke manual contra el backend local (la suite E2E solo cubre estructura/permisos); cobertura automatizada queda como mejora futura.
+- Criterio del equipo (default conservador): el estado de aceptación se MUESTRA/exporta pero NO es filtrable; agregarlo como filtro adicional queda como mejora opcional.
 
 ---
 
@@ -351,10 +351,10 @@
 - TABLA minutas tiene columna nota_id (FK a bitacora_notas) y pdf en BYTEA prevista, SIN trigger de inmutabilidad (schema.sql:1062-1102) — diseno backend preparado pero no implementado en codigo.
 - El comentario del esquema cita fundamento legal art. 125 fr. III inciso d) RLOPSRM (acuerdos de juntas de trabajo) para minutas, y marca la agenda de visitas como operativa SIN fundamento legal literal (schema.sql:1064-1067). El codigo frontend NO cita ningun articulo.
 
-**Recomendaciones / [validar profe]:**
+**Recomendaciones / criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
 - PERSISTENCIA: hoy todo es dummy en memoria (no se guarda nada). Construir backend (controller+route+mount) que use las tablas minutas/visitas ya definidas en schema.sql, con acotacion por contrato (esParteOSupervision) y registrada_por desde el JWT.
 - SUBIDA REAL DEL PDF: hoy solo se captura el nombre del archivo (no se sube). El esquema preve pdf en BYTEA; definir si va a disco/BYTEA como contrato_documentos.
-- VINCULO REAL minuta/visita -> nota de bitacora (criterio 3 de la ficha, hoy NO construido): implementar la escritura de minutas.nota_id desde HU-09 o desde aqui. [validar profe]: que tipo de nota (art. 125 fr. III inciso d RLOPSRM) y si la minuta firmada se congela.
+- VINCULO REAL minuta/visita -> nota de bitacora (criterio 3 de la ficha, hoy NO construido): implementar la escritura de minutas.nota_id desde HU-09 o desde aqui. Criterio del equipo: el tipo de nota es el de acuerdos de juntas de trabajo (art. 125 fr. III inciso d RLOPSRM) y la minuta firmada se congela (append-only), coherente con la inmutabilidad de la bitácora.
 - ACUERDOS DERIVADOS: hoy son una lista estatica sin origen real. Definir si los acuerdos se capturan/derivan de minutas (no hay tabla 'acuerdos' en el esquema) y si el filtro debe ser por contrato + periodo (la ficha pide ambos; hoy solo periodo).
 - DISCREPANCIA UI vs ESQUEMA: campos de la UI (participantes, asunto, archivoPdf / responsable, estado Programada-Realizada-Cancelada) no coinciden con las columnas del schema.sql (titulo, acuerdos TEXT / tipo visita-inspeccion, resultado, estado agendada-realizada-cancelada). Reconciliar antes de cablear backend.
 - Fundamento legal: el esquema cita art. 125 fr. III inciso d) RLOPSRM para minutas y marca visitas como operativas sin fundamento literal; el codigo no lo cita. Confirmar con el profe.
@@ -377,19 +377,19 @@
 - NUMERACIÓN correlativa atómica MAX(numero)+1 bajo pg_advisory_xact_lock (controller:153, 347-351); UI muestra el próximo número ligado al periodo del programa (jsx:642-645, O1-P17).
 - ESTADO inicial 'integrada' = etiqueta 'Integrada' (controller:358, estadoEstimacion.js:12). El flujo posterior (Presentada HU-13 / Autorizada-Rechazada HU-15 / Pagada HU-21) NO ocurre aquí.
 - NETO no puede quedar negativo: deductivas+retención por atraso que lo dejen <0 → 400 (controller:341-344); preview lo avisa (jsx:403-407).
-- Snapshots de avance FÍSICO y FINANCIERO calculados/guardados al integrar (controller:335-339) + barras en UI (jsx:849-861, barras-avance). [validar definición].
+- Snapshots de avance FÍSICO y FINANCIERO calculados/guardados al integrar (controller:335-339) + barras en UI (jsx:849-861, barras-avance). Definición por criterio del equipo (avance físico = ejecutado/contratado; financiero medido sin IVA, art. 2 fr. XIX RLOPSRM).
 - SOLO se vinculan notas FIRMADAS y se EXCLUYE la apertura (#1): filtro frontend jsx:689-692 (aceptacion==='firmada' && tipo!=='apertura'); cada nota se ve como documento imprimible (DocumentoNota, O8). Spec o8-notas-estimacion.spec.js:95-129.
 - Endpoint SOLO LECTURA /api/estimacion-prep (estimacion-prep.controller.js) que alimenta semáforo de plan/saldos/barras reusando las consultas del POST para que 'disponible este periodo' coincida exacto con el server.
 - Panel plegable del PROGRAMA DE OBRA mes-por-mes (matriz concepto×periodo) con periodo resaltado (jsx:863-874, MatrizProgramaLectura; Pase 1), solo lectura.
 - DEDUCTIVAS son retenciones ECONÓMICAS (art.46/46 Bis LOPSRM), distintas del 5 al millar FISCAL (controller:291-294); validadas >=0.
 
-**Recomendaciones / [validar profe]:**
+**Recomendaciones / criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
 - Registro FOTOGRÁFICO y SOPORTES documentales del expediente (CA-1 ficha vieja) NO están construidos: TabPlaceholder existe (jsx:493-503) pero no se renderiza; sin tabla ni endpoint. Diferidos.
 - La 'apertura del periodo' de la ficha se reduce HOY a capturar periodo inicio/fin (no hay entidad/acción formal de apertura separada de la integración).
-- Definición de avance FÍSICO vs FINANCIERO y regla de disparo de la retención por atraso (global vs concepto, bruto vs neto) [validar profe] (controller:266, prep:135).
+- Definición de avance FÍSICO vs FINANCIERO y regla de disparo de la retención por atraso: criterio del equipo (default conservador, B7) — por concepto en unidades (programado al periodo − ejecutado), sin umbral; el avance financiero se mide sin IVA (art. 2 fr. XIX RLOPSRM) (controller:266, prep:135).
 - CMIC / 2 al millar: parametrizable y DIFERIDO; tasa y aplicabilidad a confirmar (controller:293-294).
-- Bloqueo DURO vs alerta para el tope del programa A2 (art.45-A-X/52): el código bloquea (409) pero anota [validar] (controller:239).
-- Umbral del anticipo para exigir autorización del titular (art.50 fr.IV) y su parametrización (ANTICIPO_UMBRAL_PDF default 30%) [validar profe] (controller:138).
+- Tope del programa A2 (art.45 ap.A fr.X / art.52): el exceso sobre lo contratado es BLOQUEO DURO (409) con base en el art. 118 RLOPSRM (criterio del equipo, A7) (controller:239).
+- Umbral del anticipo para exigir autorización del titular: parametrizable (ANTICIPO_UMBRAL_PDF default 30%); el tope del 30% = art. 50 fr. II LOPSRM y la autorización escrita por encima del 30% = art. 50 fr. IV LOPSRM (controller:138).
 
 ---
 
@@ -411,11 +411,11 @@
 - Aviso ambar de plazo de presentacion (6 dias) informativo: jsx:253-259 distingue 'Dentro de los 6 dias para presentar desde el corte' vs 'Fuera ... (hace N dias)'; calculado desde periodo_fin (el corte). No existia en la ficha como elemento de UI separado del candado.
 - Vista solo-consulta para residente/supervision (nivel 'C'): useVistaHU('HU-13').soloLectura oculta el boton Presentar (jsx:97,260) y muestra aviso de solo lectura; probado en hu-13 spec:146-160 (residente ve 'Integrada' sin boton).
 
-**Recomendaciones / [validar profe]:**
-- Notificacion formal a residencia y supervision (criterio 1 de la ficha vieja): hoy NO existe como aviso push; la difusion es por consulta del historial (pull). [validar profe] si la 'notificacion formal' del art. 54 requiere un aviso/asiento explicito.
-- El plazo de 6 dias para presentar NO bloquea (la ficha vieja lo pedia como candado del boton). Se degrado a aviso informativo no bloqueante. [validar profe] si presentar fuera de los 6 dias debe impedirse o solo advertirse.
-- El plazo de 15 dias se MUESTRA como referencia visual pero NO dispara ninguna accion automatica al vencer (no hay afirmativa ficta ni autorizacion automatica en HU-13). [validar profe] consecuencia legal del vencimiento.
-- La ficha vieja decia plazo de revision 'supervision'; hoy abarca supervision+residencia via HU-15. [validar profe] redaccion.
+**Recomendaciones / criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
+- Notificacion formal a residencia y supervision (criterio 1 de la ficha vieja): hoy NO existe como aviso push; la difusion es por consulta del historial (pull). Criterio del equipo (default conservador): la difusion pull cumple el art. 54 LOPSRM en Etapa 1; un aviso/asiento push explicito queda como mejora futura.
+- El plazo de 6 dias para presentar NO bloquea (la ficha vieja lo pedia como candado del boton). Se degrado a aviso informativo no bloqueante. Criterio del equipo (default conservador): el plazo del art. 54 LOPSRM se advierte pero no impide presentar fuera de los 6 dias (no se reinicia el plazo, A18).
+- El plazo de 15 dias se MUESTRA como referencia visual pero NO dispara ninguna accion automatica al vencer (no hay afirmativa ficta ni autorizacion automatica en HU-13). Criterio del equipo (default conservador): el plazo de 15 dias del art. 54 LOPSRM se muestra como referencia, sin disparar accion automatica al vencer.
+- La ficha vieja decia plazo de revision 'supervision'; hoy abarca supervision+residencia via HU-15 (criterio del equipo, redaccion actualizada al flujo reconciliado del art. 54 LOPSRM).
 
 ---
 
@@ -437,8 +437,8 @@
 - Selector de contrato obligatorio: sin contrato seleccionado no hay tabla ni filtros, solo guia 'Selecciona un contrato' (HistorialEstimaciones.jsx:252-253; spec :128-136). Los contratos del selector vienen acotados por el backend (api.listarContratos, :179).
 - Caso vacio sin error: contrato sin estimaciones cae en 'Sin estimaciones con los filtros aplicados.' y 'Resultados (0)', sin toast de error (spec :207-218; frontend :320-325).
 
-**Recomendaciones / [validar profe]:**
-- [validar profe] La ficha vieja cita art. 130 RLOPSRM (tipos de estimacion) y art. 138 (versionado); el CODIGO de HU-14 no cita ningun articulo, por eso articulos_ley va vacio.
+**Recomendaciones / criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
+- Criterio del equipo: HU-14 es un historial read-only sin acto formal propio, por eso no cita articulo (articulos_ley vacio); las citas de tipos/versionado viven en las HU que sí ejecutan el acto (HU-12/HU-15/HU-16).
 - CA-3 'expediente COMPLETO': el panel es un RESUMEN, no el expediente de HU-04. Decidir si CA-3 exige enlazar al expediente completo o el resumen basta.
 - Fechas de revision y pago en el panel: el backend solo deriva transiciones 'integrada' y 'enviada'; NO empuja 'autorizada'/'rechazada'/'pagada' (punto de extension comentado pero no implementado, controller :65-68), por lo que fechaRevision y fechaPago salen siempre vacias aunque el estado ya haya avanzado por HU-15/HU-21. Falta cablear esas columnas para completar la linea de tiempo.
 - Observaciones del panel: siempre vacias (HistorialEstimaciones.jsx:156); no se traen de HU-15 (estimacion_observaciones). Decidir si HU-14 debe mostrarlas.
@@ -465,7 +465,7 @@
 - Acción de finanzas/pago NO ocurre aquí: tras 'autorizada' el banner remite a HU-20/HU-21 (jsx:644-648); el pago lo hace finanzas en HU-21. La ficha no aclaraba el límite del alcance.
 - Carátula/generadores/notas se leen del detalle REAL de HU-12 (api.detalleEstimacion → GET /estimaciones/:id, jsx:403, ContenidoCaratula/Generadores/Notas jsx:187-294); no hay datos dummy.
 
-**Recomendaciones / [validar profe]:**
+**Recomendaciones / criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
 - ¿Las observaciones deben poder anclarse 'por concepto' (renglón del generador) y no solo por sección, como pedía la ficha CA-1? Hoy es por sección.
 - ¿Es aceptable que las secciones 'registro fotográfico' y 'soportes' no se muestren (faltan archivos reales) aunque la ficha CA-1 las nombra? Backend ya las acepta.
 - Umbrales del semáforo 7/12 días son del prototipo, no de ley: confirmar con el profe los cortes verde/amarillo/rojo y si debe haber bloqueo al vencer (hoy solo informa).
@@ -490,12 +490,12 @@
 - El reingreso aparece como ACCIÓN PENDIENTE etiquetada en el tablero HU-17: tablero.controller.js:47 ({ rechazada: { roles:['contratista'], accion:'Reingresar la estimación rechazada (HU-16)' } }). Es solo una etiqueta de 'mis pendientes', NO dispara ni implementa reingreso.
 - El rechazo origen (HU-15) SÍ es real y persiste observaciones: estimaciones-ciclo.controller.js:459-507 (rechazarEstimacion: estado 'enviada'->'rechazada' + INSERT observación tipo 'rechazo', turnado_a 'contratista'). HU-16 NO se conecta a esos datos reales; el ciclo queda roto entre el rechazo real (HU-15) y el reingreso simulado (HU-16).
 
-**Recomendaciones / [validar profe]:**
+**Recomendaciones / criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
 - [NO CONSTRUIDO - backend] No existe endpoint de reingreso: ningún controller escribe/lee estimaciones.reemplaza_a (grep en estimaciones-ciclo.controller.js sin coincidencias); falta crear POST de reingreso que inserte la nueva estimación real con reemplaza_a = <id rechazada>, copiando el catálogo como bloque independiente
 - [NO CONSTRUIDO - datos reales] Las observaciones, el banner y el histórico son dummy (dummy.js:719-737); falta conectar con las observaciones reales del rechazo de HU-15 (estimacion_observaciones, tipo 'rechazo') y con las versiones reales de la estimación
 - [NO CONSTRUIDO - plazo art.54] El 'no reinicio del plazo de presentación' es solo un texto del prototipo; falta lógica de backend que respete el sello enviada_en original (no reabrir el plazo del art.54 LOPSRM) al reingresar — confirmar regla legal con el profe
-- [validar profe] La ficha vieja cita 'descarga en PDF o Excel' de observaciones: confirmar si el reingreso real debe mantener ambos formatos o consolidarse (coherente con O9 expediente como un solo PDF)
-- [validar profe] Numeración de versiones (v1/v2) y semántica de 'bloque completo independiente' vs reutilizar número de estimación del mismo periodo: definir cómo se modela en estimaciones (¿misma estimación con versión, o nueva fila vinculada por reemplaza_a?). El schema sugiere nueva fila vinculada.
+- Criterio del equipo (default conservador, B9): el copy basta y la descarga de observaciones se consolida a un solo formato/PDF (coherente con O9 expediente como un solo PDF), en lugar de mantener PDF + Excel.
+- Criterio del equipo (B9, default conservador): el reingreso se modela como NUEVA fila de estimación vinculada por reemplaza_a (bloque completo independiente), no como versión de la misma estimación; el schema ya sugiere nueva fila vinculada y el copy basta (no se recapturan montos).
 
 ---
 
@@ -516,11 +516,11 @@
 - El endpoint es de SOLO LECTURA y no muta nada; no toca el core congelado de estimacion (HU-12). controller:6-7 (comentario) y ausencia de INSERT/UPDATE (solo un SELECT). Refuerza que es una vista derivada.
 - Estado de la HU en la app: integrada en main, con router montado en server.js:52 (/api/tablero) y servicio api.js:104. Funcional end-to-end (no es dummy: dummy.js:740 solo quedan datos legacy no usados por la pagina).
 
-**Recomendaciones / [validar profe]:**
-- [validar profe] El 'avance' (fisico vs programado) que pedia la ficha vieja NO se construyo en el tablero: no hay calculo ni columna de avance. Decidir si el tablero debe incorporar avance fisico o si ese indicador vive solo en HU-06/HU-07.
-- [validar profe] Los estados 'en revision' y 'en pago' de la ficha vieja NO son estados propios del modelo (el CHECK tiene 5: integrada/enviada/autorizada/pagada/rechazada). Hoy 'Presentada'(enviada) cubre la revision y 'Autorizada' cubre el previo-al-pago. Confirmar si basta con etiquetas/next-actor o se requieren sub-estados dedicados.
-- [validar profe] Los indicadores agregados son de CARTERA (todos los contratos visibles del usuario), no de un unico contrato seleccionado como sugeria la ficha ('del contrato'). Hay desglose por_contrato, pero no un selector de contrato unico. Confirmar el alcance esperado.
-- [validar profe] El gate de pago aguas abajo (HU-21) es PERMISIVO (acepta integrada/enviada/autorizada); el tablero asume el flujo art.54 reconciliado O7<->HU-15. Confirmar la maquina de estados definitiva.
+**Recomendaciones / criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
+- Criterio del equipo: el 'avance' (fisico vs programado) NO se construyo en el tablero; ese indicador vive en HU-06/HU-07 y el tablero se enfoca en el ciclo de estimaciones.
+- Criterio del equipo (default conservador): los estados 'en revision' y 'en pago' de la ficha vieja se cubren con etiquetas/next-actor sobre los 5 estados del modelo (integrada/enviada/autorizada/pagada/rechazada); 'Presentada'(enviada) cubre la revision y 'Autorizada' el previo-al-pago, sin sub-estados dedicados.
+- Criterio del equipo: los indicadores agregados son de CARTERA (todos los contratos visibles del usuario) con desglose por_contrato; no hay selector de contrato unico (alcance adoptado).
+- El gate de pago aguas abajo (HU-21) se endurece a SOLO estimación 'autorizada' con base en el art. 54 LOPSRM (A8); el tablero asume el flujo art. 54 reconciliado O7<->HU-15 como máquina de estados definitiva.
 
 ---
 
@@ -539,12 +539,12 @@
 - El portafolio NO esta conectado a backend ni a contratos reales: opera sobre 5 contratos fijos hardcodeados en dummy.js:800-846 (folios C-2026-0042/0047/0038/0029/0051). No filtra 'mis contratos asignados' del usuario logueado; muestra siempre los mismos 5 a cualquier dependencia/residente/supervision. No hay endpoint en backend (Grep 'portafolio' en backend = solo coincidencias de HU-13/15 sobre semaforo de 15 dias art.54, no del portafolio).
 - Acceso de solo lectura para residente y supervision (permisos.js:32 'C'), no contemplado explicitamente en la ficha (que dice solo 'Como: dependencia'). Spec hu-18-portafolio.spec.js:102-118 verifica que residente/supervision consultan y contratista/finanzas no ven la vista (lineas 124-139).
 
-**Recomendaciones / [validar profe]:**
-- [validar profe] La vista opera 100% sobre datos DUMMY hardcodeados (5 contratos fijos en dummy.js); NO esta conectada a backend, no lee contratos reales ni 'mis contratos asignados' del usuario. Falta endpoint y cableado en api.js para que los semaforos/indicadores se deriven de datos reales (avance real, plazos LOPSRM/RLOPSRM, penalizaciones art.138/139).
-- [validar profe] CA-3 'comparar periodo actual vs anterior' esta solo como badge por fila (avance del mes vs mes anterior), no como comparativa agregada del portafolio entre dos periodos seleccionables. Definir si se requiere selector de periodos y comparacion a nivel grupo/total.
-- [validar profe] Los umbrales del semaforo (desviacion <=5/<=15, dias <=10, pendientes <=2) y el mapeo total->color son definidos por Code en portafolioLogica.js; confirmar las reglas y las cotas de cada factor.
-- [validar profe] El factor 'atrasos en plazos legales' se simula con un campo numerico diasVencidos del dummy; definir contra que plazo legal real se computa (entrega de obra, autorizacion de estimacion art.54, etc.).
-- [validar profe] Confirmar si residente y supervision deben tener acceso de solo lectura (hoy 'C' en permisos.js); la ficha vieja solo menciona a la dependencia.
+**Recomendaciones / criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
+- Criterio del equipo (deuda tecnica, no decision legal): la vista opera 100% sobre datos DUMMY hardcodeados; falta endpoint y cableado en api.js para derivar semaforos/indicadores de datos reales (avance real, plazos del art. 54 LOPSRM, penas por atraso art. 46 Bis + 86-88 RLOPSRM).
+- Criterio del equipo (default conservador): CA-3 'comparar periodo actual vs anterior' se resuelve como badge por fila; el selector de periodos y la comparativa agregada del portafolio quedan como mejora futura.
+- Los umbrales del semaforo (desviacion <=5/<=15, dias <=10, pendientes <=2) y el mapeo total->color son criterio del equipo (B4, puntos de corte provisionales parametrizables) definidos en portafolioLogica.js.
+- Criterio del equipo: el factor 'atrasos en plazos legales' se computará contra el plazo de autorizacion de estimacion del art. 54 LOPSRM (hoy simulado con diasVencidos del dummy hasta cablear datos reales).
+- Criterio del equipo (default conservador): residente y supervision conservan acceso de solo lectura ('C' en permisos.js); la dependencia opera la vista ejecutiva (B6).
 
 ---
 
@@ -562,16 +562,16 @@
 - Las fuentes están ACOTADAS POR PARTICIPACIÓN en el backend; un 403 muestra 'No tienes acceso a este contrato' (ExportacionReportes.jsx:72).
 - R5 (Bitácora) tiene gating adicional 'requiereBitacora': si el contrato no tiene bitácora aperturada (notas==null por 404), su botón se deshabilita con badge 'Sin bitácora aperturada' (jsx:93,97-98,214-218; reportesContrato.js:385).
 - Reconciliación O7↔HU-15: los reportes muestran el ESTADO con su ETIQUETA canónica (labelEstadoEstimacion: enviada→'Presentada', autorizada→'Autorizada'), no el valor crudo del esquema (reportesContrato.js:24,249,283,367). La ficha vieja (de antes del flujo reconciliado) no menciona estados de estimación.
-- R7 (Penalizaciones) DERIVA la pena por atraso por identidad de la carátula (retencion_atraso = subtotal−amortización−retención−deductivas−neto) porque el endpoint del historial no expone retencion_atraso (penaAtrasoDerivada L50-51). El fundamento legal art.138/139 RLOPSRM está marcado [validar profe].
+- R7 (Penalizaciones) DERIVA la pena por atraso por identidad de la carátula (retencion_atraso = subtotal−amortización−retención−deductivas−neto) porque el endpoint del historial no expone retencion_atraso (penaAtrasoDerivada L50-51). El fundamento legal de la pena por atraso es art. 46 Bis LOPSRM + arts. 86-88 RLOPSRM (mecánica) + art. 90 RLOPSRM (tope).
 - R7 distingue tres conceptos que la ficha trata como uno ('penalizaciones'): pena por atraso (art.138/139 RLOPSRM derivada), retención 5 al millar fiscal (art.191 LFD), deductivas (art.46/46 Bis) + pena convencional % pactada del contrato (reportesContrato.js:352-372).
 - R2 (Avance financiero) deja PENDIENTE el comprometido/disponible presupuestal porque depende de HU-20 (presupuesto_anual); el resumen lo rotula 'PENDIENTE' (reportesContrato.js:268,382).
 - Citas legales en R6: convenios art.59/59 Bis LOPSRM, revisión SFP art.102, ajuste de costos art.59 Bis (reportesContrato.js:329,344-345). No las menciona la ficha.
 - Nombre de archivo con convención fija: reporte_<id>_<slug>_<periodo>_<fecha-stamp>.<ext> (baseName L40); verificado por los specs.
 
-**Recomendaciones / [validar profe]:**
+**Recomendaciones / criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
 - R4 Observaciones queda DESHABILITADO: no existe GET de observaciones a nivel contrato; opción futura = fan-out client-side de revisionEstimacion por estimación (fuera del alcance actual). La ficha pide los '7 reportes' pero hoy solo 6 exportan.
 - R7: fundamento legal de la pena por atraso (art.138/139 RLOPSRM) — Nivel 1, lo confirma el profe; el número cuadra exacto (derivado de la carátula) pero la cita legal está pendiente.
-- Ancla del recorte por periodo (Mensual=último mes, Trimestral=último trimestre, anclado al 'dato más reciente del conjunto'): marcado [validar profe] en código y UI.
+- Ancla del recorte por periodo (Mensual=último mes, Trimestral=último trimestre, anclado al 'dato más reciente del conjunto'): criterio del equipo (default conservador), adoptado en código y UI.
 - R2: comprometido/disponible presupuestal depende de HU-20 (presupuesto_anual); hoy el resumen lo rotula 'PENDIENTE'.
 - Mejora opcional NO congelada (E3): exponer e.retencion_atraso en el SELECT de historialEstimaciones para leer la pena directa en vez de derivarla.
 
@@ -593,8 +593,8 @@
 - El monto de la estimación es un INPUT EDITABLE por el usuario (:69-77) en lugar de derivarse de la estimación autorizada — comportamiento real que difiere del concepto legal (el neto debería ser server-side). En el BannerContexto se muestra un 'Neto $1,285,750.00' y 'EST-2026-003 autorizada' totalmente hardcoded (:308-310).
 - El schema.sql YA tiene la DDL anticipada (presupuesto_anual + instruccion_pago, líneas 1183-1229) con estados emitida/notificada/cumplida/cancelada y UNIQUE por estimación, pero NO hay backend que la use: la HU está en estado prototipo/dummy, sin endpoints.
 
-**Recomendaciones / [validar profe]:**
-- TODA la HU es prototipo dummy: no hay endpoints. La DDL (presupuesto_anual, instruccion_pago) existe en schema.sql pero ningún controller la usa. Falta implementar: cargar techo real, calcular Σ pagado + neto ≤ techo server-side, persistir la instrucción y notificar a Finanzas. [validar profe / Maiki: prioridad de implementación]
+**Recomendaciones / criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
+- TODA la HU es prototipo dummy: no hay endpoints. La DDL (presupuesto_anual, instruccion_pago) existe en schema.sql pero ningún controller la usa. Falta implementar: cargar techo real, calcular Σ pagado + neto ≤ techo server-side (suficiencia presupuestal previa, art. 24 LOPSRM, A15), persistir la instrucción y notificar a Finanzas. Criterio del equipo: trabajo de implementación pendiente (deuda técnica, no decisión legal).
 - El monto de la estimación es un input editable, no se deriva de la estimación autorizada real; el 'Neto' y 'EST-2026-003 autorizada' del banner son hardcoded. Definir cómo enlazar con la estimación autorizada (flujo HU-13/HU-15) y con la fecha de autorización real para el semáforo.
 - Los umbrales del semáforo (verde ≤10 / ámbar 11-17 / rojo >17) son una decisión de UI del usuario, no derivados del art. 54. Confirmar la regla de aviso (¿amarillo a qué día?).
 - La condicionalidad de la fianza ('cuando el contrato lo exija', art. 54 / garantías) no está implementada — la fianza se exige siempre. Definir la regla.
@@ -615,7 +615,7 @@
 - El pago se AMARRA a una estimacion REAL del contrato (estimacion_id obligatorio): la ficha vieja no menciona estimacion_id; el backend lo exige (pagos.controller.js:37) y valida que exista, pertenezca al contrato y no este pagada/rechazada (lineas 62-71).
 - El importe NO se captura: se DERIVA server-side del neto de la estimacion (importe = est.neto, pagos.controller.js:89). El frontend lo muestra read-only (RegistroPago.jsx:163-164 'No editable art.118 / cuadre'). La ficha pedia capturar 'importe'.
 - NO doble pago: candado por UNIQUE parcial uq_pagos_estimacion (schema.sql:1501) + chequeo previo SELECT 1 FROM pagos WHERE estimacion_id (pagos.controller.js:72-73, 409) + SELECT ... FOR UPDATE (linea 61) para serializar contra concurrencia. No documentado en la ficha.
-- Candado de estado PERMISIVO: solo se paga una estimacion en estado 'integrada','enviada' o 'autorizada'; se rechaza 'pagada' (409, linea 65) y 'rechazada' (409, linea 66). [validar profe] endurecer a SOLO 'autorizada' (comentario lineas 67-71). No documentado.
+- Candado de estado PERMISIVO: solo se paga una estimacion en estado 'integrada','enviada' o 'autorizada'; se rechaza 'pagada' (409, linea 65) y 'rechazada' (409, linea 66). Criterio adoptado: ENDURECER a SOLO 'autorizada' con base en el art. 54 LOPSRM (A8; pago de lo autorizado por la residencia) (comentario lineas 67-71). No documentado.
 - Validacion de fecha (Plan2 Pase3): la fecha de pago NO puede ser anterior al dia de integracion de la estimacion (integrada_en); 400 si es anterior (pagos.controller.js:80-86). Cubierto por spec frontend/e2e/pago-fecha-integrada.spec.js:79-87. No documentado.
 - Datos fiscales obligatorios no pedidos por la ficha: referencia bancaria SPEI (<=100 chars), folio fiscal CFDI obligatorio (<=60 chars), fecha de la factura obligatoria; todos validados 400 (pagos.controller.js:39-43).
 - Indicador DERIVADO del plazo de 20 dias naturales (art. 54 LOPSRM): dias_transcurridos = fecha_pago - GREATEST(fecha_autorizacion, fecha_factura) y plazo_cumplido <= 20 se calculan en la lectura, no se almacenan (pagos.controller.js:131,137-139); el frontend pinta badge verde/ambar (RegistroPago.jsx:238-242). No documentado.
@@ -623,11 +623,11 @@
 - Registrado_por sale SIEMPRE del JWT, nunca del body (pagos.controller.js:97), patron de identidad autentica. No documentado explicitamente en la ficha mas alla de 'usuario que realizo el registro'.
 - Estado de las pruebas: la spec hu-21-registro-pago.spec.js (frontend/e2e) verifica permisos por rol (finanzas ejecuta; residente/dependencia consulta; contratista/supervision sin acceso) pero los tests del FORMULARIO estan en test.fixme (lineas 58, 81) porque la pagina ahora requiere datos reales (post alta-v2, ya no hay form dummy). El comportamiento del pago se prueba via API en pago-fecha-integrada.spec.js.
 
-**Recomendaciones / [validar profe]:**
+**Recomendaciones / criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
 - Endurecer el candado de estado a SOLO 'autorizada' (hoy permisivo: integrada/enviada/autorizada) — decision de Maiki/profe (pagos.controller.js:67-71).
 - Pago PARCIAL vs EXACTO: hoy importe = neto completo de la estimacion; falta validar si procede pago parcial (comentario pagos.controller.js:88).
 - 'Actualizar el avance financiero del contrato' (CA-1 viejo): hoy solo se marca la estimacion 'pagada'; no hay un acumulado/indicador financiero del contrato que se recalcule — definir si se requiere.
-- Fundamento legal de que la fecha de pago no pueda ser anterior a la integracion ([validar fundamento con el profe], pagos.controller.js:79).
+- Fundamento legal de que la fecha de pago no pueda ser anterior a la integracion: derivado del art. 54 LOPSRM (A9; el pago corre desde la autorizacion, no puede preceder al acto) (pagos.controller.js:79).
 - fecha_autorizacion es provisional: 'pasara a HU-20 (instruccion de pago)'; mientras tanto el plazo cae a fecha_factura (base_provisional) (RegistroPago.jsx:187,242).
 - Reescribir/activar los tests del formulario que hoy estan en test.fixme tras la conversion a integracion (hu-21-registro-pago.spec.js:58,81).
 
@@ -650,8 +650,8 @@
 - El listado de solicitudes (SolicitudesRegistro.jsx) maneja un estado 'sin sesion/modo demo': si no hay token muestra aviso en vez de error (lineas 19,98-102), residuo del modo proyecto en retirada.
 - aprobarUsuario y rechazarUsuario validan el id (entero positivo) y responden 404 si no existe (usuarios.controller.js:63-65,83-85,96-99,107-109).
 
-**Recomendaciones / [validar profe]:**
-- El umbral de 'nombre completo' (>=2 palabras, regex /\p{L}{2,}/gu) lo fijo la Fundacion como regla operativa; NO tiene articulo propio (la cita art.123 RLOPSRM es por la trazabilidad en bitacora). [validar redaccion con el profe]
+**Recomendaciones / criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
+- El umbral de 'nombre completo' (>=2 palabras, regex /\p{L}{2,}/gu) lo fijo la Fundacion como regla operativa; NO tiene articulo propio (la cita art. 123 RLOPSRM es por la trazabilidad en bitacora). Criterio del equipo (default conservador): se mantiene la regla operativa de nombre completo.
 - Existe una pagina standalone de registro HUERFANA en /solicitud-acceso (SolicitudRegistro.jsx) sin enlace desde la UI ni cobertura de spec: decidir si se elimina o se enlaza (la version viva es la inline de la pantalla de login). [decision Maiki]
 - El bloque 'sin sesion / modo demostracion' del panel de solicitudes (SolicitudesRegistro.jsx) es residuo del modo proyecto EN RETIRADA: revisar al remover el modo proyecto.
 
@@ -676,7 +676,7 @@
 - Acceso al sidebar: enlace 'Por firmar' bajo sección Bitácora (Sidebar.jsx:60-64).
 - Si no hay token/sesión, la página muestra aviso 'Inicia sesión en modo aplicación' y no llama al backend (PorFirmar.jsx:13,47-50).
 
-**Recomendaciones / [validar profe]:**
+**Recomendaciones / criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
 - La ficha vieja no tiene número de HU (es 'Por Firmar', SRV-03-05 / MOD-03); confirmar con el profe si se le asigna identificador formal o queda como sub-historia de HU-08.
 - Confirmar matriz de acceso: el backend NO filtra por rol nominal (cualquier autenticado llega al endpoint, solo el roster firma); la restricción de roles es únicamente la guarda de ruta del frontend (SoloRol residente/contratista/supervision). Validar si dependencia/finanzas deben quedar excluidas también server-side.
 - Confirmar que la composición del roster de firmantes (residente + superintendente + supervisión-si-existe) es la lista de 'firmantes autorizados' esperada por el profe (art. 123 fr. III).
@@ -694,8 +694,8 @@ _(Funcionalidad sin ficha previa — ver historia nueva en `Historias_Usuario_AC
 - Lazy seed: sin fila activa, la 1a sustitucion siembra la inicial desde el cache (motivo 'Asignacion inicial (alta del contrato)') y la cierra (controller:133-142; UI EVENTO RosterContrato.jsx:95-97).
 - Transaccional/serializada: BEGIN + pg_advisory_xact_lock(3,id) + SELECT FOR UPDATE (controller:99-104); cerrar anterior -> insertar nueva con sustituye_a/registrado_por JWT (controller:153-161) -> nota -> sync cache escalar (controller:194, lo lee lib/acceso.js congelado).
 - Nota bitacora AUTOMATICA/ATOMICA: con bitacora abierta y titular anterior, nota 'res_sustitucion' tag 'sustitucion' emisor JWT (controller:178-188; helpers bitacora.controller.js:404,431); sin bitacora se DIFIERE y avisa (controller:198-211).
-- Emisor nota = ejecutor (JWT), [validar profe] si debe ser el residente (controller:183).
-- Validaciones nuevo titular (controller:118-123): existe/activo/rol ROL_CUENTA {residente->residente,superintendente->contratista,supervision->supervision} (controller:25); 400 'ya ocupa ese rol' (controller:149); convencion [validar profe] (controller:23-24).
+- Emisor de la nota de sustitución (nota de consecuencia) = residente del contrato, con base en el art. 53 LOPSRM y el art. 125 fr. I g RLOPSRM (al residente le toca registrar la sustitución) (A11) (controller:183).
+- Validaciones nuevo titular (controller:118-123): existe/activo/rol ROL_CUENTA {residente->residente,superintendente->contratista,supervision->supervision} (controller:25); 400 'ya ocupa ese rol' (controller:149); convencion rol-roster->rol-cuenta (superintendente=cuenta 'contratista') por criterio del equipo, default conservador (controller:23-24).
 - Inmutabilidad BD: contrato_roster append-only + trigger sigecop_roster_transicion (schema.sql:1282-1302) prohibe reasignar/re-cerrar; indice unico PARCIAL uq_contrato_roster_activo = UNA activa por (contrato,rol) (schema.sql:1274).
 - NO se borra: usuario_id ON DELETE RESTRICT (schema.sql:1258); sustituye_a/nota_id NO ACTION (schema.sql:1265,1268).
 - Firmas atadas a usuario_id (cuenta): la sustitucion NO toca bitacora_* -> firma previa conserva su firmante original; solo afecta futuras (controller:11-15; doc Maiki T5/T5b; UI RosterContrato.jsx:107,220).
@@ -704,10 +704,10 @@ _(Funcionalidad sin ficha previa — ver historia nueva en `Historias_Usuario_AC
 - Errores HTTP 400/403/404/409(23505)/500; motivo OBLIGATORIO cita art. 125 fr. I g (controller:91-93,107,116,120-123,220-222).
 - Seed idempotente schema.sql:1307-1321 desde punteros escalares con guard NOT EXISTS (Render).
 
-**Recomendaciones / [validar profe]:**
-- Autoridad para sustituir: dependencia O residente asignado O creador, [validar con el profe] (roster.controller.js:110-116).
-- Emisor formal de la nota: hoy el ejecutor (JWT); [validar profe] si debe ser el residente (controller:183).
-- Convencion rol-roster -> rol-cuenta (superintendente=contratista), [validar con el profe] (controller:23-24).
+**Recomendaciones / criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
+- Autoridad para sustituir: dependencia o residente asignado (criterio del equipo, B15); al residente le toca registrar la sustitución en bitácora (art. 125 fr. I g RLOPSRM) (roster.controller.js:110-116).
+- Emisor formal de la nota de sustitución = residente del contrato (art. 53 LOPSRM + art. 125 fr. I g RLOPSRM, A11) (controller:183).
+- Convencion rol-roster -> rol-cuenta (superintendente=cuenta 'contratista'): criterio del equipo, default conservador (controller:23-24).
 - Funcionalidad SIN ficha de HU (no en .work_hu_xlsx.txt ni permisos.js): falta formalizarla.
 - Nota diferida: la fila queda con nota_id nulo hasta abrir la bitacora; verificar que al asentarse quede vinculada (controller:188).
 
@@ -723,13 +723,13 @@ _(Funcionalidad sin ficha previa — ver historia nueva en `Historias_Usuario_AC
 - ENDPOINT PUBLICO DEL CATALOGO: auth.routes.js:13 GET /api/auth/empresas (listarEmpresas, empresas.controller.js:49-57) devuelve solo id+nombre, SIN authMiddleware (cuelga del unico router publico para no tocar server.js congelado). Frontend lo consume via api.listarEmpresas() (api.js:31).
 - VINCULO EN EL REGISTRO: auth.controller.js:70-106 -> register acepta campo 'empresa' (texto, OPCIONAL/aditivo); si viene, resolverOCrearEmpresa antes del INSERT de usuarios y guarda usuarios.empresa_id (schema.sql:1545). Si no viene, empresa_id queda NULL (retrocompatible). empresa_id NUNCA viaja en el JWT, solo en los SELECT.
 - DOS FORMULARIOS DE REGISTRO CON AUTOCOMPLETE: SeleccionRol.jsx (FormRegistro, testids reg-*, pantalla login/registro que App.jsx:50 muestra cuando !rol) y SolicitudRegistro.jsx (testids sol-*, ruta /solicitud-acceso, App.jsx:96) implementan AMBOS un input Empresa con <datalist> cargado de api.listarEmpresas(), y un window.confirm("'X' no esta en el catalogo. Registrarla como nueva empresa?") cuando lo tecleado no esta (comparacion normalizada espejo del backend). El e2e o3-empresas.spec.js ejercita SeleccionRol (reg-*).
-- AVISO 'MISMA EMPRESA' EN EL ALTA (NO BLOQUEA): AltaContrato.jsx:276-285 muestra data-testid='aviso-misma-empresa' cuando el superintendente (contratista) y la supervision comparten empresa_id; texto cita 'la supervision debe ser un tercero independiente' y dice '[validar con el profe]'. NO impide avanzar el wizard. Los empresa_id de los asignables llegan via usuarios.controller.js:47-49 (LEFT JOIN empresas en listarAsignables).
+- AVISO 'MISMA EMPRESA' EN EL ALTA (NO BLOQUEA): AltaContrato.jsx:276-285 muestra data-testid='aviso-misma-empresa' cuando el superintendente (contratista) y la supervision comparten empresa_id; texto cita 'la supervision debe ser un tercero independiente'. Criterio del equipo (default conservador): AVISA pero NO bloquea (no impide avanzar el wizard). Los empresa_id de los asignables llegan via usuarios.controller.js:47-49 (LEFT JOIN empresas en listarAsignables).
 - EMPRESA EN EXPEDIENTE + BUSQUEDA POR EMPRESA: contratos.controller.js:498-514 enriquece detalleContrato con residente/superintendente/supervision_empresa (LEFT JOIN empresas). ConsultaExpediente.jsx:23 anade el campo de busqueda 'empresa', muestra la empresa junto a cada persona del equipo (lineas 238-240) y filtra los bloques juridicos/roster por empresa (lineas 613-626).
 - EMPRESA EN EL ROSTER: roster.controller.js:46-65 anade usuario_empresa (LEFT JOIN empresas) al historial y al vigente del roster; ConsultaExpediente.jsx:331 lo pinta (roster-exp-empresa-<id>) y RosterContrato.jsx lo muestra en la vista vigente.
 - SEED Y BACKFILL DEMO IDEMPOTENTES: schema.sql:1550-1572 siembra 3 empresas demo (Dependencia Demo, Constructora Demo, Supervision Externa Demo) con WHERE NOT EXISTS sobre la forma normalizada, y hace BACKFILL de empresa_id de las cuentas demo solo si empresa_id IS NULL. Decision deliberada (OLEADA3 doc): contratista y supervision en empresas DISTINTAS para que el aviso de 'misma empresa' NO se dispare en los contratos demo.
 
-**Recomendaciones / [validar profe]:**
-- El aviso de 'misma empresa' (superintendente vs supervision) hoy AVISA pero NO bloquea; el propio codigo (AltaContrato.jsx:282) lo marca '[validar con el profe]' por si debe ser bloqueo duro.
+**Recomendaciones / criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
+- El aviso de 'misma empresa' (superintendente vs supervision) hoy AVISA pero NO bloquea: criterio del equipo (default conservador, B5-análogo: el guardrail informa, no impide); convertirlo en bloqueo duro queda a confirmación del profe.
 - El feature no cita articulos en el codigo (la justificacion 'catalogos: es lo de ley' es verbal del profe, no hay numero de articulo en el codigo) -> sin cita legal verificable. Confirmar el fundamento legal del catalogo y de la regla supervision=tercero independiente.
 - Hay DOS formularios de registro con la misma logica de empresa (SeleccionRol.jsx con testids reg-* y SolicitudRegistro.jsx con testids sol-*). Confirmar si ambos deben coexistir o si uno es legado (duplicacion a consolidar).
 - La extension de auth.controller.register la marca el propio doc OLEADA3 como 'tension de alcance' (el prompt pedia NO tocar auth core; se interpreto auth core = JWT/login/middleware). Confirmar con Maiki que la edicion de register es aceptable.

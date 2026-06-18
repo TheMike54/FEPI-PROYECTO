@@ -83,7 +83,7 @@ test.describe('HU-13 — acceso por rol', () => {
   test('Contratista (E): la vista está en el Sidebar y carga', async ({ page }) => {
     await freshHome(page);
     await enterAppMode(page, 'contratista');
-    await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
+    await expect(await sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
     await goToViaSidebar(page, VIEW_PATH);
     await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
   });

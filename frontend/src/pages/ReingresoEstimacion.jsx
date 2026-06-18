@@ -309,7 +309,7 @@ export default function ReingresoEstimacion() {
           <div className="bg-sigecop-blue-light border-l-4 border-sigecop-blue px-4 py-3 mb-6 text-sm text-slate-800 rounded-r-md">
             <strong>Plazo de presentación (art. 54 LOPSRM):</strong>{' '}
             la nueva versión se REFERENCIA al envío original de {estLabel(rechazadaSel)} ({fechaMX(rechazadaSel.enviada_en)}) y
-            <strong> no reinicia</strong> el plazo. <span className="text-slate-500">[validar con el profe la semántica exacta de “no reiniciar el plazo”.]</span>
+            <strong> no reinicia</strong> el plazo (art. 54 LOPSRM: el reingreso no reinicia el plazo de presentación).
           </div>
 
           {reingreso && (
@@ -396,7 +396,7 @@ export default function ReingresoEstimacion() {
                   data-testid="textarea-nota"
                 />
                 <p className="text-xs text-slate-400 mt-1">
-                  Nota de control (no se persiste en Etapa 1). [validar: si debe quedar registrada, requiere ajuste de esquema.]
+                  Nota de control (no se persiste en Etapa 1; criterio del equipo (default conservador): persistirla requiere ajuste de esquema, diferido).
                 </p>
               </div>
               <label className="flex items-center gap-2 text-sm text-slate-700 mb-4">

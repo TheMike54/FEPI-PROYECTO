@@ -47,7 +47,7 @@ test.describe('HU-16 — modo aplicacion (Contratista: ejecuta)', () => {
   });
 
   test('sidebar muestra HU-16 y la vista carga sin metadata academica', async ({ page }) => {
-    await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
+    await expect(await sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
     await goToViaSidebar(page, VIEW_PATH);
     await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
     await expectMetadataAcademicaOculta(page, {
@@ -76,7 +76,7 @@ test.describe('HU-16 — modo aplicacion (Residente: consulta)', () => {
   });
 
   test('aviso de solo consulta visible; sin panel de reingreso antes de seleccionar', async ({ page }) => {
-    await expect(sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
+    await expect(await sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
     await goToViaSidebar(page, VIEW_PATH);
 
     await expectAvisoSoloConsulta(page);

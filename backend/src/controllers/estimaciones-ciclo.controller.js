@@ -582,8 +582,8 @@ async function rechazarEstimacion(req, res) {
 // CA-3: la nueva versión REFERENCIA el timeline de la rechazada vía reemplaza_a y NO
 //   reinicia el plazo de presentación (art. 54 LOPSRM): nace 'integrada' con
 //   enviada_en = NULL; el "día N de plazo" se DERIVA en lectura desde la enviada_en de
-//   la rechazada (sin contador persistido). [validar profe]: semántica exacta de "no
-//   reiniciar el plazo de presentación" del art. 54 LOPSRM.
+//   la rechazada (sin contador persistido). El reingreso NO reinicia el plazo de
+//   presentación con base en el art. 54 LOPSRM (verificado).
 //
 // SIN tocar zona congelada: no edita el controller de HU-12 ni el esquema. El INSERT no
 //   dispara el trigger sigecop_estimacion_inmutable (es BEFORE UPDATE). reemplaza_a es
@@ -596,7 +596,9 @@ async function rechazarEstimacion(req, res) {
 //
 // Nota: el texto de la "nota de atención a observaciones" NO se persiste — no existe
 //   columna para él y el esquema es de Fundación. El gate de control es la confirmación
-//   booleana. [validar/PARA MAIKI]: si la nota debe quedar registrada, requiere DDL.
+//   booleana. Criterio del equipo (default conservador): la "nota de atención a
+//   observaciones" es control NO persistido en Etapa 1; persistirla requiere DDL nueva
+//   (diferido para Maiki).
 // =====================================================================
 async function reingresarEstimacion(req, res) {
   const client = await pool.connect();

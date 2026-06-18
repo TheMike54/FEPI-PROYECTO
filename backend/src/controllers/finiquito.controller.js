@@ -17,7 +17,7 @@
 //   saldo > 0 → a favor del CONTRATISTA (se le paga, art. 171 párr. 1)
 //   saldo < 0 → a favor de la DEPENDENCIA (reintegra, art. 171 párr. 2)
 // `ajustes_finales` (default 0) cubre deductivas finales / sobrecosto / 5-al-millar pendiente, que el
-// profe AÚN NO confirmó (validaciones #1): se dejan parametrizables, NO hardcodeados. [validar profe].
+// profe AÚN NO confirmó: criterio del equipo (default conservador) — parametrizables, default 0, NO hardcodeados.
 const { pool } = require('../db/pool');
 const { esParteOSupervision } = require('../lib/acceso');
 const { insertarNotaAtomica } = require('./bitacora.controller');
@@ -25,7 +25,7 @@ const { insertarNotaAtomica } = require('./bitacora.controller');
 const r2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 const mxn = (n) => new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(Number(n) || 0);
 
-// Desglose del finiquito (server-side, fuente única). `ajustes` = ajustes_finales [validar profe].
+// Desglose del finiquito (server-side, fuente única). `ajustes` = ajustes_finales (criterio del equipo, default 0).
 async function calcularFiniquito(client, contrato, ajustes = 0) {
   const cid = contrato.id;
   // (A) Σ neto de estimaciones AUTORIZADAS/PAGADAS (art. 54). El neto ya descuenta amortización,
@@ -88,7 +88,7 @@ async function prepararFiniquito(req, res) {
       desglose,
       tiene_bitacora: tieneBitacora,
       finiquito: fin.rowCount ? fin.rows[0] : null,
-      nota_legal: 'saldo = Σ neto(autorizada|pagada) − pagos − anticipo no amortizado − ajustes_finales (art. 64 LOPSRM / 170 RLOPSRM). ajustes_finales [validar profe].',
+      nota_legal: 'saldo = Σ neto(autorizada|pagada) − pagos − anticipo no amortizado − ajustes_finales (art. 64 LOPSRM / 170 RLOPSRM). ajustes_finales: criterio del equipo (default conservador), parametrizable con default 0.',
     });
   } catch (err) { console.error('[prepararFiniquito]', err); return res.status(500).json({ error: 'Error interno' }); }
 }

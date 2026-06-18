@@ -8,13 +8,15 @@
 // FUENTES y cruxes (todos marcados):
 //   · CA-2 ancla del plazo (art. 54/55): DERIVADA de la bitácora — la nota de autorización que
 //     inserta autorizarEstimacion (tipo='res_estimaciones', tag='estimacion', ligada por
-//     estimacion_notas) con su `fecha` es el momento real de autorización. [validar profe]. Si no
-//     hay esa nota (contrato sin bitácora al autorizar) → semáforo DESHABILITADO (sin inventar);
-//     el ancla canónica requiere `autorizada_en` en estimaciones (PARA MAIKI, ver routes).
+//     estimacion_notas) con su `fecha` es el momento real de autorización (plazo derivado de la nota
+//     de autorización = criterio del equipo, default conservador, sin columna nueva; base art. 54
+//     LOPSRM). Si no hay esa nota (contrato sin bitácora al autorizar) → semáforo DESHABILITADO (sin
+//     inventar); el ancla canónica requiere `autorizada_en` en estimaciones (PARA MAIKI, ver routes).
 //   · CA-1 disponible = techo(presupuesto_anual por dependencia+ejercicio) − comprometido
 //     (Σ neto de estimaciones 'autorizada'+'pagada' de esa dependencia+ejercicio, EXCLUYENDO la
-//     actual). [validar profe]. Join contrato→presupuesto por dependencia (texto) + ejercicio
-//     (year de fecha_inicio), SIN FK — frágil [validar].
+//     actual); suficiencia presupuestal previa = art. 24 LOPSRM. Join contrato→presupuesto por
+//     dependencia (texto) + ejercicio (year de fecha_inicio), SIN FK — deuda técnica conocida
+//     (criterio del equipo, no legal).
 //   · CA-3 soportes: folio CFDI (texto) + estado de fianza de cumplimiento LEÍDA de
 //     contrato_garantias. La subida de ARCHIVOS binarios NO existe (sin BYTEA ni multer) → el
 //     frontend la deshabilita; aquí solo se registran METADATOS (estimacion_soportes).
@@ -63,7 +65,7 @@ async function calcularSuficiencia(dependencia, ejercicio, estimacionId, neto) {
     techo: null, presupuesto_id: null,
     comprometido: '0.00', disponible_antes: null, neto: r2(neto).toFixed(2),
     disponible_despues: null, excede: null, sin_presupuesto: true,
-    nota: '[validar profe] comprometido = Σ neto autorizadas+pagadas de la dependencia/ejercicio; join por texto sin FK [validar]',
+    nota: 'comprometido = Σ neto autorizadas+pagadas de la dependencia/ejercicio (suficiencia previa, art. 24 LOPSRM); join por texto sin FK = deuda técnica conocida (criterio del equipo, no legal)',
   };
   if (!dependencia || ejercicio == null) return out; // sin dependencia/fecha → no se puede ubicar la partida
   const p = await pool.query(
@@ -112,7 +114,7 @@ async function leerSoportes(estimacionId, contratoId) {
       WHERE contrato_id = $1 AND tipo ILIKE '%cumplimiento%' ORDER BY id DESC LIMIT 1`,
     [contratoId]
   );
-  const exigible = g.rowCount > 0; // "cuando el contrato lo exija" = hay garantía registrada [validar profe: ¿siempre, art. 48?]
+  const exigible = g.rowCount > 0; // exigible si hay garantía de cumplimiento registrada del contrato (art. 48 fr. II LOPSRM)
   const fila = g.rows[0] || null;
   const vigente = exigible ? (fila.vigencia == null || new Date(fila.vigencia) >= new Date(new Date().toDateString())) : false;
 
@@ -126,7 +128,7 @@ async function leerSoportes(estimacionId, contratoId) {
     fianza_cumplimiento: {
       exigible, vigente,
       poliza: fila?.poliza || null, afianzadora: fila?.afianzadora || null, vigencia: fila?.vigencia || null,
-      nota: '[validar profe] exigible = existe garantía de cumplimiento registrada (¿siempre exigible, art. 48 LOPSRM?)',
+      nota: 'exigible = existe garantía de cumplimiento registrada del contrato (art. 48 fr. II LOPSRM)',
     },
     obligatorios_ok: facturaOk && cfdiOk && fianzaOk,
     folio_cfdi: cfdi?.descripcion?.trim() || null,
@@ -219,7 +221,7 @@ async function cargarSoporte(req, res) {
     if (!est) return res.status(404).json({ error: 'Estimación no encontrada' });
     if (!esParteOSupervision(req.user, est)) return res.status(403).json({ error: 'No tienes acceso a esta estimación' });
     if (!['contratista', 'finanzas'].includes(req.user.rol)) {
-      return res.status(403).json({ error: 'Solo el contratista o finanzas pueden cargar soportes' }); // [validar profe] quién exactamente
+      return res.status(403).json({ error: 'Solo el contratista o finanzas pueden cargar soportes' }); // criterio del equipo (default conservador): contratista aporta soportes, finanzas opera el pago
     }
     // Consistencia con generarInstruccion: si el contrato está cerrado (finiquito), no se cargan soportes
     // nuevos del tránsito a pago (art. 64 LOPSRM: derechos y obligaciones extinguidos).
@@ -249,7 +251,7 @@ async function generarInstruccion(req, res) {
     if (!est) return res.status(404).json({ error: 'Estimación no encontrada' });
     if (!esParteOSupervision(req.user, est)) return res.status(403).json({ error: 'No tienes acceso a esta estimación' });
     if (!['contratista', 'finanzas'].includes(req.user.rol)) {
-      return res.status(403).json({ error: 'Solo el contratista o finanzas pueden generar la instrucción de pago' }); // [validar profe]
+      return res.status(403).json({ error: 'Solo el contratista o finanzas pueden generar la instrucción de pago' }); // criterio del equipo (default conservador): contratista/finanzas en el tránsito a pago
     }
     // Gate de cierre: si el contrato ya tiene finiquito elaborado (estado 'cerrado'), NO se genera una
     // nueva instrucción de pago. Al determinarse el saldo del finiquito quedan "extinguidos los derechos y
@@ -348,7 +350,8 @@ async function consultarPresupuesto(req, res) {
 }
 
 // POST /api/instruccion-pago/presupuesto — carga/actualiza el techo (rol finanzas).
-// [validar profe] ¿la carga del techo es parte de HU-20 o un concern aparte (administración presupuestal)?
+// Criterio del equipo (default conservador): la carga del techo es administración presupuestal (rol finanzas);
+// se conserva aquí por cercanía a la verificación de suficiencia (art. 24 LOPSRM).
 async function crearPresupuesto(req, res) {
   try {
     const ejercicio = Number(req.body?.ejercicio);

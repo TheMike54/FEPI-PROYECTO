@@ -14,7 +14,9 @@
 //   REGISTRA igual y se devuelve `aviso_programa` (verificar monto/conceptos). Solo aplica si hay programa.
 // - NOTA AUTOMÁTICA (P14: "el aviso es a través de una nota"): el registro GENERA su nota de bitácora
 //   tipo `avance` (insertarNotaAtomica, folio atómico) y la liga (nota_id). DIFERIDO si no hay bitácora
-//   abierta (se asienta sola al abrirla — abrirBitacora). Emisor = quien registra (contratista) [validar].
+//   abierta (se asienta sola al abrirla — abrirBitacora). Emisor = quien registra (contratista):
+//   criterio del equipo (default conservador); el avance lo registra el contratista, identificado en los
+//   datos de la nota (art. 123 fr. II RLOPSRM).
 // - Captura EDITABLE (POST/PATCH/DELETE): no append-only; cada escritura revalida art. 118 + periodo.
 // - registrado_por SIEMPRE sale del JWT (req.user.id), nunca del body.
 // - Acotamiento: el contrato llega vía el concepto; acceso por participación (esParteOSupervision).
@@ -268,7 +270,8 @@ async function registrarAvance(req, res) {
 
       // O4 — NOTA AUTOMÁTICA de avance (folio atómico). Si hay bitácora abierta y cantidad>0, se
       // asienta aquí (mismo BEGIN/COMMIT); si NO hay bitácora, se DIFIERE (nota_id NULL) y se asentará
-      // sola al abrir la bitácora (abrirBitacora). Emisor = quien registra (contratista) [validar].
+      // sola al abrir la bitácora (abrirBitacora). Emisor = quien registra (contratista): criterio del
+      // equipo (default conservador), identificado en los datos de la nota (art. 123 fr. II RLOPSRM).
       // La fecha del avance se fija al CIERRE del periodo (la curva HU-05 usa fecha + contrato_periodo_id).
       let notaId = null;
       let notaCreada = null;
