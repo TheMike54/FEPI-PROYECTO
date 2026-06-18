@@ -1,4 +1,6 @@
-// HU-11 (sesión E2 18-jun) — rutas de MINUTAS, VISITAS Y ACUERDOS (art. 123 fr. X RLOPSRM). Archivo NUEVO.
+// HU-11 (sesión E2 18-jun) — rutas de MINUTAS, VISITAS Y ACUERDOS. Archivo NUEVO.
+// Fundamento [VALIDAR CON PROFE]: candidatos art. 123 fr. X vs art. 125 fr. III inc. d) RLOPSRM
+// (contradicción con schema.sql:1064). Visitas: sin fundamento literal confirmado.
 // Se monta en server.js como /api/minutas. Participación/autoridad en el controller.
 const express = require('express');
 const multer = require('multer');
