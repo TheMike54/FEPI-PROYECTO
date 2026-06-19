@@ -1,12 +1,12 @@
 // @ts-check
-// AMBIENTE DE BITÁCORA (sesión grande 18-jun, BLOQUE B) — cascarón por bloques que ENCADENA apertura→firma→
-// emisión→consulta→minutas SIN fundir las HU. Ruta NUEVA /bitacora/ambiente, fuera del catálogo (SoloRol,
-// NO toca permisos.js). Aquí se valida el ACCESO por rol y el CABLEADO (selector + bloques + candado de
-// emisión que usa bitacora.completa, art. 123 fr. III RLOPSRM). No prueba la lógica de notas (es de HU-08/09).
-//
-// LOGIN REAL (backend+BD) → se salta en CI. Helpers: ./_helpers.js.
+// AMBIENTE DE BITÁCORA — FASE 4 (rediseño): WIZARD del hilo legal (Apertura → Firma → Emitir notas),
+// con Consultar (HU-10) y Minutas (HU-11) EN PARALELO (lectura, siempre accesibles). Ruta
+// /bitacora/ambiente, fuera del catálogo (SoloRol, NO toca permisos.js). Aquí se valida el ACCESO por rol,
+// el CABLEADO (selector + barra de pasos + enlaces reales + paralelos) y el candado de emisión
+// (bitacora.completa, art. 123 fr. III RLOPSRM). No prueba la lógica de notas (es de HU-08/09).
+// LOGIN REAL (backend+BD) → se salta en CI.
 import { test, expect } from '@playwright/test';
-import { freshHome, enterAppMode, goToViaSidebar, sidebarLinkFor } from './_helpers.js';
+import { freshHome, enterAppMode } from './_helpers.js';
 
 const skipEnCI = () => test.skip(!!process.env.CI, 'login real requiere backend+BD; se corre en local');
 const VIEW = '/bitacora/ambiente';
@@ -23,20 +23,25 @@ for (const rol of ['residente', 'contratista', 'supervision']) {
       await enterAppMode(page, rol);
     });
 
-    test('el link aparece en el Sidebar y el cascarón carga con sus 6 bloques', async ({ page }) => {
-      await expect(await sidebarLinkFor(page, VIEW)).toBeVisible();
-      await goToViaSidebar(page, VIEW);
+    test('el cascarón carga (por URL): selector + paralelos (HU-10/11) siempre; al elegir contrato aparece la barra de pasos', async ({ page }) => {
+      await page.goto(`http://localhost:5173${VIEW}`);
+      await page.waitForLoadState('networkidle');
       await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
       await expect(page.getByTestId('select-contrato')).toBeVisible();
-      // Los 6 bloques del cascarón están presentes (no funde las HU: cada uno enlaza a su ruta real).
-      for (let n = 1; n <= 6; n++) {
-        await expect(page.getByTestId(`bloque-bit-${n}`)).toBeVisible();
-      }
-      // Los enlaces a las rutas reales existen (encadena, no reemplaza).
-      await expect(page.getByTestId('link-abrir')).toHaveAttribute('href', /\/bitacora\/apertura/);
-      await expect(page.getByTestId('link-firmar')).toHaveAttribute('href', '/bitacora/por-firmar');
+      // Bloque 1 (selector/estado) + los PARALELOS (consulta/minutas) están SIEMPRE (lectura, no encadenados).
+      await expect(page.getByTestId('bloque-bit-1')).toBeVisible();
       await expect(page.getByTestId('link-consulta')).toHaveAttribute('href', /\/bitacora\/consulta/);
       await expect(page.getByTestId('link-minutas')).toHaveAttribute('href', /\/bitacora\/minutas/);
+      // Sin contrato aún: el wizard (barra de pasos) no se muestra.
+      await expect(page.getByTestId('wizard-bitacora-pasos')).toHaveCount(0);
+      // Al elegir un contrato aparece la barra de pasos y el paso 1 (Apertura) con su enlace real.
+      const sel = page.getByTestId('select-contrato');
+      if (await sel.locator('option').count() > 1) {
+        await sel.selectOption({ index: 1 });
+        await expect(page.getByTestId('wizard-bitacora-pasos')).toBeVisible();
+        await expect(page.getByTestId('wpaso-bit-apertura')).toBeVisible();
+        await expect(page.getByTestId('link-abrir')).toHaveAttribute('href', /\/bitacora\/apertura/);
+      }
     });
   });
 }
@@ -59,9 +64,9 @@ for (const rol of ['dependencia', 'finanzas']) {
   });
 }
 
-// --- Candado de emisión: con el contrato sembrado (bitácora completa) se abre el enlace a notas ---
+// --- Candado de emisión: con el contrato sembrado (bitácora completa) el paso "Emitir" se desbloquea ---
 test.describe('Ambiente bitácora — candado de emisión (art. 123 fr. III)', () => {
-  test('el residente elige el contrato demo (apertura firmada) y el bloque 4 habilita "Emitir notas"', async ({ page, request }) => {
+  test('el residente elige el contrato demo (apertura firmada) y el paso "Emitir notas" habilita el enlace', async ({ page, request }) => {
     skipEnCI();
     const login = await (await request.post(`${API}/auth/login`, { data: { email: 'residente@sigecop.test', password: PASS } })).json();
     const contratos = await (await request.get(`${API}/contratos`, { headers: { Authorization: `Bearer ${login.token}` } })).json();
@@ -70,11 +75,16 @@ test.describe('Ambiente bitácora — candado de emisión (art. 123 fr. III)', (
 
     await freshHome(page);
     await enterAppMode(page, 'residente');
-    await goToViaSidebar(page, VIEW);
+    await page.goto(`http://localhost:5173${VIEW}`);
+    await page.waitForLoadState('networkidle');
     await page.getByTestId('select-contrato').selectOption({ value: String(demo.id) });
 
-    // La apertura del demo está firmada por las 3 partes → completa → bloque 4 sin candado, con enlace a notas.
+    // La apertura del demo está firmada por las 3 partes → completa.
     await expect(page.getByTestId('firmas-xy')).toContainText('completa', { timeout: 10000 });
+    // Paso 2 · Firma (enlace "Por firmar") y paso 3 · Emitir (sin candado, con enlace a notas).
+    await page.getByTestId('wpaso-bit-firma').click();
+    await expect(page.getByTestId('link-firmar')).toHaveAttribute('href', '/bitacora/por-firmar');
+    await page.getByTestId('wpaso-bit-emitir').click();
     await expect(page.getByTestId('link-notas')).toBeVisible();
     await expect(page.getByTestId('candado-bit-4')).toHaveCount(0);
   });

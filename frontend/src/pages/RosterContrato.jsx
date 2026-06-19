@@ -106,10 +106,17 @@ export default function RosterContrato() {
       <Breadcrumb items={[{ label: 'Inicio', href: '/' }, { label: 'Roster del contrato' }]} />
 
       <h1 className="text-2xl font-bold text-sigecop-blue mb-2">Sustitución de personas del roster</h1>
-      <p className="text-sm text-slate-600 mb-6 max-w-3xl">
+      <p className="text-sm text-slate-600 mb-3 max-w-3xl">
         Sustituye al residente, superintendente o supervisión <strong>conservando el histórico</strong> de
         quién ocupó cada rol y desde cuándo. Una persona <strong>nunca se borra: se sustituye</strong>
         (art. 125 fr. I inciso g RLOPSRM). Las firmas ya registradas conservan a su firmante original.
+      </p>
+      {/* FIX 3.4 — la dependencia contratante NO es persona del roster sustituible (art. 125 fr. I g solo lista
+          residente/superintendente/supervisión). Se deja explícito para no inducir a "sustituir" al contratante. */}
+      <p className="text-xs text-slate-500 mb-6 max-w-3xl bg-slate-50 border border-borde rounded-md px-3 py-2" data-testid="roster-dependencia-aviso">
+        La <strong>dependencia contratante</strong> no es sustituible por aquí: el contrato se liga a ella y el
+        art. 125 fr. I g RLOPSRM solo prevé sustituir al residente, al superintendente y a la supervisión. Una
+        dependencia mal capturada se corrige por vía administrativa, no como sustitución de roster.
       </p>
 
       {sinToken ? (

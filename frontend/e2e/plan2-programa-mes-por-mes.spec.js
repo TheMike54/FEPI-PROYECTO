@@ -12,7 +12,7 @@
 // Requiere backend+BD (login real); se corre en local, no en CI.
 
 import { test, expect } from '@playwright/test';
-import { freshHome, enterAppMode, goToViaSidebar } from './_helpers.js';
+import { freshHome, enterAppMode, goToViaSidebar, irPasoEstimacion } from './_helpers.js';
 
 test.skip(!!process.env.CI, 'login real requiere backend+BD; se corre en local');
 
@@ -81,6 +81,8 @@ test.describe('Pase 1 — programa de obra mes por mes (3 vistas)', () => {
     await goToViaSidebar(page, '/estimaciones/integracion');
     await seleccionarPorFolio(page, folio);
 
+    // FASE 3 (wizard): el panel del programa vive en el paso 2 · "Generadores".
+    await irPasoEstimacion(page, 'generadores');
     const panel = page.getByTestId('panel-programa-obra');
     await expect(panel).toBeVisible();
     // <details> colapsado: la matriz no se ve hasta abrir el resumen.

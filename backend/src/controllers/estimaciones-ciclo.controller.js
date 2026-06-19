@@ -20,6 +20,18 @@ const { esParteOSupervision } = require('../lib/acceso');
 // fr. I-b). Reusa el folio atómico + inmutabilidad del controller de bitácora (no se duplica la lógica).
 const { insertarNotaAtomica } = require('./bitacora.controller');
 
+// FIX 1.1 — FINIQUITO bloquea el ciclo. Con el contrato CERRADO (finiquito elaborado), el art. 64 LOPSRM
+// declara "extinguidos los derechos y obligaciones asumidos por ambas partes" (verificado en docs/legal):
+// el saldo se liquida por el finiquito, no por estimaciones nuevas. Gate reusable (espejo del que ya existe
+// en instruccion-pago para el pago). Requiere que el row traiga `contrato_estado` (c.estado AS contrato_estado).
+function gateContratoCerrado(res, fila, accion) {
+  if (fila && fila.contrato_estado === 'cerrado') {
+    res.status(409).json({ error: `El contrato ya está cerrado (finiquito elaborado); ${accion}. El saldo se liquida por el finiquito (art. 64 LOPSRM).` });
+    return true;
+  }
+  return false;
+}
+
 // GET /api/estimaciones-ciclo/contrato/:contratoId/historial
 // Acotado por participación. Orden cronológico de estimaciones por número correlativo
 // (= orden de integración). Incluye las rechazadas (CA-1: trazabilidad fiscal).
@@ -136,7 +148,7 @@ async function enviarEstimacion(req, res) {
     // (1) Estimación + equipo del contrato. 404 antes que 403 (espejo de HU-12).
     const e = await pool.query(
       `SELECT e.id, e.numero, e.contrato_id, e.estado, e.periodo_inicio, e.periodo_fin, e.enviada_en, e.enviada_por,
-              c.created_by, c.residente_id, c.superintendente_id, c.supervision_id
+              c.created_by, c.residente_id, c.superintendente_id, c.supervision_id, c.estado AS contrato_estado
          FROM estimaciones e
          JOIN contratos c ON c.id = e.contrato_id
         WHERE e.id = $1`,
@@ -144,6 +156,7 @@ async function enviarEstimacion(req, res) {
     );
     if (e.rowCount === 0) return res.status(404).json({ error: 'Estimación no encontrada' });
     const row = e.rows[0];
+    if (gateContratoCerrado(res, row, 'no se presentan estimaciones')) return; // FIX 1.1 — finiquito bloquea (art. 64 LOPSRM)
 
     // (2) Acceso localizado: solo el superintendente del contrato PRESENTA sus estimaciones.
     if (row.superintendente_id !== req.user.id) {
@@ -227,7 +240,7 @@ async function cargarEstimacionConContrato(id) {
   const e = await pool.query(
     `SELECT e.id, e.numero, e.contrato_id, e.estado, e.periodo_inicio, e.periodo_fin,
             e.neto, e.enviada_en, e.enviada_por,
-            c.created_by, c.residente_id, c.superintendente_id, c.supervision_id
+            c.created_by, c.residente_id, c.superintendente_id, c.supervision_id, c.estado AS contrato_estado
        FROM estimaciones e
        JOIN contratos c ON c.id = e.contrato_id
       WHERE e.id = $1`,
@@ -321,6 +334,7 @@ async function crearObservacion(req, res) {
     if (est.supervision_id !== req.user.id) {
       return res.status(403).json({ error: 'Solo la supervisión asignada al contrato puede registrar observaciones' });
     }
+    if (gateContratoCerrado(res, est, 'no se registran observaciones')) return; // FIX 1.1
     if (est.estado !== 'enviada') {
       return res.status(409).json({ error: `No se pueden registrar observaciones en una estimación '${est.estado}'` });
     }
@@ -355,6 +369,7 @@ async function eliminarObservacion(req, res) {
     if (est.supervision_id !== req.user.id) {
       return res.status(403).json({ error: 'Solo la supervisión asignada al contrato puede eliminar observaciones' });
     }
+    if (gateContratoCerrado(res, est, 'no se eliminan observaciones')) return; // FIX 1.1
     if (est.estado !== 'enviada') {
       return res.status(409).json({ error: `No se pueden eliminar observaciones en una estimación '${est.estado}'` });
     }
@@ -393,6 +408,7 @@ async function turnarEstimacion(req, res) {
     if (est.supervision_id !== req.user.id) {
       return res.status(403).json({ error: 'Solo la supervisión asignada al contrato puede turnar la estimación' });
     }
+    if (gateContratoCerrado(res, est, 'no se turnan estimaciones')) return; // FIX 1.1
     if (est.estado !== 'enviada') {
       return res.status(409).json({ error: `No se puede turnar una estimación '${est.estado}'` });
     }
@@ -460,6 +476,7 @@ async function autorizarEstimacion(req, res) {
     if (est.residente_id !== req.user.id) {
       return res.status(403).json({ error: 'Solo la residencia asignada al contrato puede autorizar la estimación' });
     }
+    if (gateContratoCerrado(res, est, 'no se autorizan estimaciones')) return; // FIX 1.1
     if (est.estado !== 'enviada') {
       return res.status(409).json({ error: `No se puede autorizar una estimación '${est.estado}'` });
     }
@@ -531,6 +548,7 @@ async function rechazarEstimacion(req, res) {
     if (est.residente_id !== req.user.id) {
       return res.status(403).json({ error: 'Solo la residencia asignada al contrato puede rechazar la estimación' });
     }
+    if (gateContratoCerrado(res, est, 'no se rechazan estimaciones')) return; // FIX 1.1
     if (est.estado !== 'enviada') {
       return res.status(409).json({ error: `No se puede rechazar una estimación '${est.estado}'` });
     }
@@ -619,6 +637,7 @@ async function reingresarEstimacion(req, res) {
     if (est.superintendente_id !== req.user.id) {
       return res.status(403).json({ error: 'Solo el superintendente asignado a este contrato puede reingresar sus estimaciones' });
     }
+    if (gateContratoCerrado(res, est, 'no se reingresan estimaciones')) return; // FIX 1.1
 
     // (3) Máquina de estados: solo se reingresa lo RECHAZADO.
     if (est.estado !== 'rechazada') {

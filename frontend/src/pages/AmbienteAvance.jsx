@@ -86,9 +86,10 @@ export default function AmbienteAvance() {
       />
 
       <div className="bg-sigecop-blue-light border-l-4 border-sigecop-blue px-4 py-3 rounded-r-md text-sm text-slate-700" data-testid="ambiente-avance-aviso">
-        <strong>Avance físico y seguimiento</strong>, por bloques: registrar avance → curva y desviación →
-        atrasos. Cada bloque <strong>enlaza a su pantalla real</strong>; este ambiente solo encadena y muestra
-        los KPIs que ya calcula el sistema (la misma fuente que la curva).
+        <strong>Avance físico y seguimiento.</strong> La acción del flujo es <strong>registrar el avance</strong>
+        (HU-06); la <strong>curva (HU-05)</strong> y los <strong>atrasos (HU-07)</strong> van <strong>en
+        paralelo</strong> (lectura, siempre accesibles). Cada bloque enlaza a su pantalla real; el ambiente
+        muestra los KPIs que ya calcula el sistema (misma fuente que la curva).
       </div>
 
       {sinSesion && (
@@ -117,6 +118,9 @@ export default function AmbienteAvance() {
         </Link>
       </Bloque>
 
+      {/* EN PARALELO (lectura): curva (HU-05) y atrasos (HU-07) — no encadenadas al registro. */}
+      <h3 className="text-xs font-bold uppercase tracking-wider text-tinta-sec pt-2">En paralelo (lectura, no se bloquean)</h3>
+
       {/* BLOQUE 3 — Curva y desviación (HU-05), KPIs de la misma fuente. */}
       <Bloque n={3} titulo="Curva de avance y desviación (HU-05)" estado={avance ? 'listo' : 'activo'}>
         {avance && (
@@ -140,14 +144,16 @@ export default function AmbienteAvance() {
         </Link>
       </Bloque>
 
-      {/* BLOQUE 5 — Evidencia fotográfica (PLACEHOLDER, pendiente Equipo 2). */}
-      <Bloque n={5} titulo="Evidencia fotográfica por periodo" placeholder>
+      {/* BLOQUE 5 — Evidencia fotográfica: FUERA DE ALCANCE de la Etapa 1 (FASE 5, decisión de alcance). */}
+      <Bloque n={5} titulo="Evidencia fotográfica por periodo">
         <p className="text-sm text-slate-700">
-          La evidencia fotográfica del avance por periodo todavía no existe (HU-06 hoy no sube fotos).
+          El registro fotográfico del avance por periodo es <strong>fuera del alcance de la Etapa 1</strong>:
+          la ley no lo exige como requisito (el avance se sustenta con los números ejecutados por concepto y la
+          nota de bitácora). El acumulado contra lo contratado (art. 118 RLOPSRM) es el control vigente.
         </p>
-        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mt-3" data-testid="evidencia-placeholder">
-          ⏳ <strong>Pendiente del Equipo 2.</strong> Cuando se construya la subida de evidencias por periodo,
-          este bloque se cablea aquí (la estructura del ambiente ya está lista).
+        <p className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 mt-3" data-testid="evidencia-placeholder">
+          Fuera de alcance de la Etapa 1. Si en una etapa posterior se incorpora la subida de evidencias por
+          periodo, este bloque la alojará (la estructura del ambiente ya está lista).
         </p>
       </Bloque>
     </div>

@@ -1,27 +1,20 @@
-import { useEffect, useState } from 'react';
-import { NavLink, useLocation } from 'react-router-dom';
+import { NavLink } from 'react-router-dom';
 import { historiasUsuario } from '../../data/dummy.js';
 import { nivelDe } from '../../data/permisos.js';
 import { useSesion } from '../../context/SesionContext.jsx';
 
-// BLOQUE 4 — navegación modo-sistema (mockup `docs/mockups/sigecop-modo-sistema.html`). Pase de diseño/UX:
-// sidebar GUINDA institucional, grupos por flujo y sub-pasos COLAPSABLES (acordeón) para que no se amontone.
-// REGLA DE ORO: SOLO presentación/navegación — NO cambia rutas, contenido ni gating. Cada HU sigue con su
-// propia ruta e identificable (no se funden). Se conserva CADA href con su MISMO gating (HU por `nivelDe`
-// —lee permisos.js, no lo toca—; rutas fijas por rol). `permisos.js` NO se toca.
-//
-// ACORDEÓN ↔ SUITE: los sub-items se ocultan al colapsar. La suite navega con `aside a[href=...]`; los
-// helpers de test (`goToViaSidebar`/`sidebarLinkFor`, e2e/_helpers.js) expanden el flujo antes de hacer clic
-// (cada chevron lleva `data-accordion-toggle`). Es plumbing de test, no lógica de navegación.
+// F5 — SIDEBAR PLANO (match `docs/mockups/sigecop-prototipo-ciclos.html`): lista PLANA de ciclos, SIN acordeón.
+// Cada ciclo es un item directo a su pantalla/wizard; las vistas TIPO B (sub-pasos del wizard y lecturas "en
+// paralelo") ya viven DENTRO de cada ciclo, así que NO se listan en el sidebar. REGLA DE ORO: solo presentación/
+// navegación — NO cambia rutas, contenido ni gating. Cada HU conserva su gating (nivelDe lee permisos.js, NO lo
+// toca; rutas fijas por rol). Red de PROMOCIÓN: si un rol ve un HIJO pero NO el padre del ciclo (p. ej.
+// dependencia ve Historial/Revisión/Curva pero no el padre del ciclo), el hijo se promueve a item plano para no
+// perder acceso (ver Flujo()); la red "Otras pantallas" recoge cualquier HU no colocada.
 
 const itemBase = 'flex items-center gap-2.5 px-3 py-2 text-[13.5px] transition-colors border-l-[3px]';
 const linkClass = ({ isActive }) =>
   `${itemBase} flex-1 min-w-0 ${
     isActive ? 'bg-guinda-dark border-dorado text-white font-semibold' : 'border-transparent text-white/85 hover:bg-white/10 hover:text-white'
-  }`;
-const subLinkClass = ({ isActive }) =>
-  `flex items-center gap-2 pl-9 pr-3 py-1.5 text-[12.5px] transition-colors border-l-[3px] ${
-    isActive ? 'bg-guinda-dark border-dorado text-white font-medium' : 'border-transparent text-white/70 hover:bg-white/8 hover:text-white'
   }`;
 const grupoClass = 'text-[10px] uppercase tracking-[0.1em] text-white/45 px-4 pt-4 pb-1.5';
 const huPill = 'ml-auto text-[10px] text-white/40 font-medium flex-shrink-0';
@@ -30,47 +23,41 @@ const huPill = 'ml-auto text-[10px] text-white/40 font-medium flex-shrink-0';
 const HU = Object.fromEntries(historiasUsuario.map((h) => [h.codigo, h]));
 const T = ['residente', 'contratista', 'supervision']; // equipo de bitácora/estimación
 
-// Estructura por grupos → flujos → (sub-pasos). Cada item:
+// Estructura por grupos → ciclos (items planos). Cada item:
 //  · { hu } gated por nivelDe(hu, rol) !== null; ruta/título/icono de la HU.
 //  · { ruta, roles, label, icono } ruta fija (ambiente/admin), gated por rol ∈ roles.
-//  · `children` = sub-pasos (mismos tipos). Un flujo con children es un ACORDEÓN.
+//  · `children` = sub-pasos/lecturas del ciclo. NO se renderizan bajo el padre (viven DENTRO del ciclo); se
+//    conservan SOLO como red de promoción para roles que ven el hijo pero no el padre.
 const GRUPOS = [
   {
-    titulo: 'Flujos',
+    titulo: 'Ciclos',
     items: [
-      { hu: 'HU-01', icono: '📄', children: [{ hu: 'HU-02', label: 'Fianzas / garantías' }] },
+      { hu: 'HU-01', icono: '📄' },
+      { hu: 'HU-02', icono: '🛡️', label: 'Fianzas / garantías' },
       { hu: 'HU-12', icono: '📐', label: 'Ciclo de estimación', children: [
         { hu: 'HU-13', label: 'Presentar' },
         { hu: 'HU-15', label: 'Revisión / autorización' },
         { hu: 'HU-16', label: 'Reingreso' },
         { hu: 'HU-14', label: 'Historial' },
-        { ruta: '/estimaciones/ambiente', roles: T, label: 'Recorrido por bloques', icono: '🧱' },
       ] },
-      { hu: 'HU-08', icono: '📓', label: 'Bitácora', children: [
+      { ruta: '/bitacora/ambiente', roles: T, icono: '📓', label: 'Bitácora', children: [
+        { hu: 'HU-08', label: 'Apertura' },
         { ruta: '/bitacora/por-firmar', roles: T, label: 'Por firmar', icono: '✍️' },
         { hu: 'HU-09', label: 'Emitir notas' },
         { hu: 'HU-10', label: 'Consultar / buscar' },
         { hu: 'HU-11', label: 'Minutas y visitas' },
-        { ruta: '/bitacora/ambiente', roles: T, label: 'Recorrido por bloques', icono: '📒' },
       ] },
-      { hu: 'HU-06', icono: '🏗️', label: 'Avance y seguimiento', children: [
+      { ruta: '/seguimiento/ambiente', roles: ['contratista', 'residente', 'supervision'], icono: '🏗️', label: 'Avance y seguimiento', children: [
+        { hu: 'HU-06', label: 'Registrar avance' },
         { hu: 'HU-05', label: 'Curva de avance' },
         { hu: 'HU-07', label: 'Alertas de atraso' },
-        { ruta: '/seguimiento/ambiente', roles: T, label: 'Recorrido por bloques', icono: '📈' },
       ] },
       { hu: 'HU-20', icono: '💳', label: 'Pago y tránsito', children: [
         { hu: 'HU-21', label: 'Registro del pago' },
-        { ruta: '/pagos/ambiente', roles: ['finanzas', 'contratista', 'residente', 'dependencia'], label: 'Recorrido por bloques', icono: '💸' },
       ] },
-      { hu: 'HU-03', icono: '📝', label: 'Convenios', children: [
-        { ruta: '/contratos/convenio-ambiente', roles: ['dependencia', 'residente', 'contratista', 'supervision'], label: 'Recorrido por bloques', icono: '📐' },
-      ] },
-      { ruta: '/contratos/finiquito', roles: ['dependencia', 'residente'], label: 'Cierre / finiquito', icono: '🏁', children: [
-        { ruta: '/contratos/cierre', roles: ['dependencia', 'residente'], label: 'Recorrido por bloques', icono: '🧾' },
-      ] },
-      { hu: 'HU-04', icono: '🗂️', label: 'Expediente', children: [
-        { ruta: '/contratos/expediente-ambiente', roles: ['residente', 'contratista', 'supervision', 'dependencia'], label: 'Cierre documental (por bloques)', icono: '📑' },
-      ] },
+      { hu: 'HU-03', icono: '📝', label: 'Convenios' },
+      { ruta: '/contratos/finiquito', roles: ['dependencia', 'residente'], label: 'Cierre / finiquito', icono: '🏁' },
+      { hu: 'HU-04', icono: '🗂️', label: 'Expediente' },
     ],
   },
   {
@@ -92,16 +79,25 @@ const GRUPOS = [
   },
 ];
 
-// HU colocadas en algún flujo o sub-paso (red de seguridad "Otras pantallas"). Solo cuenta códigos reales.
+// HU colocadas en algún ciclo o sub-paso (red de seguridad "Otras pantallas"). Solo cuenta códigos reales.
 const codigosDe = (items) => items.flatMap((i) => [
   ...(i.hu && HU[i.hu] ? [i.hu] : []),
   ...(i.children ? codigosDe(i.children) : []),
 ]);
 const HU_COLOCADAS = new Set(GRUPOS.flatMap((g) => codigosDe(g.items)));
 
+// Pill de RANGO de HU por ciclo: min–max de los códigos (padre + sub-pasos). Un solo HU → "HU-12" (formato
+// plano de siempre); varios → "HU 12–16". Ciclo sin HU real (p. ej. finiquito por ruta) → null (sin pill).
+const rangoHU = (item) => {
+  const nums = codigosDe([item]).map((c) => parseInt(c.slice(3), 10)).filter((n) => !Number.isNaN(n));
+  if (nums.length === 0) return null;
+  const min = Math.min(...nums), max = Math.max(...nums);
+  const f = (n) => String(n).padStart(2, '0');
+  return min === max ? `HU-${f(min)}` : `HU ${f(min)}–${f(max)}`;
+};
+
 export default function Sidebar() {
   const { rol, salirRol } = useSesion();
-  const { pathname } = useLocation();
 
   // Resuelve un item a forma renderizable {key, to, icono, label, pill, lectura} o null (no aplica al rol).
   const resolver = (item) => {
@@ -115,32 +111,7 @@ export default function Sidebar() {
     return { key: item.ruta, to: item.ruta, icono: item.icono, label: item.label, pill: null, lectura: false };
   };
 
-  // Flujo (padre) cuyo propio enlace o alguno de sus hijos corresponde a la pantalla actual → abierto por defecto.
-  const flowKeyForPath = () => {
-    for (const g of GRUPOS) {
-      for (const it of g.items) {
-        const r = resolver(it);
-        if (!r) continue;
-        if (r.to === pathname) return r.key;
-        for (const ch of it.children || []) {
-          const rc = resolver(ch);
-          if (rc && rc.to === pathname) return r.key;
-        }
-      }
-    }
-    return null;
-  };
-
-  const [abiertos, setAbiertos] = useState({});
-  // Abre el flujo de la pantalla actual (sin cerrar lo que el usuario haya abierto).
-  useEffect(() => {
-    const k = flowKeyForPath();
-    if (k) setAbiertos((prev) => (prev[k] ? prev : { ...prev, [k]: true }));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pathname, rol]);
-  const toggle = (key) => setAbiertos((prev) => ({ ...prev, [key]: !prev[key] }));
-
-  // HU visibles que no quedaron en ningún flujo → red de seguridad (no se pierde ningún enlace).
+  // HU visibles que no quedaron en ningún ciclo → red de seguridad (no se pierde ningún enlace).
   const huSueltas = historiasUsuario
     .filter((h) => h.codigo !== 'HU-00' && !HU_COLOCADAS.has(h.codigo) && nivelDe(h.codigo, rol) !== null)
     .map((h) => ({ key: h.codigo, to: h.ruta, icono: h.icono, label: h.titulo, pill: h.codigo, lectura: nivelDe(h.codigo, rol) === 'C' }));
@@ -149,13 +120,13 @@ export default function Sidebar() {
   // sidebar (sí en Inicio) para no saturar y que los nombres quepan en una línea.
   const Pill = (r) => (r.pill ? <span className={huPill}>{r.pill}</span> : null);
 
-  // Renderiza un item de flujo (con su acordeón de sub-pasos si aplica).
+  // F5: cada ciclo es un item PLANO (sin acordeón). Si el rol ve el PADRE del ciclo → se muestra SOLO el padre
+  // (sus sub-pasos/lecturas viven DENTRO del ciclo: wizard + "en paralelo"). Si NO ve el padre pero SÍ algún
+  // hijo → se PROMUEVEN los hijos accesibles a items planos (no se pierde acceso). Mismo gating; NO toca
+  // permisos.js (equivalente a la promoción que ya existía en la versión con acordeón).
   const Flujo = (item) => {
     const r = resolver(item);
     const subs = (item.children || []).map(resolver).filter(Boolean);
-    // GATING: si el PADRE del flujo no es accesible para el rol pero SÍ lo es algún HIJO (p. ej.
-    // dependencia ve "Curva" HU-05 pero no el padre "Avance" HU-06), se PROMUEVEN los hijos accesibles a
-    // items planos → no se pierde ningún enlace (equivalente a la lista plana anterior). NO cambia gating.
     if (!r) {
       if (subs.length === 0) return null;
       return subs.map((s) => (
@@ -166,42 +137,14 @@ export default function Sidebar() {
         </NavLink>
       ));
     }
-    const tieneSubs = subs.length > 0;
-    const abierto = !!abiertos[r.key];
+    // El padre de un ciclo con sub-pasos muestra el RANGO de HU (HU 08–11); sin sub-pasos, su HU plano.
+    const pillTexto = (item.children && item.children.length) ? (rangoHU(item) || r.pill) : r.pill;
     return (
-      <div key={r.key}>
-        <div className="flex items-stretch">
-          <NavLink to={r.to} end={r.to === '/'} className={linkClass}>
-            <span className="text-base leading-none flex-shrink-0">{r.icono}</span>
-            <span className="leading-snug">{r.label}</span>
-            {Pill(r)}
-          </NavLink>
-          {tieneSubs && (
-            <button
-              type="button"
-              onClick={() => toggle(r.key)}
-              data-accordion-toggle={r.key}
-              aria-expanded={abierto}
-              aria-label={`${abierto ? 'Colapsar' : 'Expandir'} ${r.label}`}
-              title={abierto ? 'Colapsar' : 'Expandir'}
-              className="px-3 text-white/45 hover:text-white transition-colors text-[10px] flex items-center flex-shrink-0"
-            >
-              {abierto ? '▾' : '▸'}
-            </button>
-          )}
-        </div>
-        {tieneSubs && abierto && (
-          <div className="py-0.5">
-            {subs.map((s) => (
-              <NavLink key={s.key} to={s.to} className={subLinkClass}>
-                {s.icono && <span className="text-sm leading-none flex-shrink-0 opacity-80">{s.icono}</span>}
-                <span className="leading-snug">{s.label}</span>
-                {Pill(s)}
-              </NavLink>
-            ))}
-          </div>
-        )}
-      </div>
+      <NavLink key={r.key} to={r.to} end={r.to === '/'} className={linkClass}>
+        <span className="text-base leading-none flex-shrink-0">{r.icono}</span>
+        <span className="leading-snug">{r.label}</span>
+        {pillTexto && <span className={huPill}>{pillTexto}</span>}
+      </NavLink>
     );
   };
 
@@ -217,7 +160,7 @@ export default function Sidebar() {
         </div>
 
         {GRUPOS.map((g) => {
-          // Un flujo se muestra si el padre O algún hijo es accesible (ver promoción de hijos en Flujo).
+          // Un ciclo se muestra si el padre O algún hijo es accesible (ver promoción de hijos en Flujo).
           const visibles = g.items.filter((it) => resolver(it) || (it.children || []).some(resolver));
           if (visibles.length === 0) return null;
           return (

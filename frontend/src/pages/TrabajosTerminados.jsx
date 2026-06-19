@@ -180,34 +180,21 @@ export default function TrabajosTerminados() {
   const abrirEdicion = (a) => setEdicion({ id: a.id, cantidad: String(a.cantidad), observaciones: a.observaciones || '' });
   const setEdicionCampo = (campo, valor) => setEdicion((prev) => ({ ...prev, [campo]: valor }));
 
+  // FIX 3.3 — append-only: "corregir" NO edita la fila; anula la original y registra una NUEVA vinculada
+  // (con su nota "dice/debe decir"). art. 123 fr. VI/VII RLOPSRM.
   const guardarEdicion = async () => {
     if (!edicion) return;
     setGuardando(true);
     try {
-      const r = await api.actualizarAvance(edicion.id, {
+      const r = await api.corregirAvance(edicion.id, {
         cantidad: Number(edicion.cantidad) || 0,
         observaciones: edicion.observaciones || null
       });
-      // O-PROFE: el PATCH también puede devolver aviso_programa (no bloqueante) si excede lo programado.
-      showToast(r?.aviso_programa ? `Avance actualizado. ⚠ ${r.aviso_programa}` : 'Avance actualizado');
+      showToast(r?.aviso_programa ? `Avance corregido (registro nuevo). ⚠ ${r.aviso_programa}` : 'Avance corregido: se anuló la entrada anterior y se registró la corrección.');
       setEdicion(null);
       await recargar(contratoId);
     } catch (e) {
-      showToast(e.payload?.error || e.message || 'No se pudo actualizar el avance');
-    } finally {
-      setGuardando(false);
-    }
-  };
-
-  const eliminar = async (id) => {
-    setGuardando(true);
-    try {
-      await api.eliminarAvance(id);
-      showToast('Avance eliminado');
-      if (edicion && edicion.id === id) setEdicion(null);
-      await recargar(contratoId);
-    } catch (e) {
-      showToast(e.payload?.error || e.message || 'No se pudo eliminar el avance');
+      showToast(e.payload?.error || e.message || 'No se pudo corregir el avance');
     } finally {
       setGuardando(false);
     }
@@ -510,8 +497,13 @@ export default function TrabajosTerminados() {
                                 </>
                               ) : (
                                 <>
-                                  <button type="button" className="text-xs text-sigecop-blue hover:underline mr-3" onClick={() => abrirEdicion(a)} data-testid={`btn-editar-${a.id}`}>Editar</button>
-                                  <button type="button" className="text-xs text-red-600 hover:underline" disabled={guardando} onClick={() => eliminar(a.id)} data-testid={`btn-eliminar-${a.id}`}>Eliminar</button>
+                                  {/* FIX 3.3 — append-only: las entradas vigentes se CORRIGEN (registro nuevo); las anuladas
+                                      quedan en el histórico marcadas. Ya no hay "Editar"/"Eliminar". */}
+                                  {a.estado === 'anulada' ? (
+                                    <span className="text-xs text-slate-400 italic" data-testid={`avance-anulado-${a.id}`}>anulada (corregida)</span>
+                                  ) : (
+                                    <button type="button" className="text-xs text-sigecop-blue hover:underline" onClick={() => abrirEdicion(a)} data-testid={`btn-corregir-${a.id}`}>Corregir</button>
+                                  )}
                                 </>
                               )}
                             </td>

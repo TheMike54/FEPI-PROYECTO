@@ -94,7 +94,7 @@ function TabMinutas({ form, setForm, minutas, onRegistrar, onAdjuntar, soloLectu
                 <td className="p-3 font-semibold">{m.titulo}</td>
                 <td className="p-3 text-slate-700">{m.participantes || '—'}</td>
                 <td className="p-3 text-xs">{m.tiene_pdf ? <button type="button" className="text-sigecop-accent hover:underline" onClick={() => onAdjuntar('verpdf-min', m)} data-testid={`btn-ver-pdf-min-${m.id}`}>👁 ver</button> : '—'}</td>
-                <td className="p-3 text-xs" data-testid={`min-nota-${m.id}`}>{m.nota_id ? `#${m.nota_id}` : '—'}</td>
+                <td className="p-3 text-xs" data-testid={`min-nota-${m.id}`}>{m.nota_id ? `#${m.nota_numero ?? m.nota_id}` : '—'}</td>
                 <td className="p-3 text-right whitespace-nowrap">{!soloLectura && <button type="button" className="text-xs text-sigecop-accent hover:underline" onClick={() => onAdjuntar('minuta', m)} data-testid={`btn-adjuntar-${m.id}`}>📎 Adjuntar a nota</button>}</td>
               </tr>
             ))}
@@ -131,11 +131,11 @@ function TabVisitas({ form, setForm, visitas, onAgendar, onAdjuntar, soloLectura
             <th className="text-left p-3 font-semibold w-24">Folio</th><th className="text-left p-3 font-semibold">Fecha</th>
             <th className="text-left p-3 font-semibold">Lugar</th><th className="text-left p-3 font-semibold">Responsable</th>
             <th className="text-left p-3 font-semibold">Propósito</th><th className="text-left p-3 font-semibold">Estado</th>
-            <th className="text-right p-3 font-semibold">Acción</th>
+            <th className="text-left p-3 font-semibold">Nota</th><th className="text-right p-3 font-semibold">Acción</th>
           </tr></thead>
           <tbody>
             {visitas.length === 0 ? (
-              <tr><td colSpan="7" className="p-6 text-center text-slate-400 italic" data-testid="visitas-vacio">Sin visitas para este contrato.</td></tr>
+              <tr><td colSpan="8" className="p-6 text-center text-slate-400 italic" data-testid="visitas-vacio">Sin visitas para este contrato.</td></tr>
             ) : visitas.map((v) => (
               <tr key={v.id} className="border-t border-slate-200 hover:bg-slate-50" data-testid={`visita-${v.id}`}>
                 <td className="p-3 font-mono text-xs">{folioVis(v.id)}</td>
@@ -144,6 +144,7 @@ function TabVisitas({ form, setForm, visitas, onAgendar, onAdjuntar, soloLectura
                 <td className="p-3 text-slate-700">{v.responsable || '—'}</td>
                 <td className="p-3 text-slate-700">{v.proposito || '—'}</td>
                 <td className="p-3"><EstadoVisitaBadge estado={v.estado} /></td>
+                <td className="p-3 text-xs" data-testid={`vis-nota-${v.id}`}>{v.nota_id ? `#${v.nota_numero ?? v.nota_id}` : '—'}</td>
                 <td className="p-3 text-right whitespace-nowrap">{!soloLectura && <button type="button" className="text-xs text-sigecop-accent hover:underline" onClick={() => onAdjuntar('visita', v)} data-testid={`btn-adjuntar-vis-${v.id}`}>📎 Adjuntar a nota</button>}</td>
               </tr>
             ))}
@@ -173,7 +174,7 @@ function TabAcuerdos({ minutas }) {
                 <td className="p-3 font-mono text-xs">{folioMin(m.id)} · {m.titulo}</td>
                 <td className="p-3 font-mono text-xs">{fechaMx(m.fecha)}</td>
                 <td className="p-3 text-slate-700">{m.acuerdos}</td>
-                <td className="p-3 text-xs">{m.nota_id ? `#${m.nota_id}` : '—'}</td>
+                <td className="p-3 text-xs">{m.nota_id ? `#${m.nota_numero ?? m.nota_id}` : '—'}</td>
               </tr>
             ))}
           </tbody>

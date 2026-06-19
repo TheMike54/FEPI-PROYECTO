@@ -255,14 +255,18 @@ async function crearConvenio(req, res) {
         });
       }
 
+      // ITEM 3.2 (art. 59 párr. 3 LOPSRM): el convenio NACE 'registrado' con autorizado_por=NULL. El ACTO
+      // de autorización (sella autorizado_por/autorizado_en) lo hace después el servidor FACULTADO vía
+      // POST /:convenioId/autorizar (autorizarConvenio). Separa el registro/sustento (residente, art. 99
+      // p1) del acto formal de autorización (servidor facultado, art. 59 p3 + art. 99 p5).
       const conv = await client.query(
         `INSERT INTO convenios_modificatorios
            (contrato_id, numero, folio, tipo, fundamento, motivo, monto_anterior, monto_nuevo,
             plazo_anterior_dias, plazo_nuevo_dias, delta_monto_pct, delta_plazo_pct,
-            requiere_revision_sfp, requiere_ajuste_costos, autorizado_por, nota_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING id`,
+            requiere_revision_sfp, requiere_ajuste_costos, estado, autorizado_por, nota_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'registrado',NULL,$15) RETURNING id`,
         [contratoId, numeroConv, folioFinal, tipo, fundamento, motivo,
-         montoAnterior, montoNuevo, plazoAnterior, plazoNuevoFinal, deltaMontoPct, deltaPlazoPct, reqSfp, reqAjuste, req.user.id,
+         montoAnterior, montoNuevo, plazoAnterior, plazoNuevoFinal, deltaMontoPct, deltaPlazoPct, reqSfp, reqAjuste,
          notaConv ? notaConv.id : null]
       );
       const convenioId = conv.rows[0].id;
@@ -293,6 +297,9 @@ async function crearConvenio(req, res) {
         monto_anterior: montoAnterior, monto_nuevo: montoNuevo, plazo_anterior_dias: plazoAnterior, plazo_nuevo_dias: plazoNuevoFinal,
         delta_monto_pct: deltaMontoPct != null ? Number(deltaMontoPct) : null, delta_plazo_pct: deltaPlazoPct != null ? Number(deltaPlazoPct) : null,
         requiere_revision_sfp: reqSfp, requiere_ajuste_costos: reqAjuste, programa_version_id: nuevaVerId,
+        // ITEM 3.2: el convenio queda REGISTRADO; el acto de autorización del servidor facultado es posterior.
+        estado: 'registrado',
+        aviso_autorizacion: 'El convenio quedó REGISTRADO; pendiente de AUTORIZACIÓN del servidor facultado (dependencia) — art. 59 párr. 3 LOPSRM.',
         aviso_variacion: avisoVariacion
           ? `La variación supera el ${LIMITE_PCT}% del monto o plazo original: se registra el convenio (es un AVISO, no un bloqueo). Modificación fundada en el art. 59 LOPSRM; el umbral del 25% es referencia administrativa de revisión (RLOPSRM art. 102).`
           : null,
@@ -309,6 +316,64 @@ async function crearConvenio(req, res) {
     } finally { client.release(); }
   } catch (err) {
     console.error('[crearConvenio]', err);
+    return res.status(500).json({ error: 'Error interno' });
+  }
+}
+
+// POST /api/convenios/:convenioId/autorizar — ACTO formal de AUTORIZACIÓN del servidor FACULTADO.
+// ITEM 3.2 (Oleada 3). Fundamento verificado en docs/legal: LOPSRM art. 59 párr. 3 (el convenio debe
+// ser AUTORIZADO por la persona servidora pública facultada en los lineamientos, art. 1 Quinquies) +
+// RLOPSRM art. 99 párr. 5 (suscripción por el servidor facultado, distinto del residente que sustenta el
+// dictamen, art. 99 p1) + art. 102 fr. I-III (variación > 25% exige autorización/soporte = oficio).
+// El rol facultado se mapea a 'dependencia' (servidor que firma/suscribe el contrato). Append-only: sella
+// estado='autorizado' + autorizado_por + autorizado_en (una sola vez; el trigger blinda la transición).
+//
+// ALCANCE (Etapa 1): este acto SELLA la autorización. La modificación MATERIAL del programa/monto se
+// aplica HOY en el registro (crearConvenio) como antes; diferir el EFECTO material hasta este punto exige
+// rehacer cómo HU-12/HU-06 leen el catálogo vivo → follow-on para Maiki (documentado en el reporte).
+async function autorizarConvenio(req, res) {
+  const convenioId = Number(req.params.convenioId);
+  if (!Number.isInteger(convenioId) || convenioId <= 0) return res.status(400).json({ error: 'convenio inválido' });
+  // AUTORIDAD = servidor facultado (art. 59 p3 + art. 99 p5; coincide con permisos.js HU-03 nivel 'E').
+  if (req.user.rol !== 'dependencia') return res.status(403).json({ error: 'Solo el servidor facultado (dependencia) puede autorizar el convenio (art. 59 LOPSRM)' });
+  let client;
+  try {
+    client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      const cv = await client.query(
+        `SELECT cm.id, cm.estado, cm.delta_monto_pct, cm.delta_plazo_pct,
+                c.created_by, c.residente_id, c.superintendente_id, c.supervision_id
+           FROM convenios_modificatorios cm JOIN contratos c ON c.id = cm.contrato_id
+          WHERE cm.id = $1 FOR UPDATE OF cm`, [convenioId]);
+      if (cv.rowCount === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Convenio no encontrado' }); }
+      const conv = cv.rows[0];
+      if (!esParteOSupervision(req.user, conv)) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'No tienes acceso a este convenio' }); }
+      if (conv.estado !== 'registrado') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'El convenio ya está autorizado; el acto de autorización es único (art. 59 LOPSRM)' }); }
+
+      // Guardrail art. 102 RLOPSRM: variación de monto o plazo > 25% exige el oficio/soporte YA cargado.
+      const absM = conv.delta_monto_pct != null ? Math.abs(Number(conv.delta_monto_pct)) : null;
+      const absP = conv.delta_plazo_pct != null ? Math.abs(Number(conv.delta_plazo_pct)) : null;
+      if ((absM != null && absM > 25) || (absP != null && absP > 25)) {
+        const ofi = await client.query('SELECT 1 FROM contrato_documentos WHERE convenio_id = $1 LIMIT 1', [convenioId]);
+        if (ofi.rowCount === 0) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({ error: 'La variación supera el 25% (art. 102 RLOPSRM): carga el oficio/soporte de aprobación antes de autorizar.' });
+        }
+      }
+
+      const upd = await client.query(
+        `UPDATE convenios_modificatorios SET estado = 'autorizado', autorizado_por = $2, autorizado_en = NOW()
+           WHERE id = $1 RETURNING id, estado, autorizado_por, autorizado_en`,
+        [convenioId, req.user.id]);
+      await client.query('COMMIT');
+      return res.status(200).json({ ok: true, ...upd.rows[0] });
+    } catch (e) {
+      try { await client.query('ROLLBACK'); } catch (_) { /* el client pudo morir */ }
+      throw e;
+    } finally { client.release(); }
+  } catch (err) {
+    console.error('[autorizarConvenio]', err);
     return res.status(500).json({ error: 'Error interno' });
   }
 }
@@ -369,4 +434,4 @@ async function descargarOficioConvenio(req, res) {
   } catch (err) { console.error('[descargarOficioConvenio]', err); return res.status(500).json({ error: 'Error interno' }); }
 }
 
-module.exports = { listarConvenios, detalleVersion, crearConvenio, subirOficioConvenio, descargarOficioConvenio };
+module.exports = { listarConvenios, detalleVersion, crearConvenio, autorizarConvenio, subirOficioConvenio, descargarOficioConvenio };

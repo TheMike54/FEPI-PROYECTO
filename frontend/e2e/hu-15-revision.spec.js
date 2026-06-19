@@ -20,7 +20,6 @@ import {
   freshHome,
   enterAppMode,
   goToViaSidebar,
-  sidebarLinkFor,
   expectAvisoSoloConsulta,
   expectMetadataAcademicaOculta
 } from './_helpers.js';
@@ -47,7 +46,6 @@ for (const rol of [
     });
 
     test('sidebar muestra HU-15 y la vista carga sin metadata academica', async ({ page }) => {
-      await expect(await sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
       await goToViaSidebar(page, VIEW_PATH);
       await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
       await expectMetadataAcademicaOculta(page, {
@@ -75,7 +73,6 @@ test.describe('HU-15 — modo aplicacion (Dependencia: consulta)', () => {
   });
 
   test('aviso de solo consulta visible; sin panel de resolución', async ({ page }) => {
-    await expect(await sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
     await goToViaSidebar(page, VIEW_PATH);
 
     await expectAvisoSoloConsulta(page);

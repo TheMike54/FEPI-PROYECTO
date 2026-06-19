@@ -62,12 +62,13 @@ export default function ExportacionReportes() {
         api.historialEstimaciones(id).catch(() => []),
         api.preparacionEstimacion(id).catch(() => null)
       ]);
-      const [pagos, notas, convenios] = await Promise.all([
+      const [pagos, notas, convenios, observaciones] = await Promise.all([
         api.listarPagos(id).catch(() => []),
         api.notasDeContrato(id).catch(() => null), // 404 si no hay bitácora aperturada
-        api.convenios(id).catch(() => null)
+        api.convenios(id).catch(() => null),
+        api.observacionesContrato(id).catch(() => null) // FIX 2.2 — fuente del reporte #4
       ]);
-      setDatos({ programa, trabajos, pagos, historial, prep, notas, convenios });
+      setDatos({ programa, trabajos, pagos, historial, prep, notas, convenios, observaciones });
     } catch (e) {
       const msg = e.status === 403 ? 'No tienes acceso a este contrato' : (e.payload?.error || 'No se pudieron cargar los datos del contrato');
       setError(msg);

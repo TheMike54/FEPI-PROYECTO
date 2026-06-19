@@ -265,9 +265,20 @@ otro rol que intente registrar recibe un aviso de acceso denegado.
 5. Al registrar el convenio se asienta una nota automática en la bitácora del contrato (de inmediato si
    está abierta, diferida si todavía no); las versiones del programa se pueden consultar revisando su
    contenido concepto × periodo.
+6. **(art. 59 párr. 3 + art. 99 p5 RLOPSRM — acto de autorización)** Registrar y autorizar son actos
+   distintos. El convenio nace en estado **"registrado / pendiente de autorización"** (lo sustenta el
+   residente/dependencia, art. 99 p1). La **AUTORIZACIÓN** la realiza después el **servidor facultado**
+   (rol Dependencia): el sistema la sella de forma inmutable (quién autoriza y cuándo) y solo entonces el
+   convenio queda "autorizado". Si la variación de monto o plazo **supera el 25%** (art. 102 RLOPSRM), la
+   autorización exige que el **oficio/soporte de aprobación** ya esté cargado; si falta, se rechaza con ese
+   motivo. Re-autorizar un convenio ya autorizado se rechaza (acto único). *Alcance Etapa 1 `[validar]`: el
+   acto de autorización queda registrado; la modificación material del programa/monto se aplica al registrar
+   (como hoy) — diferir el efecto material hasta la autorización es un ajuste posterior coordinado con el
+   equipo de estimaciones.*
 
-**Fundamento legal:** art. 59 LOPSRM; art. 59 Bis LOPSRM; art. 99 RLOPSRM; art. 102 RLOPSRM; art. 118
-RLOPSRM; art. 123 fr. III RLOPSRM; art. 45 fr. IX RLOPSRM.
+**Fundamento legal:** art. 59 LOPSRM; art. 59 Bis LOPSRM; **art. 59 párr. 3 LOPSRM (autorización por el
+servidor facultado)**; art. 99 RLOPSRM (p1 sustento del residente, p5 suscripción del facultado); art. 102
+RLOPSRM; art. 118 RLOPSRM; art. 123 fr. III RLOPSRM; art. 45 fr. IX RLOPSRM.
 
 **Criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
 - Endosos de fianzas: la ficha vieja pedía que el modificatorio aplicara y registrara los endosos de las
@@ -764,13 +775,15 @@ de anticipo).
   (A7).
 - Umbral del anticipo para exigir la autorización del titular (art. 50 fr. IV LOPSRM) y su configuración.
   Criterio del equipo (A3): parametrizable, default 30%; la autorización escrita se exige cuando supera 30%.
-- **Ambiente de estimación por bloques (FASE 5, cascarón):** existe una nueva pantalla "Nueva estimación (por
-  bloques)" que presenta el flujo como pasos guiados (tipo el alta): nueva estimación → generadores →
-  carátula automática → complementar → soportes/notas/fotos → cierre con candado → envío a revisión. Hoy es un
-  **cascarón** que envuelve la captura existente; **los números generadores ya son funcionales en esta
-  pantalla** (se capturan e integran aquí, art. 132 RLOPSRM). Lo único pendiente es el **bloque de captura
-  dedicado** de generadores y el de **soportes/fotos** de ese ambiente guiado (a cargo del Equipo 3); mientras
-  tanto, la integración y la presentación reales se hacen en esta pantalla (HU-12) y en HU-13.
+- **Ambiente de estimación = WIZARD (FASE 3, rediseño por bloques):** la integración de la estimación se
+  presenta como un **wizard de pasos encadenados** (patrón del Alta) en una sola pantalla: **1·Periodo →
+  2·Generadores → 3·Carátula → 4·Soportes y notas → 5·Integrar y presentar**, con gating estilo Alta (atrás
+  libre; el avance se bloquea por exceso del art. 118 / plan del periodo). **NO es un cascarón**: reusa la
+  captura REAL de esta misma HU (mismos componentes y validaciones); el "Recorrido por bloques" dejó de ser
+  una pantalla aparte y la ruta vieja del cascarón redirige al wizard. El **registro fotográfico** de soportes
+  queda **fuera del alcance de la Etapa 1** (la ley no lo exige como requisito de la estimación; el expediente
+  del art. 132 RLOPSRM se integra con generadores y notas firmadas). La reestructura **conserva todos los
+  criterios** (ver el checklist en `docs/analisis-y-diseno/HISTORIAS_POR_CICLOS.md`).
 
 ---
 
@@ -1154,11 +1167,15 @@ era un prototipo de demostración.
   cuadrados al centavo y sin datos de demostración
 
 **Criterios de aceptación (comportamiento actual del sistema):**
-1. **(art. 24)** El sistema calcula, del lado del servidor, 'disponible = techo anual − comprometido' —el
-   comprometido suma el neto de las estimaciones ya autorizadas y pagadas de esa dependencia y ejercicio,
+1. **(art. 24 párr. 2)** El sistema calcula, del lado del servidor, 'disponible = techo anual − comprometido'
+   —el comprometido suma el neto de las estimaciones ya autorizadas y pagadas de esa dependencia y ejercicio,
    sin contar la actual— y **bloquea** la generación si el neto excede lo disponible. Si no hay techo
-   cargado, también la bloquea e indica que falta el presupuesto (no inventa una cifra). El techo lo carga
-   Finanzas en la propia pantalla.
+   cargado, también la bloquea e indica que falta el presupuesto (no inventa una cifra). Al cargar el techo,
+   la **partida presupuestal específica es obligatoria** (la ley ata la suficiencia a la *"partida o partidas
+   específicas"*, art. 24 párr. 2 LOPSRM): Finanzas captura la partida y el techo en la propia pantalla, y el
+   sistema vincula el techo a la dependencia por su **cuenta** (no por el nombre escrito, que se rompería al
+   renombrarla). Un contrato sin dependencia asociada (dato legado) no puede verificar la suficiencia y lo
+   indica sin error.
 2. **(art. 54)** Un semáforo del plazo de pago de 20 días naturales, anclado en la fecha real de
    autorización (tomada de la nota de autorización que queda en la bitácora). Se mide en **días vencidos**
    (días pasados de los 20): verde mientras está dentro del plazo (0 vencidos), ámbar de 1 a 10 días vencidos

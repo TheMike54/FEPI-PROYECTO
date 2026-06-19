@@ -14,7 +14,6 @@ import {
   freshHome,
   enterAppMode,
   goToViaSidebar,
-  sidebarLinkFor,
   expectAvisoSoloConsulta,
   expectSinAvisoSoloConsulta,
   expectMetadataAcademicaOculta,
@@ -63,7 +62,6 @@ async function crearContrato(request) {
 test('HU-06 — sidebar muestra la vista y carga sin metadata académica (contratista)', async ({ page }) => {
   await freshHome(page);
   await enterAppMode(page, 'contratista');
-  await expect(await sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
   await goToViaSidebar(page, VIEW_PATH);
   await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
   await expectMetadataAcademicaOculta(page, { huId: 'HU-06', sprintLabel: SPRINT, rolAcademicoLabel: 'Contratista' });

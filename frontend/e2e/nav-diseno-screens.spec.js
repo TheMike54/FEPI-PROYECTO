@@ -8,29 +8,21 @@ test.skip(!!process.env.CI, 'login real requiere backend+BD; se corre en local')
 
 const DIR = '../docs/reportes/screens-bloque4-diseno';
 
-test('sidebar: acordeón colapsado por defecto, abre/cierra; textos completos (sin truncar)', async ({ page }) => {
+test('sidebar PLANO (F5): ciclos como items directos, textos completos; los sub-pasos viven dentro del ciclo', async ({ page }) => {
   await freshHome(page);
   await enterAppMode(page, 'residente');
 
-  // El flujo padre se lee COMPLETO (no truncado) y es navegable.
-  const padre = page.locator('aside a[href="/estimaciones/integracion"]');
-  await expect(padre).toBeVisible();
-  await expect(padre).toContainText('Ciclo de estimación'); // texto completo, no "Cicl..."
+  // Cada CICLO se lee COMPLETO (no truncado) y es navegable como item directo.
+  const estim = page.locator('aside a[href="/estimaciones/integracion"]');
+  await expect(estim).toBeVisible();
+  await expect(estim).toContainText('Ciclo de estimación'); // texto completo, no "Cicl..."
   await expect(page.locator('aside a[href="/contratos/alta"]')).toContainText('Alta de contratos');
 
-  // Por defecto colapsado: el sub-paso NO está en el DOM.
+  // F5 — el sidebar es PLANO (sin acordeón): los sub-pasos/lecturas YA NO están en el sidebar (viven DENTRO
+  // del ciclo: wizard + "en paralelo"). Ej.: Revisión (HU-15) ya no es item del sidebar; tampoco hay chevrons.
   await expect(page.locator('aside a[href="/estimaciones/revision"]')).toHaveCount(0);
-  await page.locator('aside').screenshot({ path: `${DIR}/sidebar-colapsado.png` });
-
-  // Expandir con el chevron del flujo → el sub-paso aparece.
-  await page.locator('aside [data-accordion-toggle="HU-12"]').click();
-  await expect(page.locator('aside a[href="/estimaciones/revision"]')).toBeVisible();
-  await expect(page.locator('aside a[href="/estimaciones/revision"]')).toContainText('Revisión');
-  await page.locator('aside').screenshot({ path: `${DIR}/sidebar-expandido.png` });
-
-  // Colapsar de nuevo.
-  await page.locator('aside [data-accordion-toggle="HU-12"]').click();
-  await expect(page.locator('aside a[href="/estimaciones/revision"]')).toHaveCount(0);
+  await expect(page.locator('aside [data-accordion-toggle]')).toHaveCount(0);
+  await page.locator('aside').screenshot({ path: `${DIR}/sidebar-plano.png` });
 });
 
 test('Inicio del residente: módulos principales curados (no la lista larga de sub-HU)', async ({ page }) => {

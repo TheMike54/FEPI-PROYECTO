@@ -16,12 +16,15 @@ test.describe('BLOQUE 4 — navegación modo-sistema', () => {
     await freshHome(page);
     await enterAppMode(page, 'residente');
     const aside = page.locator('aside');
-    await expect(aside.getByText('Flujos', { exact: true })).toBeVisible();
+    // F5 — sidebar PLANO: grupos del mockup de ciclos ("Ciclos", "Vistas ejecutivas").
+    await expect(aside.getByText('Ciclos', { exact: true })).toBeVisible();
     await expect(aside.getByText('Vistas ejecutivas', { exact: true })).toBeVisible();
-    // Cada HU sigue identificable por su href (regla de no fundir historias).
+    // Cada CICLO sigue identificable por su href (regla de no fundir historias).
     await expect(page.locator('aside a[href="/contratos/alta"]')).toBeVisible();          // HU-01
-    await expect(page.locator('aside a[href="/estimaciones/integracion"]')).toBeVisible(); // HU-12
+    await expect(page.locator('aside a[href="/estimaciones/integracion"]')).toBeVisible(); // HU-12 (ciclo)
     await expect(page.locator('aside a[href="/portafolio"]')).toBeVisible();              // HU-18
+    // F5 — el ITEM de ciclo rotula el RANGO de HU del ciclo (min–max). El ciclo de estimación abarca HU 12–16.
+    await expect(aside.getByText(/HU\s*12[–-]16/)).toBeVisible();
   });
 
   test('chip de empresa visible en la barra superior', async ({ page }) => {

@@ -85,10 +85,18 @@ async function expandirSidebarHasta(page, path) {
   }
 }
 
-/** Navega a una vista con click SPA en su NavLink del Sidebar (expande su acordeón si hace falta). */
+/** Navega a una vista por el Sidebar. F5 (sidebar PLANO): si la vista sigue siendo un item del sidebar (ciclo
+ *  o item promovido), se hace click SPA en su NavLink (prueba que el enlace lleva). Si ya NO está en el sidebar
+ *  (vive DENTRO de su ciclo: sub-paso del wizard o "en paralelo"), se navega por URL. NO cambia rutas ni gating;
+ *  el acceso real lo siguen validando las rutas (WithLayout/SoloRol) y el contenido de cada ciclo. */
 export async function goToViaSidebar(page, path) {
   await expandirSidebarHasta(page, path);
-  await page.locator(`aside a[href="${path}"]`).first().click();
+  const link = page.locator(`aside a[href="${path}"]`).first();
+  if ((await link.count()) > 0) {
+    await link.click();
+  } else {
+    await page.goto(path);
+  }
   await page.waitForLoadState('networkidle');
 }
 
@@ -232,5 +240,16 @@ export async function altaLlenarGarantias(page, { conAnticipo = false } = {}) {
     await page.getByTestId('garantia-poliza-1').fill('POL-ANT-001');
     await page.getByTestId('garantia-vigencia-1').fill('2027-06-01');
   }
+}
+
+// ===========================================================================
+// FASE 3 — Wizard "Nueva estimación" (IntegracionEstimacion presentado por PASOS encadenados,
+// patrón del Alta). La captura es la MISMA de HU-12; solo se navega por pasos. `key` ∈
+// periodo | generadores | caratula | soportes | integrar. El avance hacia adelante valida el paso
+// actual (como el Alta), así que el caller debe llenar lo requerido (p. ej. el periodo) antes.
+// ===========================================================================
+export async function irPasoEstimacion(page, key) {
+  await page.getByTestId(`wpaso-${key}`).click();
+  await expect(page.getByTestId(`wstep-${key}`)).toBeVisible();
 }
 

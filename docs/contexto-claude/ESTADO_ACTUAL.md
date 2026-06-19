@@ -10,9 +10,22 @@
 > honesto: lo que funciona y lo que es maqueta están marcados como tales.
 >
 > **Cabecera de versión:** fecha **2026-06-18**, `main = 75797e2` (oleadas A/CITAS/B/PAGO/C + pulido UX ya
-> commiteados) + **cambios LOCALES sin commit** de varias sesiones (entradas 1–10 abajo; las más recientes:
-> acotamiento por empresa **encendido** (8), **BLOQUE 3** `[validar profe]` a CERO + reglas empresa (9), y
-> **BLOQUE 4** navegación modo-sistema (10)):
+> commiteados) + **cambios LOCALES sin commit** de varias sesiones (entradas 1–13 abajo; las más recientes:
+> **OLEADA 1** quick wins/errores (11), **OLEADA 2** notificaciones + funcionalidad (12) y **OLEADA 3**
+> ley/reglas de negocio 3/5 (13), todas con citas verificadas en `docs/legal` — suite **333/8/0**).
+>
+> **REDISEÑO MATCH-MOCKUP (18-jun, F0–F6)** sobre todo lo anterior (`docs/planes/PLAN_REDISENO_MATCH_MOCKUP_18jun.md`
+> → `docs/reportes/REPORTE_REDISENO_MATCH_MOCKUP_18jun.md`, capturas en `docs/reportes/screens-match-mockup/`):
+> **sidebar PLANO por ciclos** (sin acordeón; CICLOS / VISTAS EJECUTIVAS / ADMINISTRACIÓN; los sub-pasos y
+> lecturas viven DENTRO de cada ciclo; la "promoción de huérfanos" conserva el acceso de roles que ven un hijo
+> pero no el padre). **Bitácora** (padre = wizard Apertura→Firma→Emitir + Consulta/Minutas en paralelo),
+> **Estimación** (wizard 5 pasos + bloque "EN PARALELO": Revisión/Reingreso/Historial/Tablero) y **Pago**
+> (wizard 4 pasos: Suficiencia→Soportes→Instrucción→**Registrar pago HU-21 embebido**, form compartido
+> `components/pagos/RegistroPagoForm.jsx` = única fuente del POST `/api/pagos`, **botón gateado a finanzas**,
+> ruta `/pagos/registro` conservada). **Regla de oro:** las vistas TIPO B nunca se condicionan a un paso/candado.
+> Es **100% presentación/navegación + tests** (helper `goToViaSidebar` con fallback a `page.goto`): **cero
+> backend, zona congelada intacta** (`permisos.js`/`auth`/`acceso`/controllers/`schema.sql`/rutas `App.jsx` sin
+> tocar). Suite **340/8/0**. Detalle de las entradas previas:
 > (1) **Revisión del profe 15-jun** (`docs/planes/PLAN_REVISION_PROFE_15jun.md`): FASE 2 reglas del plan de
 > amortización (proporcional al programa, art. 143 fr. I), FASE 3 deduplicación fuerte de empresas, FASE 1
 > seed de datos demo (`backend/scripts/seed_demo.sql`, `docs/SEED_DEMO_SIGECOP.md`).
@@ -92,10 +105,13 @@
 > `docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md` con A1-A18 citas + B1-B20 criterio; **citas
 > verificadas contra el texto literal de `docs/legal/`** — corrigió pena=46 Bis+86-88, art. 46 fr. I/III,
 > art. 123 fr. VI=inmutabilidad, art. 125=registro). Tocó comentarios en zona congelada
-> (`schema.sql`/`contratos`/`estimaciones`, CERO lógica). **1 excepción:** `auth.controller.js:13` intacta
-> (orden "NO tocar auth"); su fix va en el reporte. **3b — REGLA 1:** empresa OBLIGATORIA para
-> contratista/supervisión (frontend `SeleccionRol`/`SolicitudRegistro` + `ROLES_EMPRESA_OBLIGATORIA` en
-> `data/empresa.js`; backend = diff para Maiki, register congelado). **3c — REGLA 4:** la sustitución exige
+> (`schema.sql`/`contratos`/`estimaciones`, CERO lógica). **`auth.controller.js`: Maiki aplicó a mano (18-jun,
+> aprobado por él) el guard de REGLA 1 en `register` + resolvió el comentario `[validar]` de la regla del
+> nombre → NO quedan marcas `[validar]` en auth; NO revertir.** **3b — REGLA 1 COMPLETA:** empresa OBLIGATORIA
+> para contratista/supervisión, **frontend + backend**: front `SeleccionRol`/`SolicitudRegistro` +
+> `ROLES_EMPRESA_OBLIGATORIA`/`empresaObligatoriaPara` en `data/empresa.js`; backend = guard en `register`
+> (`if ROLES_EMPRESA_OBLIGATORIA.includes(rolSol) && empresaId==null → 400`), aplicado por Maiki. Login 5 roles
+> OK + registro sin empresa rechaza (probado por Maiki). **3c — REGLA 4:** la sustitución exige
 > MISMA empresa (`roster.controller` guard 409; retrocompat fail-open; verificado API 409/201; seed del
 > sustituto hereda la empresa de `contratista@`). Specs negativos nuevos (registro sin empresa; sustitución
 > de otra empresa). **`permisos.js`/`App.jsx`/auth NO se tocaron.** LOCAL sin push.
@@ -120,6 +136,61 @@
 > 15 sub-HU). Helpers de test expanden el acordeón (`sidebarLinkFor` async). Fix de gating: hijos accesibles
 > con padre inaccesible se **promueven a items planos** (ningún enlace se pierde). Suite **323/8/0**. Capturas
 > en `docs/reportes/screens-bloque4-diseno/`. NO tocó href/gating/permisos.js/App.jsx/auth/contenido.
+>
+> (11) **OLEADA 1 — quick wins / errores (18-jun, `docs/reportes/OLEADA1_FIXES_18jun.md`):** Fase 1 del
+> `PLAN_MAESTRO_EJECUCION_18jun.md`. 6 fixes, **5/5 citas verificadas contra `docs/legal`**: **1.1** el
+> finiquito (`contratos.estado='cerrado'`) **bloquea TODO el ciclo de estimación** (integrar/enviar/turnar/
+> autorizar/rechazar/reingresar → 409, **art. 64 LOPSRM**; gate en `estimaciones-ciclo` + el **congelado**
+> `estimaciones.controller::integrarEstimacion`, espejo del de `instruccion-pago`); **1.2** minutas/visitas
+> muestran el **folio** de la nota (`bn.numero`), no el id (`minutas.controller`+`MinutasVisitas.jsx`, art. 123
+> fr. X RLOPSRM); **1.3** el **endoso** exige el dato de su motivo (ampliación→monto, prórroga→vigencia;
+> vacío→400; `garantias.controller`, art. 91 RLOPSRM); **1.4** se quitó el cartel **falso** "Pendiente Equipo 3"
+> de generadores (ya están en HU-12) + CTA (`AmbienteEstimacion.jsx`); **1.5** el atraso **no se duplica** (un
+> asiento por concepto/periodo; `alertas.controller` + **DDL nueva `atraso_asentado`** en
+> `backend/scripts/migracion_atraso_asentado.sql`, NO en `schema.sql` → **falta integrar + Render por Maiki**);
+> **1.6** el sidebar rotula el **rango** de HU por flujo (`HU 08–11`, `Sidebar.jsx`). Specs negativos nuevos
+> (1.1/1.3/1.5). **Congelado tocado:** `estimaciones.controller` (gate, aditivo) → diff a Maiki. Suite
+> **326/8/0**.
+>
+> (12) **OLEADA 2 — notificaciones + funcionalidad (18-jun, `docs/reportes/OLEADA2_FIXES_18jun.md`):** Fase 2
+> del plan maestro. **2.1** la consulta de notas muestra chips de **vínculo** (minuta/visita/avance) por nota
+> (`bitacora.controller` **congelado** + `BuscadorNotas.jsx`); **2.2** el **reporte #4 de HU-19**
+> (observaciones) ya exporta — endpoint NUEVO `GET /api/observaciones/contrato/:id` + `reportesContrato.js`;
+> **2.3** el **ciclo de vida** muestra **progreso real** por bloque (Hecho/En curso/Pendiente, derivado de las
+> lecturas, defensivo; `CicloVidaContrato.jsx`); **2.4** el avatar abre **"mi info / mi empresa"** (nombre,
+> rol, correo, empresa nombre+tipo+estado) — endpoint NUEVO `GET /api/yo` + `AppShell.jsx`; **2.5** **campana
+> UNIFICADA** (badge = firmas+atrasos+solicitudes; dropdown en secciones; endpoint NUEVO `GET
+> /api/notas-pendientes`; conserva TODOS los testids del BLOQUE 4). **Congelado tocado:** `bitacora.controller`
+> (3 EXISTS aditivos) + `server.js` (montaje de 3 routers nuevos) → diff a Maiki. **Sin DDL nueva.** Suite
+> **331/8/0**.
+>
+> (13) **OLEADA 3 — ley/reglas de negocio (18-jun, `docs/reportes/OLEADA3_FIXES_18jun.md`):** Fase 4-ley.
+> Maiki autorizó decidir TODO lo legal con `docs/legal`. **HECHO (3/5):** **3.3** el avance físico es
+> **APPEND-ONLY** (art. 123 fr. VI/VII RLOPSRM): se eliminaron PATCH/DELETE de `trabajos.controller`, se añadió
+> `POST /trabajos/:id/corregir` (anula la original + registro nuevo vinculado + nota "dice/debe decir"), trigger
+> `sigecop_avance_inmutable` (DDL `backend/scripts/avance_append_only.sql`), acumulados cuentan solo
+> `estado='vigente'`; **3.4** **dependencia NO sustituible** (art. 125 fr. I g): el guard ya existía (whitelist
+> `ROLES_ROSTER`), se reforzó ley + UI + spec; **3.5** **re-seed 1 empresa : N cuentas** (art. 43,
+> `backend/scripts/reseed_cuentas.*` + `npm run reseed:cuentas`). **COMPLETA (5/5):** **3.1** **HU-20 partida
+> obligatoria + join por FK `dependencia_id`** (art. 24 párr. 2 LOPSRM): `crearPresupuesto` exige partida
+> (400) y resuelve el texto desde la cuenta; suficiencia/instrucción joinan por `dependencia_id` (no el texto);
+> legacy `dependencia_id` NULL → 409 controlado; DDL `migracion_hu20_partida_fk.sql` (UNIQUE →
+> `(ejercicio, dependencia_id, partida)`); front `TransitoPago` input partida + `dependenciaId`. **3.2**
+> **convenio con acto de AUTORIZACIÓN explícito** (art. 59 párr. 3 + 99 p5 + 102 RLOPSRM): el convenio nace
+> `estado='registrado'` (`autorizado_por`=NULL); endpoint NUEVO `POST /api/convenios/:id/autorizar` (rol
+> dependencia, guardrail art. 102 >25% exige oficio) sella `estado/autorizado_por/autorizado_en`; DDL
+> `migracion_convenio_autorizacion.sql` (re-escribe el trigger `sigecop_convenio_inmutable`). **ALCANCE 3.2
+> `[validar]`:** se implementa el ACTO de autorización; el EFECTO material del convenio sigue aplicándose en
+> el registro (diferirlo toca lectura del catálogo vivo en HU-12/HU-06 = follow-on para Maiki). **DDL nuevas
+> en `backend/scripts/`** → Maiki integra a `schema.sql` + Render. Suite **337/8/0** (+4 specs nuevos).
+> (14) **REDISEÑO POR WIZARDS (Fases 3-6 del plan maestro, 18-jun):** "un flujo = un wizard" replicado a 4
+> ciclos — **Estimación** (`IntegracionEstimacion`, 5 pasos, insignia; el cascarón `AmbienteEstimacion`
+> redirige), **Pago** (`TransitoPago`, 3 pasos + enlace a HU-21), **Bitácora** (`AmbienteBitacora`, 3 pasos +
+> Consulta/Minutas en paralelo), **Avance** (`AmbienteAvance`, Registrar + Curva/Atrasos en paralelo). Reusan
+> la captura real y los `data-testid` (gating estilo Alta); **`permisos.js`/`App.jsx` NO se tocaron**.
+> Historias reestructuradas por ciclos (`docs/analisis-y-diseno/HISTORIAS_POR_CICLOS.md`, referencia + checklist
+> de conservación, NO cambia requisitos). **Evidencia fotográfica = fuera de alcance de la Etapa 1.** Reporte de
+> cierre: `docs/REPORTE_EJECUCION_PLAN_GRANDE_18jun.md`. Suite **337/8/0**.
 >
 > **Docs hermanos:** historia completa → `docs/HISTORIAL_PROYECTO.md` · historias de usuario vigentes
 > (criterios = sistema real) → `docs/analisis-y-diseno/Historias_Usuario_ACTUALIZADAS_12jun.md` · auditoría
@@ -281,10 +352,12 @@ LFD) en cada validación, o marca `[validar profe]`.
    pagada/rechazada; `reemplaza_a` self-FK para HU-16) · `estimacion_generadores` · `estimacion_notas` (N:M
    nota↔estimación) · `estimacion_observaciones` (HU-15) · `estimacion_soportes`/`estimacion_fotos`
    (esqueleto BYTEA diferido).
-7. **Pagos/presupuesto:** `pagos` (índice único parcial = no-doble-pago) · `presupuesto_anual` (HU-20) ·
+7. **Pagos/presupuesto:** `pagos` (índice único parcial = no-doble-pago) · `presupuesto_anual` (HU-20; ITEM
+   3.1: `partida` **NOT NULL** + FK `dependencia_id`, UNIQUE `(ejercicio, dependencia_id, partida)`) ·
    `instruccion_pago` (HU-20).
-8. **Convenios + versionado (HU-03):** `convenios_modificatorios` · `programa_version` (índice único parcial
-   `WHERE vigente`) · `programa_version_concepto` + `programa_version_celda` (snapshots).
+8. **Convenios + versionado (HU-03):** `convenios_modificatorios` (ITEM 3.2: `estado` ∈ `registrado`/
+   `autorizado` + `autorizado_en`; el acto de autorización lo sella el servidor facultado) · `programa_version`
+   (índice único parcial `WHERE vigente`) · `programa_version_concepto` + `programa_version_celda` (snapshots).
 9. **Empresas (O3):** `empresas` (índice único FUNCIONAL normalizado, mata duplicados).
 10. **Minutas/visitas (HU-11):** `minutas` · `visitas`. **Endosos (HU-02):** `garantia_endosos`.
 11. **Finiquito (HU-24, FASE 4):** `finiquitos` (1:1 contrato, append-only con trigger `sigecop_finiquito_inmutable`;
@@ -308,7 +381,7 @@ contenido se congela" — así HU-13/15/16 avanzan el ciclo sin tocar la carátu
 | `bitacora_nota_firmas` | bloqueo total | firma append-only |
 | `garantia_endosos` | bloqueo total | histórico de endoso |
 | `contrato_roster` | transición | cerrar `vigencia_hasta` NULL→fecha (sustituir, una vez) |
-| `convenios_modificatorios` | transición | ligar `nota_id` NULL→valor (asiento diferido, una vez) |
+| `convenios_modificatorios` | transición | ligar `nota_id` NULL→valor (asiento diferido) **+ ITEM 3.2:** `estado` registrado→autorizado y sello `autorizado_por`/`autorizado_en` NULL→valor (acto de autorización, art. 59 p3) |
 | `programa_version` | transición | `vigente` true→false (supersedido) |
 
 > **FKs `NO ACTION` deliberadas** (`nota_id`, `estimacion_id` en pagos, `contrato_concepto_id` en
@@ -491,9 +564,9 @@ está en **`docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md`** (A1-A18 con 
 sigue siendo confirmable por el profe; esto fija el comportamiento por defecto, sin marcas sueltas. Defaults
 clave: pago solo `'autorizada'` (art. 54); amortización proporcional (art. 143 fr. I); pena por atraso = art. 46
 Bis + 86-88 RLOPSRM (corregido, NO "86-90"/"138/139"); 2 al millar CMIC parametrizable, default no aplica;
-ajustes del finiquito parametrizables (default 0). **Excepción:** 1 marca en `auth.controller.js` (regla del
-nombre ≥2 palabras) se dejó intacta por la orden "NO tocar auth"; su resolución va en el reporte para que Maiki
-la aplique.
+ajustes del finiquito parametrizables (default 0). **`auth.controller.js`: Maiki resolvió a mano (18-jun) la
+marca `[validar]` de la regla del nombre (≥2 palabras → criterio del equipo, art. 123 fr. III RLOPSRM) y aplicó
+el guard de REGLA 1 en `register`. NO quedan marcas `[validar]` en auth; es el estado deseado, no revertir.**
 
 ### 7.4 PRs/ramas de equipo
 `feat/e3-hu-16`, `feat/e3-hu-18`, `feat/e3-hu-19`, `feat/e3-hu-20` **ya existen** en origin y están
@@ -535,7 +608,7 @@ la aplique.
 | HU-00 | Inicio de sesión por rol | ✅ |
 | HU-01 | Alta de contratos | ✅ (enforcement parcial solo-cliente; plan de amortización proporcional al programa + R2/R3, art. 143 fr. I — FASE 2 15-jun) |
 | HU-02 | Registro de fianzas y garantías | ✅ (sesión E2 18-jun: `/api/garantias` CRUD + PDF real + endosos art. 91 RLOPSRM; una garantía por tipo, art. 48 LOPSRM) |
-| HU-03 | Convenios modificatorios | ✅ |
+| HU-03 | Convenios modificatorios | ✅ · **ITEM 3.2 (Oleada 3):** acto de **autorización** del servidor facultado separado del registro (`POST /api/convenios/:id/autorizar`, art. 59 p3 + guardrail art. 102 >25%) |
 | HU-04 | Expediente contractual | ✅ |
 | HU-05 | Programa y curva de avance | ✅ |
 | HU-06 | Trabajos terminados por periodo | ✅ |
@@ -544,7 +617,7 @@ la aplique.
 | HU-09 | Notas tipificadas con firma | ✅ |
 | HU-10 | Consulta/búsqueda de notas | ✅ |
 | HU-11 | Minutas, visitas y acuerdos | ✅ (sesión E2 18-jun: `/api/minutas` CRUD minutas/visitas + PDF + vínculo a nota de bitácora art. 123 fr. X RLOPSRM, sin alterar la nota) |
-| HU-12 | Integración de estimación | ✅ |
+| HU-12 | Integración de estimación | ✅ · **FASE 3 (rediseño):** la pantalla es un **WIZARD de 5 pasos** (Periodo→Generadores→Carátula→Soportes→Integrar, patrón del Alta) que reusa la captura real; el cascarón `AmbienteEstimacion` redirige aquí. Historia por ciclos en `docs/analisis-y-diseno/HISTORIAS_POR_CICLOS.md` (conserva requisitos) |
 | HU-13 | Envío/presentación de estimación | ✅ (bloqueo 6 días = solo aviso) |
 | HU-14 | Historial de estimaciones | ✅ (línea de tiempo incompleta) |
 | HU-15 | Revisión técnica y autorización | ✅ |
@@ -552,7 +625,7 @@ la aplique.
 | HU-17 | Tablero de estimaciones | ✅ |
 | HU-18 | Portafolio ejecutivo con semáforos | ✅ (integración 17-jun: semáforo server-side `GET /api/portafolio`, acotado por participación; umbrales/avance físico = criterio resuelto §7.3) |
 | HU-19 | Exportación de 7 reportes | ✅ (R4 observaciones pendiente) |
-| HU-20 | Tránsito a pago / suficiencia presupuestal | ✅ (sesión grande 18-jun, PR `feat/e3-hu-20`: `GET/POST /api/instruccion-pago`; suficiencia art. 24 server-side, semáforo plazo 20 días art. 54 anclado en nota de autorización, soportes factura/CFDI + fianza leída de garantías, instrucción real 1×estimación UNIQUE, **gate de finiquito** art. 64/170; `[validar profe]` resueltos con base legal en la historia) |
+| HU-20 | Tránsito a pago / suficiencia presupuestal | ✅ (sesión grande 18-jun, PR `feat/e3-hu-20`: `GET/POST /api/instruccion-pago`; suficiencia art. 24 server-side, semáforo plazo 20 días art. 54 anclado en nota de autorización, soportes factura/CFDI + fianza leída de garantías, instrucción real 1×estimación UNIQUE, **gate de finiquito** art. 64/170; `[validar profe]` resueltos con base legal en la historia) · **ITEM 3.1 (Oleada 3):** partida específica **obligatoria** + join por FK `dependencia_id` (art. 24 párr. 2) |
 | HU-21 | Registro del pago | ✅ (gate ESTRICTO: solo `autorizada`, art. 54) |
 | Registro | Auto-registro con aprobación de dependencia | ✅ |
 | Por Firmar | Firma de aperturas pendientes | ✅ |

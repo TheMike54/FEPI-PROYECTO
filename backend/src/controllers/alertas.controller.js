@@ -211,6 +211,19 @@ async function asentarAtraso(req, res) {
         return res.status(409).json({ error: 'El contrato no tiene bitácora abierta; ábrela para asentar el atraso en la bitácora (art. 123 RLOPSRM).' });
       }
 
+      // FIX 1.5 — idempotencia: UN solo asiento de atraso por (concepto, periodo). El registro append-only de
+      // bitácora (art. 123 RLOPSRM) no debe ensuciarse con la misma consecuencia repetida. Pre-chequeo dentro
+      // de la tx; el UNIQUE uq_atraso_asentado es la red dura ante POST concurrentes (2.º → 23505 → 409 abajo).
+      const periodoNum = periodo ? periodo.numero : 0;
+      const yaAsentado = await client.query(
+        'SELECT 1 FROM atraso_asentado WHERE contrato_concepto_id = $1 AND periodo_numero = $2',
+        [conceptoId, periodoNum]
+      );
+      if (yaAsentado.rowCount > 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: `El atraso del concepto "${concepto.concepto}" ya fue asentado en la bitácora para el periodo ${periodoNum || '—'}; no se duplica.` });
+      }
+
       const { asunto, contenido } = textoNotaAtraso({
         concepto: concepto.concepto, unidad: concepto.unidad,
         cantidad: fila.deficit, periodoNumero: periodo ? periodo.numero : null
@@ -222,6 +235,12 @@ async function asentarAtraso(req, res) {
         bitacoraId: bit.rows[0].id, tipo: 'atraso', asunto, contenido,
         emisorId: c.rows[0].residente_id || req.user.id, tag: 'atraso'
       });
+
+      // FIX 1.5 — registra el asiento (concepto, periodo) ligado a la nota → evita duplicados (uq_atraso_asentado).
+      await client.query(
+        'INSERT INTO atraso_asentado (contrato_concepto_id, periodo_numero, nota_id, asentado_por) VALUES ($1, $2, $3, $4)',
+        [conceptoId, periodoNum, nota.id, req.user.id]
+      );
 
       await client.query('COMMIT');
       return res.status(201).json({
@@ -240,7 +259,11 @@ async function asentarAtraso(req, res) {
       client.release();
     }
   } catch (err) {
-    if (err.code === '23505') return res.status(409).json({ error: 'Folio de nota duplicado; reintenta' });
+    if (err.code === '23505') {
+      // FIX 1.5 — colisión del UNIQUE de atraso (carrera entre dos POST del mismo concepto/periodo) vs folio de nota.
+      if (err.constraint === 'uq_atraso_asentado') return res.status(409).json({ error: 'El atraso de ese concepto ya fue asentado para el periodo; no se duplica.' });
+      return res.status(409).json({ error: 'Folio de nota duplicado; reintenta' });
+    }
     console.error('[asentarAtraso]', err);
     return res.status(500).json({ error: 'Error interno' });
   }

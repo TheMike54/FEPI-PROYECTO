@@ -15,7 +15,7 @@
 // El avance se siembra con el endpoint REAL de HU-06 (POST /trabajos); login real + backend+BD; no CI.
 import { test, expect } from '@playwright/test';
 import {
-  freshHome, enterAppMode, goToViaSidebar, sidebarLinkFor,
+  freshHome, enterAppMode, goToViaSidebar,
   expectAvisoSoloConsulta, expectSinAvisoSoloConsulta, expectMetadataAcademicaOculta
 } from './_helpers.js';
 
@@ -111,6 +111,26 @@ test.describe('HU-07 v2 — API del atraso por concepto', () => {
     expect(blob).toContain('déficit de 90');
   });
 
+  // FIX 1.5 — un solo asiento de atraso por (concepto, periodo): el registro de bitácora es append-only
+  // (art. 123 RLOPSRM) y no debe duplicar la misma consecuencia.
+  test('FIX 1.5 — asentar el MISMO concepto/periodo dos veces → 409 y la nota NO se duplica', async ({ request }) => {
+    const { id, ccid, R } = await crearContratoConDeficit(request, { avance: 10 });
+    expect((await abrirBitacora(request, R.token, id)).status()).toBe(201);
+
+    const a1 = await request.post(`${API}/alertas/contrato/${id}/asentar`, { headers: auth(R.token), data: { contrato_concepto_id: ccid } });
+    expect(a1.status(), 'primer asiento').toBe(201);
+
+    const a2 = await request.post(`${API}/alertas/contrato/${id}/asentar`, { headers: auth(R.token), data: { contrato_concepto_id: ccid } });
+    expect(a2.status(), 'segundo asiento (duplicado)').toBe(409);
+    expect(((await a2.json()).error || '')).toMatch(/ya fue asentado|no se duplica/i);
+
+    // El conteo de notas de atraso de la bitácora NO creció: sigue habiendo exactamente 1.
+    const notas = await (await request.get(`${API}/bitacora/contrato/${id}/notas`, { headers: auth(R.token) })).json();
+    const arr = Array.isArray(notas) ? notas : (notas.notas || []);
+    const deAtraso = arr.filter((n) => n.tag === 'atraso' || n.tipo === 'atraso');
+    expect(deAtraso.length, 'una sola nota de atraso tras el doble asiento').toBe(1);
+  });
+
   test('"Asentar" sin bitácora abierta → 409 informativo (no se difiere)', async ({ request }) => {
     const { id, ccid, R } = await crearContratoConDeficit(request, { avance: 10 });
     const as = await request.post(`${API}/alertas/contrato/${id}/asentar`, { headers: auth(R.token), data: { contrato_concepto_id: ccid } });
@@ -164,7 +184,6 @@ test.describe('HU-07 v2 — modo aplicación (Residente: ejecuta)', () => {
   test('sidebar muestra HU-07 y la vista carga sin metadata académica', async ({ page }) => {
     await freshHome(page);
     await enterAppMode(page, 'residente');
-    await expect(await sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
     await goToViaSidebar(page, VIEW_PATH);
     await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
     await expectMetadataAcademicaOculta(page, { huId: 'HU-07', sprintLabel: 'Sprint 6', rolAcademicoLabel: 'Residente' });

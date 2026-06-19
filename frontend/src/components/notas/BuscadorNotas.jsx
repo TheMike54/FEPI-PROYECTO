@@ -230,11 +230,18 @@ export default function BuscadorNotas({
                       <td className="p-3" data-testid={`bn-fecha-${n.numero}`}>{fechaHora(n.fecha)}</td>
                       <td className="p-3">{n.emisor_nombre || '—'}</td>
                       <td className="p-3 text-xs">
-                        {n.vinculada_a ? (
-                          <span className="text-sigecop-blue">↪ {numPadre ? `#${numPadre}` : n.vinculada_a}</span>
-                        ) : (
-                          <span className="text-slate-400">—</span>
-                        )}
+                        {/* FIX 2.1 — además del vínculo nota→nota, muestra si la nota respalda minuta/visita/avance. */}
+                        <div className="flex flex-wrap items-center gap-1">
+                          {n.vinculada_a && (
+                            <span className="text-sigecop-blue">↪ {numPadre ? `#${numPadre}` : n.vinculada_a}</span>
+                          )}
+                          {n.tiene_minuta && <span className="inline-block px-1.5 py-0.5 bg-sky-100 text-sky-800 text-[10px] font-semibold rounded" data-testid={`bn-minuta-${n.numero}`}>minuta</span>}
+                          {n.tiene_visita && <span className="inline-block px-1.5 py-0.5 bg-teal-100 text-teal-800 text-[10px] font-semibold rounded" data-testid={`bn-visita-${n.numero}`}>visita</span>}
+                          {n.tiene_avance && <span className="inline-block px-1.5 py-0.5 bg-amber-100 text-amber-800 text-[10px] font-semibold rounded" data-testid={`bn-avance-${n.numero}`}>avance</span>}
+                          {!n.vinculada_a && !n.tiene_minuta && !n.tiene_visita && !n.tiene_avance && (
+                            <span className="text-slate-400">—</span>
+                          )}
+                        </div>
                       </td>
                       <td className="p-3 text-slate-700">{n.asunto || '—'}</td>
                       <td className="p-3">

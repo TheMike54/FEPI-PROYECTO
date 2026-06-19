@@ -69,7 +69,9 @@ test.describe('HU-11 — minutas/visitas (CRUD real + vínculo a nota)', () => {
     await expect(page.getByTestId('modal-adjuntar-referencia')).toBeVisible();
     await page.getByTestId('adjuntar-nota-select').selectOption({ index: 1 }); // primera nota real
     await page.getByTestId('btn-vincular-nota').click();
-    await expect(filaMin.locator('[data-testid^="min-nota-"]')).toContainText('#', { timeout: 10000 });
+    // FIX 1.2 — muestra el FOLIO de la nota (la apertura es la #1 de su bitácora), no el id interno (que con
+    // datos previos de otros contratos sería un número alto). Anclado a "#1" para distinguir folio de id.
+    await expect(filaMin.locator('[data-testid^="min-nota-"]')).toHaveText(/^#1$/, { timeout: 10000 });
 
     // Agendar una visita.
     await page.locator('button', { hasText: 'Agenda de visitas' }).first().click();

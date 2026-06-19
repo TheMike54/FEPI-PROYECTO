@@ -298,6 +298,32 @@ function estimacionesExcel(d, contrato, periodo) {
 }
 
 // ---------------------------------------------------------------------------
+// 4) Listado de observaciones de la revisión técnica (Excel) — HU-15. FIX 2.2: fuente a nivel contrato vía
+//    GET /api/observaciones/contrato/:id (estimacion_observaciones de todas las estimaciones del contrato).
+// ---------------------------------------------------------------------------
+const SECCION_OBS_LBL = { caratula: 'Carátula', generadores: 'Generadores', fotos: 'Fotos', soportes: 'Soportes', notas: 'Notas' };
+const TIPO_OBS_LBL = { aclaracion: 'Aclaración', correccion: 'Corrección', rechazo: 'Rechazo' };
+function observacionesExcel(d, contrato, periodo) {
+  const lista = d.observaciones?.observaciones || [];
+  const win = ventanaPeriodo(lista.map((o) => o.created_at), periodo);
+  const filas = lista
+    .filter((o) => enVentana(o.created_at, win))
+    .map((o) => ({
+      Estimacion: `EST-${String(o.estimacion_numero).padStart(3, '0')}`,
+      Seccion: SECCION_OBS_LBL[o.seccion] || o.seccion,
+      Tipo: TIPO_OBS_LBL[o.tipo] || o.tipo,
+      Severidad: o.severidad,
+      Estado: o.estado,
+      'Turnado a': o.turnado_a || '',
+      Autor: o.autor_nombre || '',
+      Fecha: dISO(o.created_at),
+      'Solventada en': dISO(o.solventada_en),
+      Descripcion: o.descripcion || ''
+    }));
+  return descargarExcelHoja(`${baseName(4, 'observaciones', periodo)}.xlsx`, 'Observaciones', filas);
+}
+
+// ---------------------------------------------------------------------------
 // 5) Bitácora completa (PDF cronológico) — notas reales del contrato.
 // ---------------------------------------------------------------------------
 function bitacoraPDF(d, contrato, periodo) {
@@ -381,7 +407,7 @@ export const CATALOGO_REPORTES = [
   { id: 1, slug: 'avance-fisico', nombre: 'Avance físico vs programado', descripcion: 'Curva S + concepto × periodo (programa, trabajos y pagos reales).', formatos: ['PDF', 'Excel'], disponible: true },
   { id: 2, slug: 'avance-financiero', nombre: 'Avance financiero', descripcion: 'Por estimación: subtotal, amortización, retención, deductivas, pena por atraso y neto + pagado acumulado.', formatos: ['Excel'], disponible: true },
   { id: 3, slug: 'estimaciones', nombre: 'Listado de estimaciones', descripcion: 'Una fila por estimación con estado, periodo, importes y sellos de integración/presentación.', formatos: ['Excel'], disponible: true },
-  { id: 4, slug: 'observaciones', nombre: 'Listado de observaciones', descripcion: 'Observaciones de la revisión técnica (HU-15). No disponible aún a nivel de contrato.', formatos: ['Excel'], disponible: false },
+  { id: 4, slug: 'observaciones', nombre: 'Listado de observaciones', descripcion: 'Observaciones de la revisión técnica (HU-15): estimación, sección, tipo, severidad, estado, turnado, autor y fecha.', formatos: ['Excel'], disponible: true },
   { id: 5, slug: 'bitacora', nombre: 'Bitácora completa', descripcion: 'Notas cronológicas con folio, fecha, tipo, emisor y firmas.', formatos: ['PDF'], disponible: true, requiereBitacora: true },
   { id: 6, slug: 'modificatorios', nombre: 'Histórico de modificatorios', descripcion: 'Convenios del contrato (art. 59 / 59 Bis LOPSRM) con deltas de monto y plazo.', formatos: ['Excel'], disponible: true },
   { id: 7, slug: 'penalizaciones', nombre: 'Penalizaciones y deductivas', descripcion: 'Pena por atraso (derivada, art. 46 Bis LOPSRM + 86-88 RLOPSRM), 5 al millar fiscal (art.191 LFD), deductivas y pena % pactada.', formatos: ['Excel'], disponible: true }
@@ -393,7 +419,7 @@ export const HANDLERS = {
   1: { PDF: avanceFisicoPDF, Excel: avanceFisicoExcel },
   2: { Excel: avanceFinancieroExcel },
   3: { Excel: estimacionesExcel },
-  4: {},
+  4: { Excel: observacionesExcel },
   5: { PDF: bitacoraPDF },
   6: { Excel: modificatoriosExcel },
   7: { Excel: penalizacionesExcel }

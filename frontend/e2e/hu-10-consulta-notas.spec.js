@@ -23,7 +23,6 @@ import {
   freshHome,
   enterAppMode,
   goToViaSidebar,
-  sidebarLinkFor,
   cardInInicioFor,
   expectAvisoSoloConsulta,
   expectMetadataAcademicaOculta
@@ -53,7 +52,6 @@ test.describe('HU-10 — modo aplicacion (Residente: ejecuta)', () => {
   });
 
   test('sidebar muestra HU-10 y la vista carga sin metadata academica', async ({ page }) => {
-    await expect(await sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
     await goToViaSidebar(page, VIEW_PATH);
     await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
     await expectMetadataAcademicaOculta(page, {
@@ -78,7 +76,6 @@ for (const rol of [
     });
 
     test('aviso de solo consulta visible; los filtros siguen utilizables', async ({ page }) => {
-      await expect(await sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
       await goToViaSidebar(page, VIEW_PATH);
 
       await expectAvisoSoloConsulta(page);

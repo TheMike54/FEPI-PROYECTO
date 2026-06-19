@@ -3,8 +3,7 @@ const { authMiddleware, requireRole } = require('../middlewares/auth.middleware'
 const {
   trabajosDeContrato,
   registrarAvance,
-  actualizarAvance,
-  eliminarAvance
+  corregirAvance
 } = require('../controllers/trabajos.controller');
 
 const router = express.Router();
@@ -19,7 +18,7 @@ router.get('/contrato/:contratoId', requireRole('contratista', 'residente', 'sup
 // Escritura: solo contratista (permisos.js HU-06: contratista = 'E'). El acotamiento por
 // participación lo refuerza el controller (esParteOSupervision sobre el contrato del concepto).
 router.post('/', requireRole('contratista'), registrarAvance);
-router.patch('/:id', requireRole('contratista'), actualizarAvance);
-router.delete('/:id', requireRole('contratista'), eliminarAvance);
+// FIX 3.3 — append-only: la corrección es un registro NUEVO vinculado (no PATCH/DELETE). art. 123 fr. VI RLOPSRM.
+router.post('/:id/corregir', requireRole('contratista'), corregirAvance);
 
 module.exports = router;

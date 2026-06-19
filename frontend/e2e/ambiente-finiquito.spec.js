@@ -3,7 +3,7 @@
 // las HU y DELEGA el cierre a /contratos/finiquito (no ejecuta cerrarFiniquito por su cuenta). Ruta NUEVA
 // /contratos/cierre, fuera del catálogo (SoloRol, NO toca permisos.js). LOGIN REAL → se salta en CI.
 import { test, expect } from '@playwright/test';
-import { freshHome, enterAppMode, goToViaSidebar, sidebarLinkFor } from './_helpers.js';
+import { freshHome, enterAppMode } from './_helpers.js';
 
 const skipEnCI = () => test.skip(!!process.env.CI, 'login real requiere backend+BD; se corre en local');
 const VIEW = '/contratos/cierre';
@@ -20,9 +20,9 @@ for (const rol of ['dependencia', 'residente']) {
       await enterAppMode(page, rol);
     });
 
-    test('el link aparece en el Sidebar y el cascarón carga con sus 7 bloques', async ({ page }) => {
-      await expect(await sidebarLinkFor(page, VIEW)).toBeVisible();
-      await goToViaSidebar(page, VIEW);
+    test('el cascarón carga (por URL) con sus 7 bloques', async ({ page }) => {
+      await page.goto(`http://localhost:5173${VIEW}`);
+      await page.waitForLoadState('networkidle');
       await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
       await expect(page.getByTestId('select-contrato')).toBeVisible();
       for (let n = 1; n <= 7; n++) {
@@ -61,7 +61,8 @@ test.describe('Ambiente cierre — saldo y delegación con el contrato demo', ()
 
     await freshHome(page);
     await enterAppMode(page, 'residente');
-    await goToViaSidebar(page, VIEW);
+    await page.goto(`http://localhost:5173${VIEW}`);
+    await page.waitForLoadState('networkidle');
     await page.getByTestId('select-contrato').selectOption({ value: String(demo.id) });
 
     // El demo tiene bitácora abierta → bloque 2 listo y el cierre delega a HU-24 (enlace habilitado).

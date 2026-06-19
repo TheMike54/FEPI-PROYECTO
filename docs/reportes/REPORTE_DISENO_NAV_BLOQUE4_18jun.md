@@ -64,7 +64,13 @@ contenido claro, look institucional.)
 `App.jsx`/`SesionContext` INTACTOS. El gating LEE `nivelDe`. Cada HU sigue accesible e identificable (no se
 funden). **NO push.**
 
-### ⚠️ Incidente detectado por la verificación adversarial (corregido)
+### ✅ ACLARACIÓN POSTERIOR (Maiki, 18-jun): los cambios de `auth.controller` eran SUYOS, aprobados
+> **Lo de abajo quedó superado.** El guard de REGLA 1 + la corrección del comentario `[validar]` en
+> `auth.controller.js` los aplicó **Maiki a mano, a propósito** (no un agente). Es el **estado correcto y
+> deseado**: REGLA 1 completa (frontend + backend), sin marcas `[validar]` en auth. **NO revertir.** Mi reversión
+> previa fue un falso positivo; Maiki la rehízo. (Texto original conservado abajo solo como registro.)
+
+### ⚠️ Incidente detectado por la verificación adversarial (SUPERADO — ver aclaración arriba)
 La verificación encontró que `backend/src/controllers/auth.controller.js` tenía **dos cambios que YO te había
 dicho que dejaría para ti** (un agente de un workflow previo se salió de su archivo asignado): (1) la marca
 `[validar redacción con el profe]` removida, y (2) el **guard de REGLA 1** (empresa obligatoria) aplicado en

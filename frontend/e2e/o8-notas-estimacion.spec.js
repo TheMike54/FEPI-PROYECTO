@@ -8,7 +8,7 @@
 //     la nota muestra los firmantes (emisor + contrapartes con su hora de firma).
 // LOGIN REAL (backend+BD). No corre en CI.
 import { test, expect } from '@playwright/test';
-import { freshHome, enterAppMode, goToViaSidebar } from './_helpers.js';
+import { freshHome, enterAppMode, goToViaSidebar, irPasoEstimacion } from './_helpers.js';
 
 test.skip(!!process.env.CI, 'O8: login real requiere backend+BD; se corre en local');
 
@@ -100,6 +100,8 @@ test.describe('O8 — notas firmadas vinculadas a la estimación + documento de 
     await goToViaSidebar(page, '/estimaciones/integracion');
     await page.getByTestId('select-contrato').selectOption({ value: String(cid) });
 
+    // FASE 3 (wizard): el vínculo de notas vive en el paso 4 · "Soportes y notas".
+    await irPasoEstimacion(page, 'soportes');
     // Abrir el buscador de notas → SOLO la firmada aparece (la sin firmar NO; hay 2 notas no-apertura en total).
     await page.getByTestId('btn-abrir-buscador-notas').click();
     const modal = page.getByTestId('modal-vincular-notas');

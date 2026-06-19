@@ -101,6 +101,7 @@ export default function ConveniosModificatorios() {
   const [folio, setFolio] = useState('');
   const [registrando, setRegistrando] = useState(false);
   const [subiendoOficioId, setSubiendoOficioId] = useState(null); // FASE 0C: oficio de aprobación del convenio
+  const [autorizandoId, setAutorizandoId] = useState(null); // ITEM 3.2: acto de autorización del servidor facultado
 
   // Detalle de versión expandido (snapshot del programa).
   const [verVersionId, setVerVersionId] = useState(null);
@@ -365,6 +366,29 @@ export default function ConveniosModificatorios() {
     }
   }, [subiendoOficioId, showToast, cargarContrato, contratoId]);
 
+  // ITEM 3.2 — ACTO de AUTORIZACIÓN del servidor facultado (dependencia) sobre un convenio 'registrado'
+  // (art. 59 párr. 3 LOPSRM). Guardrail art. 102: si la variación > 25% sin oficio, el backend responde
+  // 409 y aquí se enlaza a cargar el oficio.
+  const autorizar = useCallback(async (convenioId) => {
+    if (autorizandoId) return;
+    setAutorizandoId(convenioId);
+    try {
+      await api.autorizarConvenio(convenioId);
+      showToast('Convenio AUTORIZADO por el servidor facultado (art. 59 LOPSRM).');
+      await cargarContrato(contratoId);
+    } catch (e) {
+      const err = e.payload?.error || '';
+      showToast(
+        e.status === 409 && /25\s*%/.test(err) ? 'La variación supera el 25% (art. 102 RLOPSRM): carga el oficio de aprobación antes de autorizar.'
+          : e.status === 409 ? (err || 'El convenio ya está autorizado')
+            : e.status === 403 ? 'Solo el servidor facultado (dependencia) puede autorizar el convenio (art. 59 LOPSRM)'
+              : (err || 'No se pudo autorizar el convenio')
+      );
+    } finally {
+      setAutorizandoId(null);
+    }
+  }, [autorizandoId, showToast, cargarContrato, contratoId]);
+
   const verOficio = useCallback(async (convenioId) => {
     try {
       const blob = await api.descargarOficioConvenio(convenioId);
@@ -622,7 +646,7 @@ export default function ConveniosModificatorios() {
                     <th className="text-left p-3 font-semibold">Cambio</th>
                     <th className="text-left p-3 font-semibold">Motivo</th>
                     <th className="text-left p-3 font-semibold">Avisos</th>
-                    <th className="text-left p-3 font-semibold">Autoriza</th>
+                    <th className="text-left p-3 font-semibold">Estado / autoriza</th>
                     <th className="text-left p-3 font-semibold">Nota de bitácora</th>
                     <th className="text-left p-3 font-semibold">Oficio de aprobación</th>
                   </tr>
@@ -669,7 +693,33 @@ export default function ConveniosModificatorios() {
                             )}
                           </div>
                         </td>
-                        <td className="p-3 text-xs">{c.autorizado_por_nombre || '—'}</td>
+                        <td className="p-3 text-xs" data-testid={`conv-estado-${c.id}`}>
+                          {c.estado === 'registrado' ? (
+                            <div className="flex flex-col gap-1">
+                              <span className="inline-block w-fit px-2 py-0.5 rounded text-[11px] font-semibold bg-aviso-bg text-aviso border border-aviso/30" data-testid={`conv-badge-registrado-${c.id}`}>
+                                Pendiente de autorización
+                              </span>
+                              {!soloLectura && (
+                                <button
+                                  type="button"
+                                  className="w-fit text-sigecop-accent hover:underline font-semibold disabled:text-slate-400 disabled:no-underline"
+                                  disabled={autorizandoId != null}
+                                  onClick={() => autorizar(c.id)}
+                                  data-testid={`conv-autorizar-${c.id}`}
+                                >
+                                  {autorizandoId === c.id ? 'Autorizando…' : '✔ Autorizar convenio'}
+                                </button>
+                              )}
+                            </div>
+                          ) : (
+                            <div className="flex flex-col gap-0.5">
+                              <span className="inline-block w-fit px-2 py-0.5 rounded text-[11px] font-semibold bg-exito-bg text-exito" data-testid={`conv-badge-autorizado-${c.id}`}>
+                                Autorizado
+                              </span>
+                              <span className="text-[11px] text-slate-500">{c.autorizado_por_nombre || '—'}{c.autorizado_en ? ` · ${fechaHora(c.autorizado_en)}` : ''}</span>
+                            </div>
+                          )}
+                        </td>
                         <td className="p-3 text-xs" data-testid={`conv-nota-${c.id}`}>
                           {c.nota_numero != null ? (
                             <span className="inline-flex items-center gap-1 text-sigecop-accent font-semibold" title={c.nota_asunto || ''}>🔗 Nota #{c.nota_numero}</span>

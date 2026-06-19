@@ -75,4 +75,31 @@ test.describe('HU-02 — fianzas/garantías (CRUD real)', () => {
     await page.getByTestId('mp-confirmar').click();
     await expect(page.locator('[data-testid^="fila-poliza-"]').filter({ hasText: 'Cumplimiento' })).toContainText('Afianzadora Editada', { timeout: 10000 });
   });
+
+  // FIX 1.3 — el endoso debe traer el dato que su MOTIVO ajusta (art. 91 RLOPSRM, verificado en docs/legal):
+  // ampliación de monto exige nuevo_monto; prórroga exige nueva_vigencia; un endoso vacío no ajusta nada.
+  test('FIX 1.3 — endoso sin el dato de su motivo → 400 (art. 91 RLOPSRM)', async ({ request }) => {
+    const contratoId = await sembrarContrato(request);
+    const D = await loginApi(request, 'dependencia@sigecop.test');
+    const auth = { Authorization: `Bearer ${D.token}` };
+
+    const g = await request.post(`${API}/garantias/contrato/${contratoId}`, {
+      headers: auth, data: { tipo: 'cumplimiento', afianzadora: 'Afianzadora E2E', poliza: 'POL-1', monto: 1000, vigencia: '2027-12-31' },
+    });
+    expect(g.status(), 'crear garantía').toBe(201);
+    const gid = (await g.json()).id;
+
+    // Ampliación de monto SIN nuevo_monto → 400.
+    const e1 = await request.post(`${API}/garantias/${gid}/endoso`, { headers: auth, data: { motivo: 'ampliacion_monto' } });
+    expect(e1.status(), 'ampliación sin monto').toBe(400);
+    // Prórroga SIN nueva_vigencia → 400.
+    const e2 = await request.post(`${API}/garantias/${gid}/endoso`, { headers: auth, data: { motivo: 'prorroga_vigencia' } });
+    expect(e2.status(), 'prórroga sin vigencia').toBe(400);
+    // Endoso vacío (no modifica nada) → 400.
+    const e3 = await request.post(`${API}/garantias/${gid}/endoso`, { headers: auth, data: { motivo: 'otro' } });
+    expect(e3.status(), 'endoso vacío').toBe(400);
+    // Endoso válido (prórroga con su vigencia) → 201.
+    const e4 = await request.post(`${API}/garantias/${gid}/endoso`, { headers: auth, data: { motivo: 'prorroga_vigencia', nueva_vigencia: '2028-12-31' } });
+    expect(e4.status(), 'endoso válido').toBe(201);
+  });
 });

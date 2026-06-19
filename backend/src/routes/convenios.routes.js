@@ -4,7 +4,7 @@ const express = require('express');
 const multer = require('multer');
 const { authMiddleware } = require('../middlewares/auth.middleware');
 const {
-  listarConvenios, detalleVersion, crearConvenio,
+  listarConvenios, detalleVersion, crearConvenio, autorizarConvenio,
   subirOficioConvenio, descargarOficioConvenio
 } = require('../controllers/convenios.controller');
 
@@ -35,6 +35,10 @@ function subirPdf(req, res, next) {
 router.get('/contrato/:id', listarConvenios);     // convenios + versiones del programa del contrato
 router.post('/contrato/:id', crearConvenio);      // crear convenio (transaccional: re-cuadre + versionado)
 router.get('/version/:versionId', detalleVersion); // snapshot (catálogo + celdas) de una versión del programa
+
+// ITEM 3.2 — ACTO de autorización del servidor facultado (art. 59 párr. 3 LOPSRM). Sub-ruta sobre el
+// router YA montado como /api/convenios en server.js (congelado): NO toca server.js.
+router.post('/:convenioId/autorizar', autorizarConvenio);
 
 // Oficio de aprobación del convenio (FASE 0C): subir (PDF, append-only) y visualizar.
 router.post('/:convenioId/oficio', subirPdf, subirOficioConvenio);

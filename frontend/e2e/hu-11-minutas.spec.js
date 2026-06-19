@@ -22,7 +22,6 @@ import {
   freshHome,
   enterAppMode,
   goToViaSidebar,
-  sidebarLinkFor,
   cardInInicioFor,
   expectAvisoSoloConsulta,
   expectSinAvisoSoloConsulta,
@@ -49,7 +48,6 @@ test.describe('HU-11 — modo aplicacion (Residente: ejecuta)', () => {
   });
 
   test('sidebar muestra HU-11 y la vista carga sin metadata academica', async ({ page }) => {
-    await expect(await sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
     await goToViaSidebar(page, VIEW_PATH);
 
     await expect(page.getByRole('heading', { name: 'Minutas y agenda de visitas' })).toBeVisible();
@@ -87,7 +85,6 @@ for (const rol of [
     });
 
     test('aviso de solo consulta visible; forms de captura deshabilitados', async ({ page }) => {
-      await expect(await sidebarLinkFor(page, VIEW_PATH)).toBeVisible();
       await goToViaSidebar(page, VIEW_PATH);
 
       await expectAvisoSoloConsulta(page);

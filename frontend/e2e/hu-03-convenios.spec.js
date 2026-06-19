@@ -218,13 +218,16 @@ test.describe('HU-03 — flujo real (Dependencia registra convenio de plazo)', (
 
     // La fila del convenio registrado NO ofrece editar / anular / eliminar el convenio (corregir =
     // convenio nuevo; inmutabilidad server-side: trigger append-only + sin DELETE/PATCH en el router).
-    // EXCEPCIÓN legítima (FASE 0C, profe 16-jun): adjuntar/ver su OFICIO DE APROBACIÓN, que es un
-    // SOPORTE documental y NO muta el convenio. Ese es el único control interactivo permitido en la fila.
+    // EXCEPCIONES legítimas (controles que NO mutan la identidad del convenio registrado):
+    //   · FASE 0C (profe 16-jun): adjuntar/ver su OFICIO DE APROBACIÓN (soporte documental).
+    //   · ITEM 3.2 (art. 59 párr. 3 LOPSRM): AUTORIZAR el convenio — acto FORMAL append-only del servidor
+    //     facultado (sella estado/autorizado_por/autorizado_en; no edita lo registrado).
     const fila = filasConvenios(page).first();
     await expect(fila).toBeVisible();
     const interactivos = await fila.locator('button, input, select, textarea, [contenteditable="true"]').count();
     const delOficio = await fila.locator('[data-testid^="conv-oficio-ver-"], [data-testid^="conv-oficio-subir-"] input').count();
-    expect(interactivos - delOficio).toBe(0);
+    const delAutorizar = await fila.locator('[data-testid^="conv-autorizar-"]').count();
+    expect(interactivos - delOficio - delAutorizar).toBe(0);
   });
 });
 

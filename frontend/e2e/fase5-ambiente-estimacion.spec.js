@@ -1,47 +1,36 @@
 // @ts-check
-// FASE 5 (revisión profe 16-jun) — AMBIENTE DE ESTIMACIÓN por bloques (CASCARÓN).
-// El profe: "aíslalo en un contexto… empiezas por los generadores… la carátula te dice lo que vas a
-// cobrar… adjunta soportes/notas/fotos… cerrar, candadito… a revisión. El historial va aparte."
-// Este ambiente ENVUELVE el flujo existente (no lo reescribe): la carátula la calcula el backend
-// (estimacion-prep, la misma de HU-12); el bloque de generadores y el de soportes/fotos son
-// PLACEHOLDERS marcados pendientes de Equipo 3; la integración/envío reales se delegan a HU-12/HU-13.
-// LOGIN REAL (backend+BD). No corre en CI.
+// FASE 3 (rediseño por bloques) — el "Recorrido por bloques" de estimación DEJÓ de ser una pantalla
+// aparte: el flujo de "Nueva estimación" YA ES el WIZARD de pasos (IntegracionEstimacion,
+// /estimaciones/integracion). La ruta del cascarón (/estimaciones/ambiente) se conserva pero REDIRIGE
+// al wizard (App.jsx congelado: cero rutas nuevas). Antes este spec probaba los 7 bloques del cascarón;
+// ahora prueba el redirect + que el wizard real es lo que se muestra. LOGIN REAL (backend+BD). No CI.
 import { test, expect } from '@playwright/test';
-import { freshHome, enterAppMode, goToViaSidebar } from './_helpers.js';
+import { freshHome, enterAppMode } from './_helpers.js';
 
-test.skip(!!process.env.CI, 'FASE 5: login real requiere backend+BD; se corre en local');
+test.skip(!!process.env.CI, 'FASE 3: login real requiere backend+BD; se corre en local');
 
-const SEED = 'OBRA-2026-DEMO-01';
-
-test.describe('FASE 5 — ambiente de estimación por bloques (cascarón)', () => {
-  test('los 7 bloques se muestran; generadores y soportes son placeholders E3; la carátula es automática', async ({ page }) => {
+test.describe('FASE 3 — el ambiente de estimación ES el wizard (redirect del cascarón)', () => {
+  test('/estimaciones/ambiente redirige al wizard "Nueva estimación" (pasos), sin el cascarón viejo', async ({ page }) => {
     await freshHome(page);
-    await enterAppMode(page, 'residente');
-    await goToViaSidebar(page, '/estimaciones/ambiente');
+    await enterAppMode(page, 'contratista'); // superintendente: ejecuta el flujo de estimación (HU-12)
+    await page.goto('/estimaciones/ambiente');
+    await page.waitForLoadState('networkidle');
 
-    // Aviso de cascarón + los 7 bloques estructurados (tipo el alta).
-    await expect(page.getByTestId('ambiente-cascaron-aviso')).toBeVisible();
-    for (let n = 1; n <= 7; n++) {
-      await expect(page.getByTestId(`bloque-est-${n}`)).toBeVisible();
+    // Redirige al wizard: la URL termina en /estimaciones/integracion y carga su selector de contrato.
+    await expect(page).toHaveURL(/\/estimaciones\/integracion$/);
+    await expect(page.getByTestId('select-contrato')).toBeVisible();
+
+    // El cascarón viejo (aviso + 7 bloques + placeholders) ya NO existe.
+    await expect(page.getByTestId('ambiente-cascaron-aviso')).toHaveCount(0);
+    await expect(page.getByTestId('bloque-est-1')).toHaveCount(0);
+
+    // Al elegir un contrato aparece la BARRA DE PASOS del wizard (Periodo → … → Integrar).
+    const sel = page.getByTestId('select-contrato');
+    if (await sel.locator('option').count() > 1) {
+      await sel.selectOption({ index: 1 });
+      await expect(page.getByTestId('wizard-estimacion-pasos')).toBeVisible();
+      await expect(page.getByTestId('wpaso-periodo')).toBeVisible();
+      await expect(page.getByTestId('wpaso-integrar')).toBeVisible();
     }
-
-    // Bloques pendientes de Equipo 3 marcados.
-    await expect(page.getByTestId('generadores-placeholder')).toContainText('Pendiente del Equipo 3');
-    await expect(page.getByTestId('pendiente-e3-2')).toBeVisible();
-    await expect(page.getByTestId('soportes-placeholder')).toContainText('pendiente');
-
-    // Envío delega al flujo real (HU-12 / HU-13) — el historial NO vive aquí.
-    await expect(page.getByTestId('link-integrar')).toBeVisible();
-    await expect(page.getByTestId('link-presentar')).toBeVisible();
-
-    // Selección de contrato + periodo → la carátula AUTOMÁTICA (la existente) se muestra.
-    const val = await page.locator('[data-testid="select-contrato"] option', { hasText: SEED }).first().getAttribute('value');
-    await page.getByTestId('select-contrato').selectOption(val);
-    await page.getByTestId('select-periodo').selectOption({ index: 1 });
-    await expect(page.getByTestId('caratula-automatica')).toBeVisible({ timeout: 10000 });
-    await expect(page.getByTestId('caratula-disponibles')).toContainText('concepto');
-
-    // Candado de cierre.
-    await expect(page.getByTestId('check-cierre')).toBeEnabled();
   });
 });

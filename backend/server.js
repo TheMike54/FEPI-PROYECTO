@@ -22,6 +22,9 @@ const garantiasRoutes = require('./src/routes/garantias.routes');  // HU-02 (ses
 const minutasRoutes = require('./src/routes/minutas.routes');  // HU-11 (sesión E2): minutas, visitas y acuerdos (art. 123 fr. X RLOPSRM)
 const instruccionPagoRoutes = require('./src/routes/instruccion-pago.routes');  // HU-20 (Equipo 3): tránsito a pago (suficiencia art. 24 + instrucción de pago)
 const empresasRoutes = require('./src/routes/empresas.routes');  // PLAN GRANDE BLOQUE 1: administración del padrón de empresas (solo dependencia)
+const yoRoutes = require('./src/routes/yo.routes');  // OLEADA 2 (FIX 2.4): perfil propio para el dropdown "mi info / mi empresa"
+const observacionesRoutes = require('./src/routes/observaciones.routes');  // OLEADA 2 (FIX 2.2): observaciones por contrato para el reporte #4 de HU-19
+const notasPendientesRoutes = require('./src/routes/notas-pendientes.routes');  // OLEADA 2 (FIX 2.5): notas por firmar para la campana unificada
 const { initDb } = require('./src/db/init');
 
 const app = express();
@@ -68,6 +71,9 @@ app.use('/api/minutas', minutasRoutes);
 app.use('/api/instruccion-pago', instruccionPagoRoutes);
 // PLAN GRANDE BLOQUE 1: administración del padrón de empresas. Solo la dependencia (requireRole en el router).
 app.use('/api/empresas', empresasRoutes);
+app.use('/api/yo', yoRoutes);  // OLEADA 2 (FIX 2.4 — montaje aditivo, diff para Maiki)
+app.use('/api/observaciones', observacionesRoutes);  // OLEADA 2 (FIX 2.2 — montaje aditivo, diff para Maiki)
+app.use('/api/notas-pendientes', notasPendientesRoutes);  // OLEADA 2 (FIX 2.5 — montaje aditivo, diff para Maiki)
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Ruta no encontrada' });

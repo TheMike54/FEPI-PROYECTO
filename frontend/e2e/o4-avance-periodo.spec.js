@@ -90,7 +90,9 @@ test.describe('O4 — avance por periodo + nota + validación vs programa vigent
     expect(((await r.json()).error || '')).toContain('118');
   });
 
-  test('O-PROFE: editar (PATCH) a una cantidad que excede el periodo → 200 + aviso_programa (no bloquea)', async ({ request }) => {
+  // FIX 3.3 — append-only: ya no hay PATCH; la corrección (POST /:id/corregir) anula la original y registra
+  // una nueva. El aviso de programa (no bloqueante) sigue saliendo si la cantidad corregida excede el periodo.
+  test('O-PROFE: CORREGIR a una cantidad que excede el periodo → 201 + aviso_programa (no bloquea)', async ({ request }) => {
     const { id, S } = await crearContrato(request);
     const t = await trabajos(request, S.token, id);
     const c1 = t.conceptos.find((c) => c.clave === 'C-001').contrato_concepto_id;
@@ -98,10 +100,10 @@ test.describe('O4 — avance por periodo + nota + validación vs programa vigent
     const reg = await registrar(request, S.token, { contrato_concepto_id: c1, periodo_numero: 1, cantidad: 300 });
     expect(reg.status()).toBe(201);
     const avId = (await reg.json()).avance.id;
-    // Editar a 500 (> 400 programado en P1) → 200 CON aviso_programa (no bloquea; art. 118 no se rebasa).
-    const patch = await request.patch(`${API}/trabajos/${avId}`, { headers: { Authorization: `Bearer ${S.token}` }, data: { cantidad: 500 } });
-    expect(patch.status()).toBe(200);
-    expect(((await patch.json()).aviso_programa || '')).toContain('excede lo programado');
+    // Corregir a 500 (> 400 programado en P1) → 201 CON aviso_programa (no bloquea; art. 118 no se rebasa).
+    const corr = await request.post(`${API}/trabajos/${avId}/corregir`, { headers: { Authorization: `Bearer ${S.token}` }, data: { cantidad: 500 } });
+    expect(corr.status()).toBe(201);
+    expect(((await corr.json()).aviso_programa || '')).toContain('excede lo programado');
   });
 
   test('un convenio que AMPLÍA el periodo quita el AVISO del avance siguiente (programa vigente)', async ({ request }) => {

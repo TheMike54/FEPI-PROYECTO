@@ -34,10 +34,14 @@ async function listarMinutas(req, res) {
     const contrato = await getContrato(pool, id);
     if (!contrato) return res.status(404).json({ error: 'Contrato no encontrado' });
     if (!esParteOSupervision(req.user, contrato)) return res.status(403).json({ error: 'No tienes acceso a las minutas de este contrato' });
+    // FIX 1.2 — devolver el FOLIO de la nota (bn.numero), no solo el id interno, para mostrar "#folio".
     const r = await pool.query(
-      `SELECT id, titulo, fecha, lugar, participantes, acuerdos, nota_id, registrada_por, created_at,
-              (pdf_contenido IS NOT NULL) AS tiene_pdf, pdf_nombre
-         FROM minutas WHERE contrato_id = $1 ORDER BY fecha DESC, id DESC`, [id]);
+      `SELECT m.id, m.titulo, m.fecha, m.lugar, m.participantes, m.acuerdos, m.nota_id, m.registrada_por, m.created_at,
+              (m.pdf_contenido IS NOT NULL) AS tiene_pdf, m.pdf_nombre,
+              bn.numero AS nota_numero
+         FROM minutas m
+         LEFT JOIN bitacora_notas bn ON bn.id = m.nota_id
+        WHERE m.contrato_id = $1 ORDER BY m.fecha DESC, m.id DESC`, [id]);
     return res.status(200).json({ contrato_id: id, minutas: r.rows });
   } catch (err) { console.error('[listarMinutas]', err); return res.status(500).json({ error: 'Error interno' }); }
 }
@@ -127,9 +131,14 @@ async function listarVisitas(req, res) {
     const contrato = await getContrato(pool, id);
     if (!contrato) return res.status(404).json({ error: 'Contrato no encontrado' });
     if (!esParteOSupervision(req.user, contrato)) return res.status(403).json({ error: 'No tienes acceso a las visitas de este contrato' });
+    // FIX 1.2 — folio de la nota vinculada (bn.numero) para mostrar "#folio" en vez del id interno.
     const r = await pool.query(
-      `SELECT id, tipo, fecha_programada, fecha_realizada, lugar, responsable, proposito, resultado, estado, nota_id, created_at
-         FROM visitas WHERE contrato_id = $1 ORDER BY fecha_programada DESC, id DESC`, [id]);
+      `SELECT vi.id, vi.tipo, vi.fecha_programada, vi.fecha_realizada, vi.lugar, vi.responsable, vi.proposito,
+              vi.resultado, vi.estado, vi.nota_id, vi.created_at,
+              bn.numero AS nota_numero
+         FROM visitas vi
+         LEFT JOIN bitacora_notas bn ON bn.id = vi.nota_id
+        WHERE vi.contrato_id = $1 ORDER BY vi.fecha_programada DESC, vi.id DESC`, [id]);
     return res.status(200).json({ contrato_id: id, visitas: r.rows });
   } catch (err) { console.error('[listarVisitas]', err); return res.status(500).json({ error: 'Error interno' }); }
 }

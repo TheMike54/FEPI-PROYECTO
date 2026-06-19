@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import EncabezadoContrato from '../components/ui/EncabezadoContrato.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
@@ -525,6 +526,12 @@ export default function IntegracionEstimacion() {
   const [errorIntegrar, setErrorIntegrar] = useState(null);
   const [detalle, setDetalle] = useState(null);
 
+  // FASE 3 (rediseño por bloques) — WIZARD "Nueva estimación": la captura se presenta como pasos
+  // encadenados (patrón del Alta), reusando los MISMOS componentes/testids. `paso` = índice activo;
+  // `cierreConfirmado` = candado del último paso (art. del cascarón FASE 5: "¿seguro que vas a cerrar?").
+  const [paso, setPaso] = useState(0);
+  const [cierreConfirmado, setCierreConfirmado] = useState(false);
+
   const selected = useMemo(() => contratos.find((c) => String(c.id) === String(contratoId)) || null, [contratos, contratoId]);
   const anticipoPct = selected && selected.anticipo_pct != null ? Number(selected.anticipo_pct) : 0;
   const esSuperintendente = selected && usuario && selected.superintendente_id === usuario.id;
@@ -556,6 +563,7 @@ export default function IntegracionEstimacion() {
     setAvance([]); setPrep(null); setPrograma(null); setHistorial([]); setNotasContrato([]);
     setCantidades({}); setDeductivas('0'); setPeriodoInicio(''); setPeriodoFin('');
     setNotasVinculadas([]); setResultado(null); setErrorIntegrar(null);
+    setPaso(0); setCierreConfirmado(false); // wizard: vuelve al paso 1 al cambiar de contrato
     if (!id) return;
     setCargando(true);
     try {
@@ -670,6 +678,30 @@ export default function IntegracionEstimacion() {
   }, [prep, caratula.subtotal]);
 
   const onCantidad = (cid, valor) => setCantidades((prev) => ({ ...prev, [cid]: valor }));
+
+  // --- WIZARD: pasos + gating (atrás libre; adelante valida el paso actual, como el Alta) ---
+  const PASOS = [
+    { key: 'periodo', label: 'Periodo' },
+    { key: 'generadores', label: 'Generadores' },
+    { key: 'caratula', label: 'Carátula' },
+    { key: 'soportes', label: 'Soportes y notas' },
+    { key: 'integrar', label: 'Integrar y presentar' },
+  ];
+  const ULTIMO_PASO = PASOS.length - 1;
+  // Gate de AVANCE (no de integración): solo bloquea por EXCESO (art. 118 / plan del periodo) y neto<0.
+  // El periodo y "al menos una línea" se exigen en el botón Integrar (paso 5), conservando el
+  // comportamiento original (periodo y líneas eran requisitos de integrar, no de navegar/capturar).
+  const pasoValido = useCallback((p) => {
+    if (p === 1) return !hayExceso && !hayExcesoPlan;                   // Generadores: no exceder contratado ni plan (semáforo)
+    if (p === 2) return caratula.neto >= 0;                            // Carátula: neto no negativo
+    return true;                                                       // Periodo/Soportes/Integrar: navegación libre
+  }, [hayExceso, hayExcesoPlan, caratula.neto]);
+  const irAPaso = useCallback((target) => {
+    setErrorIntegrar(null);
+    if (target <= paso) { setPaso(target); return; }                    // atrás: libre (corregir)
+    for (let p = paso; p < target; p++) { if (!pasoValido(p)) { setPaso(p); return; } } // adelante: valida el prefijo
+    setPaso(target);
+  }, [paso, pasoValido]);
 
   const idsVinculados = useMemo(() => notasVinculadas.map((n) => n.id), [notasVinculadas]);
   // O8 (a): solo se vinculan notas FIRMADAS del contrato ("notas que soportan esta estimación"). El
@@ -814,12 +846,48 @@ export default function IntegracionEstimacion() {
             </div>
           )}
 
-          {!soloLectura && (
-            <div className="bg-white border border-slate-200 rounded-md p-4 mb-6 max-w-2xl">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">Apertura del periodo</h2>
-              {/* P5 (pulido UX 14-jun): selector de periodo del programa vigente. Al elegirlo autocompleta las
-                  fechas de abajo (que siguen editables para un ajuste fino). NO cambia el dato que se envía
-                  (periodo_inicio/periodo_fin) ni el cálculo; es solo una ayuda para no adivinar las fechas. */}
+          {/* F4 — EN PARALELO (TIPO B): vistas de lectura / de otro actor del ciclo de estimación, SIEMPRE
+              accesibles (no dependen del paso del wizard); solo requieren contrato seleccionado. Regla de oro:
+              una TIPO B nunca se condiciona a un candado. */}
+          <div className="bg-white border border-slate-200 rounded-md p-4 mb-6" data-testid="estimacion-en-paralelo">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">En paralelo (lectura / otro actor — no se bloquean)</h3>
+            <div className="flex flex-wrap gap-2">
+              <Link to={`/estimaciones/revision?contrato=${contratoId}`} className="sg-btn-secondary" data-testid="par-revision">Revisión / autorización (HU-15) →</Link>
+              <Link to={`/estimaciones/reingreso?contrato=${contratoId}`} className="sg-btn-secondary" data-testid="par-reingreso">Reingreso (HU-16) →</Link>
+              <Link to={`/estimaciones/historial?contrato=${contratoId}`} className="sg-btn-secondary" data-testid="par-historial">Historial (HU-14) →</Link>
+              <Link to="/estimaciones/tablero" className="sg-btn-secondary" data-testid="par-tablero">Tablero (HU-17) →</Link>
+            </div>
+          </div>
+
+          {/* WIZARD "Nueva estimación" (FASE 3): pasos encadenados (patrón del Alta), reusando la MISMA
+              captura/testids. Atrás libre; Siguiente valida el paso actual. El historial va aparte (abajo). */}
+          <nav className="flex flex-wrap gap-2 mb-6" data-testid="wizard-estimacion-pasos" aria-label="Pasos de la estimación">
+            {PASOS.map((p, i) => {
+              const estado = i === paso ? 'curr' : i < paso ? 'done' : 'todo';
+              return (
+                <button
+                  key={p.key}
+                  type="button"
+                  onClick={() => irAPaso(i)}
+                  data-testid={`wpaso-${p.key}`}
+                  data-estado={estado}
+                  aria-current={estado === 'curr' ? 'step' : undefined}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm border ${estado === 'curr' ? 'bg-guinda text-white border-guinda' : estado === 'done' ? 'bg-guinda-soft text-guinda border-guinda/30' : 'bg-white text-slate-500 border-slate-200'}`}
+                >
+                  <span className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${estado === 'curr' ? 'bg-white text-guinda' : estado === 'done' ? 'bg-guinda text-white' : 'bg-slate-100 text-slate-500'}`}>
+                    {estado === 'done' ? '✓' : i + 1}
+                  </span>
+                  {p.label}
+                </button>
+              );
+            })}
+          </nav>
+
+          {/* PASO 1 · Periodo (apertura). */}
+          {paso === 0 && wrapTab(
+            <div className="bg-white border border-slate-200 rounded-md p-4 max-w-2xl" data-testid="wstep-periodo">
+              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">1 · Apertura del periodo</h2>
+              {/* P5 (pulido UX 14-jun): selector de periodo del programa vigente; autocompleta las fechas. */}
               {Array.isArray(programa?.periodos) && programa.periodos.length > 0 && (
                 <div className="mb-4">
                   <label className="sg-label">Periodo del programa</label>
@@ -856,8 +924,9 @@ export default function IntegracionEstimacion() {
             </div>
           )}
 
-          {/* VISTA ÚNICA (Etapa A): captura → barras de avance → carátula viva + saldos → notas. */}
-          <div className="space-y-6">
+          {/* PASO 2 · Generadores (captura) + barras de avance + programa de obra. */}
+          {paso === 1 && (
+          <div className="space-y-6" data-testid="wstep-generadores">
             {wrapTab(<TabGeneradores filas={filas} onCantidad={onCantidad} tienePlan={tienePlan} />)}
 
             {prep && (
@@ -887,33 +956,73 @@ export default function IntegracionEstimacion() {
               </details>
             )}
 
-            {wrapTab(<TabCaratula caratula={caratula} anticipoPct={anticipoPct} deductivas={deductivas} onDeductivas={setDeductivas} acumulados={acumulados}
-              numeroEstimacion={proximoNumeroEstimacion} periodoNumero={periodoResaltadoEstim} periodoInicio={periodoInicio} periodoFin={periodoFin} />)}
-
-            {wrapTab(
-              <TabNotasVinculadas vinculadas={notasVinculadas} onAbrir={() => setModalAbierto(true)} onQuitar={quitarNota} onVerDocumento={verDocumentoNota} soloLectura={soloLectura} />
-            )}
           </div>
+          )}
 
-          {!soloLectura && (
-            <div className="mt-6 flex flex-col items-end gap-2">
-              {(hayExceso || hayExcesoPlan) && (
-                <span className="text-xs text-red-700" data-testid="confirmar-bloqueado-hint">
-                  {hayExceso ? 'Hay conceptos que exceden lo contratado (art. 118).' : 'Hay conceptos que exceden lo planeado para el periodo.'} No se puede confirmar.
-                </span>
-              )}
-              <button
-                type="button"
-                className="sg-btn-primary disabled:bg-slate-300 disabled:cursor-not-allowed"
-                onClick={integrar}
-                disabled={integrarDeshabilitado}
-                title={hayExceso ? 'Hay conceptos que exceden lo contratado' : hayExcesoPlan ? 'Hay conceptos que exceden lo planeado del periodo' : (!hayLineas ? 'Captura al menos un concepto con cantidad > 0' : '')}
-                data-testid="btn-integrar"
-              >
-                {integrando ? 'Integrando…' : 'Confirmar e integrar estimación'}
-              </button>
+          {/* PASO 3 · Carátula (viva). */}
+          {paso === 2 && (
+            <div data-testid="wstep-caratula">
+              {wrapTab(<TabCaratula caratula={caratula} anticipoPct={anticipoPct} deductivas={deductivas} onDeductivas={setDeductivas} acumulados={acumulados}
+                numeroEstimacion={proximoNumeroEstimacion} periodoNumero={periodoResaltadoEstim} periodoInicio={periodoInicio} periodoFin={periodoFin} />)}
             </div>
           )}
+
+          {/* PASO 4 · Soportes y notas (vincular notas firmadas; fotos fuera de Etapa 1). */}
+          {paso === 3 && (
+            <div className="space-y-4" data-testid="wstep-soportes">
+              {wrapTab(
+                <TabNotasVinculadas vinculadas={notasVinculadas} onAbrir={() => setModalAbierto(true)} onQuitar={quitarNota} onVerDocumento={verDocumentoNota} soloLectura={soloLectura} />
+              )}
+              <div className="bg-amber-50 border-l-4 border-amber-300 px-4 py-3 text-sm text-amber-800 rounded-r-md" data-testid="soportes-fotos-alcance">
+                El <strong>registro fotográfico</strong> de soportes queda <strong>fuera del alcance de la Etapa 1</strong>: la ley no lo exige como requisito de la estimación (el expediente del art. 132 RLOPSRM se integra con números generadores y notas de bitácora firmadas). Se incorporará en una etapa posterior.
+              </div>
+            </div>
+          )}
+
+          {/* PASO 5 · Cierre (candado), integración y presentación. */}
+          {paso === 4 && (
+            <div data-testid="wstep-integrar">
+              {wrapTab(
+                <div className="bg-white border border-slate-200 rounded-md p-4 max-w-2xl">
+                  <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">5 · Cierre, integración y presentación</h2>
+                  <label className="flex items-center gap-2 text-sm text-slate-700 mb-3">
+                    <input type="checkbox" checked={cierreConfirmado} onChange={(e) => setCierreConfirmado(e.target.checked)} data-testid="check-cierre" />
+                    ¿Seguro que vas a cerrar esta estimación? (revisa generadores, carátula y notas)
+                  </label>
+                  {(hayExceso || hayExcesoPlan) && (
+                    <p className="text-xs text-red-700 mb-2" data-testid="confirmar-bloqueado-hint">
+                      {hayExceso ? 'Hay conceptos que exceden lo contratado (art. 118).' : 'Hay conceptos que exceden lo planeado para el periodo.'} No se puede confirmar.
+                    </p>
+                  )}
+                  {(!periodoInicio || !periodoFin) && (
+                    <p className="text-xs text-amber-700 mb-2">Falta indicar el periodo (paso 1) para poder integrar.</p>
+                  )}
+                  <button
+                    type="button"
+                    className="sg-btn-primary disabled:bg-slate-300 disabled:cursor-not-allowed"
+                    onClick={integrar}
+                    disabled={integrarDeshabilitado || !cierreConfirmado || !periodoInicio || !periodoFin}
+                    title={hayExceso ? 'Hay conceptos que exceden lo contratado' : hayExcesoPlan ? 'Hay conceptos que exceden lo planeado del periodo' : (!hayLineas ? 'Captura al menos un concepto con cantidad > 0' : '')}
+                    data-testid="btn-integrar"
+                  >
+                    {integrando ? 'Integrando…' : 'Confirmar e integrar estimación'}
+                  </button>
+                  <div className="mt-4 pt-3 border-t border-slate-100">
+                    <p className="text-sm text-slate-700 mb-2">Integrada la estimación, se <strong>presenta a revisión</strong> (art. 54 LOPSRM); no se paga directo. Una estimación se presenta una sola vez.</p>
+                    <Link to="/estimaciones/envio" className="sg-btn-secondary inline-block" data-testid="link-presentar">Ir a presentar a revisión (HU-13) →</Link>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Navegación del wizard (Atrás libre; Siguiente valida el paso actual, como el Alta). */}
+          <div className="mt-6 flex justify-between items-center max-w-2xl">
+            <button type="button" onClick={() => irAPaso(paso - 1)} disabled={paso === 0} className="px-4 py-2 text-slate-600 hover:text-slate-900 disabled:opacity-40" data-testid="btn-watras">← Atrás</button>
+            {paso < ULTIMO_PASO && (
+              <button type="button" onClick={() => irAPaso(paso + 1)} disabled={!pasoValido(paso)} className="sg-btn-primary disabled:bg-slate-300 disabled:cursor-not-allowed" data-testid="btn-wsiguiente">Siguiente →</button>
+            )}
+          </div>
 
           <div className="mt-8">
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">Historial de estimaciones del contrato</h2>

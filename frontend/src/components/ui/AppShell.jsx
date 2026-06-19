@@ -61,6 +61,10 @@ function iniciales(nombre) {
   return (partes[0][0] + (partes[1]?.[0] || '')).toUpperCase();
 }
 
+// FIX 2.4 — etiquetas legibles del tipo/estado de empresa (crudos del catálogo) para el dropdown "mi info".
+const EMPRESA_TIPO = { dependencia: 'Dependencia', contratista: 'Contratista', supervision: 'Supervisión' };
+const EMPRESA_ESTADO = { validada: 'Validada', por_validar: 'Por validar' };
+
 export default function AppShell({ children }) {
   const { rol, usuario, token, logout } = useSesion();
   const rolActivo = ROLES.find((r) => r.id === rol);
@@ -105,8 +109,18 @@ export default function AppShell({ children }) {
   // BLOQUE 4 — pop-ups de "Por firmar" y campana (mockup modo-sistema): al hacer clic se abre un
   // dropdown (NO una pantalla nueva). `drop` = cuál está abierto. Los datos de "Por firmar" salen del
   // backend real (HU-08, GET /bitacora/pendientes) sin tocar zona congelada.
-  const [drop, setDrop] = useState(null); // 'firmar' | 'campana' | null
+  const [drop, setDrop] = useState(null); // 'firmar' | 'campana' | 'miinfo' | null
   const puedeFirmar = ['residente', 'contratista', 'supervision'].includes(rol);
+
+  // FIX 2.4 — perfil propio (nombre/rol/empresa nombre+tipo+estado/correo) para el dropdown "mi info". El
+  // email y el tipo/estado de empresa no viajan en el JWT → se piden a GET /api/yo. Falla en silencio.
+  const [perfil, setPerfil] = useState(null);
+  useEffect(() => {
+    if (!token) { setPerfil(null); return; }
+    let vivo = true;
+    api.miPerfil().then((p) => { if (vivo) setPerfil(p); }).catch(() => { if (vivo) setPerfil(null); });
+    return () => { vivo = false; };
+  }, [token]);
   const [pendientes, setPendientes] = useState([]);
   useEffect(() => {
     if (!token || !puedeFirmar) { setPendientes([]); return; }
@@ -120,6 +134,27 @@ export default function AppShell({ children }) {
       .catch(() => { if (vivo) setPendientes([]); });
     return () => { vivo = false; };
   }, [token, puedeFirmar, pathname]);
+
+  // FIX 2.5 — campana UNIFICADA: además de las aperturas por firmar (`pendientes`), las NOTAS por firmar
+  // (GET /api/notas-pendientes) y —solo dependencia— las solicitudes de registro pendientes. Falla en silencio.
+  const esDependencia = rol === 'dependencia';
+  const [notasFirma, setNotasFirma] = useState([]);
+  const [solicitudes, setSolicitudes] = useState(0);
+  useEffect(() => {
+    if (!token || !puedeFirmar) { setNotasFirma([]); return; }
+    let vivo = true;
+    api.notasPendientes().then((l) => { if (vivo) setNotasFirma(Array.isArray(l) ? l : []); }).catch(() => { if (vivo) setNotasFirma([]); });
+    return () => { vivo = false; };
+  }, [token, puedeFirmar, pathname]);
+  useEffect(() => {
+    if (!token || !esDependencia) { setSolicitudes(0); return; }
+    let vivo = true;
+    api.listarUsuarios('pendiente').then((l) => { if (vivo) setSolicitudes(Array.isArray(l) ? l.length : 0); }).catch(() => { if (vivo) setSolicitudes(0); });
+    return () => { vivo = false; };
+  }, [token, esDependencia, pathname]);
+  const totalFirmas = pendientes.length + notasFirma.length;                       // aperturas + notas
+  const totalNotif = (sinAccesoAtraso ? 0 : atrasos) + totalFirmas + solicitudes;  // badge unificado de la campana
+
   // Al cambiar de pantalla, cierra cualquier dropdown abierto.
   useEffect(() => { setDrop(null); }, [pathname]);
   const toggleDrop = (cual) => setDrop((d) => (d === cual ? null : cual));
@@ -157,9 +192,9 @@ export default function AppShell({ children }) {
                 className="relative w-9 h-9 rounded-md hover:bg-white/10 transition-colors text-base leading-none flex items-center justify-center"
               >
                 ✍️
-                {pendientes.length > 0 && (
+                {totalFirmas > 0 && (
                   <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-dorado text-guinda-dark text-[10px] font-bold flex items-center justify-center" data-testid="por-firmar-count">
-                    {pendientes.length > 99 ? '99+' : pendientes.length}
+                    {totalFirmas > 99 ? '99+' : totalFirmas}
                   </span>
                 )}
               </button>
@@ -169,18 +204,19 @@ export default function AppShell({ children }) {
             <button
               type="button"
               onClick={() => toggleDrop('campana')}
-              aria-label={!sinAccesoAtraso && atrasos > 0 ? `Notificaciones: ${atrasos} conceptos con déficit` : 'Notificaciones'}
+              aria-label={totalNotif > 0 ? `Notificaciones: ${totalNotif}` : 'Notificaciones'}
               aria-expanded={drop === 'campana'}
               title="Notificaciones"
               className="relative w-9 h-9 rounded-md hover:bg-white/10 transition-colors text-base leading-none flex items-center justify-center"
             >
               🔔
-              {!sinAccesoAtraso && atrasos > 0 && (
+              {/* FIX 2.5 — badge UNIFICADO (firmas + atrasos + solicitudes). data-testid conservado. */}
+              {totalNotif > 0 && (
                 <span
                   className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-dorado text-guinda-dark text-[10px] font-bold flex items-center justify-center"
                   data-testid="campana-atrasos"
                 >
-                  {atrasos > 99 ? '99+' : atrasos}
+                  {totalNotif > 99 ? '99+' : totalNotif}
                 </span>
               )}
             </button>
@@ -204,12 +240,18 @@ export default function AppShell({ children }) {
                 {usuario.nombre}
               </span>
             )}
-            <div
-              className="w-8 h-8 rounded-full bg-dorado text-guinda-dark flex items-center justify-center text-xs font-bold flex-shrink-0"
+            {/* FIX 2.4 — el avatar abre el pop-up "mi info / mi empresa" (reusa el mismo mecanismo de drop). */}
+            <button
+              type="button"
+              onClick={() => toggleDrop('miinfo')}
+              aria-label="Mi información"
+              aria-expanded={drop === 'miinfo'}
+              data-testid="btn-mi-info"
+              className="w-8 h-8 rounded-full bg-dorado text-guinda-dark flex items-center justify-center text-xs font-bold flex-shrink-0 hover:ring-2 hover:ring-white/40 transition"
               title={usuario?.nombre || rolActivo?.nombre}
             >
               {iniciales(usuario?.nombre || rolActivo?.nombre)}
-            </div>
+            </button>
             <button
               type="button"
               onClick={logout}
@@ -240,28 +282,56 @@ export default function AppShell({ children }) {
             {drop === 'firmar' ? (
               <div>
                 <div className="px-4 py-2.5 border-b border-borde font-semibold text-sm flex items-center gap-2">✍️ Pendientes por firmar</div>
-                {pendientes.length === 0 ? (
+                {totalFirmas === 0 ? (
                   <div className="px-4 py-6 text-sm text-tinta-ter text-center" data-testid="drop-firmar-vacio">No tienes pendientes por firmar.</div>
                 ) : (
                   <ul className="max-h-72 overflow-y-auto divide-y divide-borde">
-                    {pendientes.slice(0, 6).map((p, i) => (
-                      <li key={p.id || i} className="px-4 py-2.5 text-sm">
-                        <div className="font-medium text-tinta truncate">{p.asunto || p.titulo || 'Nota / apertura de bitácora'}</div>
-                        <div className="text-xs text-tinta-ter truncate">{[p.contrato_folio || p.folio, p.numero != null ? `folio #${p.numero}` : null, 'falta tu firma'].filter(Boolean).join(' · ')}</div>
+                    {/* FIX 2.5 — aperturas + notas por firmar en una sola bandeja. */}
+                    {pendientes.slice(0, 4).map((p, i) => (
+                      <li key={`a${p.apertura_id || i}`} className="px-4 py-2.5 text-sm">
+                        <div className="font-medium text-tinta truncate">Apertura de bitácora</div>
+                        <div className="text-xs text-tinta-ter truncate">{[p.folio, 'falta tu firma'].filter(Boolean).join(' · ')}</div>
+                      </li>
+                    ))}
+                    {notasFirma.slice(0, 4).map((n, i) => (
+                      <li key={`n${n.id || i}`} className="px-4 py-2.5 text-sm">
+                        <div className="font-medium text-tinta truncate">{n.asunto || n.tipo_etiqueta || 'Nota de bitácora'}</div>
+                        <div className="text-xs text-tinta-ter truncate">{[n.contrato_folio, n.numero != null ? `nota #${n.numero}` : null, 'falta tu firma'].filter(Boolean).join(' · ')}</div>
                       </li>
                     ))}
                   </ul>
                 )}
                 <Link to="/bitacora/por-firmar" onClick={() => setDrop(null)} className="block px-4 py-2.5 border-t border-borde text-sm font-semibold text-guinda hover:bg-guinda-soft" data-testid="drop-firmar-ir">Ir a «Por firmar» →</Link>
               </div>
+            ) : drop === 'miinfo' ? (
+              <div>
+                {/* FIX 2.4 — mi info / mi empresa. */}
+                <div className="px-4 py-2.5 border-b border-borde font-semibold text-sm flex items-center gap-2">👤 Mi información</div>
+                <dl className="px-4 py-3 text-sm space-y-2.5">
+                  <div><dt className="text-[11px] text-tinta-ter uppercase tracking-wide">Nombre</dt><dd className="font-medium text-tinta">{perfil?.nombre || usuario?.nombre || '—'}</dd></div>
+                  <div><dt className="text-[11px] text-tinta-ter uppercase tracking-wide">Rol</dt><dd className="text-tinta">{rolActivo?.nombre || perfil?.rol || '—'}</dd></div>
+                  <div><dt className="text-[11px] text-tinta-ter uppercase tracking-wide">Correo</dt><dd className="text-tinta truncate" data-testid="mi-info-correo">{perfil?.email || '—'}</dd></div>
+                  <div>
+                    <dt className="text-[11px] text-tinta-ter uppercase tracking-wide">Empresa</dt>
+                    <dd className="text-tinta" data-testid="mi-info-empresa">
+                      {perfil?.empresa ? (
+                        <span>{perfil.empresa.nombre} <span className="text-xs text-tinta-ter">· {EMPRESA_TIPO[perfil.empresa.tipo] || perfil.empresa.tipo} · {EMPRESA_ESTADO[perfil.empresa.estado] || perfil.empresa.estado}</span></span>
+                      ) : (
+                        <span className="text-tinta-ter">Sin empresa asignada</span>
+                      )}
+                    </dd>
+                  </div>
+                </dl>
+              </div>
             ) : (
               <div>
                 <div className="px-4 py-2.5 border-b border-borde font-semibold text-sm flex items-center gap-2">🔔 Notificaciones</div>
+                {/* FIX 2.5 — centro unificado agrupado por tipo: Firmas / Atrasos / Solicitudes. */}
                 <ul className="divide-y divide-borde text-sm">
                   {puedeFirmar && (
-                    <li className="px-4 py-2.5">
-                      <div className="font-medium">{pendientes.length > 0 ? `Tienes ${pendientes.length} ${pendientes.length === 1 ? 'pendiente' : 'pendientes'} por firmar` : 'Sin pendientes por firmar'}</div>
-                      <div className="text-xs text-tinta-ter">Bitácora (HU-08)</div>
+                    <li className="px-4 py-2.5" data-testid="drop-campana-firmas">
+                      <div className="font-medium">{totalFirmas > 0 ? `Tienes ${totalFirmas} ${totalFirmas === 1 ? 'pendiente' : 'pendientes'} por firmar` : 'Sin pendientes por firmar'}</div>
+                      <div className="text-xs text-tinta-ter">Bitácora — firmas (art. 123 fr. III RLOPSRM)</div>
                     </li>
                   )}
                   {!sinAccesoAtraso && (
@@ -270,12 +340,21 @@ export default function AppShell({ children }) {
                       <div className="text-xs text-tinta-ter">Seguimiento de avance (HU-07)</div>
                     </li>
                   )}
-                  {sinAccesoAtraso && !puedeFirmar && (
+                  {esDependencia && (
+                    <li className="px-4 py-2.5" data-testid="drop-campana-solicitudes">
+                      <div className="font-medium">{solicitudes > 0 ? `${solicitudes} solicitud${solicitudes === 1 ? '' : 'es'} de registro pendiente${solicitudes === 1 ? '' : 's'}` : 'Sin solicitudes de registro pendientes'}</div>
+                      <div className="text-xs text-tinta-ter">Altas de cuenta por aprobar</div>
+                    </li>
+                  )}
+                  {!puedeFirmar && sinAccesoAtraso && !esDependencia && (
                     <li className="px-4 py-6 text-tinta-ter text-center" data-testid="drop-campana-vacio">No tienes notificaciones.</li>
                   )}
                 </ul>
                 {!sinAccesoAtraso && (
                   <Link to="/seguimiento/alertas" onClick={() => setDrop(null)} className="block px-4 py-2.5 border-t border-borde text-sm font-semibold text-guinda hover:bg-guinda-soft" data-testid="drop-campana-ir">Ver alertas de atraso →</Link>
+                )}
+                {esDependencia && (
+                  <Link to="/usuarios/solicitudes" onClick={() => setDrop(null)} className="block px-4 py-2.5 border-t border-borde text-sm font-semibold text-guinda hover:bg-guinda-soft" data-testid="drop-solicitudes-ir">Ver solicitudes de registro →</Link>
                 )}
               </div>
             )}

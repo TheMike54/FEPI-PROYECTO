@@ -86,6 +86,9 @@ export const api = {
   // Cada quien firma SU parte desde su cuenta; bandeja de pendientes del usuario.
   firmarApertura: (aperturaId) => request(`/bitacora/${aperturaId}/firmar`, { method: 'POST' }),
   pendientesPorFirmar: () => request('/bitacora/pendientes'),
+  miPerfil: () => request('/yo'),                                         // FIX 2.4 — mi info / mi empresa
+  observacionesContrato: (id) => request(`/observaciones/contrato/${id}`), // FIX 2.2 — reporte #4 HU-19
+  notasPendientes: () => request('/notas-pendientes'),                    // FIX 2.5 — notas por firmar (campana)
   // HU-09: notas tipificadas de bitácora.
   notaTipos: () => request('/bitacora/nota-tipos'),
   listarNotas: (aperturaId) => request(`/bitacora/${aperturaId}/notas`),
@@ -187,8 +190,8 @@ export const api = {
   // periodo_numero, cantidad, observaciones}.
   trabajosDeContrato: (contratoId) => request(`/trabajos/contrato/${contratoId}`),
   registrarAvance: (payload) => request('/trabajos', { method: 'POST', body: JSON.stringify(payload) }),
-  actualizarAvance: (id, payload) => request(`/trabajos/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
-  eliminarAvance: (id) => request(`/trabajos/${id}`, { method: 'DELETE' }),
+  // FIX 3.3 — avance append-only: corregir = registro nuevo vinculado (anula el original), no editar/borrar.
+  corregirAvance: (id, payload) => request(`/trabajos/${id}/corregir`, { method: 'POST', body: JSON.stringify(payload) }),
   // HU-13: PRESENTACIÓN de la estimación por el CONTRATISTA (art. 54 LOPSRM). Reusa el endpoint /enviar
   // (path estable por compat); sella enviada_en/por (la PRESENTACIÓN, arranca el plazo) y avanza
   // 'integrada' (Integrada) → 'enviada' (Presentada). Solo el superintendente del contrato (lo valida el backend).
@@ -214,6 +217,8 @@ export const api = {
   convenios: (contratoId) => request(`/convenios/contrato/${contratoId}`),
   versionPrograma: (versionId) => request(`/convenios/version/${versionId}`),
   crearConvenio: (contratoId, payload) => request(`/convenios/contrato/${contratoId}`, { method: 'POST', body: JSON.stringify(payload) }),
+  // ITEM 3.2: ACTO de autorización del servidor facultado (dependencia) sobre un convenio 'registrado' (art. 59 párr. 3 LOPSRM).
+  autorizarConvenio: (convenioId) => request(`/convenios/${convenioId}/autorizar`, { method: 'POST' }),
   // FASE 0C (profe 16-jun): OFICIO DE APROBACIÓN del convenio. Subida multipart + descarga binaria
   // (mismo patrón que el PDF del contrato: NO pasan por request(), que asume JSON).
   subirOficioConvenio: (convenioId, file) => {

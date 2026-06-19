@@ -41,7 +41,7 @@ const r2 = (n) => Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100;
 async function cargarEstimacionContrato(id) {
   const r = await pool.query(
     `SELECT e.id, e.contrato_id, e.numero, e.estado, e.neto, e.periodo_inicio, e.periodo_fin,
-            c.folio, c.contratista, c.dependencia, c.fecha_inicio, c.monto,
+            c.folio, c.contratista, c.dependencia, c.dependencia_id, c.fecha_inicio, c.monto,
             c.estado AS contrato_estado, c.cerrado_en,
             c.created_by, c.residente_id, c.superintendente_id, c.supervision_id
        FROM estimaciones e JOIN contratos c ON c.id = e.contrato_id
@@ -57,30 +57,36 @@ function ejercicioDe(fechaInicio) {
   return Number.isFinite(y) ? y : null;
 }
 
-// Suficiencia presupuestal (art. 24). Excluye la estimación actual del "comprometido" para mostrar
-// el disponible ANTES de este pago (paralelo a la carátula del maqueta). techo=null si no hay partida.
-async function calcularSuficiencia(dependencia, ejercicio, estimacionId, neto) {
+// Suficiencia presupuestal (art. 24 párr. 2 LOPSRM). Excluye la estimación actual del "comprometido"
+// para mostrar el disponible ANTES de este pago. ITEM 3.1: el join contrato↔presupuesto se hace por la
+// FK `dependencia_id` (estable), no por el texto `dependencia` (que se rompe al renombrar la cuenta).
+// Etapa 1 mantiene el invariante de 1 partida por (ejercicio, dependencia_id); si hubiera varias, el
+// techo de la dependencia = Σ de sus partidas (el comprometido es a nivel dependencia porque los
+// contratos aún no portan partida_id → multi-partida real por contrato = follow-on para Maiki).
+// techo=null si no hay techo cargado.
+async function calcularSuficiencia(dependenciaId, dependencia, ejercicio, estimacionId, neto) {
   const out = {
-    ejercicio, dependencia,
+    ejercicio, dependencia, dependencia_id: dependenciaId ?? null,
     techo: null, presupuesto_id: null,
     comprometido: '0.00', disponible_antes: null, neto: r2(neto).toFixed(2),
     disponible_despues: null, excede: null, sin_presupuesto: true,
-    nota: 'comprometido = Σ neto autorizadas+pagadas de la dependencia/ejercicio (suficiencia previa, art. 24 LOPSRM); join por texto sin FK = deuda técnica conocida (criterio del equipo, no legal)',
+    nota: 'comprometido = Σ neto autorizadas+pagadas de la dependencia (por FK dependencia_id) + ejercicio (suficiencia previa, art. 24 párr. 2 LOPSRM). Techo por (ejercicio, dependencia_id, partida); Etapa 1 = 1 partida por dependencia.',
   };
-  if (!dependencia || ejercicio == null) return out; // sin dependencia/fecha → no se puede ubicar la partida
+  if (dependenciaId == null || ejercicio == null) return out; // sin FK/fecha → no se puede ubicar la partida (legacy)
   const p = await pool.query(
-    'SELECT id, techo FROM presupuesto_anual WHERE ejercicio = $1 AND dependencia = $2',
-    [ejercicio, dependencia]
+    'SELECT id, techo, partida FROM presupuesto_anual WHERE ejercicio = $1 AND dependencia_id = $2 ORDER BY id',
+    [ejercicio, dependenciaId]
   );
   if (p.rowCount === 0) return out; // sin techo cargado → CA-1 no verificable (sin inventar)
 
-  const techo = Number(p.rows[0].techo);
+  // Techo de la dependencia/ejercicio (Σ de sus partidas; en Etapa 1 hay exactamente una).
+  const techo = p.rows.reduce((s, r) => s + Number(r.techo), 0);
   const cq = await pool.query(
     `SELECT COALESCE(SUM(e.neto),0) AS comprometido
        FROM estimaciones e JOIN contratos c ON c.id = e.contrato_id
-      WHERE c.dependencia = $1 AND EXTRACT(YEAR FROM c.fecha_inicio) = $2
+      WHERE c.dependencia_id = $1 AND EXTRACT(YEAR FROM c.fecha_inicio) = $2
         AND e.estado IN ('autorizada','pagada') AND e.id <> $3`,
-    [dependencia, ejercicio, estimacionId]
+    [dependenciaId, ejercicio, estimacionId]
   );
   const comprometido = Number(cq.rows[0].comprometido);
   const disponibleAntes = r2(techo - comprometido);
@@ -178,7 +184,7 @@ async function estadoTransito(req, res) {
 
     const ejercicio = ejercicioDe(est.fecha_inicio);
     const [suficiencia, soportes, ancla, ip] = await Promise.all([
-      calcularSuficiencia(est.dependencia, ejercicio, est.id, est.neto),
+      calcularSuficiencia(est.dependencia_id, est.dependencia, ejercicio, est.id, est.neto),
       leerSoportes(est.id, est.contrato_id),
       anclaAutorizacion(est.id),
       pool.query('SELECT * FROM instruccion_pago WHERE estimacion_id = $1', [est.id]),
@@ -187,7 +193,7 @@ async function estadoTransito(req, res) {
     return res.status(200).json({
       estimacion: {
         id: est.id, numero: est.numero, contrato_id: est.contrato_id, folio: est.folio,
-        contratista: est.contratista, dependencia: est.dependencia, ejercicio,
+        contratista: est.contratista, dependencia: est.dependencia, dependencia_id: est.dependencia_id ?? null, ejercicio,
         estado: est.estado, neto: r2(est.neto).toFixed(2),
         periodo_inicio: est.periodo_inicio, periodo_fin: est.periodo_fin,
       },
@@ -277,24 +283,32 @@ async function generarInstruccion(req, res) {
     // TOCTOU: dos instrucciones de la misma dependencia/ejercicio se serializan, no pueden exceder el techo.
     const ejercicio = ejercicioDe(est.fecha_inicio);
     const neto = r2(est.neto);
+    // ITEM 3.1: si el contrato no porta dependencia_id (legacy), no se puede ubicar la partida por FK
+    // → 409 controlado (NO 500), igual que "sin techo cargado".
+    if (est.dependencia_id == null) {
+      return res.status(409).json({ error: `El contrato no tiene dependencia asociada por FK (dato legacy); no se puede verificar la suficiencia presupuestal por partida (art. 24 LOPSRM).` });
+    }
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
       const p = await client.query(
-        'SELECT id, techo FROM presupuesto_anual WHERE ejercicio = $1 AND dependencia = $2 FOR UPDATE',
-        [ejercicio, est.dependencia]
+        'SELECT id, techo FROM presupuesto_anual WHERE ejercicio = $1 AND dependencia_id = $2 ORDER BY id FOR UPDATE',
+        [ejercicio, est.dependencia_id]
       );
       if (p.rowCount === 0) {
         await client.query('ROLLBACK');
-        return res.status(409).json({ error: `No hay techo presupuestal cargado para (${est.dependencia || 's/dependencia'}, ${ejercicio || 's/ejercicio'}); no se puede verificar la suficiencia (art. 24).` });
+        return res.status(409).json({ error: `No hay techo presupuestal cargado para (${est.dependencia || 's/dependencia'}, ejercicio ${ejercicio || 's/ejercicio'}); carga la partida específica para verificar la suficiencia (art. 24 LOPSRM).` });
       }
-      const techo = Number(p.rows[0].techo);
+      // Techo de la dependencia/ejercicio (Σ de sus partidas; en Etapa 1 hay exactamente una). La
+      // instrucción se liga a la primera partida (presupuesto_anual_id); multi-partida = follow-on.
+      const techo = p.rows.reduce((s, r) => s + Number(r.techo), 0);
+      const presupuestoId = p.rows[0].id;
       const cq = await client.query(
         `SELECT COALESCE(SUM(e.neto),0) AS comprometido
            FROM estimaciones e JOIN contratos c ON c.id = e.contrato_id
-          WHERE c.dependencia = $1 AND EXTRACT(YEAR FROM c.fecha_inicio) = $2
+          WHERE c.dependencia_id = $1 AND EXTRACT(YEAR FROM c.fecha_inicio) = $2
             AND e.estado IN ('autorizada','pagada') AND e.id <> $3`,
-        [est.dependencia, ejercicio, est.id]
+        [est.dependencia_id, ejercicio, est.id]
       );
       const comprometido = Number(cq.rows[0].comprometido);
       const disponibleAntes = r2(techo - comprometido);
@@ -309,7 +323,7 @@ async function generarInstruccion(req, res) {
            (estimacion_id, presupuesto_anual_id, monto, factura_cfdi, soportes_ok, estado, instruida_por, notificado_finanzas_en)
          VALUES ($1, $2, $3, $4, true, 'emitida', $5, NOW())
          RETURNING *`,
-        [est.id, p.rows[0].id, neto, sop.folio_cfdi, req.user.id]
+        [est.id, presupuestoId, neto, sop.folio_cfdi, req.user.id]
       );
       await client.query('COMMIT');
       return res.status(201).json({
@@ -330,18 +344,19 @@ async function generarInstruccion(req, res) {
   }
 }
 
-// GET /api/instruccion-pago/presupuesto?ejercicio=&dependencia= — consulta el techo (lectura).
+// GET /api/instruccion-pago/presupuesto?ejercicio=&dependenciaId=  (o &dependencia= para retrocompat) — consulta el techo (lectura).
 async function consultarPresupuesto(req, res) {
   try {
     const ejercicio = Number(req.query.ejercicio);
+    const dependenciaId = Number.isInteger(Number(req.query.dependenciaId)) && Number(req.query.dependenciaId) > 0 ? Number(req.query.dependenciaId) : null;
     const dependencia = typeof req.query.dependencia === 'string' ? req.query.dependencia.trim() : '';
-    if (!Number.isInteger(ejercicio) || !dependencia) {
-      return res.status(400).json({ error: 'ejercicio y dependencia son requeridos' });
+    if (!Number.isInteger(ejercicio) || (dependenciaId == null && !dependencia)) {
+      return res.status(400).json({ error: 'ejercicio y dependenciaId (o dependencia) son requeridos' });
     }
-    const r = await pool.query(
-      'SELECT * FROM presupuesto_anual WHERE ejercicio = $1 AND dependencia = $2',
-      [ejercicio, dependencia]
-    );
+    // ITEM 3.1: preferir el join por FK dependencia_id; texto solo como retrocompat (legacy).
+    const r = dependenciaId != null
+      ? await pool.query('SELECT * FROM presupuesto_anual WHERE ejercicio = $1 AND dependencia_id = $2 ORDER BY id', [ejercicio, dependenciaId])
+      : await pool.query('SELECT * FROM presupuesto_anual WHERE ejercicio = $1 AND dependencia = $2 ORDER BY id', [ejercicio, dependencia]);
     return res.status(200).json(r.rowCount ? r.rows[0] : null);
   } catch (err) {
     console.error('[consultarPresupuesto]', err);
@@ -349,27 +364,35 @@ async function consultarPresupuesto(req, res) {
   }
 }
 
-// POST /api/instruccion-pago/presupuesto — carga/actualiza el techo (rol finanzas).
-// Criterio del equipo (default conservador): la carga del techo es administración presupuestal (rol finanzas);
-// se conserva aquí por cercanía a la verificación de suficiencia (art. 24 LOPSRM).
+// POST /api/instruccion-pago/presupuesto — carga/actualiza el techo de una PARTIDA específica (rol finanzas).
+// ITEM 3.1 (art. 24 párr. 2 LOPSRM): la PARTIDA específica es OBLIGATORIA (la ley ata la suficiencia a la
+// partida, no a un techo genérico) y la dependencia se referencia por FK `dependenciaId` (estable), no por
+// texto. La unicidad del techo es (ejercicio, dependencia_id, partida).
+// Criterio del equipo (default conservador): la carga del techo es administración presupuestal (rol finanzas).
 async function crearPresupuesto(req, res) {
   try {
     const ejercicio = Number(req.body?.ejercicio);
-    const dependencia = typeof req.body?.dependencia === 'string' ? req.body.dependencia.trim() : '';
+    const dependenciaId = Number.isInteger(Number(req.body?.dependenciaId)) && Number(req.body.dependenciaId) > 0 ? Number(req.body.dependenciaId) : null;
     const techo = Number(req.body?.techo);
-    const partida = typeof req.body?.partida === 'string' ? req.body.partida.trim() : null;
+    const partida = typeof req.body?.partida === 'string' ? req.body.partida.trim() : '';
     const descripcion = typeof req.body?.descripcion === 'string' ? req.body.descripcion.trim() : null;
     if (!Number.isInteger(ejercicio) || ejercicio < 2000 || ejercicio > 2100) return res.status(400).json({ error: 'ejercicio inválido (2000-2100)' });
-    if (!dependencia) return res.status(400).json({ error: 'dependencia es requerida' });
+    if (!partida) return res.status(400).json({ error: 'La partida presupuestal específica es obligatoria (art. 24 LOPSRM)' });
+    if (dependenciaId == null) return res.status(400).json({ error: 'dependenciaId (cuenta de la dependencia) es requerido' });
     if (!Number.isFinite(techo) || techo < 0) return res.status(400).json({ error: 'techo inválido (>= 0)' });
 
+    // Resolver el texto denormalizado desde la cuenta (autoridad = la FK). Debe ser rol 'dependencia'.
+    const u = await pool.query("SELECT nombre FROM usuarios WHERE id = $1 AND rol = 'dependencia'", [dependenciaId]);
+    if (u.rowCount === 0) return res.status(400).json({ error: 'La dependencia indicada no existe o la cuenta no es una dependencia' });
+    const dependencia = u.rows[0].nombre;
+
     const up = await pool.query(
-      `INSERT INTO presupuesto_anual (ejercicio, dependencia, partida, techo, descripcion, creado_por)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       ON CONFLICT (ejercicio, dependencia)
-       DO UPDATE SET techo = EXCLUDED.techo, partida = EXCLUDED.partida, descripcion = EXCLUDED.descripcion
+      `INSERT INTO presupuesto_anual (ejercicio, dependencia_id, dependencia, partida, techo, descripcion, creado_por)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       ON CONFLICT (ejercicio, dependencia_id, partida)
+       DO UPDATE SET techo = EXCLUDED.techo, descripcion = EXCLUDED.descripcion
        RETURNING *`,
-      [ejercicio, dependencia, partida, r2(techo), descripcion, req.user.id]
+      [ejercicio, dependenciaId, dependencia, partida, r2(techo), descripcion, req.user.id]
     );
     return res.status(201).json(up.rows[0]);
   } catch (err) {

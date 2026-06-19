@@ -7,7 +7,7 @@
 //   − 5 al millar 400 − retención atraso 4,000 = neto $51,600.
 // LOGIN REAL (backend+BD). No corre en CI.
 import { test, expect } from '@playwright/test';
-import { freshHome, enterAppMode, goToViaSidebar } from './_helpers.js';
+import { freshHome, enterAppMode, goToViaSidebar, irPasoEstimacion } from './_helpers.js';
 
 test.skip(!!process.env.CI, 'Etapa C: login real requiere backend+BD; se corre en local');
 
@@ -50,6 +50,7 @@ async function crearContrato(request, { pena, conPdf = false } = {}) {
   return { cid, folio, S };
 }
 
+// Abre el wizard, selecciona el contrato (paso 1 · Periodo) y fija el periodo P1.
 async function abrir(page, request, opts) {
   const { folio } = await crearContrato(request, opts);
   await freshHome(page);
@@ -58,7 +59,7 @@ async function abrir(page, request, opts) {
   const sel = page.getByTestId('select-contrato');
   const val = await sel.locator('option', { hasText: folio }).first().getAttribute('value');
   await sel.selectOption(val);
-  await expect(page.getByTestId('barras-avance')).toBeVisible();
+  await expect(page.getByTestId('wstep-periodo')).toBeVisible();
   await page.getByTestId('periodo-inicio').fill('2026-06-01');
   await page.getByTestId('periodo-fin').fill('2026-06-30');
 }
@@ -67,7 +68,10 @@ const volInput = (page) => page.getByTestId('tabla-generadores').locator('input[
 test.describe('Etapa C — retención por atraso (carátula viva + server)', () => {
   test('carátula viva: pena 5% + atraso → retención $4,000 (badge atraso) y neto $51,600', async ({ page, request }) => {
     await abrir(page, request, { pena: 0.05 });
+    await irPasoEstimacion(page, 'generadores');
+    await expect(page.getByTestId('barras-avance')).toBeVisible();
     await volInput(page).fill('400');
+    await irPasoEstimacion(page, 'caratula');
     await expect(page.getByTestId('caratula-retencion-atraso')).toContainText('4,000');
     await expect(page.getByTestId('badge-atraso')).toBeVisible();
     await expect(page.getByTestId('caratula-neto-preview')).toContainText('51,600');
@@ -75,7 +79,10 @@ test.describe('Etapa C — retención por atraso (carátula viva + server)', () 
 
   test('sin pena pactada (NULL) → retención por atraso $0 aunque haya atraso (neto $55,600)', async ({ page, request }) => {
     await abrir(page, request, { pena: null });
+    await irPasoEstimacion(page, 'generadores');
+    await expect(page.getByTestId('barras-avance')).toBeVisible();
     await volInput(page).fill('400');
+    await irPasoEstimacion(page, 'caratula');
     await expect(page.getByTestId('caratula-retencion-atraso')).toContainText('$0.00');
     await expect(page.getByTestId('badge-atraso')).toHaveCount(0);
     await expect(page.getByTestId('caratula-neto-preview')).toContainText('55,600');

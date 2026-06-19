@@ -114,12 +114,19 @@ async function integrarEstimacion(req, res) {
 
       // (1) Contrato + auth localizada. 404 antes que 403 (espejo de la bitácora).
       const cres = await client.query(
-        `SELECT id, monto, anticipo_pct, pena_convencional_pct, created_by, residente_id, superintendente_id, supervision_id
+        `SELECT id, monto, anticipo_pct, pena_convencional_pct, created_by, residente_id, superintendente_id, supervision_id, estado
            FROM contratos WHERE id = $1`,
         [contratoId]
       );
       if (cres.rowCount === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'El contrato indicado no existe' }); }
       const contrato = cres.rows[0];
+      // FIX 1.1 (CONGELADO — diff para Maiki) — FINIQUITO bloquea la integración. Con el contrato 'cerrado'
+      // el art. 64 LOPSRM declara extinguidos los derechos y obligaciones (verificado en docs/legal): no se
+      // integran estimaciones nuevas; el saldo se liquida por el finiquito. Espejo del gate de instruccion-pago.
+      if (contrato.estado === 'cerrado') {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'El contrato ya está cerrado (finiquito elaborado); no se integran estimaciones. El saldo se liquida por el finiquito (art. 64 LOPSRM).' });
+      }
       if (contrato.superintendente_id !== req.user.id) {
         await client.query('ROLLBACK');
         return res.status(403).json({ error: 'Solo el superintendente asignado a este contrato puede integrar estimaciones' });

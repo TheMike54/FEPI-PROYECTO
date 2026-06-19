@@ -4,7 +4,7 @@
 // /contratos/expediente-ambiente, fuera del catálogo (SoloRol, NO toca permisos.js). Solo navegación +
 // lectura. LOGIN REAL (backend+BD) → se salta en CI.
 import { test, expect } from '@playwright/test';
-import { freshHome, enterAppMode, goToViaSidebar, sidebarLinkFor } from './_helpers.js';
+import { freshHome, enterAppMode } from './_helpers.js';
 
 const skipEnCI = () => test.skip(!!process.env.CI, 'login real requiere backend+BD; se corre en local');
 const VIEW = '/contratos/expediente-ambiente';
@@ -21,9 +21,9 @@ for (const rol of ['residente', 'contratista', 'supervision', 'dependencia']) {
       await enterAppMode(page, rol);
     });
 
-    test('el link aparece en el Sidebar y el cascarón carga con sus 3 bloques y enlaces reales', async ({ page }) => {
-      await expect(await sidebarLinkFor(page, VIEW)).toBeVisible();
-      await goToViaSidebar(page, VIEW);
+    test('el cascarón carga (por URL) con sus 3 bloques y enlaces reales', async ({ page }) => {
+      await page.goto(`http://localhost:5173${VIEW}`);
+      await page.waitForLoadState('networkidle');
       await expect(page.getByRole('heading', { name: TITULO })).toBeVisible();
       await expect(page.getByTestId('select-contrato')).toBeVisible();
       for (let n = 1; n <= 3; n++) {
@@ -62,7 +62,8 @@ test.describe('Ambiente expediente — resumen y enlaces con el contrato demo', 
 
     await freshHome(page);
     await enterAppMode(page, 'residente');
-    await goToViaSidebar(page, VIEW);
+    await page.goto(`http://localhost:5173${VIEW}`);
+    await page.waitForLoadState('networkidle');
     await page.getByTestId('select-contrato').selectOption({ value: String(demo.id) });
 
     await expect(page.getByTestId('resumen-contrato')).toBeVisible({ timeout: 10000 });

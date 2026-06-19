@@ -142,6 +142,14 @@ async function registrarEndoso(req, res) {
     const nuevoMonto = numOrNull(b.nuevo_monto);
     if (nuevoMonto !== null && nuevoMonto < 0) return res.status(400).json({ error: 'El nuevo monto no puede ser negativo' });
     if (b.nueva_vigencia && vigenciaVencida(b.nueva_vigencia)) return res.status(400).json({ error: 'La nueva vigencia no puede estar vencida' });
+    // FIX 1.3 — el endoso debe traer el dato que su MOTIVO ajusta (art. 91 RLOPSRM, que remite al art. 98 fr. II
+    // y último párrafo): un endoso de ampliación de monto sin nuevo_monto, o de prórroga sin nueva_vigencia, o
+    // un endoso totalmente vacío, no ajustan la fianza y se rechazan.
+    const exigeMonto = motivo === 'ampliacion_monto' || motivo === 'mixto';
+    const exigeVigencia = motivo === 'prorroga_vigencia' || motivo === 'mixto';
+    if (exigeMonto && !(nuevoMonto > 0)) return res.status(400).json({ error: 'Un endoso por ampliación de monto requiere el nuevo monto afianzado mayor a 0 (art. 91 RLOPSRM).' });
+    if (exigeVigencia && !b.nueva_vigencia) return res.status(400).json({ error: 'Un endoso por prórroga de vigencia requiere la nueva vigencia de la póliza (art. 91 RLOPSRM).' });
+    if (nuevoMonto === null && !b.nueva_vigencia) return res.status(400).json({ error: 'El endoso no modifica nada: indica el nuevo monto afianzado y/o la nueva vigencia (art. 91 RLOPSRM).' });
     const r = await pool.query(
       `INSERT INTO garantia_endosos (garantia_id, convenio_id, motivo, nuevo_monto, nueva_vigencia, observaciones, registrado_por)
        VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, garantia_id, motivo, nuevo_monto, nueva_vigencia, observaciones, created_at`,

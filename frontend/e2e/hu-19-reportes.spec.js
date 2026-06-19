@@ -197,23 +197,23 @@ test.describe('HU-19 — modo aplicacion (Residente: ejecuta)', () => {
     expect(file.suggestedFilename()).toMatch(/reporte_1_avance-fisico_.*\.pdf$/);
   });
 
-  test('el reporte 4 (observaciones) queda deshabilitado: sin fuente (HU-15)', async ({ page, request }) => {
+  // FIX 2.2 — antes R4 estaba deshabilitado por falta de fuente; ahora hay GET /observaciones/contrato.
+  test('FIX 2.2 — el reporte 4 (observaciones, HU-15) ya está disponible a nivel contrato', async ({ page, request }) => {
     const folio = await crearContratoConConceptos(request);
     await goToViaSidebar(page, VIEW_PATH);
     await seleccionarContratoPorFolio(page, folio);
-    // Aun con contrato cargado, R4 no tiene fuente → permanece deshabilitado (no se inventa dummy).
-    await expect(page.getByTestId('btn-exportar-4-excel')).toBeDisabled();
+    // Con contrato cargado, R4 tiene fuente → habilitado (exporta el listado real; vacío si aún no hay
+    // observaciones, lo cual es válido: encabezados sin filas, sin invento).
+    await expect(page.getByTestId('btn-exportar-4-excel')).toBeEnabled();
   });
 
   // SMOKE (decisión #7): sobre un contrato sembrado completo (programa+bitácora+estimación+pago+
-  // convenio), los 6 reportes CON fuente se exportan (archivo real); R4 sigue deshabilitado.
+  // convenio), los reportes CON fuente se exportan (archivo real); R4 (observaciones) ya tiene fuente (FIX 2.2).
   test('exporta los reportes con fuente del contrato sembrado; el periodo solo etiqueta (CA-2)', async ({ page, request }) => {
     test.slow(); // el seed encadena varios endpoints (contrato→PDF→bitácora→estimación→pago→convenio)
     const { folio } = await sembrarContratoCompleto(request);
     await goToViaSidebar(page, VIEW_PATH);
     await seleccionarContratoPorFolio(page, folio);
-
-    await expect(page.getByTestId('btn-exportar-4-excel')).toBeDisabled(); // R4: sin fuente (HU-15)
 
     // R5 (bitácora) requiere apertura: el seed la creó → debe quedar habilitado.
     const descargables = [
@@ -221,6 +221,7 @@ test.describe('HU-19 — modo aplicacion (Residente: ejecuta)', () => {
       { testid: 'btn-exportar-1-excel', re: /reporte_1_avance-fisico_.*\.xlsx$/ },
       { testid: 'btn-exportar-2-excel', re: /reporte_2_avance-financiero_.*\.xlsx$/ },
       { testid: 'btn-exportar-3-excel', re: /reporte_3_estimaciones_.*\.xlsx$/ },
+      { testid: 'btn-exportar-4-excel', re: /reporte_4_observaciones_.*\.xlsx$/ }, // FIX 2.2
       { testid: 'btn-exportar-5-pdf',   re: /reporte_5_bitacora_.*\.pdf$/ },
       { testid: 'btn-exportar-6-excel', re: /reporte_6_modificatorios_.*\.xlsx$/ },
       { testid: 'btn-exportar-7-excel', re: /reporte_7_penalizaciones_.*\.xlsx$/ }

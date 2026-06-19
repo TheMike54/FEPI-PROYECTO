@@ -19,6 +19,12 @@ const { esParteOSupervision } = require('../lib/acceso');
 // Se reutiliza el folio atómico y la redacción del controller de bitácora (NO se duplica la lógica).
 const { insertarNotaAtomica, textoNotaSustitucion } = require('./bitacora.controller');
 
+// FIX 3.4 — la DEPENDENCIA contratante NO es sustituible: el art. 125 fr. I inciso g) RLOPSRM solo manda
+// registrar "la sustitución del superintendente, del anterior residente y de la supervisión" (verificado en
+// docs/legal/reg.txt) — la dependencia no figura. Este whitelist es el blindaje: un `rol` fuera de estos 3
+// (incluido 'dependencia') se rechaza con 400, y COL_CACHE no expone `dependencia_id`, así que la sustitución
+// NUNCA puede tocar al contratante. La corrección de una dependencia mal capturada es vía administrativa, no
+// por este endpoint.
 const ROLES_ROSTER = ['residente', 'superintendente', 'supervision'];
 // rol-de-roster → rol-de-cuenta esperado (convención del alta/HU-12: el superintendente es una
 // cuenta de rol 'contratista'). Convención del equipo (criterio, default conservador): el "rol de

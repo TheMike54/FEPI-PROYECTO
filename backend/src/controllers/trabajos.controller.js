@@ -65,7 +65,7 @@ async function acumuladoEjecutado(client, conceptoId, excluirId) {
   const r = await client.query(
     `SELECT COALESCE(SUM(cantidad), 0) AS acum
        FROM concepto_avance
-      WHERE contrato_concepto_id = $1 AND ($2::int IS NULL OR id <> $2::int)`,
+      WHERE contrato_concepto_id = $1 AND estado = 'vigente' AND ($2::int IS NULL OR id <> $2::int)`,
     [conceptoId, excluirId ?? null]
   );
   return Number(r.rows[0].acum);
@@ -105,7 +105,7 @@ async function validarProgramaPeriodo(client, concepto, periodo, nuevaCantidad, 
     `SELECT COALESCE(SUM(ca.cantidad), 0) AS ejecutado
        FROM concepto_avance ca
        JOIN contrato_periodos cp ON cp.id = ca.contrato_periodo_id
-      WHERE ca.contrato_concepto_id = $1 AND cp.numero <= $2
+      WHERE ca.contrato_concepto_id = $1 AND cp.numero <= $2 AND ca.estado = 'vigente'
         AND ($3::int IS NULL OR ca.id <> $3::int)`,
     [concepto.concepto_id, periodo.numero, excluirId ?? null]
   );
@@ -147,7 +147,7 @@ async function trabajosDeContrato(req, res) {
       `SELECT cc.id AS contrato_concepto_id, cc.clave, cc.concepto, cc.unidad,
               cc.cantidad AS cantidad_contratada,
               COALESCE((SELECT SUM(ca.cantidad) FROM concepto_avance ca
-                         WHERE ca.contrato_concepto_id = cc.id), 0) AS acumulado_ejecutado
+                         WHERE ca.contrato_concepto_id = cc.id AND ca.estado = 'vigente'), 0) AS acumulado_ejecutado
          FROM contrato_conceptos cc
         WHERE cc.contrato_id = $1
         ORDER BY cc.orden`,
@@ -158,7 +158,8 @@ async function trabajosDeContrato(req, res) {
     const avances = await pool.query(
       `SELECT ca.id, ca.contrato_concepto_id, ca.contrato_periodo_id, cp.numero AS periodo_numero,
               ca.nota_id, bn.numero AS nota_numero, bn.asunto AS nota_asunto,
-              ca.cantidad, ca.fecha, ca.observaciones, ca.registrado_por
+              ca.cantidad, ca.fecha, ca.observaciones, ca.registrado_por,
+              ca.estado, ca.reemplaza_a
          FROM concepto_avance ca
          JOIN contrato_conceptos cc ON cc.id = ca.contrato_concepto_id
          LEFT JOIN contrato_periodos cp ON cp.id = ca.contrato_periodo_id
@@ -321,14 +322,20 @@ async function registrarAvance(req, res) {
   }
 }
 
-// PATCH /api/trabajos/:id — edita cantidad / observaciones de una entrada. Revalida art. 118
-// (excluyéndose, BLOQUEA) y el programa por periodo (AVISO no bloqueante, O-PROFE). El PERIODO no cambia.
-// O4: la nota es AUTOMÁTICA y de sistema (no se edita aquí); la nota original queda como el
-// asiento del registro inicial (editar la cantidad no la regenera — limitación documentada).
-async function actualizarAvance(req, res) {
+// POST /api/trabajos/:id/corregir — FIX 3.3: el avance es APPEND-ONLY (art. 123 fr. VI/VII RLOPSRM). La
+// entrada original NO se edita ni se borra: se ANULA (estado vigente→anulada, blindado por el trigger
+// sigecop_avance_inmutable) y se registra una entrada NUEVA vinculada (reemplaza_a) con la cantidad
+// corregida + su propia nota de bitácora "dice / debe decir". Así la cadena dato↔nota inmutable queda
+// íntegra. Body: { cantidad, observaciones?, motivo? }. art. 118 se revalida sobre las VIGENTES.
+async function corregirAvance(req, res) {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'id inválido' });
   const body = req.body || {};
+  const cantRaw = Number(body.cantidad);
+  if (!Number.isFinite(cantRaw) || cantRaw < 0) return res.status(400).json({ error: 'cantidad debe ser un número mayor o igual a 0' });
+  const cantidad = q3(cantRaw);
+  const observaciones = typeof body.observaciones === 'string' ? body.observaciones.trim() || null : null;
+  const motivo = typeof body.motivo === 'string' ? body.motivo.trim() || null : null;
 
   let client;
   try {
@@ -337,69 +344,77 @@ async function actualizarAvance(req, res) {
       await client.query('BEGIN');
 
       const ares = await client.query(
-        'SELECT id, contrato_concepto_id, contrato_periodo_id, nota_id, cantidad, fecha, observaciones FROM concepto_avance WHERE id = $1 FOR UPDATE',
+        "SELECT id, contrato_concepto_id, contrato_periodo_id, cantidad, estado FROM concepto_avance WHERE id = $1 FOR UPDATE",
         [id]
       );
       if (ares.rowCount === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Avance no encontrado' }); }
-      const actual = ares.rows[0];
+      const original = ares.rows[0];
+      if (original.estado !== 'vigente') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'Ese avance ya fue anulado/corregido; corrige la entrada vigente.' }); }
 
-      // Candado SIMÉTRICO al POST (cierre del art. 118): además del lock de la fila editada (arriba),
-      // se toma el lock de la fila del CONCEPTO para que un POST y un PATCH —o dos PATCH— concurrentes
-      // sobre el MISMO concepto se serialicen al revalidar el acumulado. Orden de locks avance→concepto
-      // (el POST solo toma el concepto y nunca filas de avance) ⇒ sin ciclos/deadlock.
-      await client.query('SELECT 1 FROM contrato_conceptos WHERE id = $1 FOR UPDATE', [actual.contrato_concepto_id]);
+      // Lock del concepto (cierre del art. 118, simétrico al POST).
+      await client.query('SELECT 1 FROM contrato_conceptos WHERE id = $1 FOR UPDATE', [original.contrato_concepto_id]);
 
-      const concepto = await cargarConceptoContrato(client, actual.contrato_concepto_id);
+      const concepto = await cargarConceptoContrato(client, original.contrato_concepto_id);
       if (!concepto) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Concepto no encontrado' }); }
-      if (!esParteOSupervision(req.user, concepto)) {
-        await client.query('ROLLBACK');
-        return res.status(403).json({ error: 'No tienes acceso a este contrato' });
+      if (!esParteOSupervision(req.user, concepto)) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'No tienes acceso a este contrato' }); }
+
+      // Periodo del original (la corrección conserva el periodo).
+      let periodo = null;
+      if (original.contrato_periodo_id) {
+        const pr = await client.query('SELECT id, numero, inicio, fin FROM contrato_periodos WHERE id = $1', [original.contrato_periodo_id]);
+        periodo = pr.rowCount ? pr.rows[0] : null;
       }
 
-      // cantidad final (la nueva si se envía; si no, la actual).
-      let cantidad = Number(actual.cantidad);
-      if (body.cantidad !== undefined) {
-        const cantRaw = Number(body.cantidad);
-        if (!Number.isFinite(cantRaw) || cantRaw < 0) {
-          await client.query('ROLLBACK');
-          return res.status(400).json({ error: 'cantidad debe ser un número mayor o igual a 0' });
-        }
-        cantidad = q3(cantRaw);
-      }
+      // (1) ANULA la original (el trigger solo permite vigente→anulada, sin tocar sus datos).
+      await client.query("UPDATE concepto_avance SET estado = 'anulada', anulada_por = $2, anulada_en = NOW() WHERE id = $1", [id, req.user.id]);
 
-      // observaciones final.
-      let observaciones = actual.observaciones;
-      if ('observaciones' in body) {
-        observaciones = typeof body.observaciones === 'string' ? body.observaciones.trim() || null : null;
-      }
-
-      // O4 + O-PROFE: validación de periodo INFORMATIVA (AVISO, ya no bloquea), igual que el POST. El
-      // periodo no cambia. Solo art. 118 (abajo) bloquea.
-      let avisoPrograma = null;
-      if (cantidad > 0 && actual.contrato_periodo_id && await contratoTienePrograma(client, concepto.contrato_id)) {
-        const pr = await client.query('SELECT id, numero, inicio, fin FROM contrato_periodos WHERE id = $1', [actual.contrato_periodo_id]);
-        if (pr.rowCount) {
-          const vp = await validarProgramaPeriodo(client, concepto, pr.rows[0], cantidad, id);
-          if (vp.aviso) avisoPrograma = vp.aviso;
-        }
-      }
-
-      // art. 118 (BLOQUEO, NO se toca): Σ ejecutado por concepto (excluyéndose) + cantidad ≤ contratado.
-      const acum = await acumuladoEjecutado(client, actual.contrato_concepto_id, id);
+      // (2) art. 118 (BLOQUEO): Σ ejecutado VIGENTE (ya sin la original anulada) + nueva cantidad ≤ contratado.
+      const acum = await acumuladoEjecutado(client, original.contrato_concepto_id, null);
       if (acum + cantidad > Number(concepto.cantidad_contratada) + EPS_CANT) {
         await client.query('ROLLBACK');
         return res.status(409).json({ error: `Excede lo contratado (art. 118 RLOPSRM) en: ${concepto.concepto}` });
       }
 
-      const upd = await client.query(
-        `UPDATE concepto_avance SET cantidad = $2, observaciones = $3
-          WHERE id = $1
-         RETURNING id, contrato_concepto_id, contrato_periodo_id, nota_id, cantidad, fecha, observaciones, registrado_por`,
-        [id, cantidad, observaciones]
+      // (3) aviso de programa (no bloquea, O-PROFE).
+      let avisoPrograma = null;
+      if (cantidad > 0 && periodo && await contratoTienePrograma(client, concepto.contrato_id)) {
+        const vp = await validarProgramaPeriodo(client, concepto, periodo, cantidad, null);
+        if (vp.aviso) avisoPrograma = vp.aviso;
+      }
+
+      // (4) Nota de bitácora de la corrección ("dice / debe decir") si hay bitácora abierta; si no, diferida.
+      let notaId = null; let notaCreada = null;
+      const bitId = await bitacoraAbiertaId(client, concepto.contrato_id);
+      if (bitId) {
+        const asunto = `Corrección de avance — ${concepto.concepto}`;
+        const contenido =
+          `Corrección del avance${periodo ? ` del periodo ${periodo.numero}` : ''} en "${concepto.concepto}": ` +
+          `dice ${original.cantidad} ${concepto.unidad}, debe decir ${cantidad} ${concepto.unidad}.` +
+          `${motivo ? ` Motivo: ${motivo}.` : ''} ` +
+          `(art. 123 fr. VI/VII RLOPSRM: la entrada original se anula y se registra esta corrección vinculada; no se sobrescribe.)`;
+        notaCreada = await insertarNotaAtomica(client, {
+          bitacoraId: bitId, tipo: 'avance', asunto, contenido, emisorId: req.user.id, tag: 'correccion'
+        });
+        notaId = notaCreada.id;
+      }
+
+      // (5) INSERT de la entrada NUEVA vinculada (reemplaza_a = original), mismo periodo/concepto.
+      const ins = await client.query(
+        `INSERT INTO concepto_avance
+           (contrato_concepto_id, contrato_periodo_id, nota_id, cantidad, fecha, observaciones, registrado_por, reemplaza_a)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING id, contrato_concepto_id, contrato_periodo_id, nota_id, cantidad, fecha, observaciones, registrado_por, estado, reemplaza_a`,
+        [original.contrato_concepto_id, original.contrato_periodo_id, notaId, cantidad, periodo ? periodo.fin : null, observaciones, req.user.id, id]
       );
 
       await client.query('COMMIT');
-      return res.status(200).json({ avance: upd.rows[0], aviso_programa: avisoPrograma });
+      return res.status(201).json({
+        avance: ins.rows[0],
+        anulado_id: id,
+        nota: notaCreada ? { id: notaCreada.id, numero: notaCreada.numero, tipo: notaCreada.tipo } : null,
+        nota_diferida: bitId === null,
+        aviso_programa: avisoPrograma
+      });
     } catch (e) {
       try { await client.query('ROLLBACK'); } catch (_) { /* el client pudo morir */ }
       throw e;
@@ -407,45 +422,12 @@ async function actualizarAvance(req, res) {
       client.release();
     }
   } catch (err) {
-    console.error('[actualizarAvance]', err);
+    console.error('[corregirAvance]', err);
     return res.status(500).json({ error: 'Error interno' });
   }
 }
 
-// DELETE /api/trabajos/:id — elimina una entrada de avance. Acotado por participación.
-async function eliminarAvance(req, res) {
-  const id = Number(req.params.id);
-  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'id inválido' });
-
-  let client;
-  try {
-    client = await pool.connect();
-    try {
-      await client.query('BEGIN');
-
-      const ares = await client.query('SELECT id, contrato_concepto_id FROM concepto_avance WHERE id = $1 FOR UPDATE', [id]);
-      if (ares.rowCount === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Avance no encontrado' }); }
-
-      const concepto = await cargarConceptoContrato(client, ares.rows[0].contrato_concepto_id);
-      if (!concepto) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Concepto no encontrado' }); }
-      if (!esParteOSupervision(req.user, concepto)) {
-        await client.query('ROLLBACK');
-        return res.status(403).json({ error: 'No tienes acceso a este contrato' });
-      }
-
-      await client.query('DELETE FROM concepto_avance WHERE id = $1', [id]);
-      await client.query('COMMIT');
-      return res.status(200).json({ eliminado: true, id });
-    } catch (e) {
-      try { await client.query('ROLLBACK'); } catch (_) { /* el client pudo morir */ }
-      throw e;
-    } finally {
-      client.release();
-    }
-  } catch (err) {
-    console.error('[eliminarAvance]', err);
-    return res.status(500).json({ error: 'Error interno' });
-  }
-}
-
-module.exports = { trabajosDeContrato, registrarAvance, actualizarAvance, eliminarAvance };
+// FIX 3.3 — se ELIMINARON los endpoints PATCH (actualizarAvance) y DELETE (eliminarAvance): el avance es
+// append-only (art. 123 fr. VI RLOPSRM). La corrección se hace con POST /:id/corregir (anula + registro
+// nuevo vinculado). El trigger sigecop_avance_inmutable blinda la regla también a nivel BD.
+module.exports = { trabajosDeContrato, registrarAvance, corregirAvance };

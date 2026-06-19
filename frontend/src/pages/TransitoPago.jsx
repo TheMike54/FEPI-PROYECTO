@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import EncabezadoContrato from '../components/ui/EncabezadoContrato.jsx';
@@ -6,6 +7,7 @@ import Boton from '../components/ui/Boton.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
+import RegistroPagoForm from '../components/pagos/RegistroPagoForm.jsx';
 
 // HU-20 — Tránsito a pago. CABLEADO al backend real (GET/POST /api/instruccion-pago): suficiencia
 // presupuestal (art. 24), checklist de soportes (factura/CFDI metadatos + fianza de cumplimiento
@@ -79,7 +81,7 @@ function SoporteRow({ label, ok, detalle, children }) {
 }
 
 export default function TransitoPago() {
-  const { token } = useSesion();
+  const { token, rol } = useSesion();
   const { soloLectura, nivel } = useVistaHU('HU-20');
   const { showToast } = useToast();
   const sinSesion = !token;
@@ -97,6 +99,18 @@ export default function TransitoPago() {
   const [facturaDesc, setFacturaDesc] = useState('');
   const [cfdiFolio, setCfdiFolio] = useState('');
   const [techoVal, setTechoVal] = useState('');
+  const [partidaVal, setPartidaVal] = useState('');
+
+  // FASE 4 (rediseño por bloques) — WIZARD del tránsito a pago: Suficiencia → Soportes → Instrucción
+  // (patrón del Alta/Estimación). Reusa los MISMOS componentes/testids; navegación libre entre pasos
+  // (el gate duro es el botón "Generar instrucción", que ya exige suficiencia + soportes, art. 24/54).
+  const [pasoPago, setPasoPago] = useState(0);
+  const PASOS_PAGO = [
+    { key: 'suficiencia', label: 'Suficiencia' },
+    { key: 'soportes', label: 'Soportes' },
+    { key: 'instruccion', label: 'Instrucción' },
+    { key: 'registro', label: 'Registrar pago' }, // F6: HU-21 embebida como 4º paso (botón gateado a finanzas)
+  ];
 
   useEffect(() => {
     if (sinSesion) return;
@@ -126,7 +140,7 @@ export default function TransitoPago() {
     } finally { setCargando(false); }
   }, [showToast]);
 
-  const seleccionarEstimacion = (id) => { setEstimacionId(id); setFacturaDesc(''); setCfdiFolio(''); cargarTransito(id); };
+  const seleccionarEstimacion = (id) => { setEstimacionId(id); setFacturaDesc(''); setCfdiFolio(''); setPasoPago(0); cargarTransito(id); };
 
   const registrarSoporte = async (nombre, descripcion) => {
     try {
@@ -139,9 +153,17 @@ export default function TransitoPago() {
   const guardarTecho = async () => {
     const t = Number(techoVal);
     if (!Number.isFinite(t) || t < 0) { showToast('Techo inválido'); return; }
+    // ITEM 3.1 (art. 24 LOPSRM): la partida específica es obligatoria; la dependencia se manda por FK.
+    if (!partidaVal.trim()) { showToast('La partida presupuestal específica es obligatoria (art. 24 LOPSRM)'); return; }
+    if (transito.estimacion.dependencia_id == null) { showToast('El contrato no tiene dependencia asociada por FK (dato legacy); no se puede cargar el techo'); return; }
     try {
-      await api.crearPresupuesto({ ejercicio: transito.estimacion.ejercicio, dependencia: transito.estimacion.dependencia, techo: t });
-      setTechoVal(''); await cargarTransito(estimacionId);
+      await api.crearPresupuesto({
+        ejercicio: transito.estimacion.ejercicio,
+        dependenciaId: transito.estimacion.dependencia_id,
+        partida: partidaVal.trim(),
+        techo: t,
+      });
+      setTechoVal(''); setPartidaVal(''); await cargarTransito(estimacionId);
       showToast('Techo presupuestal cargado');
     } catch (e) { showToast(e.payload?.error || 'No se pudo cargar el techo (¿rol finanzas?)'); }
   };
@@ -221,32 +243,66 @@ export default function TransitoPago() {
             ]}
           />
 
-          {instr && (
-            <div className="bg-green-50 border-l-4 border-exito px-4 py-3 mb-6 text-sm rounded-r-md" data-testid="aviso-instruccion-generada">
-              <strong>✓ Instrucción de pago generada</strong> el {String(instr.fecha_instruccion).slice(0, 10)} ·
-              estado <strong>{instr.estado}</strong> · monto {moneda(instr.monto)} · CFDI {instr.factura_cfdi || '—'}.
-              {' '}Notificada a Finanzas. Plazo de pago: 20 días naturales (art. 54 LOPSRM).
-            </div>
-          )}
+          {/* WIZARD del tránsito (FASE 4): Suficiencia → Soportes → Instrucción. Navegación libre; el gate
+              duro es "Generar instrucción" (exige suficiencia + soportes, art. 24 / 54 LOPSRM). */}
+          <nav className="flex flex-wrap gap-2 my-6" data-testid="wizard-pago-pasos" aria-label="Pasos del tránsito a pago">
+            {PASOS_PAGO.map((p, i) => {
+              const estado = i === pasoPago ? 'curr' : i < pasoPago ? 'done' : 'todo';
+              return (
+                <button
+                  key={p.key}
+                  type="button"
+                  onClick={() => setPasoPago(i)}
+                  data-testid={`wpaso-pago-${p.key}`}
+                  data-estado={estado}
+                  aria-current={estado === 'curr' ? 'step' : undefined}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm border ${estado === 'curr' ? 'bg-guinda text-white border-guinda' : estado === 'done' ? 'bg-guinda-soft text-guinda border-guinda/30' : 'bg-white text-tinta-sec border-borde'}`}
+                >
+                  <span className={`flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold ${estado === 'curr' ? 'bg-white text-guinda' : estado === 'done' ? 'bg-guinda text-white' : 'bg-pagina text-tinta-sec'}`}>{i + 1}</span>
+                  {p.label}
+                </button>
+              );
+            })}
+          </nav>
 
+          {/* PASO 1 · Suficiencia presupuestal (+ carga de techo de finanzas). */}
+          {pasoPago === 0 && (
+          <div data-testid="wstep-pago-suficiencia">
           <SuficienciaPresupuestal suf={suf} />
 
           {/* Carga de techo (finanzas) cuando falta presupuesto. */}
           {suf.sin_presupuesto && !soloLectura && (
             <div className="bg-white border border-borde rounded-md p-5 mb-6">
               <h3 className="text-sm font-bold uppercase tracking-wider text-tinta-sec mb-2">Cargar techo presupuestal (finanzas)</h3>
-              <div className="flex items-end gap-3 flex-wrap">
-                <div>
-                  <label className="sg-label">Techo anual ({transito.estimacion.dependencia || 's/dependencia'} · {transito.estimacion.ejercicio ?? 's/ejercicio'})</label>
-                  <input type="number" min="0" step="any" className="sg-input max-w-[240px]" value={techoVal} onChange={(e) => setTechoVal(e.target.value)} data-testid="input-techo" />
-                </div>
-                <Boton onClick={guardarTecho} data-testid="btn-cargar-techo">Cargar techo</Boton>
-              </div>
-              <p className="text-[11px] text-tinta-sec mt-2">El techo es el insumo de la <strong>suficiencia presupuestal del art. 24 LOPSRM</strong> (partida específica del ejercicio); su carga la realiza <strong>finanzas</strong>. Sin techo cargado, la suficiencia no es verificable y la instrucción no se genera.</p>
+              {transito.estimacion.dependencia_id == null ? (
+                <p className="text-sm text-aviso" data-testid="aviso-sin-dependencia-fk">
+                  ⚠️ El contrato no tiene dependencia asociada por FK (dato legacy); no se puede ubicar la partida del art. 24 LOPSRM. Re-captura el alta o contacta a la administración.
+                </p>
+              ) : (
+                <>
+                  <div className="flex items-end gap-3 flex-wrap">
+                    <div>
+                      <label className="sg-label">Partida específica (art. 24 LOPSRM) <span className="text-peligro">*</span></label>
+                      <input type="text" maxLength={60} className="sg-input max-w-[220px]" placeholder="p. ej. 6221" value={partidaVal} onChange={(e) => setPartidaVal(e.target.value)} data-testid="input-partida" />
+                    </div>
+                    <div>
+                      <label className="sg-label">Techo de la partida ({transito.estimacion.dependencia || 's/dependencia'} · {transito.estimacion.ejercicio ?? 's/ejercicio'})</label>
+                      <input type="number" min="0" step="any" className="sg-input max-w-[240px]" value={techoVal} onChange={(e) => setTechoVal(e.target.value)} data-testid="input-techo" />
+                    </div>
+                    <Boton onClick={guardarTecho} disabled={!partidaVal.trim()} data-testid="btn-cargar-techo">Cargar techo</Boton>
+                  </div>
+                  <p className="text-[11px] text-tinta-sec mt-2">El art. 24 LOPSRM ata la suficiencia a la <strong>partida o partidas específicas</strong>: la partida es obligatoria. El techo es el insumo de la <strong>suficiencia presupuestal</strong>; su carga la realiza <strong>finanzas</strong>. Sin partida y techo cargados, la suficiencia no es verificable y la instrucción no se genera.</p>
+                </>
+              )}
             </div>
           )}
 
-          {/* Soportes obligatorios. */}
+          </div>
+          )}
+
+          {/* PASO 2 · Soportes obligatorios. */}
+          {pasoPago === 1 && (
+          <div data-testid="wstep-pago-soportes">
           <div className="bg-white border border-borde rounded-md p-5 mb-6">
             <h2 className="text-lg font-bold text-guinda mb-3">Soportes obligatorios</h2>
             <div className="overflow-x-auto border border-borde rounded-md">
@@ -283,6 +339,20 @@ export default function TransitoPago() {
               ⛔ Carga de archivo no disponible (falta infra de almacenamiento): se registran metadatos (folio CFDI) y la fianza se lee de las garantías del contrato.
             </p>
           </div>
+          </div>
+          )}
+
+          {/* PASO 3 · Instrucción de pago (semáforo del plazo + generar + registro del pago HU-21). */}
+          {pasoPago === 2 && (
+          <div data-testid="wstep-pago-instruccion">
+
+          {instr && (
+            <div className="bg-green-50 border-l-4 border-exito px-4 py-3 mb-6 text-sm rounded-r-md" data-testid="aviso-instruccion-generada">
+              <strong>✓ Instrucción de pago generada</strong> el {String(instr.fecha_instruccion).slice(0, 10)} ·
+              estado <strong>{instr.estado}</strong> · monto {moneda(instr.monto)} · CFDI {instr.factura_cfdi || '—'}.
+              {' '}Notificada a Finanzas. Plazo de pago: 20 días naturales (art. 54 LOPSRM).
+            </div>
+          )}
 
           {/* Semáforo del plazo de pago. */}
           <div className="bg-white border border-borde rounded-md p-5 mb-6">
@@ -317,6 +387,37 @@ export default function TransitoPago() {
               <Boton disabled={!puedeGenerar} onClick={generar} data-testid="btn-generar-instruccion">💸 Generar instrucción de pago</Boton>
             </div>
           )}
+
+          {/* Tras la instrucción, Finanzas REGISTRA el pago (HU-21) — siguiente eslabón del ciclo de cobro. */}
+          {instr && (
+            <div className="mt-4 pt-3 border-t border-borde">
+              <p className="text-sm text-tinta-sec mb-2">Emitida la instrucción, Finanzas <strong>registra el pago</strong> (importe = neto, no se paga dos veces — HU-21).</p>
+              <Link to={`/pagos/registro?contrato=${transito.estimacion.contrato_id}`} className="sg-btn-secondary inline-block" data-testid="link-registrar-pago">Ir a registrar el pago (HU-21) →</Link>
+            </div>
+          )}
+          </div>
+          )}
+
+          {/* F6 — PASO 4: Registrar pago (HU-21) EMBEBIDO. Reusa el componente compartido RegistroPagoForm
+              (única fuente del POST /api/pagos); el botón se gatea a rol==='finanzas'. La ruta /pagos/registro
+              se conserva (el enlace de arriba y los specs de HU-21 siguen válidos). */}
+          {pasoPago === 3 && (
+          <div data-testid="wstep-pago-registro">
+            <p className="text-sm text-tinta-sec mb-4">
+              Emitida la instrucción, <strong>Finanzas registra el pago</strong> de la estimación (importe = neto,
+              no se paga dos veces — art. 54 LOPSRM).{rol !== 'finanzas' && ' El registro del pago lo ejecuta Finanzas.'}
+            </p>
+            <RegistroPagoForm contratoId={contratoId} soloLectura={rol !== 'finanzas'} />
+          </div>
+          )}
+
+          {/* Navegación del wizard del tránsito (navegación libre; el gate es "Generar instrucción"). */}
+          <div className="mt-6 flex justify-between items-center max-w-2xl">
+            <button type="button" onClick={() => setPasoPago(Math.max(0, pasoPago - 1))} disabled={pasoPago === 0} className="px-4 py-2 text-tinta-sec hover:text-tinta disabled:opacity-40" data-testid="btn-watras-pago">← Atrás</button>
+            {pasoPago < PASOS_PAGO.length - 1 && (
+              <button type="button" onClick={() => setPasoPago(Math.min(PASOS_PAGO.length - 1, pasoPago + 1))} className="sg-btn-primary" data-testid="btn-wsiguiente-pago">Siguiente →</button>
+            )}
+          </div>
         </>
       )}
 

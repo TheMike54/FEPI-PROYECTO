@@ -110,6 +110,18 @@ test.describe('Roster — Fix B-1: selección (sin input numérico de ID)', () =
     });
     expect(r.status(), 'ID inexistente debe ser 400').toBe(400);
   });
+
+  // FIX 3.4 — la DEPENDENCIA contratante no es persona del roster sustituible (art. 125 fr. I g RLOPSRM solo
+  // lista residente/superintendente/supervisión). El whitelist ROLES_ROSTER lo blinda.
+  test('FIX 3.4 — la dependencia NO es sustituible: rol "dependencia" → 400 (art. 125 RLOPSRM)', async ({ request }) => {
+    const { id, R } = await crearContratoB1(request);
+    const r = await request.post(`${API}/roster/contrato/${id}/sustituir`, {
+      headers: { Authorization: `Bearer ${R.token}` },
+      data: { rol: 'dependencia', nuevoUsuarioId: 1, motivo: 'intento de sustituir al contratante' }
+    });
+    expect(r.status(), 'rol dependencia no permitido').toBe(400);
+    expect(((await r.json()).error || '')).toMatch(/rol inválido|residente|superintendente|supervisi/i);
+  });
 });
 
 // ---------------------------------------------------------------------------

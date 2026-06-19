@@ -611,6 +611,12 @@ async function construirPayloadNotas(apertura, userId) {
             (NOW() > n.fecha + make_interval(days => $2::int)) AS plazo_vencido,
             EXISTS (SELECT 1 FROM bitacora_notas m
                      WHERE m.vinculada_a = n.id AND m.emisor_id IS DISTINCT FROM n.emisor_id) AS respondida,
+            -- FIX 2.1 (CONGELADO — diff para Maiki) — flags de vínculo: que la consulta de notas muestre si una
+            -- nota respalda una minuta (art. 123 fr. X RLOPSRM), una visita o un avance físico (art. 125 fr. II).
+            -- Solo lectura, aditivo, sin params nuevos; los flags fluyen al payload por el spread del .map.
+            EXISTS (SELECT 1 FROM minutas mn WHERE mn.nota_id = n.id) AS tiene_minuta,
+            EXISTS (SELECT 1 FROM visitas vi WHERE vi.nota_id = n.id) AS tiene_visita,
+            EXISTS (SELECT 1 FROM concepto_avance ca WHERE ca.nota_id = n.id) AS tiene_avance,
             COALESCE((SELECT json_agg(json_build_object(
                          'usuario_id', nf.usuario_id, 'rol_en_firma', nf.rol_en_firma,
                          'nombre', uf.nombre, 'firmado_en', nf.firmado_en) ORDER BY nf.firmado_en)

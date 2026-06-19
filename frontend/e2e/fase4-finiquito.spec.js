@@ -81,4 +81,33 @@ test.describe('FASE 4 / HU-24 — finiquito y cierre del contrato', () => {
     const recerrar = await request.post(`${API}/finiquito/contrato/${contratoId}`, { headers: { Authorization: `Bearer ${R.token}` }, data: {} });
     expect(recerrar.status()).toBe(409);
   });
+
+  // FIX 1.1 — el finiquito (contrato 'cerrado') BLOQUEA el ciclo de estimación. Art. 64 LOPSRM: con el
+  // finiquito quedan "extinguidos los derechos y obligaciones" (verificado en docs/legal); el saldo se
+  // liquida por el finiquito, no por estimaciones nuevas.
+  test('FIX 1.1 — con el contrato cerrado ya NO se integran estimaciones (409, art. 64 LOPSRM)', async ({ request }) => {
+    const { contratoId } = await sembrarContratoConBitacora(request);
+    const R = await loginApi(request, 'residente@sigecop.test');
+    const S = await loginApi(request, 'contratista@sigecop.test');
+
+    // Elaborar el finiquito → cierra el contrato.
+    const fin = await request.post(`${API}/finiquito/contrato/${contratoId}`, { headers: { Authorization: `Bearer ${R.token}` }, data: {} });
+    expect(fin.status(), 'elaborar finiquito').toBe(201);
+
+    // Un concepto del contrato para armar la integración.
+    const prep = await (await request.get(`${API}/estimacion-prep/contrato/${contratoId}`, { headers: { Authorization: `Bearer ${S.token}` } })).json();
+    const ccid = prep.conceptos?.[0]?.contrato_concepto_id;
+    expect(ccid, 'concepto del contrato').toBeTruthy();
+
+    // Integrar sobre el contrato cerrado → 409 (gate de finiquito).
+    const integ = await request.post(`${API}/estimaciones`, {
+      headers: { Authorization: `Bearer ${S.token}` },
+      data: {
+        contrato_id: contratoId, periodo_inicio: '2026-06-01', periodo_fin: '2026-06-30',
+        generadores: [{ contrato_concepto_id: ccid, cantidad_periodo: 10 }], notas: [],
+      },
+    });
+    expect(integ.status(), 'integrar sobre contrato cerrado').toBe(409);
+    expect(((await integ.json()).error || '')).toMatch(/cerrado|finiquito|art\. 64/i);
+  });
 });
