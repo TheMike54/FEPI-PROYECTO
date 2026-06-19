@@ -77,10 +77,10 @@ zona (✅ VIGENTE / 🟡 vigente-pero-redundante / 🗄️ SUPERADO → mover a 
 ### docs/analisis-y-diseno/ · docs/legal/ · docs/equipos/ · docs/referencias/
 | Archivo | Estado | 1 línea |
 |---|---|---|
-| `analisis-y-diseno/Historias_Usuario_ACTUALIZADAS_12jun.md` | ✅ **CANÓNICO** | Requisitos vigentes (criterios = sistema real). |
-| `analisis-y-diseno/HISTORIAS_POR_CICLOS.md` | ✅ VIGENTE | Vista por ciclos + checklist de conservación. |
-| `analisis-y-diseno/AUDITORIA_COHERENCIA_HU.md` | ✅ VIGENTE | Auditoría criterio-por-criterio de HU. |
-| `analisis-y-diseno/Matriz_Control_Accesos_SIGECOP.md` · `Fichas_Trazabilidad.md` | 🟡 vigente parcial | Matriz de accesos / trazabilidad (referencia). |
+| `requisitos/Historias_Usuario_ACTUALIZADAS_12jun.md` | ✅ **CANÓNICO** | Requisitos vigentes (criterios = sistema real). |
+| `requisitos/HISTORIAS_POR_CICLOS.md` | ✅ VIGENTE | Vista por ciclos + checklist de conservación. |
+| `requisitos/AUDITORIA_COHERENCIA_HU.md` | ✅ VIGENTE | Auditoría criterio-por-criterio de HU. |
+| `requisitos/Matriz_Control_Accesos_SIGECOP.md` · `Fichas_Trazabilidad.md` | 🟡 vigente parcial | Matriz de accesos / trazabilidad (referencia). |
 | `analisis-y-diseno/AUDITORIA_CODIGO_MUERTO.md` · `DECISION_CODIGO_MUERTO_13jun.md` | 🗄️ SUPERADO | Auditoría de código muerto (ya decidida). |
 | `legal/Auditoria_Legal_SIGECOP.md` · `Cobertura_Legal_LOPSRM.md` · `Cobertura_Legal_Reglamento.md` | ✅ VIGENTE (referencia legal) | Cobertura legal (referencia). |
 | `equipos/*` (5) | 🟡 vigente parcial | Docs de partición por 3 equipos; útiles si vuelven los equipos. |

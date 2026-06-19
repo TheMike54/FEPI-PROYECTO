@@ -48,7 +48,7 @@
 > de los archivos de esa fase** (todo es local), se reporta y se detiene — NO se sigue a la siguiente fase.
 
 ### FASE 0 — DOCUMENTO PRIMERO (contrato de comportamiento) · 🟢 · ~0.5 h
-- **Qué:** añadir a `docs/analisis-y-diseno/HISTORIAS_POR_CICLOS.md` la **clasificación TIPO A/B por HU + condición
+- **Qué:** añadir a `docs/requisitos/HISTORIAS_POR_CICLOS.md` la **clasificación TIPO A/B por HU + condición
   de desbloqueo + la regla de oro** (la §1 del `ESTUDIO_FACTIBILIDAD_WIZARDS_PARALELOS_18jun.md`). Es el contrato
   escrito ANTES de mover navegación.
 - **Toca:** 1 doc. **Specs:** 0. **Done:** doc revisable por el profe. **Parada:** n/a (no es código).

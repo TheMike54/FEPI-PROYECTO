@@ -3,7 +3,7 @@
 > `main` cambió **muchísimo** en ~1 semana (oleadas O0-O9, reskin UI, reconciliación del flujo de
 > estimación, integraciones HU-15/HU-19). Si su rama está atrasada, **rebasen antes de seguir** o tendrán
 > conflictos grandes y trabajarán sobre supuestos obsoletos. Fuente de verdad del estado:
-> `docs/contexto-claude/ESTADO_ACTUAL.md`.
+> `docs/estado/ESTADO_ACTUAL.md`.
 
 ---
 
@@ -56,7 +56,7 @@ guinda. (Gotcha: tocar `tailwind.config` exige `docker restart sigecop_frontend`
 `estimaciones` (`pena_convencional_pct` en contratos, `retencion_atraso`, `avance_fisico_pct`,
 `avance_financiero_pct`) · `estimacion_observaciones` (HU-15) · `concepto_avance` (HU-06). El esquema es
 **idempotente** y lo aplica `RUN_MIGRATIONS` en cada deploy. **No editen `schema.sql`**: pídanle a Maiki el
-bloque de DDL (mira `docs/contexto-claude/Borrador_DDL_Tablas_Nuevas_SIGECOP.md`).
+bloque de DDL (mira `docs/estado/Borrador_DDL_Tablas_Nuevas_SIGECOP.md`).
 
 ### (d) Reglas de negocio que cambiaron (decisiones del profe, O-PROFE)
 - **Avance que excede lo programado del periodo → AVISA, no bloquea.** Solo bloquean: **art. 118** (acumulado
@@ -127,5 +127,5 @@ controllers/routes de **auth/usuarios/contratos/estimaciones**. *(Nota: `estimac
 5) Pendientes: E3 → HU-16 (ya desbloqueada), HU-18, HU-20, generadores/soportes (art.132), R4 de HU-19.
    E2 → apertura narrativa, vincular minuta↔nota (HU-11), tipos de nota por rol.
 6) Entregar por PR sobre main rebasado, suite verde, citar artículo o [validar]. Solo Maiki integra.
-   Deadline BD Render ~25-jun, entrega ~28-jun. Estado completo: docs/contexto-claude/ESTADO_ACTUAL.md
+   Deadline BD Render ~25-jun, entrega ~28-jun. Estado completo: docs/estado/ESTADO_ACTUAL.md
 ```

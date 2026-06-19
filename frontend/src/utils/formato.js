@@ -13,6 +13,11 @@ export const fmtMXN = new Intl.NumberFormat('es-MX', { style: 'currency', curren
 // copias locales que hacían fmtMXN.format(Number(n) || 0)).
 export const monedaMXN = (n) => fmtMXN.format(Number(n) || 0);
 
+// Redondeo a 2 decimales (centavos), estable ante el error de coma flotante (Number.EPSILON). Byte-idéntico a
+// las copias locales `round2` de IntegracionEstimacion / ConveniosModificatorios / AltaContrato (DRY, art. 45
+// fr. IX: el cuadre se deriva de Σ ROUND(cant×pu, 2)). No cambia la salida.
+export const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+
 // Fecha + hora corta es-MX (estilo "dd/mm/aa hh:mm"); vacío si no hay valor. Byte-idéntico a las copias
 // locales de AperturaBitacora / EmisionNotas / PorFirmar / BuscadorNotas (dateStyle/timeStyle 'short',
 // fallback ''). OJO: NO cubre las variantes con otro fallback ('—') ni dateStyle 'long' (IntegracionEstimacion,

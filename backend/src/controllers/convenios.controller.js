@@ -158,7 +158,8 @@ async function crearConvenio(req, res) {
       if (tocaPrograma) {
         const conNull = await client.query('SELECT 1 FROM contrato_conceptos WHERE contrato_id=$1 AND clave IS NULL LIMIT 1', [contratoId]);
         if (conNull.rowCount > 0) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Este contrato tiene conceptos sin clave; no es modificable por convenio hasta clasificarlos' }); }
-        // art. 118 RLOPSRM: una cantidad contratada NUEVA no puede quedar por debajo de lo YA estimado.
+        // Criterio de diseño del equipo (sin cita legal directa; el art. 118 trata trabajos excedentes, no
+        // reducciones): una cantidad contratada NUEVA no puede quedar por debajo de lo YA estimado.
         const acum = await client.query(
           `SELECT cc.clave, COALESCE(SUM(eg.cantidad_periodo),0) AS estimado
              FROM contrato_conceptos cc
@@ -168,7 +169,7 @@ async function crearConvenio(req, res) {
         const estimadoPorClave = new Map(acum.rows.map((r) => [r.clave, Number(r.estimado)]));
         for (const c of conceptos) {
           const ya = estimadoPorClave.get(String(c.clave)) || 0;
-          if (Number(c.cantidad) + 1e-9 < ya) { await client.query('ROLLBACK'); return res.status(400).json({ error: `El concepto "${c.clave}" no puede reducirse a ${c.cantidad}: ya hay ${ya} estimado (art. 118 RLOPSRM)` }); }
+          if (Number(c.cantidad) + 1e-9 < ya) { await client.query('ROLLBACK'); return res.status(400).json({ error: `El concepto "${c.clave}" no puede reducirse a ${c.cantidad}: ya hay ${ya} estimado (no se reduce un concepto por debajo de lo ya estimado)` }); }
         }
         // El catálogo nuevo debe incluir TODOS los conceptos existentes (catálogo completo).
         const existentes = await client.query('SELECT clave FROM contrato_conceptos WHERE contrato_id = $1', [contratoId]);

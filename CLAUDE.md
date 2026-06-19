@@ -6,10 +6,10 @@ Sistema de Gestión Técnico-Administrativa de Contratos de Obra Pública (LOPSR
 ## 🔱 REGLA PERMANENTE — leer primero, mantener después (OBLIGATORIO)
 
 **ANTES de cualquier tarea, LEE:**
-1. `docs/contexto-claude/ESTADO_ACTUAL.md` — el documento **canónico** del estado real del sistema (cómo
+1. `docs/estado/ESTADO_ACTUAL.md` — el documento **canónico** del estado real del sistema (cómo
    levantarlo, arquitectura, modelo de datos, flujos críticos con `archivo:función`, catálogo de HU con
    estado, zona congelada, pendientes). Es la **fuente de verdad** sobre lo que el sistema HACE HOY.
-2. `docs/analisis-y-diseno/Historias_Usuario_ACTUALIZADAS_12jun.md` — las historias de usuario vigentes
+2. `docs/requisitos/Historias_Usuario_ACTUALIZADAS_12jun.md` — las historias de usuario vigentes
    (sus criterios = comportamiento real del sistema).
 
 **DESPUÉS de cualquier cambio que altere comportamiento o agregue funcionalidad:**
@@ -24,8 +24,13 @@ Sistema de Gestión Técnico-Administrativa de Contratos de Obra Pública (LOPSR
 4. **No dejes dos docs de estado compitiendo:** `ESTADO_ACTUAL.md` es el único; las fotos viejas viven en
    `docs/historial/`.
 
-> **Docs guía:** historia del proyecto `docs/HISTORIAL_PROYECTO.md` · plan de partición
-> `docs/equipos/Plan_Particion_3Equipos_SIGECOP.md` · DDL anticipado `docs/contexto-claude/Borrador_DDL_Tablas_Nuevas_SIGECOP.md` · briefs por equipo `docs/equipos/Prompts_Accion_Equipos_SIGECOP.md`.
+> **Docs guía:** historia del proyecto `docs/estado/HISTORIAL_PROYECTO.md` · plan de partición
+> `docs/equipos/Plan_Particion_3Equipos_SIGECOP.md` · DDL anticipado `docs/estado/Borrador_DDL_Tablas_Nuevas_SIGECOP.md` · briefs por equipo `docs/equipos/Prompts_Accion_Equipos_SIGECOP.md`.
+>
+> **Mapa de `docs/` (reorg 18-jun):** `estado/` (estado vivo: ESTADO_ACTUAL, HISTORIAL_PROYECTO, PUNTO_DE_RETOMA,
+> Borrador_DDL, DECISIONES) · `requisitos/` (historias + trazabilidad + accesos + requerimientos/validar profe) ·
+> `pruebas/` (PLAN_PRUEBAS_FINAL_MATCH + SEED + guía e2e) · `legal/` · `planes/` (vigentes) · `reportes/`
+> (vigentes) · `mockups/` · `equipos/` · `referencias/` · `historial/` (todo lo superado, nada borrado).
 
 **Resumen de zona congelada (detalle abajo §⛔):** NO tocar auth, `permisos.js`, `server.js`, `schema.sql`
 (salvo aditivo idempotente), triggers de inmutabilidad, G1-G8 del alta ni la lógica de cálculo de la

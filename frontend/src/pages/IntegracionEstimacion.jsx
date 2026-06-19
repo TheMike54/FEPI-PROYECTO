@@ -9,7 +9,7 @@ import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
 import { labelEstadoEstimacion } from '../data/estadoEstimacion.js';
-import { monedaMXN as moneda } from '../utils/formato.js';
+import { monedaMXN as moneda, round2 } from '../utils/formato.js';
 import DocumentoNota from '../components/notas/DocumentoNota.jsx';
 import MatrizProgramaLectura, { periodoQueContiene } from '../components/programa/MatrizProgramaLectura.jsx';
 
@@ -22,7 +22,6 @@ import MatrizProgramaLectura, { periodoQueContiene } from '../components/program
 const num = (n) => (Number(n) || 0).toLocaleString('es-MX', { maximumFractionDigits: 4 });
 // Redondeo a 2 decimales (centavos), ESPEJO del r2() del backend: la carátula viva muestra
 // EXACTAMENTE lo que materializará el server (importe=ROUND(cant×pu,2); amort/retención ROUND a 2).
-const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 // Barra de avance (0–100%) con etiqueta. Presentación pura.
 function BarraAvance({ label, pct, color, testid }) {
   const v = pct == null ? null : Math.max(0, Math.min(100, Number(pct)));

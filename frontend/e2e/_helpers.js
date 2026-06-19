@@ -62,11 +62,6 @@ export async function enterAppMode(page, rolId) {
   await page.waitForLoadState('networkidle');
 }
 
-/** Login real explícito (alias claro de enterAppMode). */
-export async function loginComo(page, rolId) {
-  await enterAppMode(page, rolId);
-}
-
 // BLOQUE 4 (acordeones del sidebar modo-sistema): los sub-pasos de cada flujo se ocultan al colapsar. Si el
 // enlace buscado no está visible, expande los flujos colapsados (clic en los chevrons `data-accordion-toggle`
 // que sigan en aria-expanded="false") hasta que el enlace aparezca. Plumbing de test: NO cambia la navegación

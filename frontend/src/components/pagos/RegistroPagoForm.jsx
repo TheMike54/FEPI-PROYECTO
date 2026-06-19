@@ -111,7 +111,7 @@ export default function RegistroPagoForm({ contratoId, soloLectura = false, onRe
             <div>
               <label className="sg-label">Importe a pagar (neto de la estimación)</label>
               <div className="sg-input bg-pagina font-semibold" data-testid="pago-importe-neto">{importeNeto != null ? mxn(importeNeto) : '—'}</div>
-              <p className="text-[11px] text-slate-500 mt-1">Derivado del servidor (neto de la estimación). No editable (art. 118 / cuadre).</p>
+              <p className="text-[11px] text-slate-500 mt-1">Derivado del servidor (neto de la estimación). No editable (art. 54 LOPSRM / cuadre).</p>
             </div>
             <div>
               <label className="sg-label">Fecha de pago *</label>

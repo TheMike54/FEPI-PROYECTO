@@ -255,8 +255,8 @@ test.describe('HU-03 — versiones del programa (lectura)', () => {
 
 // ===========================================================================
 // Fase 2 — editor de catálogo + matriz (convenios de monto / programa / mixto).
-// El backend deriva el monto (Σ ROUND(cant×pu,2)) y revalida cuadre 100% + art. 118 +
-// guardrail. El seed da SMOKE-HU03-001: monto 100,000 (CONC-01 100×600, CONC-02 50×800),
+// El backend deriva el monto (Σ ROUND(cant×pu,2)) y revalida cuadre 100% + la regla de no reducir bajo lo ya
+// estimado (criterio de diseño) + guardrail. El seed da SMOKE-HU03-001: monto 100,000 (CONC-01 100×600, CONC-02 50×800),
 // 2 periodos, programa que cuadra (CONC-01 60/40, CONC-02 20/30).
 // ===========================================================================
 
@@ -316,7 +316,7 @@ test.describe('HU-03 Fase 2 — editor de matriz (monto / programa)', () => {
     await expect(page.getByTestId('cm-programa-cuadra')).toBeVisible();
     await expect(page.getByTestId('btn-registrar-convenio')).toBeEnabled();
 
-    // Registro end-to-end del tipo 'programa' (CONC-01 120 ≥ 80 estimado → art.118 OK; +12% ≤ 25%).
+    // Registro end-to-end del tipo 'programa' (CONC-01 120 ≥ 80 estimado → no-reducción OK; +12% ≤ 25%).
     const resp = page.waitForResponse((r) => r.url().includes('/convenios/contrato/') && r.request().method() === 'POST');
     await page.getByTestId('btn-registrar-convenio').click();
     expect((await resp).status()).toBe(201);
@@ -393,10 +393,10 @@ test.describe('HU-03 Fase 2 — editor de matriz (monto / programa)', () => {
     await expect(page.getByTestId('detalle-version').getByTestId('matriz-programa')).toContainText('CONC-03');
   });
 
-  test('art. 118: reducir CONC-01 (100) por debajo de lo ya estimado (80) → backend RECHAZA (400)', async ({ page }) => {
+  test('no-reducción (criterio de diseño): reducir CONC-01 (100) por debajo de lo ya estimado (80) → backend RECHAZA (400)', async ({ page }) => {
     await page.getByTestId('cm-tipo').selectOption('monto');
     await expect(page.getByTestId('editor-programa-convenio')).toBeVisible();
-    await page.getByTestId('cm-motivo').fill('Reducción de cantidad de excavación (prueba art. 118).');
+    await page.getByTestId('cm-motivo').fill('Reducción de cantidad de excavación (prueba de la regla de no reducir).');
     // CONC-01 cantidad 100 → 70 (< 80 ya estimado). Re-cuadra sus celdas a 70 para pasar el cuadre cliente.
     await page.getByTestId('cm-concepto-cantidad-0').fill('70');
     await page.getByTestId('cm-celda-0-1').fill('40'); // 40 + 30 = 70
@@ -406,8 +406,8 @@ test.describe('HU-03 Fase 2 — editor de matriz (monto / programa)', () => {
 
     const resp = page.waitForResponse((r) => r.url().includes('/convenios/contrato/') && r.request().method() === 'POST');
     await page.getByTestId('btn-registrar-convenio').click();
-    expect((await resp).status()).toBe(400); // art. 118 RLOPSRM: no por debajo de lo estimado
-    // El backend mostró el motivo (art. 118) y NO se creó convenio ni versión nueva.
+    expect((await resp).status()).toBe(400); // criterio de diseño: no por debajo de lo ya estimado
+    // El backend rechazó (400) y NO se creó convenio ni versión nueva.
     await expect(filasConvenios(page)).toHaveCount(0);
     await expect(filasVersiones(page)).toHaveCount(1);
   });

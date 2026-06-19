@@ -2,7 +2,7 @@
 
 > **Qué es.** El registro **exhaustivo y autocontenido** del esfuerzo de esta ronda, escrito para que
 > **cualquier instancia futura de Claude (o Maiki, o el profe) retome el proyecto sin contexto previo**. NO
-> reemplaza a `docs/contexto-claude/ESTADO_ACTUAL.md` (ese es el estado VIVO); este es el **diario del
+> reemplaza a `docs/estado/ESTADO_ACTUAL.md` (ese es el estado VIVO); este es el **diario del
 > esfuerzo**. Sesión autónoma (Maiki: *"todo lo legal lo decides tú con la ley, continúa hasta finalizar"*).
 > **Todo LOCAL, sin push** — Maiki revisa los diffs e integra.
 
@@ -103,7 +103,7 @@ y el "¿convence el patrón wizard?" que el plan reserva a Maiki/profe.
    Aplicada 2× local. **GOTCHA:** el `CREATE OR REPLACE` del trigger va ANTES del backfill.
 
 ## 5. Rediseño por ciclos (wizards) + checklist de conservación
-Fuente: `docs/analisis-y-diseno/HISTORIAS_POR_CICLOS.md` (vista por ciclos que **referencia** las historias, no
+Fuente: `docs/requisitos/HISTORIAS_POR_CICLOS.md` (vista por ciclos que **referencia** las historias, no
 las reescribe). Regla de oro: **la reestructura NO cambia requisitos**. Wizards: Estimación (5 pasos), Pago (3),
 Bitácora (3 + paralelos), Avance (acción + paralelos). El checklist HU-por-HU demuestra que cada criterio
 funcional **sobrevive literal** (revisable por el profe).
@@ -126,7 +126,7 @@ funcional **sobrevive literal** (revisable por el profe).
   replicado a los 4 flujos; si no convence, se puede revertir flujo por flujo).
 
 ## 8. Cómo retomar
-- **Estado vivo:** `docs/contexto-claude/ESTADO_ACTUAL.md`. **Handoff operativo:** `docs/PUNTO_DE_RETOMA_CLAUDE_18jun.md`.
+- **Estado vivo:** `docs/estado/ESTADO_ACTUAL.md`. **Handoff operativo:** `docs/PUNTO_DE_RETOMA_CLAUDE_18jun.md`.
 - **Siguiente paso natural:** que Maiki **integre los diffs congelados + las 4 DDL** (schema.sql + Render con el
   runbook), corra la suite en su entorno, y decida sobre los `[validar]`. No hay trabajo de Etapa 1 bloqueado.
 - **Para extender el rediseño:** el patrón wizard está en `IntegracionEstimacion.jsx` (referencia) + el helper

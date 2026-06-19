@@ -5,8 +5,8 @@
 > contexto previo**. Léelo COMPLETO antes de tocar nada.
 >
 > **Regla de arranque (CLAUDE.md del proyecto):** antes de cualquier tarea, lee también
-> `docs/contexto-claude/ESTADO_ACTUAL.md` (estado canónico del sistema) y
-> `docs/analisis-y-diseno/Historias_Usuario_ACTUALIZADAS_12jun.md` (requisitos). Después de cada cambio,
+> `docs/estado/ESTADO_ACTUAL.md` (estado canónico del sistema) y
+> `docs/requisitos/Historias_Usuario_ACTUALIZADAS_12jun.md` (requisitos). Después de cada cambio,
 > ACTUALIZA `ESTADO_ACTUAL.md`.
 
 ---
@@ -183,7 +183,7 @@ Externa Demo (3). El reseed 3.5 añadió Dependencia Sur Demo, Constructora Pati
 
 ## 8. Checklist para retomar (haz esto en orden)
 
-1. Lee `docs/contexto-claude/ESTADO_ACTUAL.md` (entrada 13 = el estado más reciente) y este doc.
+1. Lee `docs/estado/ESTADO_ACTUAL.md` (entrada 13 = el estado más reciente) y este doc.
 2. Confirma la suite verde: `cd frontend && npx playwright test --reporter=line` (debe dar ~337/8/0; si
    `hu-07-alertas-atraso:237` sale rojo, es el flaky por pollution → re-córrelo solo).
 3. **Arranca la FASE 3 (wizard de Estimación):** referencias en §4 — `docs/REPORTE_REESTRUCTURACION_HISTORIAS_POR_CICLOS.md`,

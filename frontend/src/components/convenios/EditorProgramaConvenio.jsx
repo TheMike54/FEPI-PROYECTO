@@ -2,8 +2,8 @@
 // Espeja el capturador del ALTA (TabCatalogo + TabProgramaMatriz): el monto se DERIVA
 // (Σ ROUND(cant×pu,2), art. 45 fr. IX RLOPSRM) y el programa debe CUADRAR al 100% por
 // concepto (Σ celdas = contratado; RLOPSRM art. 45-A-X + LOPSRM art. 52). El backend es la
-// fuente de la verdad: revalida cuadre + art. 118 (no reducir por debajo de lo estimado) +
-// guardrail de variación; aquí solo se guía la captura.
+// fuente de la verdad: revalida cuadre + la regla de NO reducir por debajo de lo ya estimado (criterio de
+// diseño del equipo, sin cita legal directa) + guardrail de variación; aquí solo se guía la captura.
 //
 // Reglas del catálogo NUEVO (las exige el backend, crearConvenio):
 //   · debe incluir TODOS los conceptos existentes (no se pueden borrar) → fila existente sin "✕"

@@ -506,7 +506,7 @@ function textoNotaAtraso({ concepto, unidad, cantidad, periodoNumero }) {
 }
 
 // O6 (10-jun) — Redacta el asunto/contenido de la nota AUTOMÁTICA de un CONVENIO MODIFICATORIO
-// (art. 59 LOPSRM; el convenio es un hecho relevante que se asienta en la bitácora, art. 123 fr. III /
+// (art. 59 LOPSRM; el convenio es un hecho relevante que se asienta en la bitácora, art. 123 fr. XI /
 // 125 fr. I RLOPSRM). Compartida por convenios.controller (al registrar, en vivo) y por abrirBitacora
 // (al asentar los convenios previos DIFERIDOS). La variación se reporta según el `tipo`: monto/programa/
 // mixto incluyen monto; plazo/mixto incluyen plazo. `diferida` añade la aclaración temporal.
@@ -522,7 +522,7 @@ function textoNotaConvenio({ folio, tipo, deltaMontoPct, deltaPlazoPct, motivo, 
   const cola = diferida ? ' Registrado antes de abrir la bitácora; asentado al abrirla.' : '';
   const contenido =
     `Convenio modificatorio ${folio}: ${tipo}; variación ${variacion}. Motivo: ${motivo || '—'}.${cola} ` +
-    `(art. 59 LOPSRM / art. 99, 123 fr. III RLOPSRM; asiento automático del sistema.)`;
+    `(art. 59 LOPSRM / art. 99, 123 fr. XI RLOPSRM; asiento automático del sistema.)`;
   return { asunto, contenido };
 }
 

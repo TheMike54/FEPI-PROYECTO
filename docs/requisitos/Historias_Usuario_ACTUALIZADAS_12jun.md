@@ -149,7 +149,7 @@ art. 52 LOPSRM (programa como base para medir el avance / cuadre 100%); art. 54 
 50% se informa a la SFP); art. 50 fr. V LOPSRM (anticipo 100% solo en plurianual que inicia en el último
 trimestre); art. 138 párr. 3 RLOPSRM (programa/forma de aplicación del anticipo = el plan; el plan suma el
 anticipo) y art. 143 fr. I RLOPSRM (amortización proporcional del anticipo, ligada al programa; saldo a la
-estimación final, art. 143 fr. III-d); art. 138 y 139 RLOPSRM (penas convencionales por atraso); art. 191
+estimación final, art. 143 fr. III-d); art. 46 Bis LOPSRM + arts. 86-88 RLOPSRM, tope art. 90 (penas convencionales por atraso); art. 191
 LFD (retención del 5 al millar, citada en la vista); art. 47 y art. 48 fr. I y II LOPSRM (fianzas de
 anticipo y cumplimiento obligatorias); art. 46 fr. I y IV LOPSRM y art. 61 RLOPSRM (datos jurídicos:
 firmante de la dependencia y representante legal del contratista); art. 123 RLOPSRM (la dependencia no firma
@@ -278,7 +278,7 @@ otro rol que intente registrar recibe un aviso de acceso denegado.
 
 **Fundamento legal:** art. 59 LOPSRM; art. 59 Bis LOPSRM; **art. 59 párr. 3 LOPSRM (autorización por el
 servidor facultado)**; art. 99 RLOPSRM (p1 sustento del residente, p5 suscripción del facultado); art. 102
-RLOPSRM; art. 118 RLOPSRM; art. 123 fr. III RLOPSRM; art. 45 fr. IX RLOPSRM.
+RLOPSRM; art. 123 fr. XI RLOPSRM (asiento del convenio en la bitácora como asunto trascendente); art. 45 fr. IX RLOPSRM. La regla de NO reducir un concepto por debajo de lo ya estimado es **criterio de diseño del equipo** (sin cita legal directa: el art. 118 trata trabajos excedentes, no reducciones).
 
 **Criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
 - Endosos de fianzas: la ficha vieja pedía que el modificatorio aplicara y registrara los endosos de las
@@ -337,8 +337,8 @@ cualquier otro le niega el acceso.
 
 **Fundamento legal:** art. 45 fr. IX RLOPSRM (clave del concepto en el catálogo); art. 59 LOPSRM / art. 99
 RLOPSRM (convenios modificatorios); art. 125 RLOPSRM (sustitución de personas / equipo); art. 138 fr. I
-RLOPSRM (plan de amortización del anticipo); art. 123 fr. III RLOPSRM (nota de bitácora asociada a
-sustitución/convenio).
+RLOPSRM (plan de amortización del anticipo); art. 123 fr. III RLOPSRM (nota de sustitución) y art. 123 fr. XI
+RLOPSRM (nota de convenio, asunto trascendente).
 
 **Criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
 - La ficha vieja pedía 'descarga individual por bloque'; el profe lo cambió a un único PDF consolidado.
@@ -741,7 +741,7 @@ superintendente asignado a ese contrato puede hacerlo). El Residente de obra y l
 2. La carátula la calcula el sistema (fuente única de verdad, no editable después): subtotal = suma de
    cantidad × precio unitario; amortización = subtotal × % de anticipo (art. 143 fr. I RLOPSRM, proporcional
    al avance); 5 al millar = subtotal × 0.5% (art. 191 LFD); deductivas manuales; retención por atraso =
-   pena × subtotal si hay pena pactada y la obra va atrasada (art. 138/139 RLOPSRM); neto = subtotal menos
+   pena × subtotal si hay pena pactada y la obra va atrasada (art. 46 Bis LOPSRM + arts. 86-88 RLOPSRM, tope art. 90); neto = subtotal menos
    deducciones, sin IVA (art. 2 fr. XIX RLOPSRM) y nunca negativo. La pantalla solo muestra una vista previa
    en vivo.
 3. El sistema bloquea si, por concepto, lo acumulado (lo previo más el periodo) excede lo contratado (art.
@@ -754,7 +754,7 @@ superintendente asignado a ese contrato puede hacerlo). El Residente de obra y l
    del avance físico y financiero, en estado inicial 'Integrada'.
 
 **Fundamento legal:** art. 132 RLOPSRM (expediente de la estimación); art. 143 fr. I RLOPSRM (amortización
-proporcional del anticipo); art. 138/139 RLOPSRM (penas convencionales / retención por atraso); art. 191 LFD (5 al
+proporcional del anticipo); art. 46 Bis LOPSRM + arts. 86-88 RLOPSRM, tope art. 90 (penas convencionales / retención por atraso); art. 191 LFD (5 al
 millar); art. 118 RLOPSRM (tope contratado por concepto); art. 45 ap. A fr. X RLOPSRM + art. 52 LOPSRM
 (tope planeado del programa); art. 54 LOPSRM (periodo máximo 1 mes); art. 2 fr. XIX RLOPSRM (sin IVA); art.
 46 / 46 Bis LOPSRM (deductivas económicas); art. 50 fr. IV LOPSRM (autorización del titular sobre el umbral
@@ -783,7 +783,7 @@ de anticipo).
   una pantalla aparte y la ruta vieja del cascarón redirige al wizard. El **registro fotográfico** de soportes
   queda **fuera del alcance de la Etapa 1** (la ley no lo exige como requisito de la estimación; el expediente
   del art. 132 RLOPSRM se integra con generadores y notas firmadas). La reestructura **conserva todos los
-  criterios** (ver el checklist en `docs/analisis-y-diseno/HISTORIAS_POR_CICLOS.md`).
+  criterios** (ver el checklist en `docs/requisitos/HISTORIAS_POR_CICLOS.md`).
 
 ---
 
@@ -967,8 +967,10 @@ Dependencia y Finanzas **no tienen acceso** (no les aparece en el menú ni en el
    (la residencia no puede).
 
 **Fundamento legal:** art. 54 LOPSRM (plazo de presentación que no se reinicia tras reingreso, criterio del
-equipo A18: el reingreso no reabre el contador); art. 132 RLOPSRM (trazabilidad fiscal de la versión
-rechazada / inmutabilidad de estimaciones).
+equipo A18: el reingreso no reabre el contador). La **inmutabilidad / trazabilidad** de las versiones es
+**criterio de diseño del equipo** (append-only), por analogía con la inmutabilidad de la bitácora (art. 123
+fr. VI RLOPSRM: no se modifican las notas firmadas); no se funda en el art. 132 (que solo lista los documentos
+de la estimación).
 
 **Criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
 - Semántica de 'no reiniciar el plazo de presentación' del art. 54 LOPSRM: la nueva versión referencia la
@@ -1125,7 +1127,7 @@ solo-lectura, con los botones de exportar deshabilitados).
    (Integrada / Presentada / Autorizada / Rechazada / Pagada).
 
 **Fundamento legal:** art. 54 LOPSRM (presentación de estimación / plazo, sello 'Presentada'); art. 59 / 59
-Bis LOPSRM (convenios modificatorios y ajuste de costos); art. 102 LOPSRM (revisión SFP en convenios); art.
+Bis LOPSRM (convenios modificatorios y ajuste de costos); art. 102 RLOPSRM (revisión SFP en convenios); art.
 46 Bis LOPSRM + arts. 86-88 RLOPSRM (pena por atraso, criterio A5); art. 191 LFD (retención 5 al millar);
 art. 46 / 46 Bis LOPSRM (deductivas / penas convencionales).
 

@@ -11,6 +11,7 @@ import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { api } from '../services/api.js';
 import MatrizProgramaLectura, { periodoQueContiene } from '../components/programa/MatrizProgramaLectura.jsx';
 import { Link } from 'react-router-dom'; // Pase 4: acceso directo a la lista de alertas del contrato
+import { round2 } from '../utils/formato.js';
 // alta-v2 (4.2): el alta arranca VACÍA (sin datos dummy). Ya no se importa conceptosDummy
 // ni polizasGarantiaDummy.
 
@@ -43,7 +44,6 @@ const IVA_RATE = 0.16;            // IVA derivado (solo se muestra, NO se guarda
 
 // Cuadre EXACTO (A1.3): el monto se DERIVA del catálogo = Σ ROUND(cantidad×pu, 2). No hay
 // captura de monto ni tolerancia. round2/round4 replican el redondeo del backend (NUMERIC).
-const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 const round3 = (n) => Math.round((Number(n) + Number.EPSILON) * 1e3) / 1e3;
 const round4 = (n) => Math.round((Number(n) + Number.EPSILON) * 1e4) / 1e4;
 // alta-v2 (punto 3): regla del 100% del programa. La cantidad del programa es NUMERIC(14,3);

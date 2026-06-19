@@ -2,7 +2,7 @@
 
 > **Qué es este documento:** la historia completa del proyecto en orden cronológico, con enlace al
 > documento de respaldo de cada etapa. Todo el detalle vive en `docs/historial/` (organizado por fase)
-> y en las carpetas vigentes (`contexto-claude/`, `equipos/`, `analisis-y-diseno/`, `legal/`).
+> y en las carpetas vigentes (`estado/`, `requisitos/`, `pruebas/`, `equipos/`, `legal/`; reorg 18-jun).
 > Reorganizado el 11-jun-2026 (sesión de orden); **ningún documento se borró**, solo se movieron.
 >
 > ⚠️ Los documentos históricos pueden referenciarse entre sí por sus rutas VIEJAS
@@ -18,8 +18,8 @@ frentes; Maiki (TheMike54) integra y despliega.
 
 **Documentos de arranque vigentes:** [README de docs/](README.md) ·
 [Plan de partición en 3 equipos](equipos/Plan_Particion_3Equipos_SIGECOP.md) ·
-[Contexto de respaldo](contexto-claude/SIGECOP_contexto_respaldo.md) ·
-[Plan general del trabajo restante](contexto-claude/Plan_General_Trabajo_Restante.md) (deadline: BD
+[Contexto de respaldo](historial/contexto/SIGECOP_contexto_respaldo.md) ·
+[Plan general del trabajo restante](historial/contexto/Plan_General_Trabajo_Restante.md) (deadline: BD
 Render expira el **25-jun-2026**).
 
 ---
@@ -30,14 +30,14 @@ La fase académica: historias de usuario, matrices, factibilidad, maquetas y la 
 
 | Documento | Qué es |
 |---|---|
-| [Historias_Usuario.xlsx](analisis-y-diseno/Historias_Usuario.xlsx) | Las 22 HU (HU-00..HU-21) formato del profe + 2 agregadas tras revisión (Registro, Por Firmar) |
-| [Fichas_Trazabilidad.md](analisis-y-diseno/Fichas_Trazabilidad.md) | Cadena Historia ↔ Servicio (SRV-XX-XX) ↔ Sistema por HU (estado congelado en foto vieja) |
-| [Matriz_Control_Accesos_SIGECOP.md](analisis-y-diseno/Matriz_Control_Accesos_SIGECOP.md) | Matriz completa 21 HU × 5 roles (E/C/🚫) en 3 capas (era la copia "(1)"; la corta quedó en historial/contexto/) |
+| [Historias_Usuario.xlsx](requisitos/Historias_Usuario.xlsx) | Las 22 HU (HU-00..HU-21) formato del profe + 2 agregadas tras revisión (Registro, Por Firmar) |
+| [Fichas_Trazabilidad.md](requisitos/Fichas_Trazabilidad.md) | Cadena Historia ↔ Servicio (SRV-XX-XX) ↔ Sistema por HU (estado congelado en foto vieja) |
+| [Matriz_Control_Accesos_SIGECOP.md](requisitos/Matriz_Control_Accesos_SIGECOP.md) | Matriz completa 21 HU × 5 roles (E/C/🚫) en 3 capas (era la copia "(1)"; la corta quedó en historial/contexto/) |
 | [Auditoria_Legal_SIGECOP.md](legal/Auditoria_Legal_SIGECOP.md) (24-may) | Fase 1 /auditar: cada cita legal verificada contra texto literal |
 | [Cobertura_Legal_LOPSRM.md](legal/Cobertura_Legal_LOPSRM.md) (24-may) | Los 104 arts. de la LOPSRM: cubierto/hueco/fuera de alcance |
 | [Cobertura_Legal_Reglamento.md](legal/Cobertura_Legal_Reglamento.md) (24-may) | Los 295 arts. del RLOPSRM (foco Cap. "De la Ejecución" 109-171) |
 | [historial/contexto/Auditoria_Coherencia_F3_24may.md](historial/contexto/Auditoria_Coherencia_F3_24may.md) | Fase 3 /auditar: coherencia interna/vocabulario de los entregables |
-| [contexto-claude/DECISIONES.md](contexto-claude/DECISIONES.md) | Registro del "por qué" de la fase prototipo (parcialmente desactualizado: §1.3 y §4.1 superados) |
+| [estado/DECISIONES.md](estado/DECISIONES.md) | Registro del "por qué" de la fase prototipo (parcialmente desactualizado: §1.3 y §4.1 superados) |
 
 ## 2. Primera revisión del profe y fundación (01–04 jun)
 
@@ -71,7 +71,7 @@ concepto×periodo) y las pasadas de fundación de Maiki.
 (decisiones D-1..D-10, zona congelada) + [Prompts_Accion_Equipos_SIGECOP.md](equipos/Prompts_Accion_Equipos_SIGECOP.md) +
 [GUIA_TRABAJO_EQUIPOS.md](equipos/GUIA_TRABAJO_EQUIPOS.md) + [SETUP_LOCAL.md](equipos/SETUP_LOCAL.md) — todos vigentes.
 El borrador previo del modelo quedó en [historial/planes/Plan_Paralelizacion_Equipo_SIGECOP.md](historial/planes/Plan_Paralelizacion_Equipo_SIGECOP.md).
-El DDL anticipado de las tablas de los equipos: [contexto-claude/Borrador_DDL_Tablas_Nuevas_SIGECOP.md](contexto-claude/Borrador_DDL_Tablas_Nuevas_SIGECOP.md) (vigente, citado por CLAUDE.md).
+El DDL anticipado de las tablas de los equipos: [estado/Borrador_DDL_Tablas_Nuevas_SIGECOP.md](estado/Borrador_DDL_Tablas_Nuevas_SIGECOP.md) (vigente, citado por CLAUDE.md).
 
 ## 3. Plan maestro 1 (estimación) y Plan maestro 2 (testing) — 04–06 jun
 
@@ -99,7 +99,7 @@ HU-04/07 specs reales) — ver memoria de integraciones del 06-jun y §6.
 El profe revisó de nuevo (2 sesiones grabadas) + testing interno del equipo. Todo se consolidó en el
 **contexto maestro** (hallazgos P1-P20, W1-W11, propuestas S1-S11, plan O0-O10):
 
-- **Vigente:** [contexto-claude/Contexto_Maestro_y_Plan_Correcciones_09jun.md](contexto-claude/Contexto_Maestro_y_Plan_Correcciones_09jun.md)
+- **Vigente:** [historial/contexto/Contexto_Maestro_y_Plan_Correcciones_09jun.md](historial/contexto/Contexto_Maestro_y_Plan_Correcciones_09jun.md)
   (era `Contexto_Maestro_..._09jun_1.md`; incluye el plan de reskin UI-1/UI-2 que de hecho se ejecutó)
 - Superada: [historial/revisiones-profe/Contexto_Maestro_y_Plan_Correcciones_09jun_v1-superada.md](historial/revisiones-profe/Contexto_Maestro_y_Plan_Correcciones_09jun_v1-superada.md)
 - Material de defensa de Maiki: `docs/referencias/Acordeon_Defensa_SIGECOP.md` (personal, untracked, retrata el estado de sprint 1-3)
@@ -141,10 +141,10 @@ En [historial/integraciones-equipos/](historial/integraciones-equipos/):
 
 | Doc | Para qué |
 |---|---|
-| [contexto-claude/SIGECOP_contexto_respaldo.md](contexto-claude/SIGECOP_contexto_respaldo.md) | Retomar el proyecto en frío (era `SIGECOP_contexto_respaldo_1.md`, la más completa de las 4 copias) |
-| [contexto-claude/Guia_Pruebas_E2E_SIGECOP.md](contexto-claude/Guia_Pruebas_E2E_SIGECOP.md) | Demo/pruebas manuales de las 15 HU integradas (la versión nueva; la vieja quedó en historial/contexto/) |
-| [contexto-claude/Plan_General_Trabajo_Restante.md](contexto-claude/Plan_General_Trabajo_Restante.md) | Hoja de ruta al 25-jun (parcialmente ejecutada) |
-| [contexto-claude/Contexto_Maestro_y_Plan_Correcciones_09jun.md](contexto-claude/Contexto_Maestro_y_Plan_Correcciones_09jun.md) | Referencia del plan de oleadas + lista [validar] del profe |
+| [historial/contexto/SIGECOP_contexto_respaldo.md](historial/contexto/SIGECOP_contexto_respaldo.md) | Retomar el proyecto en frío (era `SIGECOP_contexto_respaldo_1.md`, la más completa de las 4 copias) |
+| [pruebas/Guia_Pruebas_E2E_SIGECOP.md](pruebas/Guia_Pruebas_E2E_SIGECOP.md) | Demo/pruebas manuales de las 15 HU integradas (la versión nueva; la vieja quedó en historial/contexto/) |
+| [historial/contexto/Plan_General_Trabajo_Restante.md](historial/contexto/Plan_General_Trabajo_Restante.md) | Hoja de ruta al 25-jun (parcialmente ejecutada) |
+| [historial/contexto/Contexto_Maestro_y_Plan_Correcciones_09jun.md](historial/contexto/Contexto_Maestro_y_Plan_Correcciones_09jun.md) | Referencia del plan de oleadas + lista [validar] del profe |
 | `docs/Cuentas_Prueba_SIGECOP.md` | Credenciales demo (gitignored, NO mover ni versionar) |
 | `docs/comandos usuario.txt` | Chuleta de Maiki: crear/borrar usuarios (untracked) |
 

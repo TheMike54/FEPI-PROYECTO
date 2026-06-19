@@ -9,6 +9,7 @@ import EditorProgramaConvenio from '../components/convenios/EditorProgramaConven
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
+import { round2 } from '../utils/formato.js';
 
 // HU-03 (Fundación) — cableado al backend REAL de convenios modificatorios (art. 59 LOPSRM).
 // El backend YA EXISTE (tabla convenios_modificatorios inmutable + versionado del programa de
@@ -17,7 +18,7 @@ import { api } from '../services/api.js';
 //
 // ALCANCE (Fase 1 + Fase 2): convenio de PLAZO end-to-end + EDITOR de catálogo+matriz para los
 // convenios de MONTO/PROGRAMA/MIXTO (re-captura del catálogo + el programa completos; el backend
-// DERIVA el monto de Σ ROUND(cant×pu,2) y revalida cuadre 100% + art. 118 + guardrail) + historial
+// DERIVA el monto de Σ ROUND(cant×pu,2) y revalida cuadre 100% + la regla de no reducir bajo lo ya estimado (criterio de diseño) + guardrail) + historial
 // inmutable + lectura de versiones del programa (reusa MatrizProgramaLectura). El editor precarga
 // el programa VIGENTE (detalleContrato + leerProgramaObra), permite ajustar conceptos/celdas y
 // agregar conceptos; los periodos son los vigentes (no se regeneran en Etapa 1).
@@ -31,7 +32,6 @@ import { api } from '../services/api.js';
 
 const fmtMXN = new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const moneda = (n) => (n == null ? '—' : fmtMXN.format(Number(n) || 0));
-const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 const round3 = (n) => Math.round((Number(n) + Number.EPSILON) * 1000) / 1000;
 const TOL_PROGRAMA = 0.0005; // espejo del backend/alta: cuadre 100% por concepto (media milésima)
 

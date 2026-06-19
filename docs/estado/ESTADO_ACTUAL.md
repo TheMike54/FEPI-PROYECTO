@@ -188,13 +188,13 @@
 > redirige), **Pago** (`TransitoPago`, 3 pasos + enlace a HU-21), **Bitácora** (`AmbienteBitacora`, 3 pasos +
 > Consulta/Minutas en paralelo), **Avance** (`AmbienteAvance`, Registrar + Curva/Atrasos en paralelo). Reusan
 > la captura real y los `data-testid` (gating estilo Alta); **`permisos.js`/`App.jsx` NO se tocaron**.
-> Historias reestructuradas por ciclos (`docs/analisis-y-diseno/HISTORIAS_POR_CICLOS.md`, referencia + checklist
+> Historias reestructuradas por ciclos (`docs/requisitos/HISTORIAS_POR_CICLOS.md`, referencia + checklist
 > de conservación, NO cambia requisitos). **Evidencia fotográfica = fuera de alcance de la Etapa 1.** Reporte de
 > cierre: `docs/REPORTE_EJECUCION_PLAN_GRANDE_18jun.md`. Suite **337/8/0**.
 >
 > **Docs hermanos:** historia completa → `docs/HISTORIAL_PROYECTO.md` · historias de usuario vigentes
-> (criterios = sistema real) → `docs/analisis-y-diseno/Historias_Usuario_ACTUALIZADAS_12jun.md` · auditoría
-> criterio-por-criterio → `docs/analisis-y-diseno/AUDITORIA_COHERENCIA_HU.md`.
+> (criterios = sistema real) → `docs/requisitos/Historias_Usuario_ACTUALIZADAS_12jun.md` · auditoría
+> criterio-por-criterio → `docs/requisitos/AUDITORIA_COHERENCIA_HU.md`.
 
 ---
 
@@ -583,7 +583,7 @@ el guard de REGLA 1 en `register`. NO quedan marcas `[validar]` en auth; es el e
   `garantia_endosos` (HU-02)~~ → **YA SE USAN:** `garantia_endosos` por HU-02 (sesión E2) e
   `instruccion_pago`/`presupuesto_anual` por HU-20 (PR `feat/e3-hu-20`). Sin tablas muertas pendientes de
   esos dominios.
-- **Código muerto dudoso** (NO tocar sin decisión de Maiki, ver `docs/analisis-y-diseno/AUDITORIA_CODIGO_MUERTO.md`):
+- **Código muerto dudoso** (NO tocar sin decisión de Maiki, ver `docs/historial/analisis-y-diseno/AUDITORIA_CODIGO_MUERTO.md`):
   componentes UI huérfanos `Card.jsx`, `Badge.jsx`, `CardCriterioAceptacion.jsx` (0 importadores);
   `BadgeSprint.jsx` es stub de compatibilidad intencional (retorna `null`); `api.health` sin caller.
 - **Higiene de BD de prueba:** la BD local acumula contratos/estimaciones entre corridas e2e (722 contratos
@@ -617,7 +617,7 @@ el guard de REGLA 1 en `register`. NO quedan marcas `[validar]` en auth; es el e
 | HU-09 | Notas tipificadas con firma | ✅ |
 | HU-10 | Consulta/búsqueda de notas | ✅ |
 | HU-11 | Minutas, visitas y acuerdos | ✅ (sesión E2 18-jun: `/api/minutas` CRUD minutas/visitas + PDF + vínculo a nota de bitácora art. 123 fr. X RLOPSRM, sin alterar la nota) |
-| HU-12 | Integración de estimación | ✅ · **FASE 3 (rediseño):** la pantalla es un **WIZARD de 5 pasos** (Periodo→Generadores→Carátula→Soportes→Integrar, patrón del Alta) que reusa la captura real; el cascarón `AmbienteEstimacion` redirige aquí. Historia por ciclos en `docs/analisis-y-diseno/HISTORIAS_POR_CICLOS.md` (conserva requisitos) |
+| HU-12 | Integración de estimación | ✅ · **FASE 3 (rediseño):** la pantalla es un **WIZARD de 5 pasos** (Periodo→Generadores→Carátula→Soportes→Integrar, patrón del Alta) que reusa la captura real; el cascarón `AmbienteEstimacion` redirige aquí. Historia por ciclos en `docs/requisitos/HISTORIAS_POR_CICLOS.md` (conserva requisitos) |
 | HU-13 | Envío/presentación de estimación | ✅ (bloqueo 6 días = solo aviso) |
 | HU-14 | Historial de estimaciones | ✅ (línea de tiempo incompleta) |
 | HU-15 | Revisión técnica y autorización | ✅ |
@@ -654,7 +654,7 @@ el guard de REGLA 1 en `register`. NO quedan marcas `[validar]` en auth; es el e
 
 ## 10. Coherencia con las historias de usuario (verificada 13-jun-2026)
 
-Pasada de coherencia entre **este doc** y `docs/analisis-y-diseno/Historias_Usuario_ACTUALIZADAS_12jun.md`:
+Pasada de coherencia entre **este doc** y `docs/requisitos/Historias_Usuario_ACTUALIZADAS_12jun.md`:
 **concuerdan** (ambos leídos del código real). **Ya no hay maquetas:** HU-02, HU-11, HU-18 y HU-20 pasaron a
 funcionales (junio); las historias de cada una se actualizaron a su comportamiento real con su fundamento
 legal y sus `[validar profe]` resueltos. Coinciden también en: HU-14 línea de tiempo incompleta (el backend
