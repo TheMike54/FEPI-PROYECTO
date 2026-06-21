@@ -1,10 +1,12 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
+import PestanasCiclo from '../components/PestanasCiclo.jsx';
 import BannerContexto from '../components/vista/BannerContexto.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
+import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
 import { api } from '../services/api.js';
 import { labelEstadoEstimacion } from '../data/estadoEstimacion.js';
 import { monedaMXN as moneda } from '../utils/formato.js';
@@ -132,6 +134,14 @@ export default function EnvioEstimacion() {
     cargarEstimaciones(id);
   }, [cargarEstimaciones]);
 
+  const [searchParams] = useSearchParams();
+  const contratoQuery = searchParams.get('contrato');
+  useEffect(() => {
+    // B6b/A-3A: preselecciona el contrato del ?contrato=ID (consistencia entre pantallas).
+    if (sinSesion || !contratoQuery || contratoId) return;
+    if (contratos.some((c) => String(c.id) === String(contratoQuery))) seleccionarContrato(String(contratoQuery));
+  }, [sinSesion, contratoQuery, contratoId, contratos, seleccionarContrato]);
+
   // PRESENTAR (POST /enviar; el backend sella enviada_en/por = la presentación, art. 54; gate superintendente).
   const handlePresentar = useCallback(async (est) => {
     if (soloLectura || presentandoId) return;
@@ -169,25 +179,16 @@ export default function EnvioEstimacion() {
         ]}
       />
 
+      <PestanasCiclo ciclo="estimacion" activo="presentar" />
+
       {sinSesion && (
         <div className="bg-slate-50 border border-slate-200 rounded-md px-4 py-3 mb-4 text-sm text-slate-600">
           Inicia sesión para presentar tus estimaciones.
         </div>
       )}
 
-      <div className="bg-white border border-slate-200 rounded-md p-4 mb-6 max-w-2xl">
-        <label className="sg-label">Contrato</label>
-        <select
-          className="sg-input"
-          value={contratoId}
-          onChange={(e) => seleccionarContrato(e.target.value)}
-          disabled={sinSesion}
-          data-testid="select-contrato"
-        >
-          <option value="">— Selecciona un contrato —</option>
-          {contratos.map((c) => <option key={c.id} value={c.id}>{c.folio} · {c.objeto}</option>)}
-        </select>
-      </div>
+      {/* 3A · P3 — hereda el contrato activo global (banner read-only) en vez de re-seleccionarlo */}
+      <BannerContratoActivo seleccionar={seleccionarContrato} contratoId={contratoId} />
 
       {!sinSesion && !contratoId && (
         <p className="text-sm text-slate-500 mb-4">Selecciona un contrato para presentar sus estimaciones integradas.</p>

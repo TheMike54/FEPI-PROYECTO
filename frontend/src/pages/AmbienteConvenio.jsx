@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import LinkHU from '../components/LinkHU.jsx';
 import Breadcrumb from '../components/ui/Breadcrumb.jsx';
+import PestanasCiclo from '../components/PestanasCiclo.jsx';
+import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
 import { useSesion } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
@@ -80,8 +83,11 @@ export default function AmbienteConvenio() {
     <div className="space-y-4">
       <Breadcrumb items={[{ label: 'Inicio', href: '/' }, { label: 'Contrato' }, { label: 'Convenio modificatorio' }]} />
       <div className="flex items-start justify-between mb-2">
-        <h1 className="text-2xl font-medium text-tinta">Ambiente de convenio modificatorio (por bloques)</h1>
+        <h1 className="text-2xl font-medium text-tinta">Ambiente de convenio modificatorio</h1>
       </div>
+
+      {/* FRENTE 2 / NAV-G — barra de pestañas del ciclo (incluye el chip "Ciclo · HU-03"). */}
+      <PestanasCiclo ciclo="convenio" activo="ambiente" />
 
       <div className="bg-sigecop-blue-light border-l-4 border-sigecop-blue px-4 py-3 rounded-r-md text-sm text-slate-700" data-testid="ambiente-convenio-aviso">
         <strong>Ciclo del convenio modificatorio</strong> (cuando aplica): registrar el convenio → sus
@@ -97,13 +103,8 @@ export default function AmbienteConvenio() {
 
       {/* BLOQUE 1 — Contrato + estado vigente del convenio. */}
       <Bloque n={1} titulo="Contrato y convenios vigentes" estado={contratoId ? 'listo' : 'activo'}>
-        <div className="max-w-2xl">
-          <label className="sg-label">Contrato</label>
-          <select className="sg-input" value={contratoId} onChange={(e) => seleccionarContrato(e.target.value)} disabled={sinSesion} data-testid="select-contrato">
-            <option value="">— Selecciona un contrato —</option>
-            {contratos.map((ct) => <option key={ct.id} value={ct.id}>{ct.folio} · {ct.objeto}</option>)}
-          </select>
-        </div>
+        {/* 3A · P3 — hereda el contrato activo global (banner read-only) en vez de re-seleccionarlo. */}
+        <BannerContratoActivo seleccionar={seleccionarContrato} contratoId={contratoId} />
         {contratoId && (
           <div className="mt-3 text-sm" data-testid="convenios-estado">
             {convenios.length === 0 ? (
@@ -118,9 +119,9 @@ export default function AmbienteConvenio() {
       {/* BLOQUE 2 — Registrar convenio (HU-03, lee ?contrato=). */}
       <Bloque n={2} titulo="Registrar el convenio (HU-03)">
         <p className="text-sm text-slate-700 mb-3">El convenio (de plazo, monto o mixto) se registra en su pantalla, con su historial inmutable de versiones. Lo crea la dependencia (art. 59 LOPSRM).</p>
-        <Link to={`/contratos/modificatorios${q}`} className="sg-btn-primary" data-testid="link-convenio">
+        <LinkHU hu="HU-03" to={`/contratos/modificatorios${q}`} className="sg-btn-primary" data-testid="link-convenio" actor="Lo registra la Dependencia o Residencia">
           Ir a convenios modificatorios (HU-03) →
-        </Link>
+        </LinkHU>
       </Bloque>
 
       {/* BLOQUE 3 — Variaciones y avisos (read-only, lo marca el backend). */}
@@ -170,9 +171,9 @@ export default function AmbienteConvenio() {
           (art. 59 / art. 123 RLOPSRM), ligada al convenio. Consúltala en la bitácora <strong>eligiendo el
           contrato</strong> (esa pantalla no lo preselecciona).
         </p>
-        <Link to="/bitacora/consulta" className="sg-btn-secondary" data-testid="link-consulta">
+        <LinkHU hu="HU-10" to="/bitacora/consulta" className="sg-btn-secondary" data-testid="link-consulta" actor="La consultan Residencia, Contratista o Supervisión">
           Consultar la bitácora (HU-10) →
-        </Link>
+        </LinkHU>
       </Bloque>
 
       {/* BLOQUE 6 — Ver en el expediente (HU-04). */}
@@ -181,9 +182,9 @@ export default function AmbienteConvenio() {
           El expediente del contrato muestra el convenio con su oficio y el enlace a las versiones del
           programa. Ábrelo y <strong>elige el contrato</strong> (no se preselecciona).
         </p>
-        <Link to="/contratos/expediente" className="sg-btn-secondary" data-testid="link-expediente">
+        <LinkHU hu="HU-04" to="/contratos/expediente" className="sg-btn-secondary" data-testid="link-expediente" actor="No disponible para tu rol">
           Abrir el expediente (HU-04) →
-        </Link>
+        </LinkHU>
       </Bloque>
     </div>
   );

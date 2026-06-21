@@ -194,7 +194,7 @@ const AGRUPADORES = [
   { id: 'Ninguno', label: 'Ninguno', clave: () => null, disabled: false },
   { id: 'Contratista', label: 'Contratista', clave: (c) => c.contratista || '— sin contratista —', disabled: false },
   { id: 'Ejercicio fiscal', label: 'Ejercicio fiscal', clave: (c) => (c.ejercicio == null ? '— sin fecha de inicio —' : String(c.ejercicio)), disabled: false },
-  { id: 'Tipo de contratación', label: 'Tipo de contratación — no disponible (pendiente de definición) [Nivel 1 profe]', clave: () => null, disabled: true },
+  { id: 'Tipo de contratación', label: 'Tipo de contratación — no disponible', clave: () => null, disabled: true },
 ];
 
 export default function PortafolioEjecutivo() {
@@ -333,7 +333,7 @@ export default function PortafolioEjecutivo() {
         criterios={[
           { numero: 1, texto: 'Cada contrato del portafolio muestra un semáforo de color calculado a partir de tres factores: avance físico vs programado, atrasos en plazos legales y pendientes sin atender.' },
           { numero: 2, texto: 'Al hacer doble clic sobre un contrato se abre su detalle con indicadores físicos, financieros, atrasos y penalizaciones.' },
-          { numero: 3, texto: 'El portafolio puede agruparse (por contratista o ejercicio fiscal) y comparar el avance del periodo actual contra el anterior. (Tipo de contratación: pendiente de definición — [Nivel 1 profe].)' },
+          { numero: 3, texto: 'El portafolio puede agruparse (por contratista o ejercicio fiscal) y comparar el avance del periodo actual contra el anterior.' },
         ]}
       />
     </div>

@@ -1,8 +1,12 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { descargarExcelHoja } from '../services/excelExport.js';
+import LinkHU from '../components/LinkHU.jsx';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
+import PestanasCiclo from '../components/PestanasCiclo.jsx';
 import EncabezadoContrato from '../components/ui/EncabezadoContrato.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
+import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
 import { useSesion } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
@@ -195,6 +199,14 @@ export default function HistorialEstimaciones() {
     }
   }, [showToast]);
 
+  const [searchParams] = useSearchParams();
+  const contratoQuery = searchParams.get('contrato');
+  // B6b/A-3A: preselecciona el contrato del ?contrato=ID (consistencia entre pantallas).
+  useEffect(() => {
+    if (sinSesion || !contratoQuery || contratoId) return;
+    if (contratos.some((c) => String(c.id) === String(contratoQuery))) seleccionarContrato(String(contratoQuery));
+  }, [sinSesion, contratoQuery, contratoId, contratos, seleccionarContrato]);
+
   // Opciones de filtro DERIVADAS de los datos (no de un dummy fijo).
   const periodosOpts = useMemo(
     () => ['Todos', ...Array.from(new Set(historial.map((h) => h.periodo)))],
@@ -229,25 +241,16 @@ export default function HistorialEstimaciones() {
         ]}
       />
 
+      <PestanasCiclo ciclo="estimacion" activo="historial" />
+
       {sinSesion && (
         <div className="bg-pagina border border-borde rounded-md px-4 py-3 mb-4 text-sm text-slate-600">
           Inicia sesión en modo aplicación para consultar el historial de estimaciones.
         </div>
       )}
 
-      <div className="bg-white border border-borde rounded-lg p-4 mb-6 max-w-2xl">
-        <label className="sg-label">Contrato</label>
-        <select
-          className="sg-input"
-          value={contratoId}
-          onChange={(e) => seleccionarContrato(e.target.value)}
-          disabled={sinSesion}
-          data-testid="select-contrato"
-        >
-          <option value="">— Selecciona un contrato —</option>
-          {contratos.map((c) => <option key={c.id} value={c.id}>{c.folio} · {c.objeto}</option>)}
-        </select>
-      </div>
+      {/* 3A·P3: hereda el contrato activo global en vez de re-seleccionarlo */}
+      <BannerContratoActivo seleccionar={seleccionarContrato} contratoId={contratoId} />
 
       {!sinSesion && !contratoId && (
         <p className="text-sm text-slate-500 mb-4">Selecciona un contrato para ver el historial de sus estimaciones.</p>
@@ -319,8 +322,33 @@ export default function HistorialEstimaciones() {
                 <tbody>
                   {filas.length === 0 ? (
                     <tr>
-                      <td colSpan="6" className="p-8 text-center text-slate-400 italic">
-                        Sin estimaciones con los filtros aplicados.
+                      <td colSpan="6" className="p-8 text-center">
+                        {historial.length === 0 ? (
+                          <div className="max-w-md mx-auto">
+                            <p className="text-sm text-slate-600 font-medium">
+                              Este contrato aún no tiene estimaciones registradas.
+                            </p>
+                            <p className="text-xs text-slate-500 mt-1">
+                              Las estimaciones se incorporan al historial al integrarlas en el ciclo de estimación.
+                            </p>
+                            <LinkHU
+                              hu="HU-12"
+                              to={`/estimaciones/integracion${contratoId ? `?contrato=${contratoId}` : ''}`}
+                              className="sg-btn-secondary inline-block mt-3"
+                            >
+                              Integrar estimación →
+                            </LinkHU>
+                          </div>
+                        ) : (
+                          <div className="max-w-md mx-auto">
+                            <p className="text-sm text-slate-600 font-medium">
+                              Ninguna estimación coincide con los filtros aplicados.
+                            </p>
+                            <p className="text-xs text-slate-500 mt-1">
+                              Ajusta el periodo o el estado para ver más resultados. Sí hay estimaciones en este contrato.
+                            </p>
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ) : (

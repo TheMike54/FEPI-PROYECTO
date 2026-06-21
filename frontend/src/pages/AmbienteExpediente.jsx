@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
+import PestanasCiclo from '../components/PestanasCiclo.jsx';
 import { useSesion } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
@@ -70,11 +72,14 @@ export default function AmbienteExpediente() {
     <div className="space-y-4">
       <HeaderVista
         huId="HU-04"
-        titulo="Ambiente de expediente y reportes (cierre documental, por bloques)"
+        titulo="Ambiente de expediente y reportes (cierre documental)"
         sprint="Sprint 8"
         rolAcademico="Residente"
         breadcrumb={[{ label: 'Inicio', href: '/' }, { label: 'Expediente' }, { label: 'Ambiente' }]}
       />
+
+      {/* FRENTE 2 / NAV-G — barra de pestañas del ciclo (incluye el chip "Ciclo · HU 04 · 19"). */}
+      <PestanasCiclo ciclo="expediente" activo="ambiente" />
 
       <div className="bg-sigecop-blue-light border-l-4 border-sigecop-blue px-4 py-3 rounded-r-md text-sm text-slate-700" data-testid="ambiente-expediente-aviso">
         <strong>Arma el expediente y exporta el paquete del contrato.</strong> Encadena el expediente
@@ -90,13 +95,8 @@ export default function AmbienteExpediente() {
 
       {/* BLOQUE 1 — Contrato + resumen read-only. */}
       <Bloque n={1} titulo="Contrato y resumen" estado={detalle ? 'listo' : 'activo'}>
-        <div className="max-w-2xl">
-          <label className="sg-label">Contrato</label>
-          <select className="sg-input" value={contratoId} onChange={(e) => seleccionarContrato(e.target.value)} disabled={sinSesion} data-testid="select-contrato">
-            <option value="">— Selecciona un contrato —</option>
-            {contratos.map((ct) => <option key={ct.id} value={ct.id}>{ct.folio} · {ct.objeto}</option>)}
-          </select>
-        </div>
+        {/* 3A · P3 — hereda el contrato activo global. */}
+        <BannerContratoActivo seleccionar={seleccionarContrato} contratoId={contratoId} />
         {detalle && (
           <div className="mt-3 grid grid-cols-2 md:grid-cols-4 gap-3 text-sm" data-testid="resumen-contrato">
             <div><div className="text-xs text-slate-500">Folio</div><div className="font-semibold">{c.folio || '—'}</div></div>

@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
+import PestanasCiclo from '../components/PestanasCiclo.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import RegistroPagoForm from '../components/pagos/RegistroPagoForm.jsx';
+import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
@@ -47,6 +50,14 @@ export default function RegistroPago() {
     await cargarPagos(id);
   }, [cargarPagos]);
 
+  const [searchParams] = useSearchParams();
+  const contratoQuery = searchParams.get('contrato');
+  useEffect(() => {
+    // B6b/A-3A: preselecciona el contrato del ?contrato=ID (consistencia entre pantallas).
+    if (sinSesion || !contratoQuery || contratoId) return;
+    if (contratos.some((c) => String(c.id) === String(contratoQuery))) seleccionar(String(contratoQuery));
+  }, [sinSesion, contratoQuery, contratoId, contratos, seleccionar]);
+
   return (
     <div>
       <HeaderVista
@@ -58,19 +69,17 @@ export default function RegistroPago() {
         breadcrumb={[{ label: 'Inicio', href: '/' }, { label: 'Pagos' }, { label: 'Registro de pago' }]}
       />
 
+      <PestanasCiclo ciclo="pago" activo="registro" />
+
       {sinSesion ? (
         <div className="bg-pagina border border-borde rounded-md px-4 py-6 text-center text-sm text-slate-600">
           Inicia sesión en modo aplicación para registrar o consultar pagos.
         </div>
       ) : (
         <>
-          <div className="bg-white border border-borde rounded-lg p-4 mb-6 max-w-2xl">
-            <label className="sg-label">Contrato</label>
-            <select className="sg-input" value={contratoId} onChange={(e) => seleccionar(e.target.value)} data-testid="select-contrato">
-              <option value="">— Selecciona un contrato —</option>
-              {contratos.map((c) => <option key={c.id} value={c.id}>{c.folio} · {c.objeto}</option>)}
-            </select>
-          </div>
+          {/* 3A·P3: hereda el contrato activo global en vez de re-seleccionarlo. El banner llama
+              seleccionar(idGlobal) (carga pagos) y pinta "Contrato activo · Cambiar". */}
+          <BannerContratoActivo seleccionar={seleccionar} contratoId={contratoId} />
 
           {!contratoId && <p className="text-sm text-slate-500">Selecciona un contrato para registrar o ver sus pagos.</p>}
 

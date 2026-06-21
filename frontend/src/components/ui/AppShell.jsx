@@ -5,6 +5,9 @@ import { ROLES } from '../../data/permisos.js';
 import { historiasUsuario } from '../../data/dummy.js';
 import { api } from '../../services/api.js';
 import Sidebar from '../layout/Sidebar.jsx';
+import { useContratoActivo } from '../../context/ContratoActivoContext.jsx';
+import ModalContratoActivo from '../ModalContratoActivo.jsx';
+import NotificacionesCentro from '../NotificacionesCentro.jsx';
 
 // BLOQUE 4 (navegación modo-sistema): indicador discreto de HU abajo-derecha + chip de empresa arriba
 // (mockup `docs/mockups/sigecop-modo-sistema.html`). Ambos son MARCO/navegación, no tocan contenido ni
@@ -18,15 +21,15 @@ const RUTAS_MARCO = {
   '/usuarios/solicitudes': { label: 'Solicitudes de registro' },
   '/contratos/roster': { label: 'Roster / sustitución', hu: 'HU-22' },
   '/contratos/finiquito': { label: 'Cierre / finiquito', hu: 'HU-24' },
-  '/contratos/cierre': { label: 'Cierre (recorrido por bloques)' },
+  '/contratos/cierre': { label: 'Cierre' },
   '/admin/empresas': { label: 'Padrón de empresas' },
-  '/bitacora/ambiente': { label: 'Bitácora (recorrido por bloques)' },
-  '/contratos/expediente-ambiente': { label: 'Expediente (recorrido por bloques)' },
-  '/seguimiento/ambiente': { label: 'Avance (recorrido por bloques)' },
-  '/pagos/ambiente': { label: 'Pago (recorrido por bloques)' },
-  '/contratos/convenio-ambiente': { label: 'Convenio (recorrido por bloques)' },
+  '/bitacora/ambiente': { label: 'Bitácora' },
+  '/contratos/expediente-ambiente': { label: 'Expediente' },
+  '/seguimiento/ambiente': { label: 'Avance' },
+  '/pagos/ambiente': { label: 'Pago' },
+  '/contratos/convenio-ambiente': { label: 'Convenio' },
   '/contratos/ciclo-vida': { label: 'Ciclo de vida del contrato' },
-  '/estimaciones/ambiente': { label: 'Estimación (recorrido por bloques)' },
+  '/estimaciones/ambiente': { label: 'Estimación' },
 };
 
 // Lee el empresa_id del payload del JWT (sin verificar firma: solo para mostrar el chip). El JWT lo firma
@@ -67,12 +70,14 @@ const EMPRESA_ESTADO = { validada: 'Validada', por_validar: 'Por validar' };
 
 export default function AppShell({ children }) {
   const { rol, usuario, token, logout } = useSesion();
+  const { contrato, contratoId, pedirCambio, olvidarContrato } = useContratoActivo();
   const rolActivo = ROLES.find((r) => r.id === rol);
 
   // O5 (HU-07 v2): badge de la campana = conceptos con déficit (acotado por participación). Solo para
   // los roles con acceso a HU-07 (residente/supervisión); las demás cuentas no lo consultan ni lo ven.
   const { sinAcceso: sinAccesoAtraso } = useVistaHU('HU-07');
   const [atrasos, setAtrasos] = useState(0);
+  const [atrasoItems, setAtrasoItems] = useState([]); // FRENTE 4 — filas accionables de atraso (acotadas al contrato activo)
   useEffect(() => {
     if (!token || sinAccesoAtraso) { setAtrasos(0); return; }
     let vivo = true;
@@ -81,6 +86,15 @@ export default function AppShell({ children }) {
       .catch(() => { if (vivo) setAtrasos(0); });
     return () => { vivo = false; };
   }, [token, sinAccesoAtraso]);
+  // FRENTE 4 — detalle accionable de atrasos para los accesos directos de la campana (acotado al CONTRATO ACTIVO).
+  useEffect(() => {
+    if (!token || sinAccesoAtraso) { setAtrasoItems([]); return; }
+    let vivo = true;
+    api.alertasDetalle(contratoId || undefined)
+      .then((l) => { if (vivo) setAtrasoItems(Array.isArray(l) ? l : []); })
+      .catch(() => { if (vivo) setAtrasoItems([]); });
+    return () => { vivo = false; };
+  }, [token, sinAccesoAtraso, contratoId]);
 
   // BLOQUE 4 — chip de empresa: empresa_id del JWT (BLOQUE 1) → nombre vía el catálogo público. Falla en
   // silencio (sin empresa → sin chip). No toca auth ni SesionContext (congelados).
@@ -110,7 +124,20 @@ export default function AppShell({ children }) {
   // dropdown (NO una pantalla nueva). `drop` = cuál está abierto. Los datos de "Por firmar" salen del
   // backend real (HU-08, GET /bitacora/pendientes) sin tocar zona congelada.
   const [drop, setDrop] = useState(null); // 'firmar' | 'campana' | 'miinfo' | null
+  const [centro, setCentro] = useState(false); // FRENTE 4 — overlay del centro de notificaciones
   const puedeFirmar = ['residente', 'contratista', 'supervision'].includes(rol);
+
+  // FRENTE 5 — sidebar colapsable. Default ABIERTO (la suite e2e exige el <aside> visible: enterAppMode espera
+  // 'aside' visible y goToViaSidebar clica 'aside a[href]'). El toggle solo cambia el ANCHO; el <aside> NUNCA se
+  // desmonta. Persistencia en localStorage. Solo presentación de marco; no toca rutas ni gating.
+  const [sbAbierto, setSbAbierto] = useState(() => {
+    try { return localStorage.getItem('sigecop:sidebar') !== 'cerrado'; } catch { return true; }
+  });
+  const toggleSidebar = () => setSbAbierto((v) => {
+    const n = !v;
+    try { localStorage.setItem('sigecop:sidebar', n ? 'abierto' : 'cerrado'); } catch { /* noop */ }
+    return n;
+  });
 
   // FIX 2.4 — perfil propio (nombre/rol/empresa nombre+tipo+estado/correo) para el dropdown "mi info". El
   // email y el tipo/estado de empresa no viajan en el JWT → se piden a GET /api/yo. Falla en silencio.
@@ -155,6 +182,25 @@ export default function AppShell({ children }) {
   const totalFirmas = pendientes.length + notasFirma.length;                       // aperturas + notas
   const totalNotif = (sinAccesoAtraso ? 0 : atrasos) + totalFirmas + solicitudes;  // badge unificado de la campana
 
+  // FRENTE 4 — accesos DIRECTOS por ítem (acotados al contrato activo): cada uno lleva a su destino EXACTO.
+  const scopeId = contratoId ? String(contratoId) : null;
+  const enContrato = (cid) => !scopeId || String(cid) === scopeId;
+  const itemsRapidos = [
+    ...pendientes.filter((p) => enContrato(p.contrato_id)).map((p) => ({
+      key: `ap-${p.apertura_id}`, icono: '✍️', texto: `Firmar apertura — ${p.folio || 'contrato'}`,
+      sub: p.objeto || 'Bitácora · apertura', to: `/bitacora/por-firmar?contrato=${p.contrato_id}`,
+    })),
+    ...notasFirma.filter((n) => enContrato(n.contrato_id)).map((n) => ({
+      key: `nt-${n.id}`, icono: '✍️', texto: `Firmar nota #${n.numero} — ${n.contrato_folio || 'contrato'}`,
+      sub: n.asunto || 'Bitácora · nota', to: `/bitacora/consulta?contrato=${n.contrato_id}`,
+    })),
+    ...(sinAccesoAtraso ? [] : atrasoItems.filter((a) => enContrato(a.contrato_id)).map((a) => ({
+      key: `at-${a.contrato_concepto_id}`, icono: '⚠️', texto: `Atraso: ${a.concepto_label}`,
+      sub: `${a.folio || ''} · déficit ${a.deficit} ${a.unidad || ''}`.trim(),
+      to: `/seguimiento/alertas?contrato=${a.contrato_id}&concepto=${a.contrato_concepto_id}`,
+    }))),
+  ].slice(0, 6);
+
   // Al cambiar de pantalla, cierra cualquier dropdown abierto.
   useEffect(() => { setDrop(null); }, [pathname]);
   const toggleDrop = (cual) => setDrop((d) => (d === cual ? null : cual));
@@ -163,6 +209,18 @@ export default function AppShell({ children }) {
     <div className="h-screen flex flex-col bg-pagina">
       <header className="bg-guinda text-white h-14 flex-shrink-0 border-b-[3px] border-dorado">
         <div className="h-full px-4 sm:px-6 flex items-center gap-4">
+          {/* FRENTE 5 — botón de colapsar/mostrar el sidebar (default abierto; no desmonta el aside). */}
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            aria-label={sbAbierto ? 'Ocultar el menú' : 'Mostrar el menú'}
+            aria-expanded={sbAbierto}
+            title={sbAbierto ? 'Ocultar el menú' : 'Mostrar el menú'}
+            data-testid="btn-toggle-sidebar"
+            className="w-9 h-9 rounded-md hover:bg-white/10 transition-colors flex items-center justify-center text-lg leading-none flex-shrink-0"
+          >
+            ☰
+          </button>
           <Link to="/" className="flex items-center gap-3 hover:opacity-90 transition-opacity flex-shrink-0">
             <div className="w-8 h-8 rounded-md bg-white text-guinda flex items-center justify-center font-extrabold text-base">
               S
@@ -179,26 +237,9 @@ export default function AppShell({ children }) {
               mostrar un control muerto en la demo; se recableará cuando exista la búsqueda global real. */}
 
           <div className="flex items-center gap-2 sm:gap-3 ml-auto flex-shrink-0">
-            {/* BLOQUE 4 — "Por firmar": al hacer clic abre un POP-UP (no navega), con los pendientes reales
-                (HU-08). Solo para los roles que firman (residente/contratista/supervisión). */}
-            {puedeFirmar && (
-              <button
-                type="button"
-                onClick={() => toggleDrop('firmar')}
-                aria-label="Por firmar"
-                aria-expanded={drop === 'firmar'}
-                title="Pendientes por firmar"
-                data-testid="link-por-firmar"
-                className="relative w-9 h-9 rounded-md hover:bg-white/10 transition-colors text-base leading-none flex items-center justify-center"
-              >
-                ✍️
-                {totalFirmas > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-dorado text-guinda-dark text-[10px] font-bold flex items-center justify-center" data-testid="por-firmar-count">
-                    {totalFirmas > 99 ? '99+' : totalFirmas}
-                  </span>
-                )}
-              </button>
-            )}
+            {/* FIX 8 (3B) — notificaciones UNIFICADAS en la campana: se retiró el botón ✍️ "Por firmar"
+                separado (su badge duplicaba el conteo de la campana y confundía). El acceso a "Por firmar"
+                vive ahora dentro del pop-up de la campana (footer "Ir a «Por firmar» →"). */}
             {/* BLOQUE 4 — campana: al hacer clic abre un POP-UP de notificaciones (no navega). El badge
                 `campana-atrasos` (conteo de conceptos con déficit, HU-07) conserva EXACTAMENTE su condición. */}
             <button
@@ -220,6 +261,18 @@ export default function AppShell({ children }) {
                 </span>
               )}
             </button>
+            {/* 3A · P2 — chip del CONTRATO ACTIVO (clic = "Cambiar de contrato" → reabre el modal). */}
+            {contratoId && (
+              <button
+                type="button"
+                onClick={pedirCambio}
+                data-testid="chip-contrato-activo"
+                title={`Contrato activo: ${contrato?.folio || ''} · clic para cambiar`}
+                className="hidden md:inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-white/15 border border-white/30 text-xs font-medium whitespace-nowrap hover:bg-white/25 transition"
+              >
+                📄 <span className="max-w-[10rem] truncate">{contrato?.folio || 'Contrato'}</span> <span className="opacity-70">▾</span>
+              </button>
+            )}
             {/* BLOQUE 4 — chip de empresa (contexto de empresa del usuario, conecta con BLOQUE 1). */}
             {empresaNombre && (
               <span
@@ -254,7 +307,7 @@ export default function AppShell({ children }) {
             </button>
             <button
               type="button"
-              onClick={logout}
+              onClick={() => { olvidarContrato(); logout(); }}
               className="px-3 py-1.5 text-xs font-medium rounded-md bg-white/10 hover:bg-white/20 transition-colors"
             >
               Salir
@@ -264,7 +317,7 @@ export default function AppShell({ children }) {
       </header>
 
       <div className="flex flex-1 overflow-hidden">
-        <Sidebar />
+        <Sidebar abierto={sbAbierto} />
         <main className="flex-1 overflow-y-auto">
           <div className="max-w-6xl mx-auto px-6 py-6">{children}</div>
         </main>
@@ -279,31 +332,7 @@ export default function AppShell({ children }) {
             data-testid={`drop-${drop}`}
             className="fixed right-3 top-14 z-50 w-80 max-w-[92vw] bg-white text-tinta rounded-lg shadow-xl border border-borde overflow-hidden"
           >
-            {drop === 'firmar' ? (
-              <div>
-                <div className="px-4 py-2.5 border-b border-borde font-semibold text-sm flex items-center gap-2">✍️ Pendientes por firmar</div>
-                {totalFirmas === 0 ? (
-                  <div className="px-4 py-6 text-sm text-tinta-ter text-center" data-testid="drop-firmar-vacio">No tienes pendientes por firmar.</div>
-                ) : (
-                  <ul className="max-h-72 overflow-y-auto divide-y divide-borde">
-                    {/* FIX 2.5 — aperturas + notas por firmar en una sola bandeja. */}
-                    {pendientes.slice(0, 4).map((p, i) => (
-                      <li key={`a${p.apertura_id || i}`} className="px-4 py-2.5 text-sm">
-                        <div className="font-medium text-tinta truncate">Apertura de bitácora</div>
-                        <div className="text-xs text-tinta-ter truncate">{[p.folio, 'falta tu firma'].filter(Boolean).join(' · ')}</div>
-                      </li>
-                    ))}
-                    {notasFirma.slice(0, 4).map((n, i) => (
-                      <li key={`n${n.id || i}`} className="px-4 py-2.5 text-sm">
-                        <div className="font-medium text-tinta truncate">{n.asunto || n.tipo_etiqueta || 'Nota de bitácora'}</div>
-                        <div className="text-xs text-tinta-ter truncate">{[n.contrato_folio, n.numero != null ? `nota #${n.numero}` : null, 'falta tu firma'].filter(Boolean).join(' · ')}</div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <Link to="/bitacora/por-firmar" onClick={() => setDrop(null)} className="block px-4 py-2.5 border-t border-borde text-sm font-semibold text-guinda hover:bg-guinda-soft" data-testid="drop-firmar-ir">Ir a «Por firmar» →</Link>
-              </div>
-            ) : drop === 'miinfo' ? (
+            {drop === 'miinfo' ? (
               <div>
                 {/* FIX 2.4 — mi info / mi empresa. */}
                 <div className="px-4 py-2.5 border-b border-borde font-semibold text-sm flex items-center gap-2">👤 Mi información</div>
@@ -350,6 +379,24 @@ export default function AppShell({ children }) {
                     <li className="px-4 py-6 text-tinta-ter text-center" data-testid="drop-campana-vacio">No tienes notificaciones.</li>
                   )}
                 </ul>
+                {/* FRENTE 4 — accesos DIRECTOS por ítem (vista rápida; el detalle completo va en el Centro). Cada
+                    enlace lleva al punto exacto: la apertura/nota a firmar o el concepto en atraso. */}
+                {itemsRapidos.length > 0 && (
+                  <ul className="divide-y divide-borde text-sm border-t border-borde max-h-64 overflow-y-auto" data-testid="drop-campana-items">
+                    {itemsRapidos.map((it) => (
+                      <li key={it.key}>
+                        <Link to={it.to} onClick={() => setDrop(null)} className="block px-4 py-2 hover:bg-guinda-soft">
+                          <span className="mr-1.5">{it.icono}</span><span className="font-medium text-tinta">{it.texto}</span>
+                          {it.sub && <span className="block text-[11px] text-tinta-ter truncate">{it.sub}</span>}
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <button type="button" onClick={() => { setDrop(null); setCentro(true); }} className="block w-full text-left px-4 py-2.5 border-t border-borde text-sm font-semibold text-guinda hover:bg-guinda-soft" data-testid="drop-ver-todas">Ver todas las notificaciones →</button>
+                {puedeFirmar && (
+                  <Link to="/bitacora/por-firmar" onClick={() => setDrop(null)} className="block px-4 py-2.5 border-t border-borde text-sm font-semibold text-guinda hover:bg-guinda-soft" data-testid="drop-firmar-ir">Ir a «Por firmar» →</Link>
+                )}
                 {!sinAccesoAtraso && (
                   <Link to="/seguimiento/alertas" onClick={() => setDrop(null)} className="block px-4 py-2.5 border-t border-borde text-sm font-semibold text-guinda hover:bg-guinda-soft" data-testid="drop-campana-ir">Ver alertas de atraso →</Link>
                 )}
@@ -370,12 +417,13 @@ export default function AppShell({ children }) {
           className="fixed right-4 bottom-3 z-40 flex items-center gap-2 px-3 py-1.5 rounded-full bg-tinta/85 text-white text-[11px] shadow-lg backdrop-blur-sm pointer-events-none"
         >
           <span className="opacity-80">Estás en</span>
-          {huCode && (
-            <span className="bg-dorado text-guinda-dark font-bold rounded px-1.5 py-0.5 text-[10px] tracking-wide">{huCode}</span>
-          )}
           <span className="font-medium max-w-[16rem] truncate">{pantallaNombre}</span>
         </div>
       )}
+      {/* 3A · P1 — modal bloqueante "Elige tu contrato" (con salidas a Portafolio y Cerrar sesión). */}
+      <ModalContratoActivo />
+      {/* FRENTE 4 — centro de notificaciones (overlay; sin ruta nueva para no tocar App.jsx congelado). */}
+      <NotificacionesCentro open={centro} onClose={() => setCentro(false)} />
     </div>
   );
 }

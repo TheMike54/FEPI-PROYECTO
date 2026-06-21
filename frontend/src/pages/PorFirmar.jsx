@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import Breadcrumb from '../components/ui/Breadcrumb.jsx';
 import { useSesion } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
@@ -12,6 +13,9 @@ export default function PorFirmar() {
   const { token } = useSesion();
   const { showToast } = useToast();
   const sinSesion = !token;
+  // BLOQUE D — deep-link desde la campana/centro: resalta las filas del contrato indicado en ?contrato.
+  const [sp] = useSearchParams();
+  const contratoQuery = sp.get('contrato');
   const [pendientes, setPendientes] = useState([]);
   const [cargando, setCargando] = useState(false);
   const [firmando, setFirmando] = useState(null);
@@ -80,7 +84,8 @@ export default function PorFirmar() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {pendientes.map((p) => (
-                    <tr key={p.apertura_id} data-testid="fila-por-firmar" data-folio={p.folio}>
+                    <tr key={p.apertura_id} data-testid="fila-por-firmar" data-folio={p.folio} data-contrato={p.contrato_id}
+                      className={String(p.contrato_id) === contratoQuery ? 'bg-sigecop-blue-light' : undefined}>
                       <td className="px-4 py-3 font-mono text-xs">{p.folio}</td>
                       <td className="px-4 py-3">{p.objeto}</td>
                       <td className="px-4 py-3">{ROL_LABEL[p.rol_en_firma] || p.rol_en_firma}</td>

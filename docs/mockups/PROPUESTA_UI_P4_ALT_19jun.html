@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>SIGECOP — P4 ALTERNATIVA (colapso seguro del doble salto) · contrato visual 19-jun</title>
+<style>
+  :root{--guinda:#691C32;--guinda-osc:#511325;--dorado:#BC955C;--bg:#F4F2EF;--card:#FFF;--txt:#2C2C2A;--sec:#6B6660;--linea:#E2DDD5;--verde:#2E7D32;--ambar:#B7860B;--rojo:#B23B3B;--azul:#34597A;--azul-bg:#EAF1F6;--verde-bg:#EAF4EA;--rojo-bg:#FBECEC;}
+  *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,Segoe UI,Roboto,sans-serif;}
+  body{background:var(--bg);color:var(--txt);font-size:14px;line-height:1.5;}
+  .layout{display:flex;min-height:100vh;}
+  .toc{width:300px;background:var(--guinda);color:#fff;flex-shrink:0;position:sticky;top:0;height:100vh;overflow-y:auto;}
+  .toc h1{font-size:15px;padding:16px 18px;border-bottom:1px solid rgba(255,255,255,.14);font-weight:700;}
+  .toc h1 small{display:block;font-weight:400;font-size:10.5px;opacity:.7;margin-top:3px;}
+  .toc .grp{font-size:10px;text-transform:uppercase;letter-spacing:1px;opacity:.55;padding:14px 18px 4px;}
+  .toc a{display:block;padding:9px 18px;color:#fff;text-decoration:none;font-size:12.5px;border-left:3px solid transparent;cursor:pointer;}
+  .toc a:hover{background:rgba(255,255,255,.08);}.toc a.active{background:var(--guinda-osc);border-left:3px solid var(--dorado);font-weight:600;}
+  .content{flex:1;min-width:0;padding:26px 34px 80px;max-width:1280px;}
+  .screen{display:none;}.screen.show{display:block;}
+  .screen>h2{font-size:21px;color:var(--guinda);margin-bottom:4px;}
+  .screen>.sub{color:var(--sec);font-size:13px;margin-bottom:16px;}
+  .qcambia{background:#fff;border:1px solid var(--linea);border-left:4px solid var(--dorado);border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:20px;font-size:13px;}
+  .qcambia b{color:var(--guinda);}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;}
+  @media(max-width:1050px){.cols{grid-template-columns:1fr;}}
+  .panel{border-radius:10px;overflow:hidden;border:1px solid var(--linea);background:#fff;}
+  .panel .head{padding:8px 14px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;}
+  .panel.antes .head{background:var(--rojo-bg);color:var(--rojo);}.panel.despues .head{background:var(--verde-bg);color:var(--verde);}
+  .panel .body{padding:16px;}
+  .pill{display:inline-block;font-size:9px;font-weight:700;border-radius:20px;padding:2px 8px;}
+  .pill.hoy{background:var(--rojo);color:#fff;}.pill.q{background:var(--verde);color:#fff;}
+  .app{border:1px solid var(--linea);border-radius:8px;overflow:hidden;font-size:12px;}
+  .app .tb{background:#fff;border-bottom:1px solid var(--linea);padding:7px 12px;color:var(--guinda);font-weight:600;font-size:11px;}
+  .app .area{padding:14px;background:var(--bg);}
+  .ttl{font-weight:700;color:var(--guinda);font-size:14px;margin-bottom:8px;}
+  .box{background:#fff;border:1px solid var(--linea);border-radius:8px;padding:14px;margin-bottom:10px;}
+  .muted{color:var(--sec);font-size:11.5px;}
+  .btn{display:inline-block;border-radius:6px;padding:7px 12px;font-size:12px;font-weight:600;border:1px solid transparent;cursor:pointer;}
+  .btn-p{background:var(--guinda);color:#fff;}.btn-s{background:#fff;color:var(--guinda);border-color:#d8c4cb;}
+  .tabs{display:flex;gap:4px;border-bottom:2px solid var(--linea);margin-bottom:12px;}
+  .tab{padding:8px 13px;font-size:12px;font-weight:600;color:var(--sec);border-bottom:2px solid transparent;margin-bottom:-2px;cursor:pointer;}
+  .tab.on{color:var(--guinda);border-bottom-color:var(--guinda);}
+  .tab .lk{font-size:9px;opacity:.55;}
+  .stepbar{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px;}
+  .step{font-size:11px;padding:5px 10px;border-radius:6px;border:1px solid var(--linea);background:#fff;color:var(--sec);}
+  .step.on{background:var(--guinda);color:#fff;border-color:var(--guinda);}.step.done{background:#efe4e8;color:var(--guinda);border-color:#dcc7ce;}
+  .stepcount{font-size:11px;font-weight:700;color:var(--guinda);}
+  .ctx{display:flex;align-items:center;gap:8px;background:var(--azul-bg);border:1px solid #c9dcea;border-radius:7px;padding:6px 10px;margin-bottom:10px;font-size:11.5px;color:var(--azul);}
+  .sel{background:#fff;border:1px solid var(--linea);border-radius:6px;padding:7px 9px;font-size:11.5px;color:var(--sec);}
+  table.rep{width:100%;border-collapse:collapse;font-size:12.5px;background:#fff;margin-top:8px;}
+  table.rep th,table.rep td{border:1px solid var(--linea);padding:8px 10px;text-align:left;vertical-align:top;}
+  table.rep th{background:#f3eef0;color:var(--guinda);font-size:11px;text-transform:uppercase;}
+  .warn{background:#fffaf0;border:1px solid #f0e2c4;border-radius:8px;padding:12px 14px;font-size:12.5px;color:#6b531f;margin-top:14px;}
+  .good{background:var(--verde-bg);border:1px solid #c5e3c5;border-radius:8px;padding:12px 14px;font-size:12.5px;color:#236b27;margin-top:14px;}
+  .x{color:var(--rojo);font-weight:700;}.ok{color:var(--verde);font-weight:700;}
+  .note{font-size:11px;color:var(--sec);margin-top:8px;font-style:italic;}
+  .hu-chip{display:inline-block;background:#eaf1f6;color:#34597a;border:1px solid #c9dcea;border-radius:20px;padding:2px 9px;font-size:10.5px;font-weight:600;}
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav class="toc">
+    <h1>SIGECOP · P4 ALTERNATIVA<small>Colapso SEGURO del doble salto · contrato visual · 19-jun · NO funcional · NO implementado</small></h1>
+    <div class="grp">P4 — alternativa</div>
+    <a data-s="a0" class="active">▸ El enfoque + por qué es seguro</a>
+    <a data-s="a1">Pantalla A · Avance (sin wizard)</a>
+    <a data-s="a2">Pantalla B · Estimación (CON wizard)</a>
+    <a data-s="a3">Comparación con el P4 original</a>
+  </nav>
+  <main class="content">
+
+    <section class="screen show" id="a0">
+      <h2>P4 alternativa — colapso por <b>pestañas-enlace</b> (no incrustación)</h2>
+      <p class="sub">Este es el enfoque que propuse en vez del P4 original. <b>NO está implementado</b> — es el contrato visual para que lo apruebes (o lo ajustes) antes de tocar código.</p>
+      <div class="qcambia">
+        <b>La idea en una frase:</b> el sidebar lleva <b>directo a la pantalla de acción</b> (1 clic, no 2), y esa pantalla tiene una <b>barra de pestañas arriba</b>; cada pestaña es un <b>enlace</b> a su pantalla hermana (que ya existe), no un formulario incrustado. Se ve como pestañas, pero por debajo es navegación entre rutas que ya existen.
+      </div>
+      <h3 style="color:var(--guinda);font-size:15px;margin:6px 0 8px;">Por qué es SEGURA para el gating (vs el P4 original)</h3>
+      <table class="rep">
+        <tr><th>Riesgo del P4 original (pestañas in-page)</th><th>Cómo lo evita la alternativa</th></tr>
+        <tr><td>Incrusta los componentes-página hijos dentro del ambiente → <span class="x">doble HeaderVista</span> y layouts anidados.</td><td><span class="ok">No incrusta nada.</span> Cada pestaña navega a su ruta real; cada pantalla mantiene su propio encabezado y su estado.</td></tr>
+        <tr><td>Re-envuelve el wizard (estimación/pago) → <span class="x">riesgo de romper el gating secuencial</span> (pasoValido/irAPaso).</td><td><span class="ok">El wizard NO se toca.</span> La barra de pestañas vive ARRIBA del wizard; el stepper + su gating quedan intactos por dentro.</td></tr>
+        <tr><td>Hay que reescribir 6 ambientes + sus hijos.</td><td>Solo: (a) el sidebar apunta a la pantalla de acción, (b) una barra de pestañas (componente nuevo, enlaces gateados con LinkHU) en cada pantalla del ciclo. Cero lógica.</td></tr>
+        <tr><td>TIPO B podría quedar atrapado al fundir vistas.</td><td><span class="ok">TIPO B intacto:</span> las pestañas de lectura (Curva, Atrasos, Historial…) son enlaces, nunca se bloquean.</td></tr>
+      </table>
+      <div class="good"><b>Resultado:</b> mismo ahorro de clic (1 hop en vez de 2) y la misma sensación de “pestañas”, pero sin tocar el gating ni incrustar componentes. Es presentación + navegación (sidebar + un componente de pestañas).</div>
+    </section>
+
+    <!-- A1 AVANCE sin wizard -->
+    <section class="screen" id="a1">
+      <h2>Pantalla A · Avance y seguimiento (ciclo SIN wizard)</h2>
+      <p class="sub">Caso simple: el ciclo de avance son 3 pantallas hermanas (Registrar / Curva / Atrasos), sin stepper.</p>
+      <div class="cols">
+        <div class="panel antes"><div class="head"><span class="pill hoy">HOY</span> Sidebar → ambiente → pantalla (2 clics)</div>
+          <div class="body"><div class="app">
+            <div class="tb">Inicio › Seguimiento › Ambiente</div>
+            <div class="area">
+              <div class="ttl">Ambiente de avance físico y seguimiento</div>
+              <div class="box"><b>Bloque 2 — Registrar avance</b><br><span class="muted">…</span><br><span class="btn btn-p" style="margin-top:6px;">Registrar avance →</span> <span class="x">(clic #2)</span></div>
+              <div class="box"><b>Bloque 3 — Curva</b> <span class="btn btn-s">Ver curva →</span></div>
+              <div class="box"><b>Bloque 4 — Atrasos</b> <span class="btn btn-s">Ver atrasos →</span></div>
+            </div>
+          </div></div>
+        </div>
+        <div class="panel despues"><div class="head"><span class="pill q">QUEDARÁ (ALT)</span> Sidebar → pantalla con pestañas-enlace (1 clic)</div>
+          <div class="body"><div class="app">
+            <div class="tb">Inicio › Avance y seguimiento</div>
+            <div class="area">
+              <div class="ttl">Avance y seguimiento <span class="hu-chip">Ciclo · HU 05–07</span></div>
+              <div class="ctx">📄 Contrato activo: <b>OBRA-2026-PRUEBA-FINAL</b> · Cambiar</div>
+              <div class="tabs">
+                <span class="tab on">Registrar avance <span class="lk">(aquí)</span></span>
+                <span class="tab">Curva <span class="lk">↗</span></span>
+                <span class="tab">Atrasos <span class="lk">↗</span></span>
+              </div>
+              <div class="box"><b>Registrar avance ejecutado (HU-06)</b>
+                <div style="display:flex;gap:6px;margin:8px 0;"><span class="sel">C-01 Limpieza</span><span class="sel">Periodo 1</span><span class="sel">1000</span></div>
+                <span class="btn btn-p">Registrar avance</span>
+              </div>
+            </div>
+          </div>
+          <p class="muted ok" style="margin-top:8px;">El formulario está a la vista (1 clic). "Curva" y "Atrasos" son pestañas-enlace (↗ navegan a su hermana, que muestra lo mismo con esta barra). El intermedio "ambiente" se retira.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- A2 ESTIMACION con wizard -->
+    <section class="screen" id="a2">
+      <h2>Pantalla B · Estimación (ciclo CON wizard) — el gating queda intacto</h2>
+      <p class="sub">Caso con stepper: la barra de pestañas-enlace (lo "EN PARALELO") va ARRIBA; el WIZARD de 5 pasos y su candado secuencial quedan exactamente igual, por dentro.</p>
+      <div class="cols">
+        <div class="panel antes"><div class="head"><span class="pill hoy">HOY</span> Bloque "EN PARALELO" + wizard mezclados</div>
+          <div class="body"><div class="app"><div class="area">
+            <div class="ttl">Integración del periodo</div>
+            <div class="box"><span class="muted">EN PARALELO:</span> <span class="btn btn-s">Revisión</span> <span class="btn btn-s">Reingreso</span> <span class="btn btn-s">Historial</span> <span class="btn btn-s">Tablero</span></div>
+            <div class="stepbar"><span class="step done">① Periodo</span><span class="step on">② Generadores</span><span class="step">③ Carátula</span><span class="step">④ Soportes</span><span class="step">⑤ Integrar</span></div>
+          </div></div></div>
+        </div>
+        <div class="panel despues"><div class="head"><span class="pill q">QUEDARÁ (ALT)</span> Pestañas arriba · wizard intacto abajo</div>
+          <div class="body"><div class="app"><div class="area">
+            <div class="ttl">Ciclo de estimación <span class="hu-chip">Ciclo · HU 12–17</span></div>
+            <div class="ctx">📄 <b>OBRA-2026-PRUEBA-FINAL</b> · Cambiar</div>
+            <div class="tabs">
+              <span class="tab on">Integrar <span class="lk">(aquí)</span></span>
+              <span class="tab">Revisión <span class="lk">↗</span></span>
+              <span class="tab">Reingreso <span class="lk">↗</span></span>
+              <span class="tab">Historial <span class="lk">↗</span></span>
+              <span class="tab">Tablero <span class="lk">↗</span></span>
+            </div>
+            <div class="stepbar"><span class="step done">① Periodo</span><span class="step on">② Generadores</span><span class="step">③ Carátula</span><span class="step">④ Soportes</span><span class="step">⑤ Integrar</span><span class="stepcount" style="margin-left:auto;">Paso 2 de 5</span></div>
+            <div class="box muted">…captura de generadores… (el "Siguiente" sigue bloqueado hasta validar el paso — gating intacto)</div>
+          </div></div>
+          <p class="muted ok" style="margin-top:8px;">Las pestañas (Revisión/Reingreso/Historial/Tablero = lo "EN PARALELO") son enlaces gateados (LinkHU). El <b>wizard y su gating no se tocan</b>: siguen exactamente como hoy, por debajo de la barra.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- A3 COMPARACION -->
+    <section class="screen" id="a3">
+      <h2>En qué se diferencia del P4 original</h2>
+      <table class="rep">
+        <tr><th>—</th><th>P4 ORIGINAL (mockup PROPUESTA_UI)</th><th>P4 ALTERNATIVA (este)</th></tr>
+        <tr><td><b>Pestañas</b></td><td>In-page: la pestaña <b>cambia el contenido</b> dentro de la misma ruta (formulario incrustado).</td><td>Enlace: la pestaña <b>navega</b> a la pantalla hermana (su ruta real ya existente).</td></tr>
+        <tr><td><b>Rutas</b></td><td>1 ruta que embebe a las demás.</td><td>N rutas (las que ya hay); el sidebar apunta a la principal.</td></tr>
+        <tr><td><b>Componentes hijos</b></td><td>Se incrustan (doble HeaderVista, layouts anidados).</td><td>No se incrustan; cada uno se renderiza en su ruta, intacto.</td></tr>
+        <tr><td><b>Wizard / gating</b></td><td><span class="x">Riesgo</span> de re-envolver el wizard y romper el candado secuencial.</td><td><span class="ok">Intacto</span> — la barra va arriba; el wizard no se toca.</td></tr>
+        <tr><td><b>Esfuerzo / riesgo</b></td><td>Alto (refactor de 6 ambientes + hijos).</td><td>Bajo-medio (sidebar + 1 componente de pestañas-enlace).</td></tr>
+        <tr><td><b>Ahorro de clic</b></td><td>1 hop menos.</td><td>1 hop menos (igual).</td></tr>
+      </table>
+      <div class="warn">
+        <b>Lo único a decidir contigo:</b> en la alternativa, el ambiente intermedio (la pantalla-índice de bloques)
+        <b>se retira</b> como paso obligatorio (el "recorrido por bloques" completo puede conservarse accesible desde
+        "Ciclo de vida"). Si prefieres conservar el ambiente-índice como pantalla aparte, también se puede: el
+        sidebar llevaría a la pantalla de acción y el índice quedaría como una entrada secundaria. <b>Dime cuál
+        prefieres y lo implemento tal cual.</b>
+      </div>
+      <p class="note">Mockup NO funcional. Si lo apruebas, se implementa exactamente esto: sidebar→pantalla de acción + barra de pestañas-enlace (LinkHU) por ciclo, sin tocar wizards/gating/zona congelada.</p>
+    </section>
+
+  </main>
+</div>
+<script>
+  const links=document.querySelectorAll('.toc a'),screens=document.querySelectorAll('.screen');
+  links.forEach(a=>a.addEventListener('click',()=>{const id=a.getAttribute('data-s');links.forEach(l=>l.classList.remove('active'));a.classList.add('active');screens.forEach(s=>s.classList.toggle('show',s.id===id));window.scrollTo(0,0);}));
+</script>
+</body>
+</html>

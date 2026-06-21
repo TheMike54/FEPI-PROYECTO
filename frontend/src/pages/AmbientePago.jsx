@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import LinkHU from '../components/LinkHU.jsx';
+import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
+import PestanasCiclo from '../components/PestanasCiclo.jsx';
 import { useSesion } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
@@ -74,14 +77,18 @@ export default function AmbientePago() {
     <div className="space-y-4">
       <HeaderVista
         huId="HU-21"
-        titulo="Ambiente de pago de la estimación (ciclo de cobro, por bloques)"
+        titulo="Ambiente de pago de la estimación (ciclo de cobro)"
         sprint="Sprint 9"
         rolAcademico="Finanzas"
         breadcrumb={[{ label: 'Inicio', href: '/' }, { label: 'Pagos' }, { label: 'Ambiente' }]}
       />
 
+      {/* FRENTE 2 / NAV-G — barra de pestañas del ciclo (incluye el chip "Ciclo · HU 20–21"); el ambiente no es
+          un tab, así que ninguna pestaña queda marcada (activo sin coincidencia), pero el chip y la navegación sí. */}
+      <PestanasCiclo ciclo="pago" activo="ambiente" />
+
       <div className="bg-sigecop-blue-light border-l-4 border-sigecop-blue px-4 py-3 rounded-r-md text-sm text-slate-700" data-testid="ambiente-pago-aviso">
-        <strong>Ciclo de cobro de una estimación</strong>, por bloques: estimación autorizada → tránsito a
+        <strong>Ciclo de cobro de una estimación</strong>, paso a paso: estimación autorizada → tránsito a
         pago → instrucción → registro del pago → cierre. Cada bloque <strong>enlaza a su pantalla real</strong>;
         este ambiente solo las encadena. El cálculo (neto, suficiencia) lo hace el sistema.
       </div>
@@ -94,13 +101,8 @@ export default function AmbientePago() {
 
       {/* BLOQUE 1 — Estimación autorizada (siembra el ciclo). */}
       <Bloque n={1} titulo="Estimación autorizada (punto de entrada)" estado={autorizadas.length ? 'listo' : 'activo'}>
-        <div className="max-w-2xl">
-          <label className="sg-label">Contrato</label>
-          <select className="sg-input" value={contratoId} onChange={(e) => seleccionarContrato(e.target.value)} disabled={sinSesion} data-testid="select-contrato">
-            <option value="">— Selecciona un contrato —</option>
-            {contratos.map((ct) => <option key={ct.id} value={ct.id}>{ct.folio} · {ct.objeto}</option>)}
-          </select>
-        </div>
+        {/* Hereda el contrato activo global; el banner carga datos vía seleccionarContrato (3A·P3). */}
+        <BannerContratoActivo seleccionar={seleccionarContrato} contratoId={contratoId} />
         {contratoId && (
           <div className="mt-3 text-sm" data-testid="estimaciones-autorizadas">
             {autorizadas.length === 0 ? (
@@ -113,8 +115,8 @@ export default function AmbientePago() {
           </div>
         )}
         <div className="flex flex-wrap gap-3 mt-3">
-          <Link to={`/estimaciones/historial${q}`} className="sg-btn-secondary" data-testid="link-historial">Historial de estimaciones (HU-14) →</Link>
-          <Link to={`/estimaciones/revision${q}`} className="sg-btn-secondary" data-testid="link-revision">Revisión / autorización (HU-15) →</Link>
+          <LinkHU hu="HU-14" to={`/estimaciones/historial${q}`} className="sg-btn-secondary" data-testid="link-historial" actor="No disponible para tu rol">Historial de estimaciones (HU-14) →</LinkHU>
+          <LinkHU hu="HU-15" to={`/estimaciones/revision${q}`} className="sg-btn-secondary" data-testid="link-revision" actor="La hace Supervisión o Residencia">Revisión / autorización (HU-15) →</LinkHU>
         </div>
       </Bloque>
 
@@ -125,7 +127,7 @@ export default function AmbientePago() {
           (art. 24 LOPSRM: techo − comprometido), revisa los <strong>soportes</strong> (factura, CFDI, fianza
           de cumplimiento) y muestra el <strong>semáforo del plazo de 20 días</strong> (art. 54).
         </p>
-        <Link to={`/pagos/transito${q}`} className="sg-btn-primary" data-testid="link-transito">
+        <Link to={`/pagos/transito${q}`} className="sg-btn-secondary" data-testid="link-transito">
           Ir al tránsito a pago (HU-20) →
         </Link>
       </Bloque>
@@ -146,9 +148,9 @@ export default function AmbientePago() {
           Finanzas registra el pago de la estimación autorizada: el <strong>importe = neto</strong> (lo
           calcula el sistema, no se teclea), no se paga dos veces ni una no autorizada (candados de HU-21).
         </p>
-        <Link to={`/pagos/registro${q}`} className="sg-btn-primary" data-testid="link-registro">
+        <LinkHU hu="HU-21" to={`/pagos/registro${q}`} className="sg-btn-primary" data-testid="link-registro" actor="Lo registra Finanzas">
           Registrar el pago (HU-21) →
-        </Link>
+        </LinkHU>
       </Bloque>
 
       {/* BLOQUE 5 — Cierre del ciclo: pagos + continuación al finiquito. */}
@@ -165,9 +167,9 @@ export default function AmbientePago() {
           (los pagos se descuentan del saldo final, art. 64 LOPSRM).
         </p>
         {puedeFiniquito ? (
-          <Link to={`/contratos/finiquito${q}`} className="sg-btn-secondary" data-testid="link-finiquito">
+          <LinkHU roles={['dependencia', 'residente']} to={`/contratos/finiquito${q}`} className="sg-btn-secondary" data-testid="link-finiquito" actor="Lo elabora la Dependencia o Residencia">
             Ir al finiquito y cierre (HU-24) →
-          </Link>
+          </LinkHU>
         ) : (
           <p className="text-xs text-slate-500" data-testid="finiquito-informativo">El <strong>finiquito</strong> lo elaboran la dependencia o la residencia (HU-24); no está disponible para tu rol.</p>
         )}

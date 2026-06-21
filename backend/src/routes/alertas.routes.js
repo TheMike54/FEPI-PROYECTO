@@ -1,7 +1,7 @@
 const express = require('express');
 const { authMiddleware, requireRole } = require('../middlewares/auth.middleware');
 const {
-  alertasDeContrato, resumenAtrasos, asentarAtraso
+  alertasDeContrato, resumenAtrasos, asentarAtraso, alertasDetalle
 } = require('../controllers/alertas.controller');
 
 const router = express.Router();
@@ -12,6 +12,10 @@ router.use(authMiddleware);
 
 // AVISO al iniciar sesión (badge): conteo de conceptos/contratos con déficit, acotado por participación.
 router.get('/resumen', resumenAtrasos);
+
+// FRENTE 4 — DETALLE accionable (filas) para el centro de notificaciones / accesos directos. ?contrato acota
+// al contrato activo. Solo lectura, acotado por participación (igual que /resumen).
+router.get('/detalle', alertasDetalle);
 
 // Panel de atraso del contrato: cualquier rol con acceso (acotado por participación en el controller).
 router.get('/contrato/:contratoId', alertasDeContrato);

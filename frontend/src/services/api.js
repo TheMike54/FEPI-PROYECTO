@@ -114,6 +114,7 @@ export const api = {
   padronEmpresas: () => request('/empresas/padron'),
   empresasPorValidar: () => request('/empresas/por-validar'),
   dependenciasCatalogo: () => request('/empresas/dependencias'),
+  personasDeEmpresa: (id) => request(`/empresas/${id}/personas`),   // cuentas de la empresa (1 empresa : N cuentas)
   validarEmpresa: (id) => request(`/empresas/${id}/validar`, { method: 'POST' }),
   fusionarEmpresa: (id, canonicaId) => request(`/empresas/${id}/fusionar`, { method: 'POST', body: JSON.stringify({ canonica_id: canonicaId }) }),
   // HU-18: portafolio ejecutivo con semáforos por contrato (agregado + acotado por participación).
@@ -146,6 +147,21 @@ export const api = {
   visitasDeContrato: (contratoId) => request(`/minutas/contrato/${contratoId}/visitas`),
   crearVisita: (contratoId, payload) => request(`/minutas/contrato/${contratoId}/visitas`, { method: 'POST', body: JSON.stringify(payload) }),
   vincularNotaVisita: (visitaId, notaId) => request(`/minutas/visita/${visitaId}/nota`, { method: 'PATCH', body: JSON.stringify({ nota_id: notaId }) }),
+  // EVIDENCIA FOTOGRÁFICA de la estimación (art. 132 fr. IV RLOPSRM) — fotos en BYTEA (patrón PDF de minutas).
+  listarFotosEstimacion: (estId) => request(`/estimacion-fotos/estimacion/${estId}`),
+  subirFotoEstimacion: (estId, file, descripcion) => {
+    const fd = new FormData(); fd.append('documento', file); if (descripcion) fd.append('descripcion', descripcion);
+    const token = localStorage.getItem('sigecop_token');
+    return fetch(`${API_URL}/estimacion-fotos/estimacion/${estId}`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd })
+      .then(async (res) => { const t = await res.text(); const d = t ? JSON.parse(t) : null; if (!res.ok) { const e = new Error(d?.error || `HTTP ${res.status}`); e.status = res.status; throw e; } return d; });
+  },
+  descargarFotoEstimacion: async (fotoId) => {
+    const token = localStorage.getItem('sigecop_token');
+    const res = await fetch(`${API_URL}/estimacion-fotos/archivo/${fotoId}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) { let m = `HTTP ${res.status}`; try { m = JSON.parse(await res.text())?.error || m; } catch (_) { /* binario */ } const e = new Error(m); e.status = res.status; throw e; }
+    return URL.createObjectURL(await res.blob());
+  },
+  eliminarFotoEstimacion: (fotoId) => request(`/estimacion-fotos/${fotoId}`, { method: 'DELETE' }),
   subirPdfMinuta: (minutaId, file) => {
     const fd = new FormData(); fd.append('documento', file);
     const token = localStorage.getItem('sigecop_token');
@@ -177,6 +193,8 @@ export const api = {
   alertasDeContrato: (contratoId) => request(`/alertas/contrato/${contratoId}`),
   // Badge del login: { conceptos, contratos } con déficit, acotado por participación.
   resumenAtrasos: () => request('/alertas/resumen'),
+  // FRENTE 4 — detalle accionable de atrasos (filas) para el centro/campana; ?contrato acota al contrato activo.
+  alertasDetalle: (contratoId) => request(`/alertas/detalle${contratoId ? `?contrato=${contratoId}` : ''}`),
   // Asentar el atraso de un concepto en la bitácora (residente; exige bitácora abierta).
   asentarAtraso: (contratoId, payload) => request(`/alertas/contrato/${contratoId}/asentar`, { method: 'POST', body: JSON.stringify(payload) }),
   // HU-14 (Equipo 3): historial del ciclo de cobro (cada estimación con su estado y transiciones,

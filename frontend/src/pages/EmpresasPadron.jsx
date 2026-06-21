@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import Breadcrumb from '../components/ui/Breadcrumb.jsx';
 import { useSesion } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
@@ -26,6 +26,32 @@ function Tabs({ tab, setTab, pendientes }) {
   );
 }
 
+// Sub-tabla de cuentas de UNA empresa (1 empresa : N cuentas). data: array | 'cargando' | 'error' | undefined.
+function SubtablaPersonas({ data }) {
+  if (data === undefined || data === 'cargando') return <p className="text-xs text-tinta-sec py-1">Cargando cuentas…</p>;
+  if (data === 'error') return <p className="text-xs text-red-600 py-1">No se pudieron cargar las cuentas.</p>;
+  const arr = Array.isArray(data) ? data : [];
+  if (arr.length === 0) return <p className="text-xs text-tinta-sec py-1 italic">Esta empresa no tiene cuentas asociadas.</p>;
+  const rolLabel = { residente: 'Residente', contratista: 'Contratista / Superintendente', supervision: 'Supervisión', dependencia: 'Dependencia', finanzas: 'Finanzas' };
+  return (
+    <div className="rounded border border-borde bg-white overflow-hidden">
+      <table className="w-full text-xs">
+        <thead><tr className="text-left text-tinta-sec bg-pagina"><th className="py-1.5 px-2">Nombre</th><th className="px-2">Correo</th><th className="px-2">Rol</th><th className="px-2">Estado</th></tr></thead>
+        <tbody>
+          {arr.map((u) => (
+            <tr key={u.id} className="border-t border-borde" data-testid={`persona-${u.id}`}>
+              <td className="py-1.5 px-2">{u.nombre}</td>
+              <td className="px-2 font-mono text-[11px]">{u.email}</td>
+              <td className="px-2">{rolLabel[u.rol] || u.rol}</td>
+              <td className="px-2">{u.estado || '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export default function EmpresasPadron() {
   const { token } = useSesion();
   const { showToast } = useToast();
@@ -36,6 +62,19 @@ export default function EmpresasPadron() {
   const [porValidar, setPorValidar] = useState([]);
   const [dependencias, setDependencias] = useState([]);
   const [cargando, setCargando] = useState(false);
+  // Ver cuentas por empresa (1 empresa : N cuentas): al expandir una fila se cargan sus cuentas (1ª vez).
+  const [expandida, setExpandida] = useState(null);
+  const [personas, setPersonas] = useState({}); // empresaId -> array | 'cargando' | 'error'
+  const cambiarTab = (k) => { setTab(k); setExpandida(null); };
+  const toggleExpand = useCallback(async (id) => {
+    if (expandida === id) { setExpandida(null); return; }
+    setExpandida(id);
+    if (personas[id] === undefined) {
+      setPersonas((p) => ({ ...p, [id]: 'cargando' }));
+      try { const l = await api.personasDeEmpresa(id); setPersonas((p) => ({ ...p, [id]: Array.isArray(l) ? l : [] })); }
+      catch { setPersonas((p) => ({ ...p, [id]: 'error' })); }
+    }
+  }, [expandida, personas]);
 
   const recargar = useCallback(async () => {
     if (sinSesion) return;
@@ -83,7 +122,7 @@ export default function EmpresasPadron() {
       {sinSesion && <div className="bg-slate-50 border border-slate-200 rounded-md px-4 py-3 text-sm text-slate-600">Inicia sesión como Dependencia para administrar el padrón.</div>}
 
       <div className="bg-white border border-borde rounded-lg p-5">
-        <Tabs tab={tab} setTab={setTab} pendientes={porValidar.length} />
+        <Tabs tab={tab} setTab={cambiarTab} pendientes={porValidar.length} />
 
         {tab === 'padron' && (
           <div data-testid="panel-padron">
@@ -94,15 +133,22 @@ export default function EmpresasPadron() {
                 {padron.length === 0 ? (
                   <tr><td colSpan={5} className="py-4 text-center text-tinta-sec italic">{cargando ? 'Cargando…' : 'Sin empresas en el padrón.'}</td></tr>
                 ) : padron.map((e) => (
-                  <tr key={e.id} className="border-b border-borde" data-testid={`empresa-${e.id}`}>
-                    <td className="py-2">{e.nombre}</td>
-                    <td><span className="text-xs px-2 py-0.5 rounded-full bg-sigecop-blue-light text-sigecop-blue">{tipoLabel(e.tipo)}</span></td>
-                    <td className="text-right">{e.personas}</td>
-                    <td className="text-right">{e.contratos}</td>
-                    <td>{e.estado === 'validada'
-                      ? <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">Validada</span>
-                      : <button type="button" className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800" onClick={() => validar(e.id)} data-testid={`validar-${e.id}`}>Por validar · validar</button>}</td>
-                  </tr>
+                  <Fragment key={e.id}>
+                    <tr className="border-b border-borde cursor-pointer hover:bg-pagina" data-testid={`empresa-${e.id}`} onClick={() => toggleExpand(e.id)}>
+                      <td className="py-2"><span className="text-tinta-ter mr-1" aria-hidden="true">{expandida === e.id ? '▾' : '▸'}</span>{e.nombre}</td>
+                      <td><span className="text-xs px-2 py-0.5 rounded-full bg-sigecop-blue-light text-sigecop-blue">{tipoLabel(e.tipo)}</span></td>
+                      <td className="text-right">{e.personas}</td>
+                      <td className="text-right">{e.contratos}</td>
+                      <td onClick={(ev) => ev.stopPropagation()}>{e.estado === 'validada'
+                        ? <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">Validada</span>
+                        : <button type="button" className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-800" onClick={() => validar(e.id)} data-testid={`validar-${e.id}`}>Por validar · validar</button>}</td>
+                    </tr>
+                    {expandida === e.id && (
+                      <tr className="border-b border-borde bg-pagina" data-testid={`empresa-personas-${e.id}`}>
+                        <td colSpan={5} className="px-3 py-2"><SubtablaPersonas data={personas[e.id]} /></td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>
@@ -144,7 +190,17 @@ export default function EmpresasPadron() {
                 {dependencias.length === 0 ? (
                   <tr><td colSpan={2} className="py-4 text-center text-tinta-sec italic">Sin dependencias.</td></tr>
                 ) : dependencias.map((e) => (
-                  <tr key={e.id} className="border-b border-borde"><td className="py-2">{e.nombre}</td><td className="text-right">{e.contratos}</td></tr>
+                  <Fragment key={e.id}>
+                    <tr className="border-b border-borde cursor-pointer hover:bg-pagina" data-testid={`dep-${e.id}`} onClick={() => toggleExpand(e.id)}>
+                      <td className="py-2"><span className="text-tinta-ter mr-1" aria-hidden="true">{expandida === e.id ? '▾' : '▸'}</span>{e.nombre}</td>
+                      <td className="text-right">{e.contratos}</td>
+                    </tr>
+                    {expandida === e.id && (
+                      <tr className="border-b border-borde bg-pagina" data-testid={`dep-personas-${e.id}`}>
+                        <td colSpan={2} className="px-3 py-2"><SubtablaPersonas data={personas[e.id]} /></td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
               </tbody>
             </table>

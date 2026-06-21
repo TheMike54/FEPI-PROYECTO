@@ -70,5 +70,76 @@ UPDATE usuarios SET empresa_id = (SELECT id FROM empresas WHERE lower(btrim(rege
 UPDATE usuarios SET empresa_id = (SELECT id FROM empresas WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g'))) = 'supervisión técnica sur demo' LIMIT 1)
   WHERE email = 'superv.sur@sigecop.test' AND empresa_id IS NULL;
 
+-- ============================================================================
+-- (4) AMPLIACIÓN 20-jun — más variedad para la demo y el acotamiento por empresa.
+-- Sube a 3 dependencias / 3 contratistas / 3 supervisiones, con la regla 1 EMPRESA : N CUENTAS.
+-- Mismo patrón idempotente (INSERT … WHERE NOT EXISTS / ON CONFLICT / UPDATE … WHERE empresa_id IS NULL).
+-- Password de todas: Sigecop2026! (hash bcrypt reutilizado). Es ADITIVO: no pisa lo anterior.
+-- ============================================================================
+
+-- (4.1) Tres empresas nuevas (1 dependencia, 1 contratista, 1 supervisión).
+INSERT INTO empresas (nombre)
+SELECT v.nombre FROM (VALUES
+  ('Dependencia Norte Demo'), ('Constructora del Pacífico SA de CV'), ('Supervisión Integral del Norte')
+) AS v(nombre)
+WHERE NOT EXISTS (
+  SELECT 1 FROM empresas e
+  WHERE lower(btrim(regexp_replace(e.nombre, '\s+', ' ', 'g')))
+      = lower(btrim(regexp_replace(v.nombre, '\s+', ' ', 'g')))
+);
+
+-- (4.2) Tipo y estado de las empresas nuevas.
+UPDATE empresas SET tipo = 'dependencia'
+  WHERE lower(btrim(regexp_replace(nombre, '\s+', ' ', 'g'))) = 'dependencia norte demo' AND tipo <> 'dependencia';
+UPDATE empresas SET tipo = 'contratista'
+  WHERE lower(btrim(regexp_replace(nombre, '\s+', ' ', 'g'))) = 'constructora del pacífico sa de cv' AND tipo <> 'contratista';
+UPDATE empresas SET tipo = 'supervision'
+  WHERE lower(btrim(regexp_replace(nombre, '\s+', ' ', 'g'))) = 'supervisión integral del norte' AND tipo <> 'supervision';
+UPDATE empresas SET estado = 'validada'
+  WHERE lower(btrim(regexp_replace(nombre, '\s+', ' ', 'g')))
+        IN ('dependencia norte demo','constructora del pacífico sa de cv','supervisión integral del norte')
+    AND (estado IS NULL OR estado = 'por_validar');
+
+-- (4.3) Cuentas nuevas (password Sigecop2026!, hash reutilizado). estado 'activo' por DEFAULT.
+INSERT INTO usuarios (nombre, email, password_hash, rol) VALUES
+  -- Dependencia Norte Demo (3.ª dependencia → refuerza A-no-ve-B): dependencia + residente + finanzas
+  ('Lic. Norma Dependencia Norte', 'dep2@sigecop.test',             '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'dependencia'),
+  ('Ing. Néstor Residente Norte',  'residente.norte@sigecop.test',  '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'residente'),
+  ('C.P. Nadia Finanzas Norte',    'finanzas.norte@sigecop.test',   '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'finanzas'),
+  -- Dependencia Sur Demo: 1 finanzas más (para cubrir finanzas en más de una dependencia)
+  ('C.P. Susana Finanzas Sur',     'finanzas.sur@sigecop.test',     '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'finanzas'),
+  -- Constructora del Pacífico (3.ª constructora): 2 superintendentes
+  ('Ing. Patricia Pacífico',       'pacifico1@sigecop.test',        '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'contratista'),
+  ('Ing. Pablo Pacífico',          'pacifico2@sigecop.test',        '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'contratista'),
+  -- Supervisión Integral del Norte (3.ª supervisión): 1 persona
+  ('Arq. Nadia Supervisión Norte', 'superv.norte@sigecop.test',     '$2a$10$n4rhCkjJeeKM0GPpL8lUbenEoUFhckkQRHnui1SYG6z6/PbM.7qBy', 'supervision')
+ON CONFLICT (email) DO NOTHING;
+
+-- (4.4) Vincula cada cuenta nueva a su empresa (solo si empresa_id IS NULL → no pisa).
+UPDATE usuarios SET empresa_id = (SELECT id FROM empresas WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g'))) = 'dependencia norte demo' LIMIT 1)
+  WHERE email IN ('dep2@sigecop.test','residente.norte@sigecop.test','finanzas.norte@sigecop.test') AND empresa_id IS NULL;
+UPDATE usuarios SET empresa_id = (SELECT id FROM empresas WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g'))) = 'dependencia sur demo' LIMIT 1)
+  WHERE email = 'finanzas.sur@sigecop.test' AND empresa_id IS NULL;
+UPDATE usuarios SET empresa_id = (SELECT id FROM empresas WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g'))) = 'constructora del pacífico sa de cv' LIMIT 1)
+  WHERE email IN ('pacifico1@sigecop.test','pacifico2@sigecop.test') AND empresa_id IS NULL;
+UPDATE usuarios SET empresa_id = (SELECT id FROM empresas WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g'))) = 'supervisión integral del norte' LIMIT 1)
+  WHERE email = 'superv.norte@sigecop.test' AND empresa_id IS NULL;
+
+-- ============================================================================
+-- (5) NOMBRES REALISTAS (PLAN_DATOS_DEMO_PROFE_21jun) — renombra las 9 empresas demo a nombres realistas
+-- mexicanos AL FINAL (tras crearlas y vincular las cuentas por nombre demo). Solo cambia el DISPLAY; conserva
+-- el empresa_id de cada cuenta. IDEMPOTENTE: si ya están renombradas, los WHERE por nombre demo no matchean.
+-- 3 dependencias / 3 contratistas / 3 supervisiones. (schema.sql siembra 3 base con nombre demo → aquí se renombran.)
+-- ============================================================================
+UPDATE empresas SET nombre='Secretaría de Obras Públicas del Estado de Guerrero' WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g')))='dependencia demo';
+UPDATE empresas SET nombre='H. Ayuntamiento de Chilpancingo de los Bravo'        WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g')))='dependencia sur demo';
+UPDATE empresas SET nombre='Universidad Autónoma de Guerrero'                     WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g')))='dependencia norte demo';
+UPDATE empresas SET nombre='Constructora del Bajío, S.A. de C.V.'                 WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g')))='constructora demo';
+UPDATE empresas SET nombre='Edificaciones del Norte, S.A. de C.V.'               WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g')))='constructora patito sa de cv';
+UPDATE empresas SET nombre='Grupo Constructor Pacífico, S.A. de C.V.'            WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g')))='constructora del pacífico sa de cv';
+UPDATE empresas SET nombre='Supervisión Técnica Integral, S.C.'                  WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g')))='supervisión externa demo';
+UPDATE empresas SET nombre='Consultoría y Supervisión de Obra, S.C.'             WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g')))='supervisión técnica sur demo';
+UPDATE empresas SET nombre='Ingeniería y Control de Calidad del Sur, S.C.'       WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g')))='supervisión integral del norte';
+
 -- Verificación rápida (informativa): cuántas cuentas por empresa.
 -- SELECT e.nombre, e.tipo, count(u.id) FROM empresas e LEFT JOIN usuarios u ON u.empresa_id=e.id GROUP BY e.id ORDER BY e.nombre;

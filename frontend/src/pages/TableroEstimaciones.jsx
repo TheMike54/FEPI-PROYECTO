@@ -1,8 +1,10 @@
 import { useMemo, useState, useEffect, useCallback } from 'react';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
+import PestanasCiclo from '../components/PestanasCiclo.jsx';
 import EncabezadoContrato from '../components/ui/EncabezadoContrato.jsx';
 import Kpi from '../components/ui/Kpi.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
+import LinkHU from '../components/LinkHU.jsx';
 import { useSesion } from '../context/SesionContext.jsx';
 import { api } from '../services/api.js';
 
@@ -224,6 +226,8 @@ export default function TableroEstimaciones() {
         ]}
       />
 
+      <PestanasCiclo ciclo="estimacion" activo="tablero" />
+
       {/* UI-1: EncabezadoContrato (sistema de diseño guinda); mismo contenido. */}
       <EncabezadoContrato
         titulo="Cartera"
@@ -283,8 +287,26 @@ export default function TableroEstimaciones() {
               No se muestran las rechazadas — su historial está en HU-14.
             </p>
             {filtradas.length === 0 ? (
-              <div className="text-sm text-slate-400 italic" data-testid="tablero-vacio">
-                Sin estimaciones con los filtros aplicados.
+              <div className="text-sm text-slate-500" data-testid="tablero-vacio">
+                {tarjetas.length === 0 ? (
+                  <div className="text-center py-4">
+                    <p className="font-semibold text-slate-700">Aún no hay estimaciones en proceso.</p>
+                    <p className="mt-1 text-slate-500">
+                      Las estimaciones aparecen aquí en cuanto se integra la primera. Comienza integrando una estimación con sus números generadores.
+                    </p>
+                    <LinkHU
+                      hu="HU-12"
+                      to="/estimaciones/integracion"
+                      className="sg-btn-secondary mt-3 inline-flex"
+                    >
+                      Integrar estimación →
+                    </LinkHU>
+                  </div>
+                ) : (
+                  <p className="italic text-slate-400">
+                    Ninguna estimación coincide con los filtros aplicados. Cambia o limpia los filtros (Estado, Periodo o Responsable) para ver más resultados.
+                  </p>
+                )}
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" data-testid="grid-estimaciones">
@@ -301,8 +323,11 @@ export default function TableroEstimaciones() {
               Pendientes para tu rol{rol ? ` (${NOMBRE_ROL[rol] ?? rol})` : ''}, según el estado de cada estimación.
             </p>
             {pendientes.length === 0 ? (
-              <div className="text-sm text-slate-400 italic" data-testid="mis-pendientes-vacio">
-                No tienes pendientes en este momento.
+              <div className="text-sm text-slate-500" data-testid="mis-pendientes-vacio">
+                <p className="font-semibold text-slate-700">No tienes pendientes ahora.</p>
+                <p className="mt-1 text-slate-500">
+                  Cuando una estimación quede a la espera de una acción de tu rol{rol ? ` (${NOMBRE_ROL[rol] ?? rol})` : ''}, aparecerá aquí con la tarea por hacer.
+                </p>
               </div>
             ) : (
               <ul className="space-y-2" data-testid="mis-pendientes">

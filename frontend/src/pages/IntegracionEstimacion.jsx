@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
+import LinkHU from '../components/LinkHU.jsx';
+import PestanasCiclo from '../components/PestanasCiclo.jsx';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import EncabezadoContrato from '../components/ui/EncabezadoContrato.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
@@ -12,6 +14,7 @@ import { labelEstadoEstimacion } from '../data/estadoEstimacion.js';
 import { monedaMXN as moneda, round2 } from '../utils/formato.js';
 import DocumentoNota from '../components/notas/DocumentoNota.jsx';
 import MatrizProgramaLectura, { periodoQueContiene } from '../components/programa/MatrizProgramaLectura.jsx';
+import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
 
 // HU-12 Fase 3 — cableado al backend real. El superintendente del contrato integra
 // la estimación del periodo como expediente (art. 132 RLOPSRM). Toda la verdad del
@@ -584,6 +587,14 @@ export default function IntegracionEstimacion() {
     }
   }, [recargarAvance, recargarHistorial, recargarPrep, showToast]);
 
+  const [searchParams] = useSearchParams();
+  const contratoQuery = searchParams.get('contrato');
+  useEffect(() => {
+    // B6b/A-3A: preselecciona el contrato del ?contrato=ID (consistencia entre pantallas).
+    if (sinSesion || !contratoQuery || contratoId) return;
+    if (contratos.some((c) => String(c.id) === String(contratoQuery))) seleccionarContrato(String(contratoQuery));
+  }, [sinSesion, contratoQuery, contratoId, contratos, seleccionarContrato]);
+
   // Etapa A: al fijar/cambiar el periodo-fin, recalcular el plan acotado a ese corte (el semáforo
   // "disponible este periodo" usa planeado hasta cp.fin <= periodo_fin, igual que el server).
   useEffect(() => {
@@ -690,11 +701,13 @@ export default function IntegracionEstimacion() {
   // Gate de AVANCE (no de integración): solo bloquea por EXCESO (art. 118 / plan del periodo) y neto<0.
   // El periodo y "al menos una línea" se exigen en el botón Integrar (paso 5), conservando el
   // comportamiento original (periodo y líneas eran requisitos de integrar, no de navegar/capturar).
+  // BLOQUE 2 — gating secuencial como en el Alta: no avanzas sin que el paso ACTUAL esté completo/correcto.
   const pasoValido = useCallback((p) => {
-    if (p === 1) return !hayExceso && !hayExcesoPlan;                   // Generadores: no exceder contratado ni plan (semáforo)
-    if (p === 2) return caratula.neto >= 0;                            // Carátula: neto no negativo
-    return true;                                                       // Periodo/Soportes/Integrar: navegación libre
-  }, [hayExceso, hayExcesoPlan, caratula.neto]);
+    if (p === 0) return !!periodoInicio && !!periodoFin;               // Periodo: requiere inicio y fin
+    if (p === 1) return hayLineas && !hayExceso && !hayExcesoPlan;     // Generadores: ≥1 línea y sin exceso (contratado/plan)
+    if (p === 2) return caratula.neto >= 0;                           // Carátula: neto no negativo
+    return true;                                                      // Soportes (opcional) / Integrar: navegación libre
+  }, [periodoInicio, periodoFin, hayLineas, hayExceso, hayExcesoPlan, caratula.neto]);
   const irAPaso = useCallback((target) => {
     setErrorIntegrar(null);
     if (target <= paso) { setPaso(target); return; }                    // atrás: libre (corregir)
@@ -789,19 +802,9 @@ export default function IntegracionEstimacion() {
         </div>
       )}
 
-      <div className="bg-white border border-slate-200 rounded-md p-4 mb-6 max-w-2xl">
-        <label className="sg-label">Contrato</label>
-        <select
-          className="sg-input"
-          value={contratoId}
-          onChange={(e) => seleccionarContrato(e.target.value)}
-          disabled={sinSesion}
-          data-testid="select-contrato"
-        >
-          <option value="">— Selecciona un contrato —</option>
-          {contratos.map((c) => <option key={c.id} value={c.id}>{c.folio} · {c.objeto}</option>)}
-        </select>
-      </div>
+      {/* 3A · P3 — hereda el contrato activo global (antes <select> de contrato); el banner carga
+          los datos via seleccionarContrato(idGlobal) y permite "Cambiar". */}
+      <BannerContratoActivo seleccionar={seleccionarContrato} contratoId={contratoId} />
 
       {!sinSesion && !contratoId && (
         <p className="text-sm text-slate-500 mb-4">Selecciona un contrato para integrar la estimación de su periodo.</p>
@@ -848,18 +851,14 @@ export default function IntegracionEstimacion() {
           {/* F4 — EN PARALELO (TIPO B): vistas de lectura / de otro actor del ciclo de estimación, SIEMPRE
               accesibles (no dependen del paso del wizard); solo requieren contrato seleccionado. Regla de oro:
               una TIPO B nunca se condiciona a un candado. */}
-          <div className="bg-white border border-slate-200 rounded-md p-4 mb-6" data-testid="estimacion-en-paralelo">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">En paralelo (lectura / otro actor — no se bloquean)</h3>
-            <div className="flex flex-wrap gap-2">
-              <Link to={`/estimaciones/revision?contrato=${contratoId}`} className="sg-btn-secondary" data-testid="par-revision">Revisión / autorización (HU-15) →</Link>
-              <Link to={`/estimaciones/reingreso?contrato=${contratoId}`} className="sg-btn-secondary" data-testid="par-reingreso">Reingreso (HU-16) →</Link>
-              <Link to={`/estimaciones/historial?contrato=${contratoId}`} className="sg-btn-secondary" data-testid="par-historial">Historial (HU-14) →</Link>
-              <Link to="/estimaciones/tablero" className="sg-btn-secondary" data-testid="par-tablero">Tablero (HU-17) →</Link>
-            </div>
-          </div>
+          {/* P4-ALT — barra de pestañas-enlace del ciclo de estimación (reemplaza el bloque "EN PARALELO").
+              Son enlaces a las pantallas hermanas (lectura/otro actor), gateados por acceso; el wizard y su
+              gating secuencial quedan INTACTOS por debajo. */}
+          <PestanasCiclo ciclo="estimacion" activo="integrar" />
 
           {/* WIZARD "Nueva estimación" (FASE 3): pasos encadenados (patrón del Alta), reusando la MISMA
               captura/testids. Atrás libre; Siguiente valida el paso actual. El historial va aparte (abajo). */}
+          <div className="text-xs font-semibold text-guinda mb-1" data-testid="paso-indicador">Paso {paso + 1} de {PASOS.length}</div>
           <nav className="flex flex-wrap gap-2 mb-6" data-testid="wizard-estimacion-pasos" aria-label="Pasos de la estimación">
             {PASOS.map((p, i) => {
               const estado = i === paso ? 'curr' : i < paso ? 'done' : 'todo';
@@ -966,14 +965,14 @@ export default function IntegracionEstimacion() {
             </div>
           )}
 
-          {/* PASO 4 · Soportes y notas (vincular notas firmadas; fotos fuera de Etapa 1). */}
+          {/* PASO 4 · Soportes y notas (vincular notas firmadas + registro fotográfico). */}
           {paso === 3 && (
             <div className="space-y-4" data-testid="wstep-soportes">
               {wrapTab(
                 <TabNotasVinculadas vinculadas={notasVinculadas} onAbrir={() => setModalAbierto(true)} onQuitar={quitarNota} onVerDocumento={verDocumentoNota} soloLectura={soloLectura} />
               )}
-              <div className="bg-amber-50 border-l-4 border-amber-300 px-4 py-3 text-sm text-amber-800 rounded-r-md" data-testid="soportes-fotos-alcance">
-                El <strong>registro fotográfico</strong> de soportes queda <strong>fuera del alcance de la Etapa 1</strong>: la ley no lo exige como requisito de la estimación (el expediente del art. 132 RLOPSRM se integra con números generadores y notas de bitácora firmadas). Se incorporará en una etapa posterior.
+              <div className="bg-sigecop-blue-light border-l-4 border-sigecop-blue px-4 py-3 text-sm text-slate-700 rounded-r-md" data-testid="soportes-fotos-alcance">
+                El <strong>registro fotográfico</strong> es parte de los documentos de la estimación (<strong>art. 132 fr. IV RLOPSRM</strong>). Las fotos del avance se <strong>cargan y consultan por estimación en el Expediente</strong> (HU-04), una vez integrada.
               </div>
             </div>
           )}
@@ -1019,7 +1018,19 @@ export default function IntegracionEstimacion() {
           <div className="mt-6 flex justify-between items-center max-w-2xl">
             <button type="button" onClick={() => irAPaso(paso - 1)} disabled={paso === 0} className="px-4 py-2 text-slate-600 hover:text-slate-900 disabled:opacity-40" data-testid="btn-watras">← Atrás</button>
             {paso < ULTIMO_PASO && (
-              <button type="button" onClick={() => irAPaso(paso + 1)} disabled={!pasoValido(paso)} className="sg-btn-primary disabled:bg-slate-300 disabled:cursor-not-allowed" data-testid="btn-wsiguiente">Siguiente →</button>
+              <div className="text-right">
+                <button type="button" onClick={() => irAPaso(paso + 1)} disabled={!pasoValido(paso)} className="sg-btn-primary disabled:bg-slate-300 disabled:cursor-not-allowed" data-testid="btn-wsiguiente">Siguiente →</button>
+                {/* A5/BLOQUE 2: candado con motivo. */}
+                {!pasoValido(paso) && (
+                  <p className="text-xs text-amber-700 mt-1" data-testid="wsiguiente-motivo">
+                    {paso === 0
+                      ? 'Indica el periodo (inicio y fin) para continuar.'
+                      : paso === 1
+                        ? (hayExceso || hayExcesoPlan ? 'Corrige los generadores que exceden lo contratado o el plan del periodo.' : 'Captura al menos un concepto con cantidad mayor a 0.')
+                        : 'Las deductivas dejan el neto en negativo; corrígelas.'}
+                  </p>
+                )}
+              </div>
             )}
           </div>
 

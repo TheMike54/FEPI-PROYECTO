@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
+import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
@@ -215,13 +216,8 @@ export default function RegistroFianzas() {
 
       {sinSesion && <div className="bg-slate-50 border border-slate-200 rounded-md px-4 py-3 mb-4 text-sm text-slate-600">Inicia sesión para consultar y registrar las garantías de un contrato.</div>}
 
-      <div className="bg-white border border-slate-200 rounded-md p-4 mb-6 max-w-2xl">
-        <label className="sg-label">Contrato</label>
-        <select className="sg-input" value={contratoId} onChange={(e) => seleccionar(e.target.value)} disabled={sinSesion} data-testid="select-contrato">
-          <option value="">— Selecciona un contrato —</option>
-          {contratos.map((c) => <option key={c.id} value={c.id}>{c.folio} · {c.objeto}</option>)}
-        </select>
-      </div>
+      {/* 3A · P3 — hereda el contrato activo global en vez de re-seleccionarlo aquí */}
+      <BannerContratoActivo seleccionar={seleccionar} contratoId={contratoId} />
 
       {!contratoId && !sinSesion && <p className="text-sm text-slate-500 mb-4">Selecciona un contrato para ver y gestionar sus pólizas de fianza.</p>}
       {cargando && <p className="text-sm text-slate-500 mb-4">Cargando garantías…</p>}

@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>SIGECOP — Propuesta UI (3A contrato global + B clics + C trazabilidad HU) · contrato visual 19-jun</title>
+<style>
+  :root{
+    --guinda:#691C32; --guinda-osc:#511325; --dorado:#BC955C; --bg:#F4F2EF; --card:#FFF;
+    --txt:#2C2C2A; --sec:#6B6660; --linea:#E2DDD5; --verde:#2E7D32; --ambar:#B7860B;
+    --rojo:#B23B3B; --azul:#34597A; --azul-bg:#EAF1F6; --verde-bg:#EAF4EA; --rojo-bg:#FBECEC;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,Segoe UI,Roboto,sans-serif;}
+  body{background:var(--bg);color:var(--txt);font-size:14px;line-height:1.5;}
+  .layout{display:flex;min-height:100vh;}
+  /* índice (TOC) */
+  .toc{width:300px;background:var(--guinda);color:#fff;flex-shrink:0;position:sticky;top:0;height:100vh;overflow-y:auto;}
+  .toc h1{font-size:15px;padding:16px 18px;border-bottom:1px solid rgba(255,255,255,.14);font-weight:700;}
+  .toc h1 small{display:block;font-weight:400;font-size:10.5px;opacity:.7;margin-top:3px;}
+  .toc .grp{font-size:10px;text-transform:uppercase;letter-spacing:1px;opacity:.55;padding:14px 18px 4px;}
+  .toc a{display:block;padding:9px 18px;color:#fff;text-decoration:none;font-size:12.5px;border-left:3px solid transparent;cursor:pointer;}
+  .toc a:hover{background:rgba(255,255,255,.08);}
+  .toc a.active{background:var(--guinda-osc);border-left:3px solid var(--dorado);font-weight:600;}
+  .toc .tag{display:inline-block;font-size:9px;font-weight:700;border-radius:4px;padding:1px 5px;margin-right:6px;vertical-align:middle;}
+  .t3a{background:#3b5e7d;color:#fff;} .tb{background:var(--dorado);color:#3a2a12;} .tc{background:#5b7d4f;color:#fff;}
+  /* contenido */
+  .content{flex:1;min-width:0;padding:26px 34px 80px;max-width:1280px;}
+  .screen{display:none;} .screen.show{display:block;animation:fade .15s ease;}
+  @keyframes fade{from{opacity:.3}to{opacity:1}}
+  .screen > h2{font-size:21px;color:var(--guinda);margin-bottom:4px;}
+  .screen > .sub{color:var(--sec);font-size:13px;margin-bottom:18px;}
+  .qcambia{background:#fff;border:1px solid var(--linea);border-left:4px solid var(--dorado);border-radius:0 8px 8px 0;padding:12px 16px;margin-bottom:22px;font-size:13px;}
+  .qcambia b{color:var(--guinda);}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:20px;align-items:start;}
+  @media(max-width:1050px){.cols{grid-template-columns:1fr;}}
+  .panel{border-radius:10px;overflow:hidden;border:1px solid var(--linea);background:#fff;}
+  .panel .head{padding:8px 14px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;display:flex;align-items:center;gap:8px;}
+  .panel.antes .head{background:var(--rojo-bg);color:var(--rojo);}
+  .panel.despues .head{background:var(--verde-bg);color:var(--verde);}
+  .panel .body{padding:16px;}
+  .pill{display:inline-block;font-size:9px;font-weight:700;border-radius:20px;padding:2px 8px;}
+  .pill.hoy{background:var(--rojo);color:#fff;} .pill.q{background:var(--verde);color:#fff;}
+  /* mini-app chrome (para dibujar la UI realista) */
+  .app{border:1px solid var(--linea);border-radius:8px;overflow:hidden;font-size:12px;}
+  .app .tb{background:#fff;border-bottom:1px solid var(--linea);padding:7px 12px;display:flex;align-items:center;gap:10px;color:var(--guinda);font-weight:600;font-size:11px;}
+  .app .tb .right{margin-left:auto;display:flex;align-items:center;gap:8px;}
+  .chip{border-radius:20px;padding:3px 10px;font-size:11px;font-weight:600;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;}
+  .chip-emp{background:#F3E9EC;color:var(--guinda);border:1px solid #E4CDD4;}
+  .chip-con{background:var(--azul-bg);color:var(--azul);border:1px solid #c9dcea;cursor:pointer;}
+  .chip-bell{font-size:15px;}
+  .app .area{padding:14px;background:var(--bg);}
+  .ttl{font-weight:700;color:var(--guinda);font-size:14px;margin-bottom:3px;}
+  .crumb{color:var(--sec);font-size:10.5px;margin-bottom:10px;}
+  .sel{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid var(--linea);border-radius:7px;padding:8px 10px;margin-bottom:12px;}
+  .sel select,.selbox{flex:1;border:1px solid var(--linea);border-radius:6px;padding:7px 9px;font-size:12px;background:#fff;color:var(--sec);}
+  .ctxbanner{display:flex;align-items:center;gap:10px;background:var(--azul-bg);border:1px solid #c9dcea;border-radius:7px;padding:7px 11px;margin-bottom:12px;font-size:12px;color:var(--azul);}
+  .ctxbanner b{color:#23435c;}
+  .ctxbanner .cambiar{margin-left:auto;background:#fff;border:1px solid #c9dcea;color:var(--azul);border-radius:6px;padding:3px 10px;font-size:11px;font-weight:600;cursor:pointer;}
+  .box{background:#fff;border:1px solid var(--linea);border-radius:8px;padding:12px;margin-bottom:10px;}
+  .box h4{font-size:12px;color:var(--guinda);margin-bottom:6px;}
+  .muted{color:var(--sec);font-size:11.5px;}
+  .btn{display:inline-block;border-radius:6px;padding:6px 11px;font-size:11.5px;font-weight:600;border:1px solid transparent;cursor:pointer;}
+  .btn-p{background:var(--guinda);color:#fff;} .btn-s{background:#fff;color:var(--guinda);border-color:#d8c4cb;}
+  .btn-g{background:#fff;color:var(--dorado);border:1px solid #e3d3bb;}
+  .tabs{display:flex;gap:6px;border-bottom:2px solid var(--linea);margin-bottom:12px;}
+  .tab{padding:7px 12px;font-size:12px;font-weight:600;color:var(--sec);border-bottom:2px solid transparent;margin-bottom:-2px;cursor:pointer;}
+  .tab.on{color:var(--guinda);border-bottom-color:var(--guinda);}
+  .stepbar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px;}
+  .step{font-size:11px;padding:5px 10px;border-radius:6px;border:1px solid var(--linea);background:#fff;color:var(--sec);}
+  .step.on{background:var(--guinda);color:#fff;border-color:var(--guinda);}
+  .step.done{background:#efe4e8;color:var(--guinda);border-color:#dcc7ce;}
+  .hu-chip{display:inline-block;background:#eee7da;color:#7a5a2a;border:1px solid #e0d2bb;border-radius:20px;padding:2px 9px;font-size:10.5px;font-weight:600;}
+  .x{color:var(--rojo);font-weight:700;} .ok{color:var(--verde);font-weight:700;}
+  .listcols{column-count:3;column-gap:18px;font-size:12px;}
+  @media(max-width:900px){.listcols{column-count:1;}}
+  .listcols div{break-inside:avoid;padding:2px 0;}
+  table.rep{width:100%;border-collapse:collapse;font-size:12.5px;background:#fff;}
+  table.rep th,table.rep td{border:1px solid var(--linea);padding:8px 10px;text-align:left;}
+  table.rep th{background:#f3eef0;color:var(--guinda);font-size:11px;text-transform:uppercase;letter-spacing:.4px;}
+  table.rep td.n{text-align:center;font-weight:700;}
+  .save{color:var(--verde);font-weight:700;}
+  .note{font-size:11px;color:var(--sec);margin-top:8px;font-style:italic;}
+  .grid-rep{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;}
+  .repbtn{background:#fff;border:1px solid var(--linea);border-radius:7px;padding:9px;font-size:11px;text-align:center;color:var(--guinda);}
+  .reprow{display:flex;align-items:center;gap:10px;background:#fff;border:1px solid var(--linea);border-radius:7px;padding:8px 11px;margin-bottom:6px;font-size:12px;}
+  .reprow .rt{margin-left:auto;display:flex;gap:6px;}
+  .warnbox{background:#fffaf0;border:1px solid #f0e2c4;border-radius:8px;padding:12px 14px;font-size:12.5px;color:#6b531f;}
+  .kpi{display:inline-flex;flex-direction:column;background:#fff;border:1px solid var(--linea);border-radius:8px;padding:10px 16px;min-width:120px;}
+  .kpi b{font-size:22px;color:var(--guinda);} .kpi span{font-size:11px;color:var(--sec);}
+</style>
+</head>
+<body>
+<div class="layout">
+  <nav class="toc">
+    <h1>SIGECOP · Propuesta UI<small>Contrato visual — 3A + B + C · 19-jun · NO funcional</small></h1>
+    <div class="grp">Alcance</div>
+    <a data-s="s0" class="active">▸ Resumen y alcance</a>
+    <div class="grp">3A · Contrato global</div>
+    <a data-s="s1"><span class="tag t3a">3A</span>P1 · Elige tu contrato (al entrar)</a>
+    <a data-s="s2"><span class="tag t3a">3A</span>P2 · Barra superior: cambiar contrato</a>
+    <a data-s="s3"><span class="tag t3a">3A</span>P3 · Pantallas sin re-selección</a>
+    <div class="grp">B · Reducir clics</div>
+    <a data-s="s4"><span class="tag tb">B</span>P4 · Doble salto colapsado</a>
+    <a data-s="s5"><span class="tag tb">B</span>P5 · Reportes agrupados</a>
+    <div class="grp">C · Trazabilidad HU</div>
+    <a data-s="s6"><span class="tag tc">C</span>P6 · Chip "Ciclo · HU 12–17"</a>
+    <div class="grp">Reporte</div>
+    <a data-s="s7">📊 Ahorro de clics + confusión</a>
+  </nav>
+
+  <main class="content">
+
+    <!-- ============ S0 RESUMEN ============ -->
+    <section class="screen show" id="s0">
+      <h2>Resumen y alcance</h2>
+      <p class="sub">Este HTML es el <b>contrato visual</b>: lo que se dibuja aquí es <b>exactamente</b> lo que se implementará — ni más, ni menos. Al aprobarlo, se construye tal cual.</p>
+      <div class="qcambia">
+        <b>Qué se aprobó:</b> 3A versión mínima (contrato global), B (reducir clics) y C (chip de trazabilidad HU).
+        <b>Qué NO entra aquí:</b> el bug 4 (re-aplicar schema + blindar controller en Render con backup) va al final, en la fase de BD.
+      </div>
+      <h3 style="color:var(--guinda);margin:6px 0 10px;font-size:15px;">Pantallas / zonas que se van a modificar — <b>6 grupos</b></h3>
+      <table class="rep">
+        <tr><th>#</th><th>Tema</th><th>Pantalla / zona</th><th>Cambio</th></tr>
+        <tr><td class="n">P1</td><td><span class="tag t3a">3A</span></td><td><b>NUEVA</b> — "Elige tu contrato"</td><td>Pantalla al entrar (post-login) para fijar el contrato activo. No toca el login real.</td></tr>
+        <tr><td class="n">P2</td><td><span class="tag t3a">3A</span></td><td>Barra superior (AppShell)</td><td>Chip/selector "Contrato activo · Cambiar" junto al chip de empresa.</td></tr>
+        <tr><td class="n">P3</td><td><span class="tag t3a">3A</span></td><td><b>27 pantallas</b> con selector de contrato</td><td>El <code>select</code> repetido se reemplaza por un banner "Contrato activo · Cambiar" (heredan el global).</td></tr>
+        <tr><td class="n">P4</td><td><span class="tag tb">B</span></td><td>Ambientes (Avance, Bitácora, Pago, Convenio, Expediente, Finiquito)</td><td>Se colapsa el doble salto: el ambiente y su pantalla de acción son <b>una sola</b> con pestañas.</td></tr>
+        <tr><td class="n">P5</td><td><span class="tag tb">B</span></td><td>Reportes (ExportacionReportes)</td><td>Los 8 botones sueltos se agrupan por reporte (7 filas).</td></tr>
+        <tr><td class="n">P6</td><td><span class="tag tc">C</span></td><td>Encabezado de los ambientes</td><td>Chip discreto "Ciclo · HU 12–17" (trazabilidad limpia, sin el "HU-XX" flotante que ya se quitó).</td></tr>
+      </table>
+      <p class="note">Las 27 pantallas de P3 se listan en su sección. Las vistas multi-contrato (Portafolio, Tablero, Padrón) <b>no</b> se tocan: siguen listando todos los contratos (el contrato activo es opcional, no un filtro forzado).</p>
+      <div class="warnbox" style="margin-top:16px;">
+        <b>Regla de Maiki que respeto al implementar:</b> si al construir algo de este mockup descubro que no es viable sin tocar zona congelada o sin introducir bugs, <b>me paro y te aviso</b> — no improviso algo distinto.
+      </div>
+    </section>
+
+    <!-- ============ S1 ELIGE CONTRATO ============ -->
+    <section class="screen" id="s1">
+      <h2><span class="tag t3a">3A</span> P1 · "Elige tu contrato" (al entrar)</h2>
+      <p class="sub">Pantalla nueva, post-login. Se muestra solo cuando aún no hay un contrato activo. No modifica el login ni la sesión (se hace con un contexto nuevo, no con SesionContext).</p>
+      <div class="qcambia"><b>Antes</b> no existía: entrabas al Inicio y cada pantalla te pedía elegir el contrato. <b>Después</b>: eliges el contrato UNA vez aquí (o entras por el Portafolio); queda "activo" en toda la app.</div>
+      <div class="cols">
+        <div class="panel antes">
+          <div class="head"><span class="pill hoy">HOY</span> No existe — entras directo al Inicio</div>
+          <div class="body">
+            <div class="app">
+              <div class="tb">SIGECOP <span class="right"><span class="chip chip-emp">🏢 Constructora Demo</span><span class="chip-bell">🔔</span></span></div>
+              <div class="area">
+                <div class="ttl">Inicio</div>
+                <div class="crumb">Gestión de contratos de obra pública</div>
+                <div class="box"><h4>Tus flujos</h4><div class="muted">Tarjetas: Alta · Estimación · Bitácora · Avance · Pago…</div></div>
+                <p class="muted">→ Al abrir cualquier flujo, la pantalla te pide <span class="x">elegir el contrato</span> otra vez.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="panel despues">
+          <div class="head"><span class="pill q">QUEDARÁ</span> Pantalla "Elige tu contrato"</div>
+          <div class="body">
+            <div class="app">
+              <div class="tb">SIGECOP <span class="right"><span class="chip chip-emp">🏢 Constructora Demo</span><span class="chip-bell">🔔</span></span></div>
+              <div class="area">
+                <div class="ttl">¿En qué contrato vas a trabajar?</div>
+                <div class="crumb">Elige uno para empezar — podrás cambiarlo cuando quieras desde la barra de arriba</div>
+                <div class="sel"><input class="selbox" placeholder="🔎 Buscar por folio u objeto…"></div>
+                <div class="box" style="cursor:pointer;border-color:#c9dcea;background:#fbfdff;">
+                  <h4>OBRA-2026-PRUEBA-FINAL <span class="hu-chip" style="background:#eaf4ea;color:#2e7d32;border-color:#c5e3c5;">Vigente</span></h4>
+                  <div class="muted">Construcción de aula didáctica — campus UAGRO · $1,000,000.00 · 90 días</div>
+                </div>
+                <div class="box" style="cursor:pointer;">
+                  <h4>OBRA-2026-DEMO-01 <span class="hu-chip" style="background:#eaf4ea;color:#2e7d32;border-color:#c5e3c5;">Vigente</span></h4>
+                  <div class="muted">Rehabilitación de camino rural · $2,400,000.00 · 120 días</div>
+                </div>
+                <p class="muted" style="margin-top:8px;">¿Una vista de toda la cartera? <span class="btn btn-s">Ver portafolio →</span></p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ S2 BARRA SUPERIOR ============ -->
+    <section class="screen" id="s2">
+      <h2><span class="tag t3a">3A</span> P2 · Barra superior — "Cambiar de contrato"</h2>
+      <p class="sub">En la barra de arriba (AppShell), junto al chip de empresa, aparece el <b>contrato activo</b> como chip; al hacer clic se cambia (vuelve a P1).</p>
+      <div class="qcambia"><b>Antes</b>: la barra solo mostraba la empresa; el contrato vivía dentro de cada pantalla. <b>Después</b>: el contrato activo es visible y cambiable desde cualquier lugar — el usuario siempre sabe en qué contrato está.</div>
+      <div class="cols">
+        <div class="panel antes">
+          <div class="head"><span class="pill hoy">HOY</span> Barra sin contexto de contrato</div>
+          <div class="body">
+            <div class="app"><div class="tb" style="padding:11px 12px;">Inicio › Estimaciones › Integración <span class="right"><span class="chip chip-emp">🏢 Constructora Demo</span> <span class="chip-bell">✍️</span> <span class="chip-bell">🔔</span></span></div></div>
+            <p class="muted" style="margin-top:8px;">No dice en qué contrato estás. (El ✍️ ya se quitó en el arreglo de notificaciones.)</p>
+          </div>
+        </div>
+        <div class="panel despues">
+          <div class="head"><span class="pill q">QUEDARÁ</span> Chip de contrato activo + Cambiar</div>
+          <div class="body">
+            <div class="app"><div class="tb" style="padding:11px 12px;">Inicio › Estimaciones › Integración <span class="right"><span class="chip chip-con">📄 OBRA-2026-PRUEBA-FINAL ▾</span><span class="chip chip-emp">🏢 Constructora Demo</span><span class="chip-bell">🔔</span></span></div></div>
+            <p class="muted" style="margin-top:8px;">El chip <span style="color:var(--azul);font-weight:600;">📄 contrato activo</span> es clicable → "Cambiar de contrato" (vuelve a P1). Visible en toda la app.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ S3 SIN RE-SELECCION ============ -->
+    <section class="screen" id="s3">
+      <h2><span class="tag t3a">3A</span> P3 · Pantallas que YA NO piden re-seleccionar contrato</h2>
+      <p class="sub">El <code>&lt;select de contrato&gt;</code> repetido en cada pantalla se reemplaza por un <b>banner compacto</b> que muestra el contrato activo (heredado del global) con un botón "Cambiar". Mismo dato, sin volver a elegir.</p>
+      <div class="qcambia"><b>Son 27 pantallas</b> (todas las que hoy tienen selector de contrato). Abajo, cómo queda el patrón (ejemplo: wizard de estimación) y la lista completa.</div>
+      <div class="cols">
+        <div class="panel antes">
+          <div class="head"><span class="pill hoy">HOY</span> Cada pantalla re-pide el contrato</div>
+          <div class="body">
+            <div class="app">
+              <div class="tb">Inicio › Estimaciones › Integración <span class="right"><span class="chip chip-emp">🏢 Constructora Demo</span></span></div>
+              <div class="area">
+                <div class="ttl">Integración de estimación</div>
+                <div class="sel">Contrato <select><option>— Selecciona un contrato —</option></select></div>
+                <p class="muted x">↑ Tienes que volver a elegir el contrato (otra vez) antes de ver nada.</p>
+                <div class="stepbar"><span class="step">① Periodo</span><span class="step">② Generadores</span><span class="step">③ Carátula</span><span class="step">④ Soportes</span><span class="step">⑤ Integrar</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="panel despues">
+          <div class="head"><span class="pill q">QUEDARÁ</span> Hereda el contrato activo</div>
+          <div class="body">
+            <div class="app">
+              <div class="tb">Inicio › Estimaciones › Integración <span class="right"><span class="chip chip-con">📄 OBRA-2026-PRUEBA-FINAL ▾</span><span class="chip chip-emp">🏢</span></span></div>
+              <div class="area">
+                <div class="ttl">Integración de estimación</div>
+                <div class="ctxbanner">📄 Contrato activo: <b>OBRA-2026-PRUEBA-FINAL</b> · Construcción de aula didáctica <span class="cambiar">Cambiar</span></div>
+                <p class="muted ok">↑ Ya no eliges nada: viene listo. (Si entras por enlace directo con otro contrato, también se respeta.)</p>
+                <div class="stepbar"><span class="step on">① Periodo</span><span class="step">② Generadores</span><span class="step">③ Carátula</span><span class="step">④ Soportes</span><span class="step">⑤ Integrar</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="box" style="margin-top:18px;">
+        <h4>Las 27 pantallas que reciben este cambio</h4>
+        <div class="listcols">
+          <div><b>Estimación (5):</b></div>
+          <div>· Integración</div><div>· Presentación (envío)</div><div>· Revisión / autorización</div><div>· Reingreso</div><div>· Historial</div>
+          <div><b>Pago (2):</b></div><div>· Tránsito a pago</div><div>· Registro de pago</div>
+          <div><b>Bitácora (4):</b></div><div>· Apertura</div><div>· Emisión de notas</div><div>· Consulta de notas</div><div>· Minutas y visitas</div>
+          <div><b>Avance (3):</b></div><div>· Trabajos terminados</div><div>· Curva de avance</div><div>· Alertas de atraso</div>
+          <div><b>Contrato/doc (5):</b></div><div>· Fianzas / garantías</div><div>· Convenios modificatorios</div><div>· Roster / sustitución</div><div>· Expediente</div><div>· Finiquito</div>
+          <div><b>Reportes (1):</b></div><div>· Exportación de reportes</div>
+          <div><b>Ambientes (7):</b></div><div>· Amb. Bitácora</div><div>· Amb. Avance</div><div>· Amb. Pago</div><div>· Amb. Convenio</div><div>· Amb. Finiquito</div><div>· Amb. Expediente</div><div>· Ciclo de vida</div>
+        </div>
+        <p class="note">El <code>select</code> local se conserva internamente como respaldo (si entras sin contrato activo), pero deja de mostrarse cuando hay uno activo. Las multi-contrato (Portafolio/Tablero/Padrón) NO están en esta lista: no se tocan.</p>
+      </div>
+    </section>
+
+    <!-- ============ S4 DOBLE SALTO ============ -->
+    <section class="screen" id="s4">
+      <h2><span class="tag tb">B</span> P4 · Doble salto "ambiente → pantalla" colapsado</h2>
+      <p class="sub">Hoy: Sidebar → <b>ambiente</b> (pantalla intermedia de bloques que enlazan) → <b>pantalla real</b> de la acción = 2 clics. Después: el ambiente y la acción son <b>una sola pantalla</b> con pestañas; la acción principal está a la vista.</p>
+      <div class="qcambia"><b>Ejemplo: Avance y seguimiento.</b> El mismo patrón aplica a Bitácora, Pago, Convenio, Expediente y Finiquito. <span style="color:var(--guinda)">Si al implementar alguno no es viable sin tocar zona congelada, me paro y aviso (no lo fuerzo).</span></div>
+      <div class="cols">
+        <div class="panel antes">
+          <div class="head"><span class="pill hoy">HOY</span> 2 clics: ambiente → registrar</div>
+          <div class="body">
+            <div class="app">
+              <div class="tb">Inicio › Seguimiento › Ambiente</div>
+              <div class="area">
+                <div class="ttl">Ambiente de avance físico y seguimiento</div>
+                <div class="box"><h4>Bloque 2 — Registrar avance (HU-06)</h4><div class="muted">El contratista registra los trabajos…</div><span class="btn btn-p" style="margin-top:6px;">Registrar avance →</span> <span class="x">(clic #2 para llegar al formulario)</span></div>
+                <div class="box"><h4>Bloque 3 — Curva (HU-05)</h4><span class="btn btn-s">Ver curva →</span></div>
+                <div class="box"><h4>Bloque 4 — Atrasos (HU-07)</h4><span class="btn btn-s">Ver atrasos →</span></div>
+              </div>
+            </div>
+            <p class="muted">Sidebar (clic #1) → esta pantalla → Registrar (clic #2) → recién aparece el formulario.</p>
+          </div>
+        </div>
+        <div class="panel despues">
+          <div class="head"><span class="pill q">QUEDARÁ</span> 1 pantalla con pestañas</div>
+          <div class="body">
+            <div class="app">
+              <div class="tb">Inicio › Avance y seguimiento <span class="right"><span class="chip chip-con">📄 OBRA-2026-PRUEBA-FINAL ▾</span></span></div>
+              <div class="area">
+                <div class="ttl">Avance y seguimiento <span class="hu-chip">Ciclo · HU 05–07</span></div>
+                <div class="ctxbanner">📄 Contrato activo: <b>OBRA-2026-PRUEBA-FINAL</b> <span class="cambiar">Cambiar</span></div>
+                <div class="tabs"><span class="tab on">📝 Registrar avance</span><span class="tab">📈 Curva</span><span class="tab">⚠ Atrasos</span></div>
+                <div class="box"><h4>Registrar avance ejecutado (HU-06)</h4>
+                  <div class="muted">Concepto · Periodo · Cantidad</div>
+                  <div class="sel" style="margin-top:8px;"><span class="selbox">C-01 Limpieza y trazo</span><span class="selbox">Periodo 1</span><span class="selbox">1000</span></div>
+                  <span class="btn btn-p">Registrar avance</span>
+                </div>
+              </div>
+            </div>
+            <p class="muted ok">Sidebar (clic #1) → formulario YA visible. Curva/Atrasos a 1 clic como pestañas (siguen siendo "en paralelo", nunca bloqueadas).</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ S5 REPORTES ============ -->
+    <section class="screen" id="s5">
+      <h2><span class="tag tb">B</span> P5 · Reportes — 8 botones agrupados por reporte</h2>
+      <p class="sub">Mismos 7 reportes y mismos formatos; solo se reordenan para reducir el ruido visual (cada reporte en su fila, con su formato al lado).</p>
+      <div class="qcambia"><b>Honesto:</b> esto <b>no</b> ahorra clics para exportar uno (sigue siendo 1 clic), pero reduce el escaneo visual de una rejilla de 8 botones sueltos a una lista clara de 7 reportes.</div>
+      <div class="cols">
+        <div class="panel antes">
+          <div class="head"><span class="pill hoy">HOY</span> Rejilla de 8 botones sueltos</div>
+          <div class="body">
+            <div class="app"><div class="area">
+              <div class="ttl">Exportación de reportes</div>
+              <div class="grid-rep">
+                <div class="repbtn">⬇ PDF<br><small>1 Avance físico</small></div>
+                <div class="repbtn">⬇ Excel<br><small>1 Avance físico</small></div>
+                <div class="repbtn">⬇ Excel<br><small>2 Financiero</small></div>
+                <div class="repbtn">⬇ Excel<br><small>3 Estimaciones</small></div>
+                <div class="repbtn">⬇ Excel<br><small>4 Observac.</small></div>
+                <div class="repbtn">⬇ PDF<br><small>5 Bitácora</small></div>
+                <div class="repbtn">⬇ Excel<br><small>6 Modificat.</small></div>
+                <div class="repbtn">⬇ Excel<br><small>7 Penaliz.</small></div>
+              </div>
+            </div></div>
+          </div>
+        </div>
+        <div class="panel despues">
+          <div class="head"><span class="pill q">QUEDARÁ</span> 7 reportes, formato al lado</div>
+          <div class="body">
+            <div class="app"><div class="area">
+              <div class="ttl">Exportación de reportes</div>
+              <div class="ctxbanner">📄 <b>OBRA-2026-PRUEBA-FINAL</b> · Periodo: Acumulado <span class="cambiar">Cambiar</span></div>
+              <div class="reprow">1 · Avance físico (Curva S) <span class="rt"><span class="btn btn-g">⬇ PDF</span><span class="btn btn-g">⬇ Excel</span></span></div>
+              <div class="reprow">2 · Avance financiero <span class="rt"><span class="btn btn-g">⬇ Excel</span></span></div>
+              <div class="reprow">3 · Estimaciones <span class="rt"><span class="btn btn-g">⬇ Excel</span></span></div>
+              <div class="reprow">4 · Observaciones <span class="rt"><span class="btn btn-g">⬇ Excel</span></span></div>
+              <div class="reprow">5 · Bitácora <span class="rt"><span class="btn btn-g">⬇ PDF</span></span></div>
+              <div class="reprow">6 · Modificatorios <span class="rt"><span class="btn btn-g">⬇ Excel</span></span></div>
+              <div class="reprow">7 · Penalizaciones <span class="rt"><span class="btn btn-g">⬇ Excel</span></span></div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ S6 CHIP HU ============ -->
+    <section class="screen" id="s6">
+      <h2><span class="tag tc">C</span> P6 · Chip discreto "Ciclo · HU 12–17"</h2>
+      <p class="sub">Se quitó el badge flotante "HU-XX" suelto (confundía). En su lugar, un chip discreto junto al título de cada ambiente con el <b>rango de HU del ciclo</b> — trazabilidad útil para ti y el profe, sin estorbar al usuario.</p>
+      <div class="qcambia"><b>Rangos por ciclo:</b> Estimación · HU 12–17 · Bitácora · HU 08–11 · Avance · HU 05–07 · Pago · HU 20–21.</div>
+      <div class="cols">
+        <div class="panel antes">
+          <div class="head"><span class="pill hoy">HOY</span> Badge "HU-XX" flotante (ya retirado)</div>
+          <div class="body">
+            <div class="app"><div class="area" style="position:relative;min-height:120px;">
+              <div class="ttl">Integración de estimación</div>
+              <div class="muted">…contenido…</div>
+              <div style="position:absolute;right:10px;bottom:10px;background:#2c2c2a;color:#fff;border-radius:20px;padding:4px 10px;font-size:10px;">Estás en <span style="background:var(--dorado);color:#3a2a12;border-radius:4px;padding:1px 5px;font-weight:700;">HU-12</span> Integración</div>
+            </div></div>
+            <p class="muted x">Código suelto flotando en cada pantalla → "parece proyecto escolar".</p>
+          </div>
+        </div>
+        <div class="panel despues">
+          <div class="head"><span class="pill q">QUEDARÁ</span> Chip de rango junto al título</div>
+          <div class="body">
+            <div class="app"><div class="area">
+              <div class="ttl">Ciclo de estimación <span class="hu-chip">Ciclo · HU 12–17</span></div>
+              <div class="ctxbanner">📄 Contrato activo: <b>OBRA-2026-PRUEBA-FINAL</b> <span class="cambiar">Cambiar</span></div>
+              <div class="muted">…contenido…</div>
+            </div></div>
+            <p class="muted ok">Trazabilidad clara y discreta, integrada al encabezado. Sin código flotante.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ S7 REPORTE ============ -->
+    <section class="screen" id="s7">
+      <h2>📊 Reporte — ahorro de clics y confusión</h2>
+      <p class="sub">Estimación honesta sobre un <b>recorrido completo de un contrato</b> (lo que haría el profe en la demo): registro → alta → garantías → bitácora → avance → estimación → revisión → pago → convenio → expediente → finiquito ≈ <b>14 pantallas de contrato</b>.</p>
+
+      <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;">
+        <div class="kpi"><b>~17</b><span>clics menos por recorrido</span></div>
+        <div class="kpi"><b>13–14</b><span>re-selecciones de contrato eliminadas</span></div>
+        <div class="kpi"><b>~5</b><span>saltos de ambiente evitados</span></div>
+        <div class="kpi"><b>1</b><span>selección de contrato (al entrar)</span></div>
+      </div>
+
+      <table class="rep">
+        <tr><th>Mejora</th><th>Hoy (clics)</th><th>Después (clics)</th><th>Ahorro</th></tr>
+        <tr><td><b>3A</b> · elegir contrato (por recorrido de ~14 pantallas)</td><td class="n">~14 × (abrir select + elegir) ≈ 28</td><td class="n">1 vez al entrar ≈ 1–2</td><td class="n save">~13–14 selecciones</td></tr>
+        <tr><td><b>B</b> · doble salto ambiente→pantalla (~5 ambientes)</td><td class="n">5 clics extra</td><td class="n">0</td><td class="n save">~5 clics</td></tr>
+        <tr><td><b>B</b> · Reportes (exportar uno)</td><td class="n">1</td><td class="n">1</td><td class="n">0 (solo + claro)</td></tr>
+        <tr><td><b>Total aprox. por recorrido</b></td><td class="n">—</td><td class="n">—</td><td class="n save">≈ 17 clics menos</td></tr>
+      </table>
+
+      <h3 style="color:var(--guinda);margin:22px 0 8px;font-size:16px;">¿De verdad será menos confuso? — sí, y por qué</h3>
+      <table class="rep">
+        <tr><th>Confusión de hoy</th><th>Cómo la resuelve</th></tr>
+        <tr><td>"¿No le acabo de decir el contrato? ¿por qué me lo pide otra vez?"</td><td><span class="ok">3A</span>: el contrato se elige una vez y se ve siempre en la barra. Cero re-selección.</td></tr>
+        <tr><td>"¿En qué contrato estoy trabajando?"</td><td><span class="ok">3A</span>: chip de contrato activo permanente arriba.</td></tr>
+        <tr><td>"Entré al ciclo pero esta pantalla está incompleta / ¿cuál es la buena?"</td><td><span class="ok">B</span>: la acción principal está a la vista; las lecturas son pestañas, no pantallas sueltas.</td></tr>
+        <tr><td>"¿Qué es 'HU-12' flotando? ¿Etapa 1? ¿Nivel 1 profe?"</td><td><span class="ok">C + jerga</span>: jerga fuera; queda solo el rango de HU como traza discreta.</td></tr>
+      </table>
+
+      <div class="warnbox" style="margin-top:18px;">
+        <b>El único riesgo nuevo a vigilar (y su mitigación):</b> con un contrato "activo" global, el usuario podría olvidar cuál tiene puesto. <b>Mitigación (ya en el diseño):</b> el chip de contrato activo está <b>siempre visible</b> en la barra superior y se repite como banner en cada pantalla; cambiarlo es 1 clic. Las vistas de cartera (Portafolio/Tablero) siguen mostrando todos los contratos, así que no se "pierde" la visión global.
+      </div>
+      <p class="note">Cifras aproximadas para comunicar el orden de magnitud, no medidas exactas. El ahorro real depende de cuántas pantallas recorra cada usuario; en la demo del profe (recorrido completo) el efecto es el de la tabla.</p>
+    </section>
+
+  </main>
+</div>
+
+<script>
+  // SOLO navegación del prototipo (no es lógica del sistema): mostrar una pantalla a la vez.
+  const links = document.querySelectorAll('.toc a');
+  const screens = document.querySelectorAll('.screen');
+  links.forEach(a => a.addEventListener('click', () => {
+    const id = a.getAttribute('data-s');
+    links.forEach(l => l.classList.remove('active'));
+    a.classList.add('active');
+    screens.forEach(s => s.classList.toggle('show', s.id === id));
+    window.scrollTo(0, 0);
+  }));
+</script>
+</body>
+</html>

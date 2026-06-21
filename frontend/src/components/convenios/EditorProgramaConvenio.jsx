@@ -123,7 +123,7 @@ export default function EditorProgramaConvenio({
 
         {!hayPeriodos ? (
           <div className="bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 text-sm text-slate-800 rounded-r-md" data-testid="cm-sin-periodos">
-            Este contrato no tiene periodos en su programa de obra; no se puede capturar una matriz por convenio en Etapa 1.
+            Este contrato no tiene periodos en su programa de obra; primero captura el programa de obra para poder distribuir el convenio por periodo.
           </div>
         ) : (
           <div className="overflow-x-auto border border-borde rounded-md">

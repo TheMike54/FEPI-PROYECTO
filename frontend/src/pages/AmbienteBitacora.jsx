@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
+import PestanasCiclo from '../components/PestanasCiclo.jsx';
 import { useSesion } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
+import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
 
 // AMBIENTE DE BITÁCORA — FASE 4 (rediseño por bloques): el hilo legal de la bitácora se presenta como
 // un WIZARD de pasos encadenados (Apertura HU-08 → Firma conjunta → Emitir notas HU-09), patrón del Alta.
@@ -60,6 +62,9 @@ export default function AmbienteBitacora() {
     try {
       const b = await api.bitacoraDeContrato(id); // 404 si no hay apertura
       setBitacora(b);
+      // B7b: salta al paso YA logrado en backend (Emitir si la apertura está firmada; Firma si solo abierta),
+      // sin obligar a recorrer pasos cumplidos. El candado (pasoValido) sigue intacto para retroceder/avanzar.
+      setPaso(b?.completa ? 2 : 1);
     } catch (e) {
       if (e.status === 404) { setSinApertura(true); }
       else if (e.status === 403) { showToast('No tienes acceso a la bitácora de este contrato'); }
@@ -90,11 +95,15 @@ export default function AmbienteBitacora() {
     <div className="space-y-4">
       <HeaderVista
         huId="HU-08"
-        titulo="Ambiente de bitácora (hilo legal del contrato, por bloques)"
+        titulo="Ambiente de bitácora (hilo legal del contrato)"
         sprint="Sprint 6"
         rolAcademico="Residente"
         breadcrumb={[{ label: 'Inicio', href: '/' }, { label: 'Bitácora' }, { label: 'Ambiente' }]}
       />
+
+      {/* P4-ALT — barra de pestañas del ciclo de bitácora (Bitácora wizard · Consultar · Minutas). El wizard
+          y su gating quedan intactos abajo; Consultar/Minutas son pestañas-enlace (lectura, no bloquean). */}
+      <PestanasCiclo ciclo="bitacora" activo="bitacora" />
 
       <div className="bg-sigecop-blue-light border-l-4 border-sigecop-blue px-4 py-3 rounded-r-md text-sm text-slate-700" data-testid="ambiente-bitacora-aviso">
         <strong>Recorrido de la bitácora del contrato</strong>, como wizard: <strong>Apertura → Firma conjunta →
@@ -110,13 +119,8 @@ export default function AmbienteBitacora() {
 
       {/* Selector de contrato + estado (siempre; arranca el recorrido). */}
       <Bloque n={1} titulo="Contrato y estado de la bitácora" estado={abierta ? 'listo' : 'activo'} testid="bloque-bit-1">
-        <div className="max-w-2xl">
-          <label className="sg-label">Contrato</label>
-          <select className="sg-input" value={contratoId} onChange={(e) => seleccionarContrato(e.target.value)} disabled={sinSesion} data-testid="select-contrato">
-            <option value="">— Selecciona un contrato —</option>
-            {contratos.map((c) => <option key={c.id} value={c.id}>{c.folio} · {c.objeto}</option>)}
-          </select>
-        </div>
+        {/* 3A·P3: hereda el contrato activo global en vez de re-seleccionarlo (banner "Contrato activo · Cambiar"). */}
+        <BannerContratoActivo seleccionar={seleccionarContrato} contratoId={contratoId} />
         {contratoId && !cargando && (
           <div className="mt-3 text-sm" data-testid="estado-bitacora">
             {sinApertura ? (
@@ -136,6 +140,8 @@ export default function AmbienteBitacora() {
 
       {/* Barra de pasos del wizard (el hilo encadenado). */}
       {contratoId && (
+        <>
+        <div className="text-xs font-semibold text-guinda mb-1" data-testid="paso-indicador-bit">Paso {paso + 1} de {PASOS_BIT.length}</div>
         <nav className="flex flex-wrap gap-2" data-testid="wizard-bitacora-pasos" aria-label="Pasos de la bitácora">
           {PASOS_BIT.map((p, i) => {
             const est = i === paso ? 'curr' : i < paso ? 'done' : 'todo';
@@ -149,6 +155,7 @@ export default function AmbienteBitacora() {
             );
           })}
         </nav>
+        </>
       )}
 
       {/* PASO 1 · Abrir la bitácora (HU-08). */}
@@ -170,7 +177,7 @@ export default function AmbienteBitacora() {
           <p className="text-sm text-slate-700 mb-3">
             Cada parte firma su porción desde su cuenta. {abierta ? <span><strong>{firmadas} de {totalFirmas}</strong> firmadas{completa ? ' — completa.' : '; al firmar la última se desbloquea emitir notas.'}</span> : 'Disponible cuando exista la apertura.'}
           </p>
-          <Link to="/bitacora/por-firmar" className="sg-btn-secondary" data-testid="link-firmar">
+          <Link to={`/bitacora/por-firmar${q}`} className="sg-btn-secondary" data-testid="link-firmar">
             Ir a "Por firmar" →
           </Link>
         </Bloque>
@@ -199,38 +206,27 @@ export default function AmbienteBitacora() {
 
       {/* Navegación del wizard (atrás libre; adelante valida: abierta→Firma, completa→Emitir). */}
       {contratoId && (
-        <div className="flex justify-between items-center max-w-2xl">
-          <button type="button" onClick={() => irPaso(paso - 1)} disabled={paso === 0} className="px-4 py-2 text-tinta-sec hover:text-tinta disabled:opacity-40" data-testid="btn-watras-bit">← Atrás</button>
-          {paso < PASOS_BIT.length - 1 && (
-            <button type="button" onClick={() => irPaso(paso + 1)} disabled={!pasoValido(paso)} className="sg-btn-primary disabled:bg-slate-300 disabled:cursor-not-allowed" data-testid="btn-wsiguiente-bit">Siguiente →</button>
+        <div className="max-w-2xl">
+          <div className="flex justify-between items-center">
+            <button type="button" onClick={() => irPaso(paso - 1)} disabled={paso === 0} className="px-4 py-2 text-tinta-sec hover:text-tinta disabled:opacity-40" data-testid="btn-watras-bit">← Atrás</button>
+            {paso < PASOS_BIT.length - 1 && (
+              <button type="button" onClick={() => irPaso(paso + 1)} disabled={!pasoValido(paso)} className={`${paso === 0 ? 'sg-btn-secondary' : 'sg-btn-primary'} disabled:bg-slate-300 disabled:cursor-not-allowed`} data-testid="btn-wsiguiente-bit">Siguiente →</button>
+            )}
+          </div>
+          {/* A5: candado con motivo — el botón gris explica POR QUÉ no se puede avanzar todavía. */}
+          {paso < PASOS_BIT.length - 1 && !pasoValido(paso) && (
+            <p className="text-xs text-amber-700 text-right mt-1" data-testid="wsiguiente-bit-motivo">
+              {paso === 0
+                ? 'Para continuar, primero abre la bitácora (paso 1).'
+                : `Para emitir notas faltan firmas de la apertura: ${firmadas} de ${totalFirmas}.`}
+            </p>
           )}
         </div>
       )}
 
-      {/* EN PARALELO (lectura/episódico) — siempre accesibles, no encadenadas al wizard. */}
-      <div className="pt-2">
-        <h3 className="text-xs font-bold uppercase tracking-wider text-tinta-sec mb-2">En paralelo (lectura, no se bloquean)</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Bloque n={5} titulo="Consultar, buscar y exportar notas (HU-10)" testid="bloque-bit-5">
-            <p className="text-sm text-slate-700 mb-3">
-              Lectura de la bitácora: filtros combinados (tipo, periodo, tag) y exportación. Disponible en
-              paralelo, no depende del candado.
-            </p>
-            <Link to={`/bitacora/consulta${q}`} className="sg-btn-secondary" data-testid="link-consulta">
-              Consultar la bitácora (HU-10) →
-            </Link>
-          </Bloque>
-          <Bloque n={6} titulo="Minutas, visitas y acuerdos (HU-11)" testid="bloque-bit-6">
-            <p className="text-sm text-slate-700 mb-3">
-              Reuniones, visitas de campo y acuerdos del contrato; cada minuta se puede <strong>vincular a una
-              nota</strong> de la bitácora (art. 123 fr. X RLOPSRM), sin alterar la nota firmada.
-            </p>
-            <Link to={`/bitacora/minutas${q}`} className="sg-btn-secondary" data-testid="link-minutas">
-              Minutas y visitas (HU-11) →
-            </Link>
-          </Bloque>
-        </div>
-      </div>
+      {/* P4-ALT — Consultar (HU-10) y Minutas (HU-11) ahora son PESTAÑAS-ENLACE en la barra superior
+          (PestanasCiclo ciclo="bitacora"); se retiró el bloque "EN PARALELO" redundante. Siguen siendo lectura
+          siempre accesible (las pestañas no bloquean). */}
     </div>
   );
 }

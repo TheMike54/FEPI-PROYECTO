@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
+import PestanasCiclo from '../components/PestanasCiclo.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
+import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
 import { useSesion } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
@@ -113,6 +116,14 @@ export default function Finiquito() {
     cargar(id, '');
   }, [cargar]);
 
+  // B6b/A-3A: preselecciona el contrato del ?contrato=ID (consistencia entre pantallas).
+  const [searchParams] = useSearchParams();
+  const contratoQuery = searchParams.get('contrato');
+  useEffect(() => {
+    if (sinSesion || !contratoQuery || contratoId) return;
+    if (contratos.some((c) => String(c.id) === String(contratoQuery))) seleccionar(String(contratoQuery));
+  }, [sinSesion, contratoQuery, contratoId, contratos, seleccionar]);
+
   const cerrado = data?.contrato?.estado === 'cerrado' || !!data?.finiquito;
   const d = data?.desglose;
 
@@ -142,19 +153,16 @@ export default function Finiquito() {
         breadcrumb={[{ label: 'Inicio', href: '/' }, { label: 'Contratos' }, { label: 'Finiquito' }]}
       />
 
+      <PestanasCiclo ciclo="finiquito" activo="finiquito" />
+
       {sinSesion && (
         <div className="bg-slate-50 border border-slate-200 rounded-md px-4 py-3 mb-4 text-sm text-slate-600">
           Inicia sesión para elaborar el finiquito y cerrar un contrato.
         </div>
       )}
 
-      <div className="bg-white border border-slate-200 rounded-md p-4 mb-6 max-w-2xl">
-        <label className="sg-label">Contrato</label>
-        <select className="sg-input" value={contratoId} onChange={(e) => seleccionar(e.target.value)} disabled={sinSesion} data-testid="select-contrato">
-          <option value="">— Selecciona un contrato —</option>
-          {contratos.map((c) => <option key={c.id} value={c.id}>{c.folio} · {c.objeto}</option>)}
-        </select>
-      </div>
+      {/* 3A·P3: hereda el contrato activo global en vez de re-seleccionarlo (banner Contrato activo · Cambiar) */}
+      <BannerContratoActivo seleccionar={seleccionar} contratoId={contratoId} />
 
       {cargando && <p className="text-sm text-slate-500 mb-4">Cargando finiquito…</p>}
 

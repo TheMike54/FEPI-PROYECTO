@@ -13,7 +13,10 @@ import { labelEstadoEstimacion } from '../../data/estadoEstimacion.js';
 
 const mxn = (n) => `$ ${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const fmtFecha = (s) => { if (!s) return '—'; const [y, m, d] = String(s).slice(0, 10).split('-'); return (y && m && d) ? `${d}/${m}/${y}` : '—'; };
-const PAGABLES = new Set(['integrada', 'enviada', 'autorizada']);
+// BLOQUE C (HU-21) — el backend (pagos.controller registrarPago) SOLO paga estimaciones 'autorizada' por la
+// residencia (art. 54 LOPSRM); ofrecer 'integrada'/'enviada' producía un 409 al registrar. Sincronizado: el
+// selector solo lista lo que el backend acepta. (No se toca la lógica server-side, que es la fuente de verdad.)
+const PAGABLES = new Set(['autorizada']);
 
 export default function RegistroPagoForm({ contratoId, soloLectura = false, onRegistrado }) {
   const { rol } = useSesion();
@@ -90,6 +93,7 @@ export default function RegistroPagoForm({ contratoId, soloLectura = false, onRe
           <p className="text-sm text-slate-800 mt-1">
             <strong>{ultimo.ref}</strong> · {ultimo.fecha} · {mxn(ultimo.importe)}. La estimación quedó marcada como <strong>pagada</strong>.
           </p>
+          <p className="text-xs text-slate-500 mt-1">Siguiente: el contrato continúa a su <strong>finiquito</strong> cuando todas las estimaciones autorizadas estén pagadas (art. 64 LOPSRM).</p>
         </div>
       )}
 
@@ -98,14 +102,14 @@ export default function RegistroPagoForm({ contratoId, soloLectura = false, onRe
         <RegionEditable disabled={soloLectura}>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="md:col-span-2">
-              <label className="sg-label">Estimación a pagar * <span className="text-[11px] font-normal text-slate-500">(integrada/presentada/autorizada, no pagada)</span></label>
+              <label className="sg-label">Estimación a pagar * <span className="text-[11px] font-normal text-slate-500">(autorizada, no pagada)</span></label>
               <select className="sg-input" value={estimacionId} onChange={(e) => setEstimacionId(e.target.value)} data-testid="pago-estimacion">
                 <option value="">— Selecciona la estimación —</option>
                 {estimaciones.map((e) => (
                   <option key={e.id} value={e.id}>Estimación #{e.numero} · {labelEstadoEstimacion(e.estado)} · {fmtFecha(e.periodo_inicio)}–{fmtFecha(e.periodo_fin)} · neto {mxn(e.neto)}</option>
                 ))}
               </select>
-              {estimaciones.length === 0 && <p className="text-[11px] text-amber-700 mt-1">Este contrato no tiene estimaciones pagables (presentadas o autorizadas, no pagadas).</p>}
+              {estimaciones.length === 0 && <p className="text-[11px] text-amber-700 mt-1">Este contrato no tiene estimaciones pagables (autorizadas, no pagadas).</p>}
             </div>
 
             <div>

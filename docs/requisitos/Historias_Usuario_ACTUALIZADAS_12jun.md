@@ -48,7 +48,7 @@
 | Registro | Registro de usuario con aprobación | Cualquier persona (público); la Dependencia aprueba |
 | Por Firmar | Firma de aperturas de bitácora pendientes | Quien tiene aperturas pendientes de firmar |
 | HU-22 | Sustitución de personas del roster | Dependencia y Residente de obra |
-| HU-23 | Catálogo de empresas | Todos (funcionalidad de implementación, sin permiso por rol) |
+| HU-23 | Catálogo de empresas | Registro/uso: todos (público); padrón de administración: Dependencia |
 | HU-24 | Finiquito y cierre del contrato | Dependencia / Contratante y Residente de obra |
 
 ---
@@ -410,7 +410,8 @@ la Supervisión solo **consultan**. La Dependencia y Finanzas **no tienen acceso
 - **Deseo** registrar, por periodo del programa, la cantidad ejecutada de cada concepto del catálogo,
   viendo en la misma pantalla el avance acumulado y el porcentaje contra lo contratado, donde cada captura
   genera automáticamente su nota de bitácora de tipo 'avance' (o la difiere si la bitácora aún no está
-  abierta) y puedo editar o eliminar la captura
+  abierta) y puedo CORREGIR una captura (se anula la entrada anterior y se registra una nueva vinculada,
+  append-only)
 - **A fin de** alimentar la curva de avance ejecutado (HU-05) y la integración de la estimación con
   respaldo documental, sin poder registrar más de lo contratado (art. 118 RLOPSRM)
 
@@ -428,8 +429,9 @@ la Supervisión solo **consultan**. La Dependencia y Finanzas **no tienen acceso
    no requiere convenio).
 5. Cada captura con cantidad mayor a cero genera una nota de bitácora automática de tipo 'avance' ligada al
    avance; si no hay bitácora abierta, la nota se difiere y se asienta sola al abrir la bitácora. La captura
-   se puede editar y eliminar, revalidando el art. 118.
-6. Acceso: solo el Contratista captura, edita y elimina; el Residente y la Supervisión consultan; la
+   es append-only: no se edita ni se elimina; corregir un error anula la entrada anterior y registra una
+   nueva vinculada (con nota 'dice / debe decir', art. 123 fr. VI/VII RLOPSRM), revalidando el art. 118.
+6. Acceso: solo el Contratista captura y corrige; el Residente y la Supervisión consultan; la
    Dependencia y Finanzas sin acceso. Todo limitado a quien participa en el contrato; el autor de la
    captura se toma de la sesión.
 
@@ -444,8 +446,6 @@ LOPSRM (programa por periodo).
   registra el contratista, identificado en los datos de la nota (art. 123 fr. II RLOPSRM).
 - Que el aviso no bloqueante (adelantar a precios pactados sin convenio) sea el comportamiento legal
   correcto frente al art. 118 / convenios. Es interpretación a confirmar.
-- Editar la cantidad de un avance no regenera ni corrige la nota original (limitación documentada).
-  Confirmar si es aceptable o requiere una nota vinculada nueva (inmutabilidad).
 
 ---
 
@@ -857,11 +857,16 @@ historial.
    importe neto y fecha de presentación.
 2. Los filtros de periodo y estado operan a la vez: una estimación solo aparece si cumple ambos; las
    opciones de cada filtro salen de los datos cargados.
-3. Al hacer clic en una fila se abre un panel lateral 'Expediente' (resumen) con periodo, estado, importe,
-   fecha de presentación, fecha de revisión, fecha de pago y observaciones; se cierra con el botón o
-   tocando fuera.
+3. Al hacer clic en una fila se abre un panel lateral 'Expediente' (resumen) que muestra los datos REALES:
+   periodo, estado, importe y fecha de presentación. Los campos fecha de revisión, fecha de pago y
+   observaciones se muestran como placeholders vacíos ('—') hasta que existan sus sellos: el sistema solo
+   registra hoy las fechas de integración y presentación (no hay columnas autorizada_en / pagada_en ni una
+   tabla de transiciones que llene la revisión, el pago o las observaciones de HU-15). El panel se cierra con
+   el botón o tocando fuera.
 4. El botón 'Exportar historial' descarga un Excel con las filas filtradas (estimación, versión, periodo,
-   estado, importe y fechas).
+   estado, importe y fechas); el filtro y el export funcionan sobre los datos cargados. La columna 'versión'
+   sale '—' porque el modelo no versiona (ver cr. adoptados), y las fechas de revisión/pago quedan vacías
+   igual que en el panel del cr. 3.
 5. Un contrato sin estimaciones muestra un estado vacío sin error; un usuario sin participación recibe un
    aviso de sin acceso.
 
@@ -1103,20 +1108,20 @@ solo-lectura, con los botones de exportar deshabilitados).
 **Historia:**
 - **Como** Residente de obra
 - **Deseo** seleccionar un contrato (de los que participo) y un periodo (Mensual, Trimestral o Acumulado), y
-  descargar 6 de los 7 reportes definidos en su formato (PDF y/o Excel), generados a partir de los datos
-  reales del contrato; el séptimo reporte (Observaciones) aparece en la lista pero su exportación está
-  deshabilitada por falta de fuente a nivel contrato
+  descargar los 7 reportes definidos en su formato (PDF y/o Excel), generados a partir de los datos reales
+  del contrato (el reporte 4, Observaciones, ya exporta con la consulta de observaciones a nivel contrato)
 - **A fin de** llevar la información del sistema a oficios, presentaciones o expedientes de auditoría, con
   valores que cuadran con lo que guarda el sistema (carátula, curva S, convenios) sin recalcularlos
 
 **Criterios de aceptación:**
-1. Tras seleccionar un contrato, los reportes 1 (Avance físico, PDF + Excel), 2 (Avance financiero, Excel),
-   3 (Listado de estimaciones, Excel), 5 (Bitácora, PDF), 6 (Histórico de modificatorios, Excel) y 7
-   (Penalizaciones, Excel) descargan un archivo real con un nombre que incluye el reporte, el periodo y la
-   fecha.
-2. El reporte 4 (Observaciones) se muestra en la lista pero su botón permanece deshabilitado con el aviso
-   'Sin fuente — falta la consulta de observaciones a nivel contrato' (HU-15 solo las expone por
-   estimación).
+1. Tras seleccionar un contrato, los 7 reportes —1 (Avance físico, PDF + Excel), 2 (Avance financiero,
+   Excel), 3 (Listado de estimaciones, Excel), 4 (Observaciones, Excel), 5 (Bitácora, PDF), 6 (Histórico de
+   modificatorios, Excel) y 7 (Penalizaciones, Excel)— descargan un archivo real con un nombre que incluye
+   el reporte, el periodo y la fecha. El reporte 5 (Bitácora) solo descarga si la bitácora está abierta (ver
+   cr. 5).
+2. El reporte 4 (Observaciones) ya exporta: se alimenta de la consulta de observaciones a nivel contrato
+   (que reúne las observaciones de la revisión técnica de HU-15). Antes estaba deshabilitado por falta de
+   fuente a nivel contrato; esa fuente ya existe.
 3. El selector de periodo (Mensual / Trimestral / Acumulado) solo acota el rango de fechas donde aplica y
    etiqueta el nombre del archivo; no cambia las columnas ni el contenido del reporte.
 4. Solo el Residente ejecuta la exportación; el Contratista, la Supervisión, la Dependencia y Finanzas ven
@@ -1132,9 +1137,9 @@ Bis LOPSRM (convenios modificatorios y ajuste de costos); art. 102 RLOPSRM (revi
 art. 46 / 46 Bis LOPSRM (deductivas / penas convencionales).
 
 **Criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
-- El reporte 4 (Observaciones) queda deshabilitado: no existe la consulta de observaciones a nivel
-  contrato; una opción futura sería reunirlas estimación por estimación (fuera del alcance actual). La ficha
-  pide los '7 reportes' pero hoy solo 6 exportan.
+- ✅ **RESUELTO / aplicado:** el reporte 4 (Observaciones) ya exporta — se añadió la consulta de
+  observaciones a nivel contrato (que reúne las de la revisión técnica de HU-15). Los 7 reportes exportan; la
+  ficha que pedía los '7 reportes' queda cubierta.
 - Fundamento legal de la pena por atraso. Criterio del equipo (A5): art. 46 Bis LOPSRM + arts. 86-88 RLOPSRM
   (mecánica) + art. 90 RLOPSRM (tope); el número cuadra exacto (derivado de la carátula).
 - Ancla del recorte por periodo (Mensual = último mes, Trimestral = último trimestre, anclado al dato más
@@ -1243,10 +1248,10 @@ la Dependencia solo **consultan**. El Contratista / Superintendente y la Supervi
 
 **Historia:**
 - **Como** Finanzas
-- **Deseo** registrar el pago efectuado de una estimación previamente integrada/presentada/autorizada del
-  contrato, seleccionándola y aportando fecha de pago, referencia bancaria SPEI, folio fiscal CFDI y fecha
-  de factura (y opcionalmente fecha de autorización y observaciones), tomando el importe automáticamente del
-  neto de la estimación
+- **Deseo** registrar el pago efectuado de una estimación previamente AUTORIZADA por la residencia (art. 54
+  LOPSRM) del contrato, seleccionándola y aportando fecha de pago, referencia bancaria SPEI, folio fiscal
+  CFDI y fecha de factura (y opcionalmente fecha de autorización y observaciones), tomando el importe
+  automáticamente del neto de la estimación
 - **A fin de** cerrar el ciclo de esa estimación dejándola en estado 'Pagada' de forma inmutable y
   auditable, vinculada a un pago real con la identidad de quien lo registró
 
@@ -1255,8 +1260,8 @@ la Dependencia solo **consultan**. El Contratista / Superintendente y la Supervi
 2. El importe del pago no se teclea: el sistema lo fija igual al neto de la estimación; en la pantalla se
    muestra de solo-lectura.
 3. No se paga dos veces la misma estimación: un segundo intento se rechaza.
-4. Solo se paga una estimación en estado Integrada / Presentada / Autorizada; 'Pagada' y 'Rechazada' se
-   rechazan.
+4. Solo se paga una estimación AUTORIZADA por la residencia (art. 54 LOPSRM); cualquier otro estado
+   (Integrada / Presentada / Rechazada / Pagada) se rechaza.
 5. La fecha de pago no puede ser anterior al día en que la estimación fue integrada; si lo es, se rechaza.
 6. Son obligatorios la fecha de pago, la referencia bancaria SPEI, el folio fiscal CFDI y la fecha de
    factura; quien registra se toma de la sesión y se muestra por su nombre en la lista.
@@ -1268,8 +1273,8 @@ la Dependencia solo **consultan**. El Contratista / Superintendente y la Supervi
 el pie de página de HU-21); art. 118 RLOPSRM (citado en la pantalla como base del cuadre del importe).
 
 **Criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
-- Endurecer el candado de estado a solo 'Autorizada' (hoy es permisivo: Integrada/Presentada/Autorizada) —
-  decisión de Maiki/profe.
+- ✅ **RESUELTO / aplicado:** el candado de estado se endureció a solo **'Autorizada'** (art. 54 LOPSRM); el
+  backend rechaza cualquier otro estado (Integrada/Presentada/Rechazada/Pagada). Ya no es permisivo.
 - Pago parcial vs. exacto: hoy el importe es el neto completo de la estimación; falta validar si procede el
   pago parcial.
 - 'Actualizar el avance financiero del contrato' (ficha vieja): hoy solo se marca la estimación como
@@ -1421,27 +1426,30 @@ está en la matriz de permisos por rol (vive fuera del catálogo de HU).
 
 ## HU-23 · Catálogo de empresas (Oleada O3) · 🆕 **NUEVA** (sin ficha previa)
 
-**Quién ve y quién hace:** Es una funcionalidad de implementación, sin permiso por rol: todos la usan al
-registrarse o al crear un contrato. El catálogo y el registro con empresa son públicos (sin sesión): el alta
-de la empresa la hace cualquier persona que se registra. El catálogo se consume desde tres lugares: el
-autocompletado al registrarse (cualquiera, público), el aviso de 'misma empresa' al crear el contrato
-(quien tenga acceso al alta, es decir el Residente de obra) y la búsqueda por empresa en el expediente
-(quien tenga acceso al expediente). No existe un panel para administrar el catálogo: se llena solo, cuando
-las personas eligen o crean su empresa al registrarse.
+**Quién ve y quién hace:** El catálogo y el registro con empresa son públicos (sin sesión): el alta de la
+empresa la hace cualquier persona que se registra, y se consume desde el autocompletado al registrarse
+(cualquiera, público) y el aviso de 'misma empresa' al crear el contrato (quien tenga acceso al alta, es
+decir el Residente de obra). Además, ya existe un **panel de administración** del catálogo en forma de
+**padrón de empresas** administrado por la **Dependencia / Contratante** (pantalla `/admin/empresas`,
+restringida por rol a la Dependencia), donde se valida o fusiona cada empresa propuesta: el padrón llena su
+caudal solo (cuando las personas eligen o crean su empresa al registrarse) y la Dependencia lo cura
+después.
 
 **Historia:**
 - **Como** persona que se registra en el sistema (público), Residente de obra que da de alta un contrato, y
-  cualquier rol que consulta el expediente
+  Dependencia / Contratante que administra el padrón
 - **Deseo** que al registrarme elija mi empresa de un selector del catálogo único ('el primero la crea, los
   siguientes la eligen' — profe 09-jun), con la opción explícita 'registrar nueva empresa' solo si de
   verdad no existe; que el sistema deduplique por nombre normalizado fuerte como segunda red (mayúsculas y
   espacios + acentos + puntuación + sufijos de razón social tipo 'S.A. de C.V.'), que el alta del contrato
   muestre la empresa de la cuenta elegida y me avise (sin bloquear) cuando el superintendente y la
-  supervisión son de la misma empresa, y que el expediente muestre la empresa de cada persona y permita
-  buscar por empresa
+  supervisión son de la misma empresa, y que la Dependencia administre un **padrón de empresas** (pantalla
+  `/admin/empresas`) con el flujo 'propone → valida / fusiona', el estado de cada empresa (por_validar /
+  validada), su tipo (contratista / supervisión / dependencia) y los conteos de uso
 - **A fin de** eliminar los duplicados de razón social ('patito' / 'PAT' / 'patito SA' como 3 empresas) que
-  el profe señaló, dejar la empresa vinculada a cada persona como dicta 'catálogos: es lo de ley', y poder
-  advertir cuando la supervisión no es un tercero independiente del contratista
+  el profe señaló, dejar la empresa vinculada a cada persona como dicta 'catálogos: es lo de ley', poder
+  advertir cuando la supervisión no es un tercero independiente del contratista, y darle a la Dependencia el
+  control formal del padrón (validar, fusionar duplicados, clasificar por tipo)
 
 **Criterios de aceptación:**
 1. Registro con empresa: el campo es un selector del catálogo, no texto libre, así es imposible duplicar
@@ -1456,16 +1464,26 @@ las personas eligen o crean su empresa al registrarse.
 4. Alta del contrato: cuando el superintendente y la supervisión comparten empresa se muestra el aviso de
    'misma empresa' con el nombre de la empresa y la leyenda de que la supervisión debe ser un tercero
    independiente; el aviso no bloquea el asistente y desaparece al cambiar la supervisión.
-5. Expediente: muestra la empresa junto a cada persona del equipo y del histórico, y permite buscar por
-   empresa, filtrando los bloques (jurídicos y equipo) que no contienen el término.
+5. Expediente: muestra la empresa junto a cada persona del equipo y del histórico. El buscador del
+   expediente HOY filtra solo por **tipo de documento** y **periodo** (ver HU-04 cr. 3); la **búsqueda por
+   empresa** NO está expuesta en la pantalla (el código existe pero quedó inerte): se documenta como
+   **fuera de alcance / follow-on**.
+6. Padrón de empresas (Dependencia): la pantalla `/admin/empresas` (restringida por rol a la Dependencia)
+   lista las empresas con su estado (por_validar / validada), su tipo (contratista / supervisión /
+   dependencia) y los conteos de uso, con el flujo 'propone → valida / fusiona' para curar duplicados. Los
+   demás roles no ven esta pantalla.
+
+**Fundamento legal:** art. 43 RLOPSRM `[validar profe]` (registro/padrón de contratistas) y art. 74 Bis
+LOPSRM `[validar profe]` (registro único de proveedores y contratistas), citados por el sistema en el padrón
+de empresas; lo legal lo confirma el profe.
 
 **Criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
 - El aviso de 'misma empresa' (superintendente vs. supervisión) hoy avisa pero no bloquea. Criterio del
   equipo (default conservador): se mantiene como aviso, no bloqueo duro (la supervisión debe ser un tercero
   independiente); endurecerlo a bloqueo queda como ajuste.
-- La funcionalidad no cita artículos (la justificación 'catálogos: es lo de ley' es verbal del profe; no hay
-  número de artículo) → sin cita legal verificable. Confirmar el fundamento legal del catálogo y de la regla
-  supervisión = tercero independiente.
+- El padrón se funda en art. 43 RLOPSRM / art. 74 Bis LOPSRM `[validar profe]` (estas dos citas ya las usa el
+  sistema); la justificación verbal del profe ('catálogos: es lo de ley', 09-jun) las respalda. Confirmar con
+  el profe el fundamento legal del padrón y de la regla supervisión = tercero independiente.
 - Hay dos formularios de registro con la misma lógica de empresa; ambos comparten ya el normalizador
   fuerte. Confirmar si ambos deben coexistir o si uno es legado (duplicación a consolidar).
 - Las reglas de normalización fuerte (qué sufijos de razón social se recortan, qué se funde). Criterio del

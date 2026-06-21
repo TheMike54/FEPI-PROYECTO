@@ -25,6 +25,7 @@ const empresasRoutes = require('./src/routes/empresas.routes');  // PLAN GRANDE 
 const yoRoutes = require('./src/routes/yo.routes');  // OLEADA 2 (FIX 2.4): perfil propio para el dropdown "mi info / mi empresa"
 const observacionesRoutes = require('./src/routes/observaciones.routes');  // OLEADA 2 (FIX 2.2): observaciones por contrato para el reporte #4 de HU-19
 const notasPendientesRoutes = require('./src/routes/notas-pendientes.routes');  // OLEADA 2 (FIX 2.5): notas por firmar para la campana unificada
+const estimacionFotosRoutes = require('./src/routes/estimacion-fotos.routes');  // EVIDENCIA FOTOGRÁFICA (art. 132 fr. IV RLOPSRM) — montaje aditivo, diff para Maiki
 const { initDb } = require('./src/db/init');
 
 const app = express();
@@ -74,6 +75,10 @@ app.use('/api/empresas', empresasRoutes);
 app.use('/api/yo', yoRoutes);  // OLEADA 2 (FIX 2.4 — montaje aditivo, diff para Maiki)
 app.use('/api/observaciones', observacionesRoutes);  // OLEADA 2 (FIX 2.2 — montaje aditivo, diff para Maiki)
 app.use('/api/notas-pendientes', notasPendientesRoutes);  // OLEADA 2 (FIX 2.5 — montaje aditivo, diff para Maiki)
+// EVIDENCIA FOTOGRÁFICA de la estimación (art. 132 fr. IV RLOPSRM). Controller/route NUEVOS (no congelados);
+// fotos en BYTEA. Montaje ADITIVO — diff para Maiki (igual que los 3 de arriba). Requiere la migración
+// backend/scripts/migracion_estimacion_fotos.sql (4 columnas en estimacion_fotos).
+app.use('/api/estimacion-fotos', estimacionFotosRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Ruta no encontrada' });

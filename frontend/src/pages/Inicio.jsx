@@ -20,8 +20,11 @@ const SECCIONES = [
     items: [
       { hu: 'HU-01', icono: '📄', label: 'Alta de contrato', desc: 'Captura un contrato nuevo (7 pasos).' },
       { hu: 'HU-12', icono: '📐', label: 'Ciclo de estimación', desc: 'Integra, presenta, revisa y autoriza.' },
-      { hu: 'HU-08', icono: '📓', label: 'Bitácora', desc: 'Apertura, notas, consulta y minutas.' },
-      { hu: 'HU-06', icono: '🏗️', label: 'Avance y seguimiento', desc: 'Trabajos, curva y alertas de atraso.' },
+      { ruta: '/bitacora/ambiente', roles: ['residente', 'contratista', 'supervision'], icono: '📓', label: 'Bitácora', desc: 'Apertura, notas, consulta y minutas.' },
+      // NAV-F: unificado con el item del Sidebar ('Avance y seguimiento' → /seguimiento/trabajos-terminados),
+      // la pantalla de acción directa que YA monta PestanasCiclo. Antes apuntaba a /seguimiento/ambiente y
+      // divergía del sidebar (entrar por la tarjeta no resaltaba el menú). El ambiente sigue vivo para Ciclo de vida.
+      { ruta: '/seguimiento/trabajos-terminados', roles: ['contratista', 'residente', 'supervision'], icono: '🏗️', label: 'Avance y seguimiento', desc: 'Trabajos, curva y alertas de atraso.' },
       { hu: 'HU-20', icono: '💳', label: 'Pago y tránsito', desc: 'Tránsito a pago y registro.' },
       { hu: 'HU-03', icono: '📝', label: 'Convenios', desc: 'Convenios modificatorios.' },
       { ruta: '/contratos/finiquito', roles: ['dependencia', 'residente'], icono: '🏁', label: 'Cierre / finiquito', desc: 'Finiquito y cierre del contrato.' },

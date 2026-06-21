@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 import { historiasUsuario } from '../../data/dummy.js';
 import { nivelDe } from '../../data/permisos.js';
 import { useSesion } from '../../context/SesionContext.jsx';
@@ -47,7 +47,7 @@ const GRUPOS = [
         { hu: 'HU-10', label: 'Consultar / buscar' },
         { hu: 'HU-11', label: 'Minutas y visitas' },
       ] },
-      { ruta: '/seguimiento/ambiente', roles: ['contratista', 'residente', 'supervision'], icono: '🏗️', label: 'Avance y seguimiento', children: [
+      { ruta: '/seguimiento/trabajos-terminados', roles: ['contratista', 'residente', 'supervision'], icono: '🏗️', label: 'Avance y seguimiento', children: [
         { hu: 'HU-06', label: 'Registrar avance' },
         { hu: 'HU-05', label: 'Curva de avance' },
         { hu: 'HU-07', label: 'Alertas de atraso' },
@@ -96,8 +96,9 @@ const rangoHU = (item) => {
   return min === max ? `HU-${f(min)}` : `HU ${f(min)}–${f(max)}`;
 };
 
-export default function Sidebar() {
+export default function Sidebar({ abierto = true }) {
   const { rol, salirRol } = useSesion();
+  const { pathname } = useLocation(); // NAV-E — para resaltar el padre del ciclo en sus rutas hermanas
 
   // Resuelve un item a forma renderizable {key, to, icono, label, pill, lectura} o null (no aplica al rol).
   const resolver = (item) => {
@@ -139,8 +140,13 @@ export default function Sidebar() {
     }
     // El padre de un ciclo con sub-pasos muestra el RANGO de HU (HU 08–11); sin sub-pasos, su HU plano.
     const pillTexto = (item.children && item.children.length) ? (rangoHU(item) || r.pill) : r.pill;
+    // NAV-E — el padre del ciclo queda RESALTADO también en sus rutas HERMANAS (sub-pasos/lecturas). Como no
+    // están anidadas bajo el padre, el match por prefijo de NavLink no las cubría: se calcula el activo del
+    // ciclo contra {ruta del padre + rutas de los hijos} (coincidencia exacta, sin falsos positivos entre ciclos).
+    const rutasCiclo = [r.to, ...(item.children || []).map((ch) => (ch.hu ? HU[ch.hu]?.ruta : ch.ruta)).filter(Boolean)];
+    const activoCiclo = rutasCiclo.some((rt) => pathname === rt);
     return (
-      <NavLink key={r.key} to={r.to} end={r.to === '/'} className={linkClass}>
+      <NavLink key={r.key} to={r.to} end={r.to === '/'} className={({ isActive }) => linkClass({ isActive: isActive || activoCiclo })}>
         <span className="text-base leading-none flex-shrink-0">{r.icono}</span>
         <span className="leading-snug">{r.label}</span>
         {pillTexto && <span className={huPill}>{pillTexto}</span>}
@@ -149,7 +155,11 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="w-72 bg-guinda text-white flex-shrink-0 overflow-y-auto flex flex-col">
+    <aside
+      data-testid="sidebar"
+      aria-hidden={abierto ? undefined : true}
+      className={`bg-guinda text-white flex-shrink-0 flex flex-col transition-[width] duration-200 ${abierto ? 'w-72 overflow-y-auto' : 'w-0 overflow-hidden'}`}
+    >
       <div className="flex flex-col min-h-full pb-2">
         {/* Inicio (sin grupo, arriba). */}
         <div className="pt-2">

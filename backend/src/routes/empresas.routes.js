@@ -4,7 +4,7 @@
 const express = require('express');
 const { authMiddleware, requireRole } = require('../middlewares/auth.middleware');
 const {
-  listarPadron, listarPorValidar, listarDependencias, validarEmpresa, fusionarEmpresa,
+  listarPadron, listarPorValidar, listarDependencias, validarEmpresa, fusionarEmpresa, listarPersonas,
 } = require('../controllers/empresas.controller');
 
 const router = express.Router();
@@ -14,6 +14,7 @@ router.use(requireRole('dependencia')); // SOLO la dependencia administra el pad
 router.get('/padron', listarPadron);
 router.get('/por-validar', listarPorValidar);
 router.get('/dependencias', listarDependencias);
+router.get('/:id/personas', listarPersonas);   // cuentas de la empresa (1 empresa : N cuentas) — solo lectura
 router.post('/:id/validar', validarEmpresa);
 router.post('/:id/fusionar', fusionarEmpresa);
 

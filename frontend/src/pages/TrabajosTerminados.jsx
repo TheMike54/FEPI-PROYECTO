@@ -1,8 +1,11 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import EncabezadoContrato from '../components/ui/EncabezadoContrato.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import RegionEditable from '../components/vista/RegionEditable.jsx';
+import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
+import PestanasCiclo from '../components/PestanasCiclo.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
@@ -96,6 +99,14 @@ export default function TrabajosTerminados() {
       setCargando(false);
     }
   }, [recargar, showToast]);
+
+  // B6b: preselecciona el contrato del ?contrato=ID al venir del ambiente de avance (sin re-seleccionar a mano).
+  const [searchParams] = useSearchParams();
+  const contratoQuery = searchParams.get('contrato');
+  useEffect(() => {
+    if (sinSesion || !contratoQuery || contratoId) return;
+    if (contratos.some((c) => String(c.id) === String(contratoQuery))) seleccionarContrato(String(contratoQuery));
+  }, [sinSesion, contratoQuery, contratoId, contratos, seleccionarContrato]);
 
   const setCampo = (campo, valor) => setForm((prev) => ({ ...prev, [campo]: valor }));
 
@@ -214,25 +225,17 @@ export default function TrabajosTerminados() {
         ]}
       />
 
+      <PestanasCiclo ciclo="avance" activo="trabajos" />
+
       {sinSesion && (
         <div className="bg-pagina border border-borde rounded-md px-4 py-3 mb-4 text-sm text-slate-600">
           Inicia sesión en modo aplicación para cargar tus contratos y registrar avance.
         </div>
       )}
 
-      <div className="bg-white border border-borde rounded-lg p-4 mb-6 max-w-2xl">
-        <label className="sg-label">Contrato</label>
-        <select
-          className="sg-input"
-          value={contratoId}
-          onChange={(e) => seleccionarContrato(e.target.value)}
-          disabled={sinSesion}
-          data-testid="select-contrato"
-        >
-          <option value="">— Selecciona un contrato —</option>
-          {contratos.map((c) => <option key={c.id} value={c.id}>{c.folio} · {c.objeto}</option>)}
-        </select>
-      </div>
+      {/* P3 (3A): el contrato se HEREDA del contrato activo global; el banner carga datos vía el mismo
+          handler que usaba el <select> y ofrece "Cambiar". Sin contrato activo, el modal bloqueante cubre. */}
+      <BannerContratoActivo seleccionar={seleccionarContrato} contratoId={contratoId} />
 
       {!sinSesion && !contratoId && (
         <p className="text-sm text-slate-500 mb-4">Selecciona un contrato para registrar el avance ejecutado por concepto y periodo.</p>

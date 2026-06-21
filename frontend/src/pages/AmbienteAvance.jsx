@@ -1,8 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import LinkHU from '../components/LinkHU.jsx';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
+import PestanasCiclo from '../components/PestanasCiclo.jsx';
 import { useSesion } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
+import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
 import { api } from '../services/api.js';
 
 // AMBIENTE DE AVANCE Y SEGUIMIENTO (sesión grande 18-jun, BLOQUE B) — cascarón que ENCADENA HU-06 (trabajos
@@ -79,11 +82,14 @@ export default function AmbienteAvance() {
     <div className="space-y-4">
       <HeaderVista
         huId="HU-06"
-        titulo="Ambiente de avance físico y seguimiento (por bloques)"
+        titulo="Ambiente de avance físico y seguimiento"
         sprint="Sprint 7"
         rolAcademico="Contratista / Residencia"
         breadcrumb={[{ label: 'Inicio', href: '/' }, { label: 'Seguimiento' }, { label: 'Ambiente' }]}
       />
+
+      {/* FRENTE 2 / NAV-G — barra de pestañas del ciclo (incluye el chip "Ciclo · HU 05–07"). */}
+      <PestanasCiclo ciclo="avance" activo="ambiente" />
 
       <div className="bg-sigecop-blue-light border-l-4 border-sigecop-blue px-4 py-3 rounded-r-md text-sm text-slate-700" data-testid="ambiente-avance-aviso">
         <strong>Avance físico y seguimiento.</strong> La acción del flujo es <strong>registrar el avance</strong>
@@ -100,22 +106,17 @@ export default function AmbienteAvance() {
 
       {/* BLOQUE 1 — Contrato + periodos del programa. */}
       <Bloque n={1} titulo="Contrato y programa" estado={contratoId ? 'listo' : 'activo'}>
-        <div className="max-w-2xl">
-          <label className="sg-label">Contrato</label>
-          <select className="sg-input" value={contratoId} onChange={(e) => seleccionarContrato(e.target.value)} disabled={sinSesion} data-testid="select-contrato">
-            <option value="">— Selecciona un contrato —</option>
-            {contratos.map((ct) => <option key={ct.id} value={ct.id}>{ct.folio} · {ct.objeto}</option>)}
-          </select>
-        </div>
+        {/* 3A · P3 — hereda el contrato activo global en vez de re-seleccionarlo */}
+        <BannerContratoActivo seleccionar={seleccionarContrato} contratoId={contratoId} />
         {contratoId && <p className="mt-2 text-sm text-slate-600" data-testid="programa-periodos"><strong>{periodos.length}</strong> periodo(s) en el programa de obra.</p>}
       </Bloque>
 
       {/* BLOQUE 2 — Registrar avance (HU-06). */}
       <Bloque n={2} titulo="Registrar el avance ejecutado (HU-06)">
         <p className="text-sm text-slate-700 mb-3">El contratista registra los trabajos terminados por concepto y periodo; el acumulado no puede exceder lo contratado (art. 118 RLOPSRM).</p>
-        <Link to={`/seguimiento/trabajos-terminados${q}`} className="sg-btn-primary" data-testid="link-trabajos">
+        <LinkHU hu="HU-06" to={`/seguimiento/trabajos-terminados${q}`} className="sg-btn-primary" data-testid="link-trabajos" actor="Lo registra el Contratista">
           Registrar avance (HU-06) →
-        </Link>
+        </LinkHU>
       </Bloque>
 
       {/* EN PARALELO (lectura): curva (HU-05) y atrasos (HU-07) — no encadenadas al registro. */}
@@ -131,29 +132,28 @@ export default function AmbienteAvance() {
           </div>
         )}
         <p className="text-xs text-slate-500 mb-3">Los % salen de la misma fuente que la curva (no se recalculan aquí).</p>
-        <Link to={`/seguimiento/curva-avance${q}`} className="sg-btn-secondary" data-testid="link-curva">
+        <LinkHU hu="HU-05" to={`/seguimiento/curva-avance${q}`} className="sg-btn-secondary" data-testid="link-curva" actor="No disponible para tu rol">
           Ver la curva de avance (HU-05) →
-        </Link>
+        </LinkHU>
       </Bloque>
 
       {/* BLOQUE 4 — Atrasos + asiento (HU-07, preselecciona contrato). */}
       <Bloque n={4} titulo="Atrasos y alertas (HU-07)">
         <p className="text-sm text-slate-700 mb-3">El sistema deriva el déficit por concepto (programado al periodo vigente − ejecutado) y permite asentarlo en la bitácora. Esta pantalla sí <strong>preselecciona el contrato</strong>.</p>
-        <Link to={`/seguimiento/alertas${q}`} className="sg-btn-secondary" data-testid="link-alertas">
+        <LinkHU hu="HU-07" to={`/seguimiento/alertas${q}`} className="sg-btn-secondary" data-testid="link-alertas" actor="Los atrasos los ve Residencia o Supervisión">
           Ver atrasos del contrato (HU-07) →
-        </Link>
+        </LinkHU>
       </Bloque>
 
       {/* BLOQUE 5 — Evidencia fotográfica: FUERA DE ALCANCE de la Etapa 1 (FASE 5, decisión de alcance). */}
       <Bloque n={5} titulo="Evidencia fotográfica por periodo">
         <p className="text-sm text-slate-700">
-          El registro fotográfico del avance por periodo es <strong>fuera del alcance de la Etapa 1</strong>:
+          El registro fotográfico del avance por periodo es <strong>opcional</strong>:
           la ley no lo exige como requisito (el avance se sustenta con los números ejecutados por concepto y la
           nota de bitácora). El acumulado contra lo contratado (art. 118 RLOPSRM) es el control vigente.
         </p>
         <p className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 mt-3" data-testid="evidencia-placeholder">
-          Fuera de alcance de la Etapa 1. Si en una etapa posterior se incorpora la subida de evidencias por
-          periodo, este bloque la alojará (la estructura del ambiente ya está lista).
+          El registro fotográfico de evidencias por periodo no está disponible en esta versión del sistema.
         </p>
       </Bloque>
     </div>

@@ -1,11 +1,13 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
+import PestanasCiclo from '../components/PestanasCiclo.jsx';
 import EncabezadoContrato from '../components/ui/EncabezadoContrato.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import RegionEditable from '../components/vista/RegionEditable.jsx';
 import MatrizProgramaLectura from '../components/programa/MatrizProgramaLectura.jsx';
 import EditorProgramaConvenio from '../components/convenios/EditorProgramaConvenio.jsx';
+import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
@@ -100,6 +102,8 @@ export default function ConveniosModificatorios() {
   const [motivo, setMotivo] = useState('');
   const [folio, setFolio] = useState('');
   const [registrando, setRegistrando] = useState(false);
+  // B5: mensaje de rechazo PERSISTENTE (no toast efímero) para que el usuario entienda el "piso" de lo estimado.
+  const [errorRegistro, setErrorRegistro] = useState('');
   const [subiendoOficioId, setSubiendoOficioId] = useState(null); // FASE 0C: oficio de aprobación del convenio
   const [autorizandoId, setAutorizandoId] = useState(null); // ITEM 3.2: acto de autorización del servidor facultado
 
@@ -334,6 +338,7 @@ export default function ConveniosModificatorios() {
         ? ' · su nota de bitácora se asentará al abrir la bitácora'
         : (res.nota ? ` · nota de bitácora #${res.nota.numero} asentada` : '');
       showToast(`Convenio ${ref} registrado${cambios.length ? ' (' + cambios.join(' · ') + ')' : ''}${avisos.length ? ' · ' + avisos.join(' · ') : ''}${notaMsg}.`);
+      setErrorRegistro('');
       setPlazoNuevo(''); setMotivo(''); setFolio('');
       setCmConceptos([]); setCmCeldas({}); setCmPeriodos([]);
       await cargarContrato(contratoId); // recarga vigente + historial; la precarga del editor se redispara
@@ -342,6 +347,7 @@ export default function ConveniosModificatorios() {
         e.status === 403 ? 'Solo la dependencia o el residente asignado puede registrar convenios'
           : e.status === 409 ? 'Conflicto de versión del programa; recarga e inténtalo de nuevo'
             : 'No se pudo registrar el convenio');
+      setErrorRegistro(msg);
       showToast(msg);
     } finally {
       setRegistrando(false);
@@ -430,25 +436,16 @@ export default function ConveniosModificatorios() {
         ]}
       />
 
+      <PestanasCiclo ciclo="convenio" activo="convenio" />
+
       {sinSesion && (
         <div className="bg-pagina border border-borde rounded-md px-4 py-3 mb-4 text-sm text-slate-600">
           Inicia sesión para consultar o registrar convenios modificatorios.
         </div>
       )}
 
-      <div className="bg-white border border-borde rounded-lg p-4 mb-6 max-w-2xl">
-        <label className="sg-label">Contrato</label>
-        <select
-          className="sg-input"
-          value={contratoId}
-          onChange={(e) => seleccionarContrato(e.target.value)}
-          disabled={sinSesion}
-          data-testid="select-contrato"
-        >
-          <option value="">— Selecciona un contrato —</option>
-          {contratos.map((c) => <option key={c.id} value={c.id}>{c.folio} · {c.objeto}</option>)}
-        </select>
-      </div>
+      {/* 3A·P3: hereda el contrato activo global (BannerContratoActivo carga datos vía el mismo handler). */}
+      <BannerContratoActivo seleccionar={seleccionarContrato} contratoId={contratoId} />
 
       {!sinSesion && !contratoId && (
         <p className="text-sm text-slate-500 mb-4">Selecciona un contrato para ver sus convenios y versiones del programa.</p>
@@ -615,6 +612,12 @@ export default function ConveniosModificatorios() {
                 </div>
               </RegionEditable>
 
+              {errorRegistro && (
+                <div className="mt-4 bg-red-50 border-l-4 border-peligro px-4 py-3 rounded-r-md text-sm text-peligro" data-testid="cm-error-registro">
+                  <strong>No se registró el convenio:</strong> {errorRegistro}
+                  <p className="text-xs text-tinta-sec mt-1">Si dice «ya hay N estimado», ese es el mínimo de ese concepto: no puedes reducirlo por debajo de lo ya estimado en estimaciones integradas. Súbelo a ≥ N o registra un convenio que no lo reduzca.</p>
+                </div>
+              )}
               <div className="mt-6 flex justify-end">
                 <button
                   type="button"

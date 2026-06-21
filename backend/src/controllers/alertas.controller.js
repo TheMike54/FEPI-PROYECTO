@@ -269,4 +269,59 @@ async function asentarAtraso(req, res) {
   }
 }
 
-module.exports = { alertasDeContrato, resumenAtrasos, asentarAtraso };
+// GET /api/alertas/detalle?contrato=ID — DETALLE accionable de atrasos por concepto (FILAS, no conteos), para el
+// CENTRO DE NOTIFICACIONES y los accesos directos de la campana. MISMO cálculo que resumenAtrasos (déficit al
+// periodo vigente, programado_acum − ejecutado_acum), ACOTADO por participación; con ?contrato acota al contrato
+// ACTIVO. LIMIT defensivo (100). Solo lectura; archivo NO congelado (router /alertas ya montado en server.js).
+async function alertasDetalle(req, res) {
+  try {
+    const uid = req.user.id;
+    const venTodo = req.user.rol === 'dependencia' || req.user.rol === 'finanzas';
+    const contratoFiltro = req.query.contrato ? Number(req.query.contrato) : null;
+    if (contratoFiltro != null && (!Number.isInteger(contratoFiltro) || contratoFiltro <= 0)) {
+      return res.status(400).json({ error: 'contrato inválido' });
+    }
+    const r = await pool.query(
+      `WITH contratos_acc AS (
+         SELECT id, folio FROM contratos
+          WHERE ($3::int IS NULL OR id = $3)
+            AND ($2::boolean
+              OR created_by = $1 OR residente_id = $1 OR superintendente_id = $1 OR supervision_id = $1)
+       ),
+       pa AS (
+         SELECT contrato_id, MAX(numero) AS pa_num
+           FROM contrato_periodos WHERE inicio <= CURRENT_DATE GROUP BY contrato_id
+       )
+       SELECT cc.contrato_id, ca_c.folio, cc.id AS contrato_concepto_id, cc.clave, cc.concepto, cc.unidad,
+              ( COALESCE((SELECT SUM(po.cantidad) FROM programa_obra po
+                           JOIN contrato_periodos cp ON cp.id = po.contrato_periodo_id
+                          WHERE po.contrato_concepto_id = cc.id AND cp.numero <= COALESCE(pa.pa_num, 0)), 0)
+              - COALESCE((SELECT SUM(av.cantidad) FROM concepto_avance av WHERE av.contrato_concepto_id = cc.id), 0)
+              ) AS deficit
+         FROM contrato_conceptos cc
+         JOIN contratos_acc ca_c ON ca_c.id = cc.contrato_id
+         LEFT JOIN pa ON pa.contrato_id = cc.contrato_id
+        ORDER BY cc.contrato_id, cc.orden`,
+      [uid, venTodo, contratoFiltro]
+    );
+    const filas = r.rows
+      .map((row) => ({
+        contrato_id: row.contrato_id,
+        folio: row.folio,
+        contrato_concepto_id: row.contrato_concepto_id,
+        clave: row.clave,
+        concepto: row.concepto,
+        unidad: row.unidad,
+        concepto_label: row.clave ? `${row.clave} · ${row.concepto}` : row.concepto,
+        deficit: q3(row.deficit),
+      }))
+      .filter((f) => f.deficit > EPS_CANT)
+      .slice(0, 100);
+    return res.status(200).json(filas);
+  } catch (err) {
+    console.error('[alertasDetalle]', err);
+    return res.status(500).json({ error: 'Error interno' });
+  }
+}
+
+module.exports = { alertasDeContrato, resumenAtrasos, asentarAtraso, alertasDetalle };

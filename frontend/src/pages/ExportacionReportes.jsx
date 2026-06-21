@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import BannerContexto from '../components/vista/BannerContexto.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
@@ -6,6 +7,8 @@ import RegionEditable from '../components/vista/RegionEditable.jsx';
 import { useVistaHU, useSesion } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
+import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
+import PestanasCiclo from '../components/PestanasCiclo.jsx';
 import { CATALOGO_REPORTES, PERIODOS_REPORTE, HANDLERS } from '../services/reportesContrato.js';
 
 // HU-19 — Exportación de los 7 reportes definidos del contrato. Cableado a datos REALES
@@ -78,6 +81,14 @@ export default function ExportacionReportes() {
     }
   }, [contratos, showToast]);
 
+  // B6b/A-3A: preselecciona el contrato del ?contrato=ID (consistencia entre pantallas).
+  const [searchParams] = useSearchParams();
+  const contratoQuery = searchParams.get('contrato');
+  useEffect(() => {
+    if (sinSesion || !contratoQuery || contratoId) return;
+    if (contratos.some((c) => String(c.id) === String(contratoQuery))) seleccionarContrato(String(contratoQuery));
+  }, [sinSesion, contratoQuery, contratoId, contratos, seleccionarContrato]);
+
   const exportar = useCallback((reporteId, formato) => {
     const handler = HANDLERS[reporteId]?.[formato];
     if (!handler || !contrato || !datos) return;
@@ -111,26 +122,16 @@ export default function ExportacionReportes() {
         ]}
       />
 
+      <PestanasCiclo ciclo="expediente" activo="reportes" />
+
       {sinSesion && (
         <div className="bg-slate-50 border border-slate-200 rounded-md px-4 py-3 mb-4 text-sm text-slate-600">
           Inicia sesión en modo aplicación para exportar los reportes del contrato.
         </div>
       )}
 
-      {/* Selector de contrato — fuente de todos los reportes. */}
-      <div className="bg-white border border-slate-200 rounded-md p-4 mb-6 max-w-2xl">
-        <label className="sg-label">Contrato</label>
-        <select
-          className="sg-input"
-          value={contratoId}
-          onChange={(e) => seleccionarContrato(e.target.value)}
-          disabled={sinSesion}
-          data-testid="select-contrato-reporte"
-        >
-          <option value="">— Selecciona un contrato —</option>
-          {contratos.map((c) => <option key={c.id} value={c.id}>{c.folio} · {c.objeto}</option>)}
-        </select>
-      </div>
+      {/* 3A · P3 — hereda el contrato activo global (antes: selector repetido select-contrato-reporte). */}
+      <BannerContratoActivo seleccionar={seleccionarContrato} contratoId={contratoId} />
 
       {!sinSesion && !contratoId && (
         <p className="text-sm text-slate-500 mb-4">Selecciona un contrato para exportar sus reportes.</p>

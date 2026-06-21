@@ -5,6 +5,8 @@ import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import RegionEditable from '../components/vista/RegionEditable.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
+import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
+import PestanasCiclo from '../components/PestanasCiclo.jsx';
 import { api } from '../services/api.js';
 
 // HU-11 (sesión E2 18-jun) — MINUTAS, VISITAS Y ACUERDOS, cableado al backend real (antes era maqueta).
@@ -85,7 +87,7 @@ function TabMinutas({ form, setForm, minutas, onRegistrar, onAdjuntar, soloLectu
           </tr></thead>
           <tbody>
             {minutas.length === 0 ? (
-              <tr><td colSpan="8" className="p-6 text-center text-slate-400 italic" data-testid="minutas-vacio">Sin minutas para este contrato.</td></tr>
+              <tr><td colSpan="8" className="p-6 text-center text-slate-500" data-testid="minutas-vacio">Aún no hay minutas registradas para este contrato. Usa el formulario de arriba para registrar la primera.</td></tr>
             ) : minutas.map((m) => (
               <tr key={m.id} className="border-t border-slate-200 hover:bg-slate-50" data-testid={`minuta-${m.id}`}>
                 <td className="p-3 font-mono text-xs">{folioMin(m.id)}</td>
@@ -135,7 +137,7 @@ function TabVisitas({ form, setForm, visitas, onAgendar, onAdjuntar, soloLectura
           </tr></thead>
           <tbody>
             {visitas.length === 0 ? (
-              <tr><td colSpan="8" className="p-6 text-center text-slate-400 italic" data-testid="visitas-vacio">Sin visitas para este contrato.</td></tr>
+              <tr><td colSpan="8" className="p-6 text-center text-slate-500" data-testid="visitas-vacio">Aún no hay visitas agendadas para este contrato. Agenda una con el formulario de arriba.</td></tr>
             ) : visitas.map((v) => (
               <tr key={v.id} className="border-t border-slate-200 hover:bg-slate-50" data-testid={`visita-${v.id}`}>
                 <td className="p-3 font-mono text-xs">{folioVis(v.id)}</td>
@@ -262,16 +264,12 @@ export default function MinutasVisitas() {
       <HeaderVista huId="HU-11" titulo="Minutas y agenda de visitas" sprint="Sprint 7" rolAcademico="Residente"
         breadcrumb={[{ label: 'Inicio', href: '/' }, { label: 'Bitácora' }, { label: 'Minutas y visitas' }]} />
 
-      {sinSesion && <div className="bg-slate-50 border border-slate-200 rounded-md px-4 py-3 mb-4 text-sm text-slate-600">Inicia sesión para registrar minutas y visitas.</div>}
+      <PestanasCiclo ciclo="bitacora" activo="minutas" />
 
-      <div className="bg-white border border-slate-200 rounded-md p-4 mb-6 max-w-2xl">
-        <label className="sg-label">Contrato</label>
-        <select className="sg-input" value={contratoId} onChange={(e) => seleccionar(e.target.value)} disabled={sinSesion} data-testid="select-contrato">
-          <option value="">— Selecciona un contrato —</option>
-          {contratos.map((c) => <option key={c.id} value={c.id}>{c.folio} · {c.objeto}</option>)}
-        </select>
-        {!contratoId && <p className="text-xs text-slate-500 mt-2">Selecciona un contrato para ver y registrar sus minutas y visitas.</p>}
-      </div>
+      {sinSesion &&<div className="bg-slate-50 border border-slate-200 rounded-md px-4 py-3 mb-4 text-sm text-slate-600">Inicia sesión para registrar minutas y visitas.</div>}
+
+      {/* 3A·P3 — hereda el contrato activo global (antes era un <select> de re-selección). */}
+      <BannerContratoActivo seleccionar={seleccionar} contratoId={contratoId} />
 
       <Tabs tabs={tabs} />
 

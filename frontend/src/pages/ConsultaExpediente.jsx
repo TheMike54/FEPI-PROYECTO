@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import EncabezadoContrato from '../components/ui/EncabezadoContrato.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
@@ -7,6 +7,9 @@ import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { api } from '../services/api.js';
 import { labelEstadoEstimacion } from '../data/estadoEstimacion.js';
 import MatrizProgramaLectura, { periodoQueContiene } from '../components/programa/MatrizProgramaLectura.jsx';
+import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
+import PestanasCiclo from '../components/PestanasCiclo.jsx';
+import FotosEstimacion from '../components/FotosEstimacion.jsx';
 
 // HU-04 cableado al backend. El expediente sale de GET /api/contratos/:id + los endpoints propios
 // (programa, roster, plan de amortización, convenios, estimaciones). El acotamiento por participación
@@ -29,6 +32,21 @@ const CAMPOS_BUSQUEDA = [
 // pg devuelve NUMERIC y DATE como strings; coercemos al mostrar/calcular.
 const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 const soloFecha = (f) => (f || '').slice(0, 10);
+
+// Propuesta 1 — estado vacío con guía. En este VISOR (HU-04) cada bloque vacío conserva su
+// mensaje "Este contrato no tiene …" y se acompaña de una guía común: el expediente NO está
+// incompleto, sólo se va llenando conforme avanza el contrato. Sin CTA (es de sólo lectura).
+function BloqueVacio({ children }) {
+  return (
+    <div className="text-sm">
+      <p className="text-slate-400 italic">{children}</p>
+      <p className="text-xs text-slate-400 mt-1">
+        El expediente se arma conforme avanza el contrato (alta, bitácora, estimaciones, convenios);
+        este apartado aparecerá en cuanto se registre su información.
+      </p>
+    </div>
+  );
+}
 
 const moneda = (v) =>
   `$ ${num(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -87,7 +105,7 @@ function BloqueConfiguracion({ contrato, superVigente }) {
 
 function BloqueCatalogo({ conceptos }) {
   if (conceptos.length === 0) {
-    return <p className="text-sm text-slate-400 italic">Este contrato no tiene catálogo de conceptos (precio alzado).</p>;
+    return <BloqueVacio>Este contrato no tiene catálogo de conceptos (precio alzado).</BloqueVacio>;
   }
   return (
     <div className="overflow-x-auto border border-slate-200 rounded-md">
@@ -148,7 +166,7 @@ function BloquePrograma({ programa, actividades, versiones }) {
     );
   }
   if (actividades.length === 0) {
-    return <p className="text-sm text-slate-400 italic">Este contrato no tiene programa de obra registrado.</p>;
+    return <BloqueVacio>Este contrato no tiene programa de obra registrado.</BloqueVacio>;
   }
   return (
     <div>
@@ -181,7 +199,7 @@ function BloquePrograma({ programa, actividades, versiones }) {
 
 function BloqueFianzas({ garantias }) {
   if (garantias.length === 0) {
-    return <p className="text-sm text-slate-400 italic">Este contrato no tiene garantías capturadas.</p>;
+    return <BloqueVacio>Este contrato no tiene garantías capturadas.</BloqueVacio>;
   }
   return (
     <div className="overflow-x-auto border border-slate-200 rounded-md">
@@ -249,7 +267,7 @@ function BloqueJuridicos({ juridicos, equipo }) {
 function BloquePlanAmortizacion({ data }) {
   const filas = Array.isArray(data?.plan) ? data.plan : [];
   if (filas.length === 0) {
-    return <p className="text-sm text-slate-400 italic">Este contrato no tiene plan de amortización (sin anticipo o sin periodos).</p>;
+    return <BloqueVacio>Este contrato no tiene plan de amortización (sin anticipo o sin periodos).</BloqueVacio>;
   }
   const total = filas.reduce((s, f) => s + (Number(f.monto) || 0), 0);
   return (
@@ -299,7 +317,7 @@ const motivoRoster = (h) => (h.sustituye_a == null && h.motivo === MOTIVO_ALTA_R
 function BloqueRoster({ roster }) {
   const historial = Array.isArray(roster?.historial) ? roster.historial : [];
   if (historial.length === 0) {
-    return <p className="text-sm text-slate-400 italic">Este contrato no tiene roster versionado ni sustituciones registradas.</p>;
+    return <BloqueVacio>Este contrato no tiene roster versionado ni sustituciones registradas.</BloqueVacio>;
   }
   const sustituciones = historial.filter((h) => h.sustituye_a != null).length;
   return (
@@ -378,7 +396,7 @@ function BloqueConvenios({ data, contratoId }) {
     }
   };
   if (convenios.length === 0) {
-    return <p className="text-sm text-slate-400 italic">Este contrato no tiene convenios modificatorios registrados.</p>;
+    return <BloqueVacio>Este contrato no tiene convenios modificatorios registrados.</BloqueVacio>;
   }
   return (
     <div data-testid="convenios-expediente">
@@ -453,10 +471,10 @@ function BloqueConvenios({ data, contratoId }) {
 // O9 — Resumen de estimaciones (ciclo de cobro). Números y estados; el detalle vive en sus HU (12–21).
 // Las etiquetas del ciclo salen del util compartido estadoEstimacion.js (reconciliación O7↔HU-15:
 // integrada→"Integrada", enviada→"Presentada", autorizada→"Autorizada").
-function BloqueEstimaciones({ estimaciones }) {
+function BloqueEstimaciones({ estimaciones, soloLectura = false }) {
   const filas = Array.isArray(estimaciones) ? estimaciones : [];
   if (filas.length === 0) {
-    return <p className="text-sm text-slate-400 italic">Este contrato no tiene estimaciones registradas.</p>;
+    return <BloqueVacio>Este contrato no tiene estimaciones registradas.</BloqueVacio>;
   }
   // P3 (revisión 14-jun): el total NO suma las estimaciones RECHAZADAS. Una rechazada se sustituye por su
   // reingreso (HU-16, ligado por reemplaza_a), que ya aporta su neto → sumar ambas doble-contabilizaría.
@@ -497,13 +515,22 @@ function BloqueEstimaciones({ estimaciones }) {
           </tbody>
         </table>
       </div>
+      {/* EVIDENCIA FOTOGRÁFICA (art. 132 fr. IV RLOPSRM): galería por estimación; subir/ver (bytea). */}
+      <div className="mt-4 space-y-3">
+        {filas.map((e) => (
+          <div key={`fotos-${e.id}`} className="border border-borde rounded-md px-3 py-2 bg-white">
+            <div className="text-xs font-semibold text-tinta-sec">Estimación #{e.numero} · {labelEstadoEstimacion(e.estado)}</div>
+            <FotosEstimacion estimacionId={e.id} soloLectura={soloLectura} />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
 
 export default function ConsultaExpediente() {
   const { token } = useSesion();
-  useVistaHU('HU-04');
+  const { soloLectura: soloLecturaExp } = useVistaHU('HU-04'); // para gatear la subida de fotos del expediente
   const sinSesion = !token;
 
   const [contratos, setContratos] = useState([]);
@@ -557,6 +584,14 @@ export default function ConsultaExpediente() {
       setCargando(false);
     }
   }, []);
+
+  // B6b/A-3A: preselecciona el contrato del ?contrato=ID (consistencia entre pantallas).
+  const [searchParams] = useSearchParams();
+  const contratoQuery = searchParams.get('contrato');
+  useEffect(() => {
+    if (sinSesion || !contratoQuery || contratoId) return;
+    if (contratos.some((c) => String(c.id) === String(contratoQuery))) seleccionarContrato(String(contratoQuery));
+  }, [sinSesion, contratoQuery, contratoId, contratos, seleccionarContrato]);
 
   // Los bloques del expediente, derivados del contrato real. Cada bloque expone qué campos hace match
   // con el buscador. O9: + resumen de estimaciones; el orden es el del documento consolidado.
@@ -671,10 +706,10 @@ export default function ConsultaExpediente() {
           const blob = (Array.isArray(estimaciones) ? estimaciones : []).map((e) => `#${e.numero} ${e.estado} ${soloFecha(e.periodo_inicio)}`).join(' ').toLowerCase();
           return blob.includes(q);
         },
-        body: <BloqueEstimaciones estimaciones={estimaciones} />
+        body: <BloqueEstimaciones estimaciones={estimaciones} soloLectura={soloLecturaExp} />
       }
     ];
-  }, [expediente, programa, roster, planAmort, convenios, estimaciones]);
+  }, [expediente, programa, roster, planAmort, convenios, estimaciones, soloLecturaExp]);
 
   const bloquesFiltrados = useMemo(() => {
     const terminos = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -697,28 +732,22 @@ export default function ConsultaExpediente() {
           breadcrumb={[{ label: 'Inicio', href: '/' }, { label: 'Contratos' }, { label: 'Expediente' }]}
         />
 
+        <PestanasCiclo ciclo="expediente" activo="expediente" />
+
         {sinSesion && (
           <div className="bg-slate-50 border border-slate-200 rounded-md px-4 py-3 mb-4 text-sm text-slate-600">
             Inicia sesión en modo aplicación para cargar tus contratos y consultar su expediente.
           </div>
         )}
 
-        <div className="bg-white border border-slate-200 rounded-md p-4 mb-6 max-w-2xl">
-          <label className="sg-label">Contrato</label>
-          <select
-            className="sg-input"
-            value={contratoId}
-            onChange={(e) => seleccionarContrato(e.target.value)}
-            disabled={sinSesion}
-            data-testid="select-contrato"
-          >
-            <option value="">— Selecciona un contrato —</option>
-            {contratos.map((c) => <option key={c.id} value={c.id}>{c.folio} · {c.objeto}</option>)}
-          </select>
-        </div>
+        {/* 3A·P3: hereda el contrato activo global; el banner llama seleccionarContrato(idGlobal). */}
+        <BannerContratoActivo seleccionar={seleccionarContrato} contratoId={contratoId} />
 
         {!sinSesion && !contratoId && (
-          <p className="text-sm text-slate-500 mb-4">Selecciona un contrato para ver su expediente integrado.</p>
+          <p className="text-sm text-slate-500 mb-4">
+            Aún no hay un contrato seleccionado. Elige un contrato arriba para ver su expediente
+            integrado (configuración, catálogo, programa, fianzas, jurídicos, roster, convenios y estimaciones).
+          </p>
         )}
         {cargando && <p className="text-sm text-slate-500 mb-4">Cargando expediente…</p>}
         {error && (
@@ -795,8 +824,13 @@ export default function ConsultaExpediente() {
               </BloqueExpediente>
             ))}
             {bloquesFiltrados.length === 0 && (
-              <div className="print:hidden bg-white border border-slate-200 rounded-md p-8 text-center text-slate-400 italic">
-                Ningún bloque del expediente coincide con la búsqueda.
+              <div className="print:hidden bg-white border border-slate-200 rounded-md p-8 text-center text-sm text-slate-500">
+                <p className="italic text-slate-400">Ningún bloque del expediente coincide con tu búsqueda.</p>
+                <p className="mt-1">
+                  Prueba con otro tipo de documento o periodo, o{' '}
+                  <button type="button" className="text-sigecop-accent hover:underline font-medium" onClick={() => setQuery('')}>limpia la búsqueda</button>
+                  {' '}para ver todos los bloques.
+                </p>
               </div>
             )}
           </div>

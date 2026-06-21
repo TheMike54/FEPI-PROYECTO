@@ -1,8 +1,11 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import jsPDF from 'jspdf';
 import { descargarExcelHoja } from '../services/excelExport.js';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
+import PestanasCiclo from '../components/PestanasCiclo.jsx';
 import BannerContexto from '../components/vista/BannerContexto.jsx';
+import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import Boton from '../components/ui/Boton.jsx';
 import Tabla, { thClass } from '../components/ui/Tabla.jsx';
@@ -191,6 +194,14 @@ export default function ReingresoEstimacion() {
     cargarHistorial(id);
   }, [cargarHistorial]);
 
+  const [searchParams] = useSearchParams();
+  const contratoQuery = searchParams.get('contrato');
+  useEffect(() => {
+    // B6b/A-3A: preselecciona el contrato del ?contrato=ID (consistencia entre pantallas).
+    if (sinSesion || !contratoQuery || contratoId) return;
+    if (contratos.some((c) => String(c.id) === String(contratoQuery))) seleccionarContrato(String(contratoQuery));
+  }, [sinSesion, contratoQuery, contratoId, contratos, seleccionarContrato]);
+
   const seleccionarRechazada = useCallback((id) => {
     setRechazadaId(id);
     setRevision(null); setReingreso(null);
@@ -242,6 +253,8 @@ export default function ReingresoEstimacion() {
         ]}
       />
 
+      <PestanasCiclo ciclo="estimacion" activo="reingreso" />
+
       {sinSesion && (
         <div className="bg-slate-50 border border-slate-200 rounded-md px-4 py-3 mb-4 text-sm text-slate-600">
           Inicia sesión para reingresar estimaciones.
@@ -250,19 +263,8 @@ export default function ReingresoEstimacion() {
 
       {/* Selección de contrato + estimación rechazada. */}
       <div className="bg-white border border-slate-200 rounded-md p-4 mb-6 max-w-2xl space-y-4">
-        <div>
-          <label className="sg-label">Contrato</label>
-          <select
-            className="sg-input"
-            value={contratoId}
-            onChange={(e) => seleccionarContrato(e.target.value)}
-            disabled={sinSesion}
-            data-testid="select-contrato"
-          >
-            <option value="">— Selecciona un contrato —</option>
-            {contratos.map((c) => <option key={c.id} value={c.id}>{c.folio} · {c.objeto}</option>)}
-          </select>
-        </div>
+        {/* 3A · P3 — hereda el contrato activo global (en vez de re-seleccionarlo aquí). */}
+        <BannerContratoActivo seleccionar={seleccionarContrato} contratoId={contratoId} />
         {contratoId && (
           <div>
             <label className="sg-label">Estimación rechazada</label>
@@ -396,7 +398,7 @@ export default function ReingresoEstimacion() {
                   data-testid="textarea-nota"
                 />
                 <p className="text-xs text-slate-400 mt-1">
-                  Nota de control (no se persiste en Etapa 1; criterio del equipo (default conservador): persistirla requiere ajuste de esquema, diferido).
+                  Nota de control: queda como referencia en esta pantalla y no se almacena de forma permanente.
                 </p>
               </div>
               <label className="flex items-center gap-2 text-sm text-slate-700 mb-4">

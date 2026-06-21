@@ -197,7 +197,22 @@ async function fusionarEmpresa(req, res) {
   } finally { client.release(); }
 }
 
+// GET /api/empresas/:id/personas — cuentas asociadas a la empresa (modelo 1 empresa : N cuentas). SOLO
+// LECTURA: lee usuarios.empresa_id, datos ya existentes. El router exige requireRole('dependencia'), así que
+// hereda el gate. Para que el padrón muestre, al expandir una empresa, quiénes pertenecen a ella.
+async function listarPersonas(req, res) {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'empresa inválida' });
+    const r = await query(
+      'SELECT id, nombre, email, rol, estado FROM usuarios WHERE empresa_id = $1 ORDER BY rol ASC, nombre ASC',
+      [id]
+    );
+    return res.status(200).json(r.rows);
+  } catch (err) { console.error('[listarPersonas]', err); return res.status(500).json({ error: 'Error interno' }); }
+}
+
 module.exports = {
   listarEmpresas, resolverOCrearEmpresa, normalizarNombreEmpresa, normalizarNombreEmpresaFuerte,
-  listarPadron, listarPorValidar, listarDependencias, validarEmpresa, fusionarEmpresa,
+  listarPadron, listarPorValidar, listarDependencias, validarEmpresa, fusionarEmpresa, listarPersonas,
 };

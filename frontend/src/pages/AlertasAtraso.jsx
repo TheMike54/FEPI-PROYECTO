@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
+import PestanasCiclo from '../components/PestanasCiclo.jsx';
 import EncabezadoContrato from '../components/ui/EncabezadoContrato.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
+import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { api } from '../services/api.js';
 
@@ -66,6 +68,7 @@ export default function AlertasAtraso() {
   // lista esté cargada y mientras el usuario no haya elegido otro a mano.
   const [searchParams] = useSearchParams();
   const contratoQuery = searchParams.get('contrato');
+  const conceptoQuery = searchParams.get('concepto'); // BLOQUE D — deep-link de la campana: resalta el concepto exacto
   useEffect(() => {
     if (sinSesion || !contratoQuery || contratoId) return;
     if (contratos.some((c) => String(c.id) === String(contratoQuery))) {
@@ -109,6 +112,8 @@ export default function AlertasAtraso() {
         ]}
       />
 
+      <PestanasCiclo ciclo="avance" activo="alertas" />
+
       {sinSesion && (
         <div className="bg-pagina border border-borde rounded-md px-4 py-3 mb-4 text-sm text-slate-600">
           Inicia sesión en modo aplicación para cargar tus contratos y consultar su atraso por concepto.
@@ -124,19 +129,8 @@ export default function AlertasAtraso() {
         ponderado (curva y estimaciones).
       </div>
 
-      <div className="bg-white border border-borde rounded-lg p-4 mb-6 max-w-2xl">
-        <label className="sg-label">Contrato</label>
-        <select
-          className="sg-input"
-          value={contratoId}
-          onChange={(e) => seleccionarContrato(e.target.value)}
-          disabled={sinSesion}
-          data-testid="select-contrato"
-        >
-          <option value="">— Selecciona un contrato —</option>
-          {contratos.map((c) => <option key={c.id} value={c.id}>{c.folio} · {c.objeto}</option>)}
-        </select>
-      </div>
+      {/* 3A · P3 — hereda el contrato activo global en vez de re-seleccionarlo aquí. */}
+      <BannerContratoActivo seleccionar={seleccionarContrato} contratoId={contratoId} />
 
       {!sinSesion && !contratoId && (
         <p className="text-sm text-slate-500 mb-4">Selecciona un contrato para consultar su atraso por concepto.</p>
@@ -191,15 +185,17 @@ export default function AlertasAtraso() {
                 <tbody>
                   {atrasos.length === 0 ? (
                     <tr>
-                      <td colSpan={soloLectura ? 5 : 6} className="p-8 text-center text-slate-400 italic" data-testid="sin-atrasos">
-                        Sin conceptos en atraso al periodo actual.
+                      <td colSpan={soloLectura ? 5 : 6} className="p-8 text-center text-slate-500" data-testid="sin-atrasos">
+                        {data.periodo_actual
+                          ? <span className="font-medium text-exito">Sin atrasos: lo ejecutado va al día con el programa al periodo vigente.</span>
+                          : <span className="italic text-slate-400">El contrato aún no inicia su primer periodo; no hay atraso que medir todavía.</span>}
                       </td>
                     </tr>
                   ) : (
                     atrasos.map((a) => (
                       <tr
                         key={a.contrato_concepto_id}
-                        className="border-t border-borde bg-amber-50"
+                        className={`border-t border-borde ${String(a.contrato_concepto_id) === conceptoQuery ? 'bg-amber-100 ring-2 ring-inset ring-sigecop-amber-attention' : 'bg-amber-50'}`}
                         data-testid={`fila-atraso-${a.contrato_concepto_id}`}
                       >
                         <td className="p-3 font-semibold">{a.concepto_label}</td>

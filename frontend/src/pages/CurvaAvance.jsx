@@ -1,8 +1,12 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import EncabezadoContrato from '../components/ui/EncabezadoContrato.jsx';
 import Kpi from '../components/ui/Kpi.jsx';
+import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
+import PestanasCiclo from '../components/PestanasCiclo.jsx';
+import LinkHU from '../components/LinkHU.jsx';
 import { useSesion } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
@@ -46,7 +50,7 @@ const COLOR_CELDA = {
 // O1-P16b (revisión profe, 09-jun): tooltip interactivo — "el graficador te debe dar el valor
 // cuando pongas el mouse". Círculo de hit invisible (r=10) por punto; el tooltip se dibuja
 // DENTRO del SVG (escala con el viewBox, sin matemática de DOM) + <title> nativo de respaldo.
-function CurvaSVG({ datos, hoyIndex }) {
+function CurvaSVG({ datos, hoyIndex, contratoQ = '' }) {
   const w = 720, h = 320, padL = 44, padR = 16, padT = 16, padB = 36;
   const innerW = w - padL - padR;
   const innerH = h - padT - padB;
@@ -54,8 +58,19 @@ function CurvaSVG({ datos, hoyIndex }) {
 
   if (!datos || datos.length === 0) {
     return (
-      <div className="h-80 flex items-center justify-center text-slate-400 italic text-sm">
-        Sin datos para los filtros aplicados.
+      <div className="h-80 flex flex-col items-center justify-center text-center px-4">
+        <p className="text-sm text-slate-600 max-w-md">
+          Aún no hay avance ejecutado; la curva se llena al registrar trabajos terminados (HU-06).
+          Si filtraste por concepto o periodo, prueba ampliar el filtro.
+        </p>
+        <LinkHU
+          hu="HU-06"
+          to={`/seguimiento/trabajos-terminados${contratoQ}`}
+          className="sg-btn-secondary mt-3"
+          actor="Lo registra el Contratista"
+        >
+          Registrar avance →
+        </LinkHU>
       </div>
     );
   }
@@ -217,6 +232,14 @@ export default function CurvaAvance() {
     }
   }, [showToast]);
 
+  // B6b: preselecciona el contrato del ?contrato=ID al venir del ambiente de avance (sin re-seleccionar a mano).
+  const [searchParams] = useSearchParams();
+  const contratoQuery = searchParams.get('contrato');
+  useEffect(() => {
+    if (sinSesion || !contratoQuery || contratoId) return;
+    if (contratos.some((c) => String(c.id) === String(contratoQuery))) seleccionarContrato(String(contratoQuery));
+  }, [sinSesion, contratoQuery, contratoId, contratos, seleccionarContrato]);
+
   // ---- Derivaciones ----
   const periodosAll = useMemo(() => {
     const ps = (programa?.periodos || []).slice();
@@ -370,6 +393,7 @@ export default function CurvaAvance() {
 
   const hayContrato = !!selected;
   const sinPrograma = hayContrato && !cargando && !error && periodosAll.length === 0;
+  const contratoQ = contratoId ? `?contrato=${contratoId}` : '';
 
   return (
     <div>
@@ -385,25 +409,16 @@ export default function CurvaAvance() {
         ]}
       />
 
+      <PestanasCiclo ciclo="avance" activo="curva" />
+
       {sinSesion && (
         <div className="bg-pagina border border-borde rounded-md px-4 py-3 mb-4 text-sm text-slate-600">
           Inicia sesión en modo aplicación para consultar el programa y la curva de avance.
         </div>
       )}
 
-      <div className="bg-white border border-borde rounded-lg p-4 mb-6 max-w-2xl">
-        <label className="sg-label">Contrato</label>
-        <select
-          className="sg-input"
-          value={contratoId}
-          onChange={(e) => seleccionarContrato(e.target.value)}
-          disabled={sinSesion}
-          data-testid="select-contrato"
-        >
-          <option value="">— Selecciona un contrato —</option>
-          {contratos.map((c) => <option key={c.id} value={c.id}>{c.folio} · {c.objeto}</option>)}
-        </select>
-      </div>
+      {/* 3A · P3 — hereda el contrato activo global (antes: <select> de contrato). */}
+      <BannerContratoActivo seleccionar={seleccionarContrato} contratoId={contratoId} />
 
       {!sinSesion && !contratoId && (
         <p className="text-sm text-slate-500 mb-4">Selecciona un contrato para ver su programa de obra y la curva de avance.</p>
@@ -429,8 +444,8 @@ export default function CurvaAvance() {
 
           {sinPrograma && (
             <div className="bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 mb-6 text-sm text-slate-800 rounded-r-md">
-              ⚠️ Este contrato no tiene programa de obra (periodos) configurado; no hay curva ni matriz que graficar.
-              El avance físico global se calcula sobre lo ejecutado.
+              ⚠️ Este contrato aún no tiene programa de obra (periodos) configurado, así que no hay curva ni matriz que graficar.
+              La curva se habilita cuando el contrato cuente con su programa de obra; mientras tanto, el avance físico global se sigue calculando sobre lo ejecutado.
             </div>
           )}
 
@@ -513,14 +528,14 @@ export default function CurvaAvance() {
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
               Curva S — programado · ejecutado · financiero
             </h2>
-            <CurvaSVG datos={datosCurva} hoyIndex={hoyIndex} />
+            <CurvaSVG datos={datosCurva} hoyIndex={hoyIndex} contratoQ={contratoQ} />
             <p className="text-xs text-slate-500 mt-3 text-center">
               Las curvas inician en <strong>0%</strong> al inicio del contrato y cada periodo grafica a su{' '}
               <strong>cierre</strong> (pasa el mouse sobre un punto para ver su valor).{' '}
               Programado llega al 100%; ejecutado y financiero se detienen en <strong>hoy</strong> (marcador).{' '}
               Financiero = Σ pagos hasta el periodo ÷ monto del contrato (mismo número que el{' '}
               <code>financiero_pct</code> canónico, acumulado por fecha), a nivel contrato
-              {conceptoSelId != null && <strong> (no se desglosa por concepto en Etapa 1)</strong>}.
+              {conceptoSelId != null && <strong> (el financiero se reporta a nivel contrato, no por concepto)</strong>}.
             </p>
           </div>
 

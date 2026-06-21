@@ -1,11 +1,15 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import ExcelJS from 'exceljs';
+import { useSearchParams } from 'react-router-dom';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import BuscadorNotas, { useFiltrosNotas, ETIQUETA_ACEPTACION } from '../components/notas/BuscadorNotas.jsx';
 import DocumentoNota from '../components/notas/DocumentoNota.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
+import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
+import LinkHU from '../components/LinkHU.jsx';
+import PestanasCiclo from '../components/PestanasCiclo.jsx';
 import { api } from '../services/api.js';
 
 // HU-10 conectado al backend. La búsqueda y el export ya existían sobre datos de
@@ -69,6 +73,14 @@ export default function ConsultaNotas() {
       setCargando(false);
     }
   }, [showToast]);
+
+  // B6b/B7: preselecciona el contrato del ?contrato=ID al venir del ambiente (sin re-seleccionar a mano).
+  const [searchParams] = useSearchParams();
+  const contratoQuery = searchParams.get('contrato');
+  useEffect(() => {
+    if (sinSesion || !contratoQuery || contratoId) return;
+    if (contratos.some((c) => String(c.id) === String(contratoQuery))) seleccionarContrato(String(contratoQuery));
+  }, [sinSesion, contratoQuery, contratoId, contratos, seleccionarContrato]);
 
   const { filtros, setFiltro, limpiar, resultados, firmantesUnicos, numeroPorId } = useFiltrosNotas(notas);
 
@@ -152,33 +164,50 @@ export default function ConsultaNotas() {
         ]}
       />
 
+      <PestanasCiclo ciclo="bitacora" activo="consulta" />
+
       {sinSesion && (
         <div className="bg-slate-50 border border-slate-200 rounded-md px-4 py-3 mb-4 text-sm text-slate-600">
           Inicia sesión en modo aplicación para cargar tus contratos y consultar las notas de su bitácora.
         </div>
       )}
 
-      <div className="bg-white border border-slate-200 rounded-md p-4 mb-6 max-w-2xl">
-        <label className="sg-label">Contrato</label>
-        <select
-          className="sg-input"
-          value={contratoId}
-          onChange={(e) => seleccionarContrato(e.target.value)}
-          disabled={sinSesion}
-          data-testid="select-contrato"
-        >
-          <option value="">— Selecciona un contrato —</option>
-          {contratos.map((c) => <option key={c.id} value={c.id}>{c.folio} · {c.objeto}</option>)}
-        </select>
-      </div>
+      {/* 3A·P3: hereda el contrato activo global en vez de re-seleccionarlo aquí. */}
+      <BannerContratoActivo seleccionar={seleccionarContrato} contratoId={contratoId} />
 
       {!sinSesion && !contratoId && (
-        <p className="text-sm text-slate-500 mb-4">Selecciona un contrato para buscar en las notas de su bitácora.</p>
+        <p className="text-sm text-slate-500 mb-4">
+          Aún no hay un contrato activo. Activa un contrato desde el banner superior (o desde tu ambiente de trabajo) para buscar en las notas de su bitácora.
+        </p>
       )}
       {cargando && <p className="text-sm text-slate-500 mb-4">Cargando notas…</p>}
       {sinBitacora && (
         <div className="bg-amber-50 border-l-4 border-amber-400 px-4 py-3 mb-4 text-sm text-amber-800 rounded-r-md" data-testid="aviso-sin-bitacora">
-          Este contrato aún no tiene bitácora aperturada, por lo que no hay notas que consultar.
+          <p className="mb-2">
+            Aún no hay notas en este contrato. Las notas se registran al abrir la bitácora y emitir notas (HU-08/09).
+          </p>
+          <LinkHU
+            hu="HU-08"
+            to={contratoId ? `/bitacora/apertura?contrato=${contratoId}` : '/bitacora/apertura'}
+            className="sg-btn-secondary"
+          >
+            Abrir la bitácora →
+          </LinkHU>
+        </div>
+      )}
+
+      {!sinSesion && !cargando && !sinBitacora && contratoId && notas.length === 0 && (
+        <div className="bg-amber-50 border-l-4 border-amber-400 px-4 py-3 mb-4 text-sm text-amber-800 rounded-r-md" data-testid="aviso-sin-notas">
+          <p className="mb-2">
+            Aún no hay notas en este contrato. Las notas se registran al abrir la bitácora y emitir notas (HU-08/09).
+          </p>
+          <LinkHU
+            hu="HU-08"
+            to={`/bitacora/apertura?contrato=${contratoId}`}
+            className="sg-btn-secondary"
+          >
+            Abrir la bitácora →
+          </LinkHU>
         </div>
       )}
 

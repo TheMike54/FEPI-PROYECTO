@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import RegionEditable from '../components/vista/RegionEditable.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
+import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
 import { api } from '../services/api.js';
 import { fechaHora } from '../utils/formato.js';
 
@@ -161,6 +163,15 @@ export default function AperturaBitacora() {
     }
   }, [contratos, showToast]);
 
+  // B7: si llegas con ?contrato=ID (desde el ambiente u otra pantalla), preselecciónalo en cuanto la lista
+  // cargue y mientras no hayas elegido otro a mano — evita re-seleccionar el contrato que ya venías usando.
+  const [searchParams] = useSearchParams();
+  const contratoQuery = searchParams.get('contrato');
+  useEffect(() => {
+    if (sinSesion || !contratoQuery || contratoId) return;
+    if (contratos.some((c) => String(c.id) === String(contratoQuery))) seleccionar(String(contratoQuery));
+  }, [sinSesion, contratoQuery, contratoId, contratos, seleccionar]);
+
   const puedeAperturar = !soloLectura && soyResidenteDelContrato && tieneSuperintendente && !bitacora && !cargando && !!fechaEntregaSitio && minDataCompleta && !aperturando;
 
   const handleAperturar = async () => {
@@ -210,15 +221,8 @@ export default function AperturaBitacora() {
         </div>
       ) : (
         <>
-          <div className="bg-white border border-slate-200 rounded-md p-4 mb-6 max-w-2xl">
-            <label className="sg-label">Contrato</label>
-            <select className="sg-input" value={contratoId} onChange={(e) => seleccionar(e.target.value)} data-testid="select-contrato">
-              <option value="">— Selecciona un contrato —</option>
-              {contratos.map((c) => (
-                <option key={c.id} value={c.id}>{c.folio} · {c.objeto}</option>
-              ))}
-            </select>
-          </div>
+          {/* 3A · P3 — hereda el contrato activo global en vez de re-seleccionarlo en esta pantalla. */}
+          <BannerContratoActivo seleccionar={seleccionar} contratoId={contratoId} />
 
           {!contratoId && <p className="text-sm text-slate-500">Selecciona un contrato para ver o aperturar su bitácora.</p>}
           {contratoId && cargando && <p className="text-sm text-slate-500">Consultando bitácora…</p>}

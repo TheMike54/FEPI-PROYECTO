@@ -1,5 +1,18 @@
 # SIGECOP — Estado actual del sistema (documento canónico)
 
+> **🔄 Actualización 2026-06-21 (LOCAL, sin commit, sin push · build `vite build` VERDE):** sobre `HEAD=4eaf044`
+> se aplicaron (a) correcciones de UX/navegación de `docs/reportes/PLAN_SOLUCION_ERRORES_19jun.md` (jerga UI
+> fuera; `LinkHU` contra callejones a Inicio; tarjetas del Inicio → ambiente; preselección de `?contrato`;
+> banner de error en convenio; candados con motivo; notificaciones unificadas en la campana; **gating secuencial
+> en estimación y pago** espejo del Alta) y (b) **3A contrato global (versión mínima)**: contexto nuevo
+> `ContratoActivoContext` (NO toca `SesionContext`/`App.jsx`), **modal bloqueante** "Elige tu contrato"
+> (`ModalContratoActivo`), chip "Contrato activo · Cambiar" en la barra, y **`BannerContratoActivo`** en las 27
+> pantallas de contrato (heredan el contrato global, sin re-seleccionar); chip "Ciclo · HU XX–YY" en los
+> ambientes. **Zona congelada intacta.** **Pendiente:** P4 (colapso de ambientes — DETENIDO, espera OK),
+> **bug 4 "Autorizar"** (es la BD de Render: re-aplicar `schema.sql` en fase de BD con backup), 4 propuestas UX
+> extra (evaluadas, sin implementar) y seed ampliado (sin correr). **Detalle / punto de retoma:**
+> `docs/estado/CONTEXTO_3A_UX_21jun.md`.
+
 > **Este es el documento ÚNICO y canónico del estado del sistema.** `CLAUDE.md` ordena leerlo ANTES de
 > cualquier tarea y mantenerlo actualizado DESPUÉS de cualquier cambio. Si algo aquí contradice otro doc,
 > **manda éste** (y manda el código sobre éste). No debe haber un segundo doc de estado compitiendo: la foto

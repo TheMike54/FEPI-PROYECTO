@@ -150,8 +150,10 @@ wizard solo los ordena por pasos). [x] HU-10/11 **conservados e intactos** (pant
 **Ambiente de avance** — `/seguimiento/ambiente`. La **acción** del flujo es **registrar el avance (HU-06)**;
 **Curva (HU-05)** y **Atrasos (HU-07)** van **en paralelo** (lectura). La **evidencia fotográfica** queda
 **fuera del alcance de la Etapa 1** (la ley no la exige; el avance se sustenta con números ejecutados + nota
-de bitácora — copy suavizado en FASE 5). **Checklist:** [x] HU-05/06/07 **conservados** (registro con tope
-art. 118; curva y alertas como lectura; sin cambio de requisitos).
+de bitácora — copy suavizado en FASE 5). El **registro de avance (HU-06) es append-only**: no se edita ni se
+elimina; corregir = anular la entrada anterior y registrar una nueva vinculada (art. 123 fr. VI/VII RLOPSRM).
+**Checklist:** [x] HU-05/06/07 **conservados** (registro con tope art. 118 y corrección append-only; curva y
+alertas como lectura; sin cambio de requisitos).
 
 ---
 

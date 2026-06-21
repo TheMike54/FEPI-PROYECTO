@@ -3,6 +3,7 @@ import Breadcrumb from '../components/ui/Breadcrumb.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { useSesion } from '../context/SesionContext.jsx';
 import { api } from '../services/api.js';
+import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
 
 // Pasada F (Fundación) — Sustitución de personas del roster del contrato.
 // Fundamento Nivel 1 (literal, RLOPSRM art. 125 fr. I inciso g): al residente le corresponde
@@ -125,20 +126,10 @@ export default function RosterContrato() {
         </div>
       ) : (
         <>
-          <div className="mb-6 max-w-md">
-            <label className="block text-sm font-medium text-slate-700 mb-1">Contrato</label>
-            <select
-              data-testid="roster-contrato"
-              className="sg-input"
-              value={contratoId}
-              onChange={(e) => setContratoId(e.target.value)}
-            >
-              <option value="">— Selecciona un contrato —</option>
-              {contratos.map((c) => (
-                <option key={c.id} value={c.id}>{c.folio} — {c.objeto || c.contratista || `Contrato ${c.id}`}</option>
-              ))}
-            </select>
-          </div>
+          {/* 3A · P3 — el contrato se HEREDA del contrato activo global (banner read-only),
+              ya no se re-selecciona aquí. El banner llama a setContratoId(idGlobal) y el
+              useEffect existente sobre [contratoId] dispara cargarRoster. */}
+          <BannerContratoActivo seleccionar={setContratoId} contratoId={contratoId} />
 
           {!contratoId ? (
             <p className="text-sm text-slate-500">Selecciona un contrato para ver y gestionar su roster.</p>

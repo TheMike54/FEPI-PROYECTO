@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import EncabezadoContrato from '../components/ui/EncabezadoContrato.jsx';
@@ -8,6 +8,9 @@ import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
 import RegistroPagoForm from '../components/pagos/RegistroPagoForm.jsx';
+import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
+import PestanasCiclo from '../components/PestanasCiclo.jsx';
+import LinkHU from '../components/LinkHU.jsx';
 
 // HU-20 — Tránsito a pago. CABLEADO al backend real (GET/POST /api/instruccion-pago): suficiencia
 // presupuestal (art. 24), checklist de soportes (factura/CFDI metadatos + fianza de cumplimiento
@@ -129,6 +132,14 @@ export default function TransitoPago() {
     }
   }, [showToast]);
 
+  const [searchParams] = useSearchParams();
+  const contratoQuery = searchParams.get('contrato');
+  useEffect(() => {
+    // B6b/A-3A: preselecciona el contrato del ?contrato=ID (consistencia entre pantallas).
+    if (sinSesion || !contratoQuery || contratoId) return;
+    if (contratos.some((c) => String(c.id) === String(contratoQuery))) seleccionarContrato(String(contratoQuery));
+  }, [sinSesion, contratoQuery, contratoId, contratos, seleccionarContrato]);
+
   const cargarTransito = useCallback(async (estId) => {
     if (!estId) { setTransito(null); return; }
     setCargando(true); setError(null);
@@ -191,6 +202,25 @@ export default function TransitoPago() {
   }, [transito, suf, sop]);
   const puedeGenerar = !soloLectura && transito && !instr && bloqueos.length === 0;
 
+  // BLOQUE 2 — gating secuencial del wizard de pago (igual que Alta/Estimación): no avanzas sin que el paso
+  // ACTUAL esté correcto. Atrás libre. Solo aplica al stepper (Tipo A); no hay vistas TIPO B aquí.
+  const pasoValidoPago = useCallback((p) => {
+    if (!transito) return false;
+    if (p === 0) return !!transito.es_autorizada && !!suf && !suf.sin_presupuesto && !suf.excede; // Suficiencia (art. 24)
+    if (p === 1) return !!sop && !!sop.obligatorios_ok;                                           // Soportes obligatorios
+    if (p === 2) return !!instr;                                                                  // Instrucción generada (art. 54)
+    return true;                                                                                 // Registrar pago (último)
+  }, [transito, suf, sop, instr]);
+  const irPasoPago = useCallback((target) => {
+    if (target <= pasoPago) { setPasoPago(target); return; }                                      // atrás: libre
+    for (let p = pasoPago; p < target; p++) { if (!pasoValidoPago(p)) { setPasoPago(p); return; } }
+    setPasoPago(target);
+  }, [pasoPago, pasoValidoPago]);
+  const motivoSiguientePago = !transito ? '' :
+    pasoPago === 0 ? (transito.es_autorizada ? 'Carga el techo presupuestal y verifica la suficiencia (art. 24) para continuar.' : 'La estimación debe estar autorizada por la residencia (art. 54).') :
+    pasoPago === 1 ? 'Carga los soportes obligatorios (factura, folio CFDI y fianza de cumplimiento vigente).' :
+    pasoPago === 2 ? 'Genera la instrucción de pago para continuar al registro.' : '';
+
   return (
     <div>
       <HeaderVista
@@ -201,6 +231,8 @@ export default function TransitoPago() {
         breadcrumb={[{ label: 'Inicio', href: '/' }, { label: 'Pagos' }, { label: 'Tránsito a pago' }]}
       />
 
+      <PestanasCiclo ciclo="pago" activo="transito" />
+
       {sinSesion && (
         <div className="bg-pagina border border-borde rounded-md px-4 py-3 mb-4 text-sm text-tinta-sec">
           Inicia sesión para gestionar el tránsito a pago.
@@ -209,13 +241,8 @@ export default function TransitoPago() {
 
       {!sinSesion && (
         <div className="bg-white border border-borde rounded-lg p-4 mb-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="sg-label">Contrato</label>
-            <select className="sg-input" value={contratoId} onChange={(e) => seleccionarContrato(e.target.value)} data-testid="select-contrato">
-              <option value="">— Selecciona un contrato —</option>
-              {contratos.map((c) => <option key={c.id} value={c.id}>{c.folio} · {c.objeto}</option>)}
-            </select>
-          </div>
+          {/* 3A · P3 — hereda el contrato activo global en vez de re-seleccionarlo (banner read-only). */}
+          <BannerContratoActivo seleccionar={seleccionarContrato} contratoId={contratoId} />
           <div>
             <label className="sg-label">Estimación autorizada</label>
             <select className="sg-input" value={estimacionId} onChange={(e) => seleccionarEstimacion(e.target.value)} disabled={!contratoId} data-testid="select-estimacion">
@@ -245,6 +272,7 @@ export default function TransitoPago() {
 
           {/* WIZARD del tránsito (FASE 4): Suficiencia → Soportes → Instrucción. Navegación libre; el gate
               duro es "Generar instrucción" (exige suficiencia + soportes, art. 24 / 54 LOPSRM). */}
+          <div className="text-xs font-semibold text-guinda mb-1" data-testid="paso-indicador-pago">Paso {pasoPago + 1} de {PASOS_PAGO.length}</div>
           <nav className="flex flex-wrap gap-2 my-6" data-testid="wizard-pago-pasos" aria-label="Pasos del tránsito a pago">
             {PASOS_PAGO.map((p, i) => {
               const estado = i === pasoPago ? 'curr' : i < pasoPago ? 'done' : 'todo';
@@ -252,7 +280,7 @@ export default function TransitoPago() {
                 <button
                   key={p.key}
                   type="button"
-                  onClick={() => setPasoPago(i)}
+                  onClick={() => irPasoPago(i)}
                   data-testid={`wpaso-pago-${p.key}`}
                   data-estado={estado}
                   aria-current={estado === 'curr' ? 'step' : undefined}
@@ -392,7 +420,9 @@ export default function TransitoPago() {
           {instr && (
             <div className="mt-4 pt-3 border-t border-borde">
               <p className="text-sm text-tinta-sec mb-2">Emitida la instrucción, Finanzas <strong>registra el pago</strong> (importe = neto, no se paga dos veces — HU-21).</p>
-              <Link to={`/pagos/registro?contrato=${transito.estimacion.contrato_id}`} className="sg-btn-secondary inline-block" data-testid="link-registrar-pago">Ir a registrar el pago (HU-21) →</Link>
+              {/* NAV-C: /pagos/registro es HU-21 (contratista=null) → un <Link> crudo rebotaría al contratista.
+                  LinkHU lo gatea por acceso (chip deshabilitado con motivo si el rol no puede registrar). */}
+              <LinkHU hu="HU-21" to={`/pagos/registro?contrato=${transito.estimacion.contrato_id}`} className="sg-btn-secondary inline-block" data-testid="link-registrar-pago" actor="Lo registra Finanzas.">Ir a registrar el pago (HU-21) →</LinkHU>
             </div>
           )}
           </div>
@@ -415,7 +445,13 @@ export default function TransitoPago() {
           <div className="mt-6 flex justify-between items-center max-w-2xl">
             <button type="button" onClick={() => setPasoPago(Math.max(0, pasoPago - 1))} disabled={pasoPago === 0} className="px-4 py-2 text-tinta-sec hover:text-tinta disabled:opacity-40" data-testid="btn-watras-pago">← Atrás</button>
             {pasoPago < PASOS_PAGO.length - 1 && (
-              <button type="button" onClick={() => setPasoPago(Math.min(PASOS_PAGO.length - 1, pasoPago + 1))} className="sg-btn-primary" data-testid="btn-wsiguiente-pago">Siguiente →</button>
+              <div className="text-right">
+                <button type="button" onClick={() => irPasoPago(pasoPago + 1)} disabled={!pasoValidoPago(pasoPago)} className="sg-btn-primary disabled:bg-slate-300 disabled:cursor-not-allowed" data-testid="btn-wsiguiente-pago">Siguiente →</button>
+                {/* A5/BLOQUE 2: candado con motivo. */}
+                {!pasoValidoPago(pasoPago) && motivoSiguientePago && (
+                  <p className="text-xs text-amber-700 mt-1" data-testid="wsiguiente-pago-motivo">{motivoSiguientePago}</p>
+                )}
+              </div>
             )}
           </div>
         </>

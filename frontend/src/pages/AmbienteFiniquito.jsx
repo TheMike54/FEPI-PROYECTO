@@ -1,10 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
+import LinkHU from '../components/LinkHU.jsx';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
+import PestanasCiclo from '../components/PestanasCiclo.jsx';
 import { useSesion } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
 import { monedaMXN as moneda } from '../utils/formato.js';
+import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
 
 // AMBIENTE DE CIERRE / FINIQUITO (sesión grande 18-jun, BLOQUE B) — cascarón que ENVUELVE HU-24 (finiquito)
 // SIN fundir las historias. NO reemplaza /contratos/finiquito (esa sigue siendo la pantalla de HU-24): este
@@ -76,14 +79,17 @@ export default function AmbienteFiniquito() {
     <div className="space-y-4">
       <HeaderVista
         huId="HU-24"
-        titulo="Ambiente de cierre del contrato (finiquito, por bloques)"
+        titulo="Ambiente de cierre del contrato (finiquito)"
         sprint="Sprint 10"
         rolAcademico="Dependencia / Residencia"
         breadcrumb={[{ label: 'Inicio', href: '/' }, { label: 'Contrato' }, { label: 'Cierre' }]}
       />
 
+      {/* FRENTE 2 / NAV-G — barra de pestañas del ciclo (incluye el chip "Ciclo · HU-24"). */}
+      <PestanasCiclo ciclo="finiquito" activo="ambiente" />
+
       <div className="bg-sigecop-blue-light border-l-4 border-sigecop-blue px-4 py-3 rounded-r-md text-sm text-slate-700" data-testid="ambiente-cierre-aviso">
-        <strong>Cierre del contrato por bloques.</strong> Recorre los prerrequisitos del finiquito
+        <strong>Cierre del contrato paso a paso.</strong> Recorre los prerrequisitos del finiquito
         (bitácora, estimaciones, pagos, saldo) y <strong>delega el cierre</strong> a la pantalla de finiquito
         (HU-24). No reemplaza ninguna vista; el saldo y el cierre los hace el sistema en HU-24.
       </div>
@@ -96,13 +102,8 @@ export default function AmbienteFiniquito() {
 
       {/* BLOQUE 1 — Contrato a cerrar. */}
       <Bloque n={1} titulo="Contrato a cerrar" estado={prep ? 'listo' : 'activo'}>
-        <div className="max-w-2xl">
-          <label className="sg-label">Contrato</label>
-          <select className="sg-input" value={contratoId} onChange={(e) => seleccionarContrato(e.target.value)} disabled={sinSesion} data-testid="select-contrato">
-            <option value="">— Selecciona un contrato —</option>
-            {contratos.map((ct) => <option key={ct.id} value={ct.id}>{ct.folio} · {ct.objeto}</option>)}
-          </select>
-        </div>
+        {/* 3A · P3 — hereda el contrato activo global en vez de re-seleccionarlo. */}
+        <BannerContratoActivo seleccionar={seleccionarContrato} contratoId={contratoId} />
         {cerrado && <p className="mt-3 text-sm text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-md px-3 py-2" data-testid="ya-cerrado">Este contrato ya está <strong>cerrado</strong> (finiquito elaborado). Consulta el documento en el bloque 7.</p>}
       </Bloque>
 
@@ -115,7 +116,7 @@ export default function AmbienteFiniquito() {
         ) : (
           <div>
             <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md px-3 py-2 mb-3" data-testid="falta-bitacora">El finiquito se asienta como <strong>nota de bitácora</strong> (art. 64); este contrato aún no tiene bitácora abierta. Ábrela primero.</p>
-            <Link to={`/bitacora/apertura${q}`} className="sg-btn-secondary" data-testid="link-apertura">Abrir la bitácora (HU-08) →</Link>
+            <LinkHU hu="HU-08" to={`/bitacora/apertura${q}`} className="sg-btn-secondary" data-testid="link-apertura" actor="La abre la Residencia">Abrir la bitácora (HU-08) →</LinkHU>
           </div>
         )}
       </Bloque>
@@ -128,9 +129,9 @@ export default function AmbienteFiniquito() {
           </p>
         )}
         <div className="flex flex-wrap gap-3">
-          <Link to={`/estimaciones/integracion${q}`} className="sg-btn-secondary" data-testid="link-integracion">Integración (HU-12) →</Link>
-          <Link to={`/estimaciones/envio${q}`} className="sg-btn-secondary" data-testid="link-envio">Presentación (HU-13) →</Link>
-          <Link to={`/estimaciones/revision${q}`} className="sg-btn-secondary" data-testid="link-revision">Revisión (HU-15) →</Link>
+          <LinkHU hu="HU-12" to={`/estimaciones/integracion${q}`} className="sg-btn-secondary" data-testid="link-integracion" actor="La integra el Contratista">Integración (HU-12) →</LinkHU>
+          <LinkHU hu="HU-13" to={`/estimaciones/envio${q}`} className="sg-btn-secondary" data-testid="link-envio" actor="La presenta el Contratista">Presentación (HU-13) →</LinkHU>
+          <LinkHU hu="HU-15" to={`/estimaciones/revision${q}`} className="sg-btn-secondary" data-testid="link-revision" actor="La hace Supervisión o Residencia">Revisión (HU-15) →</LinkHU>
         </div>
       </Bloque>
 
@@ -139,7 +140,7 @@ export default function AmbienteFiniquito() {
         {contratoId && (
           <p className="text-sm mb-3" data-testid="pagos-aplicados"><strong>{pagos.length}</strong> pago(s) aplicado(s); se descuentan del saldo final.</p>
         )}
-        <Link to={`/pagos/registro${q}`} className="sg-btn-secondary" data-testid="link-registro">Registro de pagos (HU-21) →</Link>
+        <LinkHU hu="HU-21" to={`/pagos/registro${q}`} className="sg-btn-secondary" data-testid="link-registro" actor="Lo registra Finanzas">Registro de pagos (HU-21) →</LinkHU>
       </Bloque>
 
       {/* BLOQUE 5 — Carátula del finiquito: saldo en vivo (read-only, lo calcula HU-24). */}
@@ -186,8 +187,8 @@ export default function AmbienteFiniquito() {
         </p>
         <div className="flex flex-wrap gap-3">
           <Link to={`/contratos/finiquito${q}`} className="sg-btn-secondary" data-testid="link-documento">Ver el documento del finiquito (HU-24) →</Link>
-          <Link to={`/bitacora/consulta${q}`} className="sg-btn-secondary" data-testid="link-consulta">Nota de finiquito en la bitácora (HU-10) →</Link>
-          <Link to={`/contratos/expediente${q}`} className="sg-btn-secondary" data-testid="link-expediente">Expediente del contrato (HU-04) →</Link>
+          <LinkHU hu="HU-10" to={`/bitacora/consulta${q}`} className="sg-btn-secondary" data-testid="link-consulta" actor="La consultan Residencia, Contratista o Supervisión">Nota de finiquito en la bitácora (HU-10) →</LinkHU>
+          <LinkHU hu="HU-04" to={`/contratos/expediente${q}`} className="sg-btn-secondary" data-testid="link-expediente" actor="No disponible para tu rol">Expediente del contrato (HU-04) →</LinkHU>
         </div>
       </Bloque>
     </div>

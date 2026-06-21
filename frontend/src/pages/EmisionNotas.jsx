@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
 import DocumentoNota from '../components/notas/DocumentoNota.jsx';
+import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
 import { fechaHora } from '../utils/formato.js';
 
 // HU-09 conectado al backend. Pasada bitácora:
@@ -110,6 +112,14 @@ export default function EmisionNotas() {
       else showToast('No se pudo consultar la bitácora');
     } finally { setCargando(false); }
   }, [cargarNotas, showToast]);
+
+  // B7: preselecciona el contrato del ?contrato=ID al venir del ambiente/bitácora (sin re-seleccionar a mano).
+  const [searchParams] = useSearchParams();
+  const contratoQuery = searchParams.get('contrato');
+  useEffect(() => {
+    if (sinSesion || !contratoQuery || contratoId) return;
+    if (contratos.some((c) => String(c.id) === String(contratoQuery))) seleccionar(String(contratoQuery));
+  }, [sinSesion, contratoQuery, contratoId, contratos, seleccionar]);
 
   useEffect(() => {
     if (tiposDeMiRol.length && !tiposDeMiRol.some((t) => t.clave === tipo)) {
@@ -266,13 +276,8 @@ export default function EmisionNotas() {
         </div>
       ) : (
         <>
-          <div className="bg-white border border-slate-200 rounded-md p-4 mb-6 max-w-2xl">
-            <label className="sg-label">Contrato</label>
-            <select className="sg-input" value={contratoId} onChange={(e) => seleccionar(e.target.value)} data-testid="select-contrato">
-              <option value="">— Selecciona un contrato —</option>
-              {contratos.map((c) => <option key={c.id} value={c.id}>{c.folio} · {c.objeto}</option>)}
-            </select>
-          </div>
+          {/* 3A · P3: hereda el contrato activo global (sin re-seleccionar). El banner llama a `seleccionar` (carga datos). */}
+          <BannerContratoActivo seleccionar={seleccionar} contratoId={contratoId} />
 
           {!contratoId && <p className="text-sm text-slate-500">Selecciona un contrato para ver su bitácora.</p>}
           {contratoId && cargando && <p className="text-sm text-slate-500">Cargando…</p>}

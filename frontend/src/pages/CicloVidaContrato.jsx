@@ -4,6 +4,7 @@ import Breadcrumb from '../components/ui/Breadcrumb.jsx';
 import { useSesion } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
+import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
 
 // MACRO — AMBIENTE DEL CICLO DE VIDA DEL CONTRATO (sesión grande 18-jun, BLOQUE B, AL FINAL) — el recorrido
 // completo del contrato como ÍNDICE ORDENADO por ciclo de vida. ENLAZA todas las HU (y los sub-ambientes
@@ -23,18 +24,20 @@ import { api } from '../services/api.js';
 // estimación, expediente, cierre.
 const BLOQUES = [
   { n: 2,  titulo: 'Alta del contrato (HU-01)',                 route: '/contratos/alta',                 roles: ['residente', 'contratista', 'supervision', 'dependencia'], desc: 'Captura del contrato: catálogo, programa, garantías, jurídicos, PDF firmado.' },
-  { n: 3,  titulo: 'Apertura de la bitácora (HU-08)',           route: '/bitacora/apertura',              roles: ['residente', 'contratista', 'supervision', 'dependencia'], desc: 'Se abre la bitácora; el sistema genera la nota de apertura #1.' },
-  { n: 4,  titulo: 'Bitácora en operación (HU-09/10 + firma)',  route: '/bitacora/ambiente',              roles: ['residente', 'contratista', 'supervision'], desc: 'Firma conjunta, emisión y consulta de notas — recorrido por bloques.', sub: true },
-  { n: 5,  titulo: 'Ejecución y seguimiento (HU-06/07/05)',     route: '/seguimiento/ambiente',           roles: ['contratista', 'residente', 'supervision'], desc: 'Avance, curva y atrasos — recorrido por bloques.', sub: true },
-  { n: 6,  titulo: 'Convenios modificatorios (HU-03, si aplica)', route: '/contratos/convenio-ambiente',  roles: ['dependencia', 'residente', 'contratista', 'supervision'], desc: 'Cuando cambia monto, plazo o alcance — recorrido por bloques.', sub: true },
-  { n: 7,  titulo: 'Integración de la estimación (HU-12)',      route: '/estimaciones/ambiente',          roles: ['contratista', 'residente', 'supervision'], desc: 'Arma la estimación por bloques (carátula automática).', sub: true },
+  // NAV-A: HU-08 NO es accesible para la dependencia (permisos.js HU-08 dependencia=null). Si se le ofreciera
+  // el enlace, WithLayout la rebotaría a Inicio (dead-end mudo). El array `roles` se alinea con la HU subyacente.
+  { n: 3,  titulo: 'Apertura de la bitácora (HU-08)',           route: '/bitacora/apertura',              roles: ['residente', 'contratista', 'supervision'], desc: 'Se abre la bitácora; el sistema genera la nota de apertura #1.' },
+  { n: 4,  titulo: 'Bitácora en operación (HU-09/10 + firma)',  route: '/bitacora/ambiente',              roles: ['residente', 'contratista', 'supervision'], desc: 'Firma conjunta, emisión y consulta de notas.', sub: true },
+  { n: 5,  titulo: 'Ejecución y seguimiento (HU-06/07/05)',     route: '/seguimiento/ambiente',           roles: ['contratista', 'residente', 'supervision'], desc: 'Avance, curva y atrasos.', sub: true },
+  { n: 6,  titulo: 'Convenios modificatorios (HU-03, si aplica)', route: '/contratos/convenio-ambiente',  roles: ['dependencia', 'residente', 'contratista', 'supervision'], desc: 'Cuando cambia monto, plazo o alcance.', sub: true },
+  { n: 7,  titulo: 'Integración de la estimación (HU-12)',      route: '/estimaciones/ambiente',          roles: ['contratista', 'residente', 'supervision'], desc: 'Arma la estimación paso a paso (carátula automática).', sub: true },
   { n: 8,  titulo: 'Presentación de la estimación (HU-13)',     route: '/estimaciones/envio',             roles: ['residente', 'contratista', 'supervision'], desc: 'El contratista presenta la estimación (art. 54).' },
   { n: 9,  titulo: 'Revisión y autorización (HU-15)',           route: '/estimaciones/revision',          roles: ['residente', 'supervision', 'dependencia'], desc: 'Supervisión observa/turna; la residencia autoriza o rechaza.' },
   { n: 10, titulo: 'Reingreso tras rechazo (HU-16, si aplica)', route: '/estimaciones/reingreso',         roles: ['residente', 'contratista'], desc: 'Una estimación rechazada se reingresa como nueva versión.' },
   // n: 11 (pago) se renderiza aparte como bloque informativo + enlace gateado al ambiente de pago.
   { n: 12, titulo: 'Coordinación: historial, tablero y portafolio (HU-14/17/18)', route: '/estimaciones/tablero', roles: ['residente', 'contratista', 'supervision', 'dependencia'], desc: 'Vista agregada del estado de las estimaciones y la cartera.' },
-  { n: 13, titulo: 'Expediente integral (HU-04)',               route: '/contratos/expediente-ambiente',  roles: ['residente', 'contratista', 'supervision', 'dependencia'], desc: 'Arma el expediente y exporta el paquete — recorrido por bloques.', sub: true },
-  { n: 14, titulo: 'Finiquito y cierre (HU-24)',                route: '/contratos/cierre',               roles: ['dependencia', 'residente'], desc: 'Cierre del contrato por bloques (delega en el finiquito).', sub: true },
+  { n: 13, titulo: 'Expediente integral (HU-04)',               route: '/contratos/expediente-ambiente',  roles: ['residente', 'contratista', 'supervision', 'dependencia'], desc: 'Arma el expediente y exporta el paquete.', sub: true },
+  { n: 14, titulo: 'Finiquito y cierre (HU-24)',                route: '/contratos/cierre',               roles: ['dependencia', 'residente'], desc: 'Cierre del contrato paso a paso (delega en el finiquito).', sub: true },
 ];
 
 // FIX 2.3 — progreso REAL por bloque, DERIVADO en el cliente de las fuentes de lectura ya existentes (sin
@@ -137,7 +140,7 @@ export default function CicloVidaContrato() {
     <div className="space-y-4">
       <Breadcrumb items={[{ label: 'Inicio', href: '/' }, { label: 'Contrato' }, { label: 'Ciclo de vida' }]} />
       <div className="flex items-start justify-between mb-2">
-        <h1 className="text-2xl font-medium text-tinta">Ciclo de vida del contrato (recorrido por bloques)</h1>
+        <h1 className="text-2xl font-medium text-tinta">Ciclo de vida del contrato</h1>
       </div>
 
       <div className="bg-sigecop-blue-light border-l-4 border-sigecop-blue px-4 py-3 rounded-r-md text-sm text-slate-700" data-testid="ciclo-vida-aviso">
@@ -159,13 +162,8 @@ export default function CicloVidaContrato() {
           <h2 className="text-base font-medium text-tinta">Selección del contrato</h2>
         </div>
         <div className="p-5">
-          <div className="max-w-2xl">
-            <label className="sg-label">Contrato</label>
-            <select className="sg-input" value={contratoId} onChange={(e) => seleccionarContrato(e.target.value)} disabled={sinSesion} data-testid="select-contrato">
-              <option value="">— Selecciona un contrato —</option>
-              {contratos.map((ct) => <option key={ct.id} value={ct.id}>{ct.folio} · {ct.objeto}</option>)}
-            </select>
-          </div>
+          {/* 3A · P3 — hereda el contrato activo global (en vez de re-seleccionarlo). */}
+          <BannerContratoActivo seleccionar={seleccionarContrato} contratoId={contratoId} />
           {detalle && <p className="mt-2 text-sm text-slate-600" data-testid="contrato-ancla">{c.folio} — {c.objeto}. El recorrido lleva este contrato a cada etapa.</p>}
         </div>
       </section>
