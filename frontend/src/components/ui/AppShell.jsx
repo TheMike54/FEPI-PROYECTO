@@ -233,6 +233,20 @@ export default function AppShell({ children }) {
             </div>
           </Link>
 
+          {/* INDICADOR DE HISTORIA (HU) — visible en TODA pantalla (la barra superior siempre está). Chip
+              dorado prominente a la derecha del logo: muestra la HU + el nombre de la pantalla actual. Cubre
+              también las pantallas que NO son de un ciclo (donde no hay barra de pestañas con su propio chip). */}
+          {(huCode || pantallaNombre) && (
+            <span
+              data-testid="indicador-hu-top"
+              title={`Estás en: ${pantallaNombre || ''}${huCode ? ` (${huCode})` : ''}`}
+              className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-dorado text-guinda-dark text-xs font-semibold whitespace-nowrap max-w-[18rem] truncate flex-shrink-0"
+            >
+              📍 {huCode && <span>{huCode}</span>}
+              {huCode && pantallaNombre ? <span className="font-normal opacity-80"> · {pantallaNombre}</span> : (!huCode && <span>{pantallaNombre}</span>)}
+            </span>
+          )}
+
           {/* P9 (pulido UX 14-jun): se retiró el buscador global presentacional (no funcional) para no
               mostrar un control muerto en la demo; se recableará cuando exista la búsqueda global real. */}
 
@@ -417,7 +431,7 @@ export default function AppShell({ children }) {
           className="fixed right-4 bottom-3 z-40 flex items-center gap-2 px-3 py-1.5 rounded-full bg-tinta/85 text-white text-[11px] shadow-lg backdrop-blur-sm pointer-events-none"
         >
           <span className="opacity-80">Estás en</span>
-          <span className="font-medium max-w-[16rem] truncate">{pantallaNombre}</span>
+          <span className="font-medium max-w-[16rem] truncate">{pantallaNombre}{huCode ? ` · ${huCode}` : ''}</span>
         </div>
       )}
       {/* 3A · P1 — modal bloqueante "Elige tu contrato" (con salidas a Portafolio y Cerrar sesión). */}

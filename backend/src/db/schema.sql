@@ -603,6 +603,16 @@ CREATE TABLE IF NOT EXISTS estimacion_fotos (
 );
 CREATE INDEX IF NOT EXISTS idx_estimacion_fotos_estimacion ON estimacion_fotos(estimacion_id);
 
+-- ── PLEGADO 21-jun desde backend/scripts/migracion_estimacion_fotos.sql ───────────────────────────────
+-- Evidencia fotográfica de la estimación (art. 132 fr. IV RLOPSRM): el binario va INLINE como BYTEA (el
+-- disco de Render es efímero; la BD persiste). ADITIVO E IDEMPOTENTE: la tabla estimacion_fotos (arriba) ya
+-- existe con metadatos; aquí solo se le agregan las 4 columnas del archivo (usuarios ya existe → FK ok).
+ALTER TABLE estimacion_fotos ADD COLUMN IF NOT EXISTS mime        TEXT;
+ALTER TABLE estimacion_fotos ADD COLUMN IF NOT EXISTS tamano      INTEGER;
+ALTER TABLE estimacion_fotos ADD COLUMN IF NOT EXISTS contenido   BYTEA;
+ALTER TABLE estimacion_fotos ADD COLUMN IF NOT EXISTS subido_por  INTEGER REFERENCES usuarios(id);
+-- ── fin del plegado 21-jun (estimacion_fotos) ────────────────────────────────────────────────────────
+
 -- (5) Inmutabilidad. Tras integrar, la CARÁTULA/contenido de la estimación es
 --     inalterable (art. 132 RLOPSRM); el ESTADO sí puede AVANZAR (autorizada por
 --     HU-15, pagada por la reconexión de HU-21). Espejo de sigecop_nota_inmutable:
@@ -1040,6 +1050,63 @@ CREATE INDEX IF NOT EXISTS idx_concepto_avance_concepto ON concepto_avance(contr
 CREATE INDEX IF NOT EXISTS idx_concepto_avance_periodo  ON concepto_avance(contrato_periodo_id);
 CREATE INDEX IF NOT EXISTS idx_concepto_avance_nota     ON concepto_avance(nota_id);
 
+-- ── PLEGADO 21-jun desde backend/scripts/avance_append_only.sql (Oleada 3, ITEM 3.3) ──────────────────
+-- concepto_avance APPEND-ONLY (art. 123 fr. VI/VII/VIII RLOPSRM): corregir = registro NUEVO vinculado,
+-- nunca editar/borrar. ADITIVO E IDEMPOTENTE (reaplicar sobre una base que ya lo tiene NO truena).
+-- FKs disponibles aquí: concepto_avance (arriba), usuarios (seed base), self-FK reemplaza_a.
+ALTER TABLE concepto_avance ADD COLUMN IF NOT EXISTS estado      TEXT NOT NULL DEFAULT 'vigente';
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'chk_concepto_avance_estado') THEN
+    ALTER TABLE concepto_avance ADD CONSTRAINT chk_concepto_avance_estado CHECK (estado IN ('vigente','anulada'));
+  END IF;
+END $$;
+ALTER TABLE concepto_avance ADD COLUMN IF NOT EXISTS reemplaza_a INTEGER REFERENCES concepto_avance(id) ON DELETE NO ACTION;
+ALTER TABLE concepto_avance ADD COLUMN IF NOT EXISTS anulada_por INTEGER REFERENCES usuarios(id) ON DELETE SET NULL;
+ALTER TABLE concepto_avance ADD COLUMN IF NOT EXISTS anulada_en  TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_concepto_avance_reemplaza ON concepto_avance(reemplaza_a);
+
+-- Trigger de inmutabilidad del avance: la ÚNICA mutación permitida es vigente→anulada (corrección, sin
+-- tocar los datos) o ligar la nota DIFERIDA (nota_id NULL→valor). Cualquier otro UPDATE se rechaza.
+CREATE OR REPLACE FUNCTION sigecop_avance_inmutable() RETURNS trigger AS $func$
+BEGIN
+  -- Caso A: ANULACIÓN (corrección) — vigente→anulada, sin tocar cantidad/concepto/periodo/nota.
+  IF OLD.estado = 'vigente' AND NEW.estado = 'anulada'
+     AND NEW.cantidad = OLD.cantidad
+     AND NEW.contrato_concepto_id = OLD.contrato_concepto_id
+     AND NEW.contrato_periodo_id IS NOT DISTINCT FROM OLD.contrato_periodo_id
+     AND NEW.nota_id IS NOT DISTINCT FROM OLD.nota_id THEN
+    RETURN NEW;
+  END IF;
+  -- Caso B: asentar la NOTA DIFERIDA — sigue vigente; solo nota_id NULL→valor (abrirBitacora).
+  IF OLD.estado = 'vigente' AND NEW.estado = 'vigente'
+     AND OLD.nota_id IS NULL AND NEW.nota_id IS NOT NULL
+     AND NEW.cantidad = OLD.cantidad
+     AND NEW.contrato_concepto_id = OLD.contrato_concepto_id
+     AND NEW.contrato_periodo_id IS NOT DISTINCT FROM OLD.contrato_periodo_id THEN
+    RETURN NEW;
+  END IF;
+  RAISE EXCEPTION 'concepto_avance es append-only (art. 123 fr. VI RLOPSRM): corregir = registro nuevo vinculado, no editar ni borrar (id=%)', OLD.id;
+END;
+$func$ LANGUAGE plpgsql;
+DROP TRIGGER IF EXISTS trg_concepto_avance_inmutable ON concepto_avance;
+CREATE TRIGGER trg_concepto_avance_inmutable BEFORE UPDATE ON concepto_avance
+  FOR EACH ROW EXECUTE FUNCTION sigecop_avance_inmutable();
+
+-- ── PLEGADO 21-jun desde backend/scripts/migracion_atraso_asentado.sql (Oleada 1, FIX 1.5) ────────────
+-- Idempotencia del asiento de ATRASO en bitácora (art. 123 RLOPSRM): UN solo asiento por (concepto, periodo).
+-- FKs disponibles aquí: contrato_conceptos, bitacora_notas, usuarios (todas creadas antes). ADITIVO/IDEMPOTENTE.
+CREATE TABLE IF NOT EXISTS atraso_asentado (
+  id                   SERIAL PRIMARY KEY,
+  contrato_concepto_id INTEGER NOT NULL REFERENCES contrato_conceptos(id) ON DELETE CASCADE,
+  periodo_numero       INTEGER NOT NULL,                       -- número del periodo; 0 = ninguno arrancó
+  nota_id              INTEGER REFERENCES bitacora_notas(id) ON DELETE NO ACTION,
+  asentado_por         INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+  created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_atraso_asentado ON atraso_asentado (contrato_concepto_id, periodo_numero);
+CREATE INDEX IF NOT EXISTS idx_atraso_asentado_nota ON atraso_asentado(nota_id);
+-- ── fin del plegado 21-jun ───────────────────────────────────────────────────────────────────────────
+
 -- ---------------------------------------------------------------------
 -- HU-07 (Equipo 2) — alerta_atraso: CONFIGURACIÓN de alertas de atraso por
 -- concepto (umbral). El DISPARO (avance ejecutado < planeado) se DERIVA en lectura
@@ -1207,6 +1274,29 @@ CREATE TABLE IF NOT EXISTS presupuesto_anual (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT uq_presupuesto_anual UNIQUE (ejercicio, dependencia)
 );
+
+-- ── PLEGADO 21-jun desde backend/scripts/migracion_hu20_partida_fk.sql (Oleada 3, ITEM 3.1) ───────────
+-- HU-20: partida presupuestal OBLIGATORIA + FK estable dependencia_id (art. 24 párr. 2 LOPSRM, suficiencia
+-- en la PARTIDA específica). ADITIVO E IDEMPOTENTE. usuarios ya existe (FK). El backfill resuelve
+-- dependencia_id desde el texto y mueve la unicidad a (ejercicio, dependencia_id, partida).
+ALTER TABLE presupuesto_anual ADD COLUMN IF NOT EXISTS dependencia_id INTEGER REFERENCES usuarios(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_presupuesto_anual_dependencia_id ON presupuesto_anual(dependencia_id);
+UPDATE presupuesto_anual p SET dependencia_id = u.id
+  FROM usuarios u
+ WHERE p.dependencia_id IS NULL AND u.rol = 'dependencia'
+   AND lower(btrim(regexp_replace(u.nombre, '\s+', ' ', 'g'))) =
+       lower(btrim(regexp_replace(p.dependencia, '\s+', ' ', 'g')));
+UPDATE presupuesto_anual SET partida = 'SIN_PARTIDA_MIGRACION' WHERE partida IS NULL OR btrim(partida) = '';
+ALTER TABLE presupuesto_anual ALTER COLUMN partida SET NOT NULL;
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_presupuesto_anual') THEN
+    ALTER TABLE presupuesto_anual DROP CONSTRAINT uq_presupuesto_anual;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_presupuesto_anual_fk_partida') THEN
+    ALTER TABLE presupuesto_anual ADD CONSTRAINT uq_presupuesto_anual_fk_partida UNIQUE (ejercicio, dependencia_id, partida);
+  END IF;
+END $$;
+-- ── fin del plegado 21-jun (presupuesto_anual hu20) ──────────────────────────────────────────────────
 
 -- instruccion_pago = orden formal de pago al autorizar la estimación; antecede al
 -- pago efectivo (HU-21). UNA por estimación (UNIQUE). monto = snapshot del neto
@@ -1408,6 +1498,63 @@ DROP TRIGGER IF EXISTS trg_convenio_inmutable ON convenios_modificatorios;
 CREATE TRIGGER trg_convenio_inmutable
   BEFORE UPDATE ON convenios_modificatorios
   FOR EACH ROW EXECUTE FUNCTION sigecop_convenio_inmutable();
+
+-- ── PLEGADO 21-jun desde backend/scripts/migracion_convenio_autorizacion.sql (Oleada 3, ITEM 3.2) ─────
+-- Acto de AUTORIZACIÓN explícito del convenio (LOPSRM art. 59 párr. 3): columna estado + sello
+-- autorizado_en, y la función sigecop_convenio_inmutable se REESCRIBE (CREATE OR REPLACE) para permitir
+-- SOLO la transición controlada registrado→autorizado (el trigger de arriba ya la ejecuta; aquí se hace
+-- override de la función definida arriba). ADITIVO E IDEMPOTENTE.
+ALTER TABLE convenios_modificatorios
+  ADD COLUMN IF NOT EXISTS estado VARCHAR(20) NOT NULL DEFAULT 'autorizado'
+    CHECK (estado IN ('registrado', 'autorizado'));
+ALTER TABLE convenios_modificatorios ADD COLUMN IF NOT EXISTS autorizado_en TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_convenios_estado ON convenios_modificatorios(contrato_id, estado);
+CREATE OR REPLACE FUNCTION sigecop_convenio_inmutable() RETURNS trigger AS $func$
+BEGIN
+  -- Identidad CONGELADA (lo sustantivo del convenio registrado).
+  IF NEW.contrato_id            IS DISTINCT FROM OLD.contrato_id
+     OR NEW.numero              IS DISTINCT FROM OLD.numero
+     OR NEW.folio               IS DISTINCT FROM OLD.folio
+     OR NEW.tipo                IS DISTINCT FROM OLD.tipo
+     OR NEW.fundamento          IS DISTINCT FROM OLD.fundamento
+     OR NEW.motivo              IS DISTINCT FROM OLD.motivo
+     OR NEW.fecha               IS DISTINCT FROM OLD.fecha
+     OR NEW.monto_anterior      IS DISTINCT FROM OLD.monto_anterior
+     OR NEW.monto_nuevo         IS DISTINCT FROM OLD.monto_nuevo
+     OR NEW.plazo_anterior_dias IS DISTINCT FROM OLD.plazo_anterior_dias
+     OR NEW.plazo_nuevo_dias    IS DISTINCT FROM OLD.plazo_nuevo_dias
+     OR NEW.delta_monto_pct     IS DISTINCT FROM OLD.delta_monto_pct
+     OR NEW.delta_plazo_pct     IS DISTINCT FROM OLD.delta_plazo_pct
+     OR NEW.requiere_revision_sfp  IS DISTINCT FROM OLD.requiere_revision_sfp
+     OR NEW.requiere_ajuste_costos IS DISTINCT FROM OLD.requiere_ajuste_costos
+     OR NEW.created_at          IS DISTINCT FROM OLD.created_at THEN
+    RAISE EXCEPTION 'Un convenio modificatorio registrado es inalterable (art. 59 LOPSRM / art. 99 RLOPSRM)';
+  END IF;
+  -- nota_id: solo NULL→valor (asiento diferido al abrir la bitácora); una vez ligada, inmutable.
+  IF OLD.nota_id IS NOT NULL AND NEW.nota_id IS DISTINCT FROM OLD.nota_id THEN
+    RAISE EXCEPTION 'El convenio ya tiene su nota de bitácora ligada; el vínculo es inmutable';
+  END IF;
+  -- estado: SOLO la transición controlada registrado→autorizado (ITEM 3.2, art. 59 párr. 3 LOPSRM).
+  IF OLD.estado = 'autorizado' AND NEW.estado IS DISTINCT FROM OLD.estado THEN
+    RAISE EXCEPTION 'El convenio ya está autorizado y surtió efecto; es inalterable (art. 59 LOPSRM)';
+  END IF;
+  IF OLD.estado = 'registrado' AND NEW.estado NOT IN ('registrado', 'autorizado') THEN
+    RAISE EXCEPTION 'Transición de estado de convenio inválida';
+  END IF;
+  -- autorizado_por / autorizado_en: solo NULL→valor (sello del acto de autorización), una sola vez.
+  IF OLD.autorizado_por IS NOT NULL AND NEW.autorizado_por IS DISTINCT FROM OLD.autorizado_por THEN
+    RAISE EXCEPTION 'El autorizador del convenio es inmutable';
+  END IF;
+  IF OLD.autorizado_en IS NOT NULL AND NEW.autorizado_en IS DISTINCT FROM OLD.autorizado_en THEN
+    RAISE EXCEPTION 'El sello de autorización del convenio es inmutable';
+  END IF;
+  RETURN NEW;
+END;
+$func$ LANGUAGE plpgsql;
+-- Backfill: convenios viejos (flujo de 1 acto) quedan 'autorizado' (DEFAULT) con autorizado_en = created_at.
+UPDATE convenios_modificatorios SET autorizado_en = created_at
+ WHERE autorizado_en IS NULL AND estado = 'autorizado';
+-- ── fin del plegado 21-jun (convenios autorización) ──────────────────────────────────────────────────
 
 -- (2) VERSIONADO del programa de obra. El programa VIGENTE vive en programa_obra (A2, sin cambios);
 --     cada versión se SNAPSHOTEA aquí (catálogo + celdas) cuando un convenio lo supersede. v1 = el
