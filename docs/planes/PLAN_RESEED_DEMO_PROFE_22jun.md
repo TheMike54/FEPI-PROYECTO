@@ -23,9 +23,10 @@
 - **Techo presupuestal 2026** (ejercicio 2026 / dependencia / partida 62201, techo $50,000,000) → el Tránsito a pago **no se atora**.
 - **Notas variadas** en OP-0009 (avance/aviso/calidad) y OP-0010 (avance/junta) → el libro y el buscador tienen contenido.
 - **Convenio de monto** en OP-0003 ($1,000,000→$1,060,000) con **versiones del programa** (v1 sustituida + v2 vigente) → la tabla "Versiones del programa" deja de salir vacía.
+- **Empresas "por validar"** (padrón HU-23): 2 empresas estado `por_validar` → "Constructora del Bajio SA de CV" (**duplicada** de la validada "Constructora del Bajío, S.A. de C.V." → botón **Fusionar**) + "Edificadora Acapulco, S.A. de C.V." (nueva → botón **Validar**). Verificado con la función real del controller: ambas formas fuertes = `constructora del bajio` → el padrón marca el duplicado.
 
 > **Verificación ya hecha:** corrí el script entero envuelto en `BEGIN … ROLLBACK` contra la BD local
-> (no persistió nada): **0 errores**, los 8 chequeos en verde (ver tabla arriba). El SQL, las FKs y los
+> (no persistió nada): **0 errores**, los 9 chequeos en verde (incl. `empresas por validar = 2`). El SQL, las FKs y los
 > triggers de inmutabilidad pasan.
 
 ## ⚠️ Pasos destructivos (marcados)
@@ -52,7 +53,7 @@ docker exec -i sigecop_db psql -U sigecop -d sigecop_db -v ON_ERROR_STOP=1 -f - 
 - **Folios `OP-2026-0001..0024`** 1:1 con HU-01..24; la trazabilidad HU↔folio vive solo en el mapa (el objeto en pantalla es una obra realista, sin "HU").
 - **Monto de OP-0003 = $1,060,000** (lo sube el convenio): rompe a propósito la "base idéntica" del seed viejo para que el portafolio no se vea "de juguete" (todos iguales) — la auditoría lo señaló.
 - **Semáforo de revisión en verde:** estimaciones presentadas hace 3 días (dentro de los 15) → no salen "Vencido".
-- **No incluí "empresas por validar"** (la auditoría lo sugería pero tú no lo pediste). Si lo quieres para lucir el validar/fusionar del padrón (HU-23), te agrego 1-2 empresas `por_validar` en 2 líneas — dime.
+- **Empresas "por validar" añadidas** (lo aprobaste): 1 duplicada (Fusionar) + 1 nueva (Validar), para lucir el flujo del padrón (HU-23). El nombre de la duplicada se eligió para que su forma fuerte coincida con la canónica sin chocar con el índice único débil.
 
 ## Lo que ESTE re-seed NO arregla (son de UI, no de datos)
 Quedan para el otro frente (barrido de texto / colores), no son parte de este script:

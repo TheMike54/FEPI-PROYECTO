@@ -40,10 +40,11 @@
 | OP-2026-0020 | HU-20 Tránsito a pago | Estimación **autorizada** + **techo presupuestal 2026** cargado → el wizard NO se atora | Contratista / Finanzas |
 | OP-2026-0021 | HU-21 Registro de pago | Estimación **autorizada** (lista para registrar el pago) | Finanzas |
 | OP-2026-0022 | HU-22 Roster | Roster cargado + **apertura sin firmar** (también aparece en "Por firmar") | Dependencia / Residente |
-| OP-2026-0023 | HU-23 Padrón | Catálogo de empresas + **apertura sin firmar** (2.º caso de "Por firmar") | Dependencia |
+| OP-2026-0023 | HU-23 Padrón | Catálogo de empresas. En el **padrón → pestaña "Por validar"** hay 2 empresas: **"Constructora del Bajio SA de CV"** marcada como **posible duplicado** de "Constructora del Bajío, S.A. de C.V." → botón **Fusionar**; y **"Edificadora Acapulco, S.A. de C.V."** nueva → botón **Validar (inscribir)**. (Además, apertura sin firmar → 2.º caso de "Por firmar".) | Dependencia |
 | OP-2026-0024 | HU-24 Finiquito | 3 estimaciones pagadas + **finiquito asentado → contrato CERRADO** (se ve el cierre sin cerrarlo en vivo) | Dependencia / Residente |
 
 ## Demos transversales (no por contrato)
 - **"Por firmar":** entra como **Residente**, **Contratista** o **Supervisión** → hay firmas pendientes de OP-2026-0022 y OP-2026-0023.
 - **Garantías (semáforo de color):** abre las fianzas de **OP-2026-0002** → rojo/ámbar/amarillo/verde a la vez.
 - **Curva financiera con datos:** **OP-2026-0024** (todo pagado, ~financiero alto) o **OP-2026-0005**.
+- **Padrón validar/fusionar (HU-23):** entra como **Dependencia** → Padrón de empresas → pestaña **"Por validar"**: hay 1 empresa duplicada (**Fusionar** con "Constructora del Bajío") y 1 nueva (**Validar**).

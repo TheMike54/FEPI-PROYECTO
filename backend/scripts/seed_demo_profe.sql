@@ -56,6 +56,22 @@ UPDATE usuarios SET nombre='Lic. Diana Herrera Salgado'    WHERE email='dependen
 UPDATE usuarios SET nombre='C.P. Fernando Ríos Aguilar'    WHERE email='finanzas@sigecop.test';
 
 -- =====================================================================
+-- PARTE 1.5 — EMPRESAS "POR VALIDAR" (para lucir el flujo validar/fusionar del padrón, HU-23).
+--   Dos empresas estado='por_validar':
+--     · "Constructora del Bajio SA de CV" → DUPLICADA de la validada "Constructora del Bajío, S.A. de C.V."
+--       (misma forma fuerte 'constructora del bajio' sin acentos/puntuación/sufijo) → el padrón la marca
+--       como posible duplicado para FUSIONAR. (La forma DÉBIL difiere → no choca con el índice único.)
+--     · "Edificadora Acapulco, S.A. de C.V." → nueva genuina (sin duplicado) → para VALIDAR (inscribir).
+--   Idempotente: se borran por nombre (no las referencia ninguna cuenta) y se reinsertan como por_validar.
+-- =====================================================================
+DELETE FROM empresas
+ WHERE nombre IN ('Constructora del Bajio SA de CV','Edificadora Acapulco, S.A. de C.V.')
+   AND NOT EXISTS (SELECT 1 FROM usuarios u WHERE u.empresa_id = empresas.id);
+INSERT INTO empresas (nombre, tipo, estado) VALUES
+  ('Constructora del Bajio SA de CV',    'contratista', 'por_validar'),   -- duplicada → FUSIONAR
+  ('Edificadora Acapulco, S.A. de C.V.', 'contratista', 'por_validar');   -- nueva genuina → VALIDAR
+
+-- =====================================================================
 -- PARTE 2 — LIMPIEZA de los contratos demo (OP-2026-% y cualquier PRUEBA-HU-% viejo). Hijos en orden de FK.
 -- =====================================================================
 DO $$
@@ -481,7 +497,8 @@ UNION ALL SELECT 'contratos cerrados', count(*)::text FROM contratos WHERE estad
 UNION ALL SELECT 'finiquitos', count(*)::text FROM finiquitos
 UNION ALL SELECT 'techo presupuestal 2026', count(*)::text FROM presupuesto_anual WHERE ejercicio=2026
 UNION ALL SELECT 'aperturas sin firmar', count(*)::text FROM bitacora_aperturas b WHERE EXISTS (SELECT 1 FROM bitacora_firmantes f WHERE f.bitacora_id=b.id AND NOT f.firmado)
-UNION ALL SELECT 'versiones de programa', count(*)::text FROM programa_version;
+UNION ALL SELECT 'versiones de programa', count(*)::text FROM programa_version
+UNION ALL SELECT 'empresas por validar', count(*)::text FROM empresas WHERE estado='por_validar';
 
 SELECT c.folio, c.objeto, c.monto, c.estado,
        (SELECT string_agg(e.estado, ',' ORDER BY e.numero) FROM estimaciones e WHERE e.contrato_id=c.id) AS estimaciones
