@@ -251,6 +251,12 @@ async function registrarAvance(req, res) {
         await client.query('ROLLBACK');
         return res.status(409).json({ error: msgCerrado('no se registra avance') });
       }
+      // P23 (22-jun) — el profe exige bitácora abierta ANTES de registrar avance (art. 122 RLOPSRM). Antes la nota
+      // se difería; ahora se exige (mismo patrón de "atraso"). El front redirige a abrir bitácora.
+      if (!(await bitacoraAbiertaId(client, concepto.contrato_id))) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'El contrato no tiene bitácora abierta; ábrela primero para registrar el avance (art. 122 RLOPSRM).' });
+      }
 
       // O4: el periodo viene del SELECTOR; debe existir en el programa del contrato.
       const periodo = await cargarPeriodoPorNumero(client, concepto.contrato_id, periodoNumero);
@@ -365,6 +371,8 @@ async function corregirAvance(req, res) {
       if (!esParteOSupervision(req.user, concepto)) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'No tienes acceso a este contrato' }); }
       // FIX #3 (22-jun) — contrato cerrado (finiquito) = SOLO-LECTURA (art. 64 LOPSRM).
       if (await contratoCerrado(client, concepto.contrato_id)) { await client.query('ROLLBACK'); return res.status(409).json({ error: msgCerrado('no se corrige avance') }); }
+      // P23 (22-jun) — exige bitácora abierta también para corregir avance (art. 122 RLOPSRM).
+      if (!(await bitacoraAbiertaId(client, concepto.contrato_id))) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'El contrato no tiene bitácora abierta; ábrela primero para corregir el avance (art. 122 RLOPSRM).' }); }
 
       // Periodo del original (la corrección conserva el periodo).
       let periodo = null;

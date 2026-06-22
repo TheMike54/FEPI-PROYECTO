@@ -154,7 +154,7 @@ function aVistaHistorial(e) {
     periodo: periodoLabel(e.periodo_inicio),
     estado: e.estado,
     importe: moneda(e.neto),
-    fechaPresentacion: fechaMX(e.integrada_en),
+    fechaPresentacion: e.enviada_en ? fechaMX(e.enviada_en) : '—', // HU-14 (22-jun): la "Fecha de presentación" es la del envío real (enviada_en); '—' si aún no se ha presentado
     fechaRevision: revision ? fechaMX(revision.en) : null,
     fechaPago: pago ? fechaMX(pago.en) : null,
     observaciones: [] // HU-15: estimacion_observaciones — no se fabrican datos hasta que exista

@@ -60,6 +60,9 @@ async function crearMinuta(req, res) {
     const b = req.body || {};
     if (!b.titulo || !String(b.titulo).trim()) return res.status(400).json({ error: 'El asunto/título de la minuta es obligatorio' });
     if (!b.fecha) return res.status(400).json({ error: 'La fecha de la minuta es obligatoria' });
+    // HU-11 (22-jun) — la historia exige lugar y participantes; antes solo el frontend los pedía → se validan también server-side.
+    if (!b.lugar || !String(b.lugar).trim()) return res.status(400).json({ error: 'El lugar de la minuta es obligatorio' });
+    if (!b.participantes || !String(b.participantes).trim()) return res.status(400).json({ error: 'Los participantes de la minuta son obligatorios' });
     const notaId = b.nota_id != null ? Number(b.nota_id) : null;
     if (notaId != null) { if (!(await notaDelContrato(pool, notaId, id))) return res.status(400).json({ error: 'La nota indicada no pertenece a la bitácora de este contrato' }); }
     const r = await pool.query(
@@ -158,6 +161,10 @@ async function crearVisita(req, res) {
     if (await contratoCerrado(pool, id)) return res.status(409).json({ error: msgCerrado('no se agendan visitas') });
     const b = req.body || {};
     if (!b.fecha_programada) return res.status(400).json({ error: 'La fecha programada de la visita es obligatoria' });
+    // HU-11 (22-jun) — la historia exige lugar, responsable y propósito; antes solo el frontend → se validan server-side.
+    if (!b.lugar || !String(b.lugar).trim()) return res.status(400).json({ error: 'El lugar de la visita es obligatorio' });
+    if (!b.responsable || !String(b.responsable).trim()) return res.status(400).json({ error: 'El responsable de la visita es obligatorio' });
+    if (!b.proposito || !String(b.proposito).trim()) return res.status(400).json({ error: 'El propósito de la visita es obligatorio' });
     const r = await pool.query(
       `INSERT INTO visitas (contrato_id, tipo, fecha_programada, lugar, responsable, proposito, estado, registrada_por)
        VALUES ($1,$2,$3,$4,$5,$6,'agendada',$7) RETURNING id, tipo, fecha_programada, lugar, responsable, proposito, estado, created_at`,

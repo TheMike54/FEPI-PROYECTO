@@ -281,8 +281,8 @@ export default function EnvioEstimacion() {
                                 {semRev && (
                                   <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${SEMAFORO_CLASE[semRev.nivel]}`}>
                                     {semRev.nivel === 'vencido'
-                                      ? `Revisión (HU-15): día ${semRev.transcurridos} de ${PLAZO_REVISION_DIAS} · plazo vencido`
-                                      : `Revisión (HU-15): día ${semRev.transcurridos} de ${PLAZO_REVISION_DIAS} · ${semRev.restantes} días restantes`}
+                                      ? `Plazo de revisión: día ${semRev.transcurridos} de ${PLAZO_REVISION_DIAS} · plazo vencido`
+                                      : `Plazo de revisión: día ${semRev.transcurridos} de ${PLAZO_REVISION_DIAS} · ${semRev.restantes} días restantes`}
                                   </span>
                                 )}
                               </div>

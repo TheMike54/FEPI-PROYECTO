@@ -90,11 +90,15 @@ async function crearGarantia(req, res) {
     const b = req.body || {};
     const err = validarGarantia(b, contrato.monto);
     if (err) return res.status(400).json({ error: err });
+    // P1 (22-jun) — canonicalizar `tipo` a clave (minúsculas + guion bajo) para que el UNIQUE(contrato_id,tipo) muerda
+    // aunque el alta mande 'Cumplimiento' y HU-02 'cumplimiento' (antes eran strings distintos → permitían 2 del mismo
+    // tipo). NO se toca el schema ni el índice (zona congelada): solo se normaliza antes de grabar.
+    const tipoNorm = String(b.tipo || '').trim().toLowerCase().replace(/\s+/g, '_');
     try {
       const r = await pool.query(
         `INSERT INTO contrato_garantias (contrato_id, tipo, afianzadora, poliza, monto, vigencia, registrado_por)
          VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, tipo, afianzadora, poliza, monto, vigencia, created_at`,
-        [id, String(b.tipo).trim(), b.afianzadora ? String(b.afianzadora).trim() : null,
+        [id, tipoNorm, b.afianzadora ? String(b.afianzadora).trim() : null,
          b.poliza ? String(b.poliza).trim() : null, numOrNull(b.monto), b.vigencia || null, req.user.id]);
       return res.status(201).json(r.rows[0]);
     } catch (e) {

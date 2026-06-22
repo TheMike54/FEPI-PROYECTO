@@ -129,6 +129,10 @@ async function crearConvenio(req, res) {
   const tocaPlazo = ['plazo', 'mixto'].includes(tipo);
   if (tocaPrograma && (conceptos.length === 0 || celdas.length === 0)) return res.status(400).json({ error: 'Para un convenio de monto/programa, envía el catálogo (conceptos) y el programa (celdas) NUEVOS completos' });
   if (tocaPlazo && plazoNuevo == null) return res.status(400).json({ error: 'Para un convenio de plazo, envía plazo_nuevo_dias (> 0)' });
+  // P4 (22-jun) — cota máxima de plazo: la ley NO fija tope numérico (art. 59 / 59 Bis no fijan máximo) → criterio
+  // de diseño. Evita el RangeError de Date (JS desborda ~100M días) devolviendo 400 claro en lugar de 500.
+  const PLAZO_MAX_DIAS = 36500; // ~100 años: holgado para cualquier obra real
+  if (plazoNuevo != null && plazoNuevo > PLAZO_MAX_DIAS) return res.status(400).json({ error: `El plazo del convenio (${plazoNuevo} días) excede el máximo permitido (${PLAZO_MAX_DIAS} días ≈ 100 años); revisa el dato.` });
   for (const c of conceptos) {
     if (!c.clave || !(Number(c.cantidad) >= 0) || !(Number(c.pu) >= 0)) return res.status(400).json({ error: 'Cada concepto requiere clave, cantidad >= 0 y pu >= 0' });
   }
@@ -153,6 +157,10 @@ async function crearConvenio(req, res) {
       if (!puede) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'Solo la dependencia o el residente asignado puede registrar convenios' }); }
       // FIX #3 (22-jun) — contrato cerrado (finiquito) = SOLO-LECTURA (art. 64 LOPSRM).
       if (await contratoCerrado(client, contratoId)) { await client.query('ROLLBACK'); return res.status(409).json({ error: msgCerrado('no se registran convenios') }); }
+      // P23 (22-jun) — el profe exige bitácora abierta ANTES de registrar el convenio (art. 122 RLOPSRM: "el uso de
+      // la Bitácora es obligatorio"). Antes se permitía y la nota se difería; ahora se exige (mismo patrón de "atraso").
+      const bitConv = await client.query('SELECT id FROM bitacora_aperturas WHERE contrato_id = $1', [contratoId]);
+      if (bitConv.rowCount === 0) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'El contrato no tiene bitácora abierta; ábrela primero para registrar el convenio (art. 122 RLOPSRM).' }); }
 
       const montoAnterior = contrato.monto;   // string NUMERIC
       const plazoAnterior = contrato.plazo_dias;

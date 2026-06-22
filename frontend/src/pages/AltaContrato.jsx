@@ -1801,7 +1801,9 @@ export default function AltaContrato() {
         // alta-v5: defensa-en-profundidad: solo se persisten pólizas COMPLETAS (polizaCompleta). El
         // guardado ya pasó por validar() (todos los pasos), que exige cumplimiento/anticipo completos;
         // este filtro hace explícito en el borde de persistencia que nunca se manda una póliza a medias.
-        garantias: garantias.filter((g) => polizaCompleta(g)).map((g) => ({ tipo: g.tipo, afianzadora: g.afianzadora, poliza: g.poliza, monto: g.monto, vigencia: g.vigencia })),
+        // P1 (22-jun): se envía el `tipo` canonizado (minúsculas + guion bajo: 'Cumplimiento'→'cumplimiento') para que
+        // coincida con HU-02 y el UNIQUE(contrato_id,tipo) muerda; el catálogo y la UI conservan sus etiquetas bonitas.
+        garantias: garantias.filter((g) => polizaCompleta(g)).map((g) => ({ tipo: String(g.tipo || '').trim().toLowerCase().replace(/\s+/g, '_'), afianzadora: g.afianzadora, poliza: g.poliza, monto: g.monto, vigencia: g.vigencia })),
         // O2: plan de amortización del anticipo (validar() ya exigió Σ = anticipo al centavo;
         // el backend lo revalida y, si faltara, derivaría el proporcional). Sin anticipo: vacío.
         planAmortizacion: planOmitido ? [] : periodos.map((p) => ({ periodoNumero: p.numero, monto: Number(planAmort[p.numero]) || 0 }))

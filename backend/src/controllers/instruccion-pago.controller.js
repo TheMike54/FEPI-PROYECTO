@@ -129,7 +129,7 @@ async function leerSoportes(estimacionId, contratoId) {
   const fianzaOk = !exigible || vigente; // si no es exigible, no bloquea
   return {
     metadatos: sop.rows,
-    factura: { cargado: facturaOk, descripcion: factura?.descripcion || null },
+    factura: { cargado: facturaOk, descripcion: factura?.descripcion || null, fecha: factura?.created_at || null },
     cfdi: { cargado: cfdiOk, folio: cfdi?.descripcion || null },
     fianza_cumplimiento: {
       exigible, vigente,
@@ -152,14 +152,23 @@ async function anclaAutorizacion(estimacionId) {
   return r.rows[0]?.autorizada_en || null;
 }
 
-function semaforoPlazo(anclaISO) {
-  if (!anclaISO) {
+function semaforoPlazo(anclaAutISO, facturaISO) {
+  if (!anclaAutISO) {
     return {
       disponible: false,
-      nota: 'Sin fecha de autorización registrada (la nota de autorización requiere bitácora abierta al autorizar). ' +
-            'El ancla canónica requiere el sello autorizada_en (PARA MAIKI).',
+      nota: 'Sin fecha de autorización registrada (la nota de autorización requiere bitácora abierta al autorizar).',
     };
   }
+  // HU-20 (22-jun) — art. 54 LOPSRM: el plazo de pago de 20 días corre "a partir de la fecha en que hayan sido
+  // autorizadas por la residencia Y que el contratista haya presentado la factura". → el ancla es la MÁS TARDÍA de
+  // las dos. Sin factura presentada, el plazo AÚN NO corre (no se muestran días vencidos prematuros).
+  if (!facturaISO) {
+    return {
+      disponible: false,
+      nota: 'El plazo de pago de 20 días (art. 54 LOPSRM) aún no corre: falta la presentación de la factura.',
+    };
+  }
+  const anclaISO = new Date(anclaAutISO) >= new Date(facturaISO) ? anclaAutISO : facturaISO;
   const ancla = new Date(anclaISO);
   const hoy = new Date(new Date().toDateString());
   const dias = Math.max(0, Math.floor((hoy - new Date(ancla.toDateString())) / 86400000));
@@ -168,7 +177,7 @@ function semaforoPlazo(anclaISO) {
     : (diasVencidos <= PLAZO_DIAS_VENCIDOS.ambar_max ? 'ambar' : 'rojo');
   return {
     disponible: true, ancla: anclaISO, dia_actual: dias, dias_vencidos: diasVencidos, plazo: PLAZO_PAGO_DIAS, color,
-    fuente: 'bitácora (nota de autorización res_estimaciones)',
+    fuente: 'la más tardía de: autorización (bitácora) y presentación de la factura (art. 54 LOPSRM)',
     nota: 'Días vencidos = días pasados del plazo de pago de 20 días (art. 54 LOPSRM). Umbrales 0 / 1-10 / >10 días vencidos: criterio del equipo (defaults provisionales, configurables).',
   };
 }
@@ -202,7 +211,7 @@ async function estadoTransito(req, res) {
       contrato_cerrado: est.contrato_estado === 'cerrado',
       suficiencia,
       soportes,
-      semaforo_plazo: semaforoPlazo(ancla),
+      semaforo_plazo: semaforoPlazo(ancla, soportes.factura?.fecha || null),
       instruccion: ip.rowCount ? ip.rows[0] : null,
       // CA-3: la subida de archivos binarios no está disponible (sin infra de almacenamiento).
       upload_archivos: { disponible: false, nota: 'carga de archivo no disponible (falta infra de almacenamiento)' },

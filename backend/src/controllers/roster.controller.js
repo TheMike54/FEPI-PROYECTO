@@ -125,6 +125,11 @@ async function sustituirPersona(req, res) {
       if (!puede) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'Solo la dependencia o el residente asignado puede sustituir personas del roster' }); }
       // FIX #3 (22-jun) — contrato cerrado (finiquito) = SOLO-LECTURA (art. 64 LOPSRM).
       if (await contratoCerrado(client, contratoId)) { await client.query('ROLLBACK'); return res.status(409).json({ error: msgCerrado('no se sustituyen personas del roster') }); }
+      // P23 (22-jun) — DECISIÓN autónoma: exigir bitácora abierta también para la sustitución. El profe no la nombró,
+      // pero el art. 125 fr. I g RLOPSRM manda REGISTRAR la sustitución EN la bitácora y el art. 122 la hace obligatoria;
+      // sin bitácora no hay dónde asentarla. Consistente con convenio/avance (antes se difería).
+      const bitRost = await client.query('SELECT id FROM bitacora_aperturas WHERE contrato_id = $1', [contratoId]);
+      if (bitRost.rowCount === 0) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'El contrato no tiene bitácora abierta; ábrela primero para registrar la sustitución (art. 122 / 125 RLOPSRM).' }); }
 
       // El nuevo debe existir, estar ACTIVO y tener el rol de cuenta esperado para el slot.
       const ures = await client.query('SELECT id, rol, estado, nombre, empresa_id FROM usuarios WHERE id = $1', [nuevoUsuarioId]);

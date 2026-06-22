@@ -188,13 +188,13 @@ function TablaContratos({ contratos, onSeleccionar, folioActivo }) {
   );
 }
 
-// Agrupadores DISPONIBLES (fuente real). "Tipo de contratación" (procedimiento de adjudicación)
-// NO existe en el esquema → se ofrece DESHABILITADO con etiqueta, sin sustituirlo por la modalidad.
+// Agrupadores DISPONIBLES (fuente real). HU-18 (22-jun): se QUITÓ "Tipo de contratación" — el procedimiento
+// de adjudicación no existe en el esquema, así que se eliminó la opción (antes salía deshabilitada / "no disponible",
+// lo que se veía a medias) en lugar de ofrecer un agrupador inutilizable.
 const AGRUPADORES = [
   { id: 'Ninguno', label: 'Ninguno', clave: () => null, disabled: false },
   { id: 'Contratista', label: 'Contratista', clave: (c) => c.contratista || '— sin contratista —', disabled: false },
   { id: 'Ejercicio fiscal', label: 'Ejercicio fiscal', clave: (c) => (c.ejercicio == null ? '— sin fecha de inicio —' : String(c.ejercicio)), disabled: false },
-  { id: 'Tipo de contratación', label: 'Tipo de contratación — no disponible', clave: () => null, disabled: true },
 ];
 
 export default function PortafolioEjecutivo() {

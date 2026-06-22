@@ -293,9 +293,12 @@ export default function CurvaAvance() {
     const monto = Number(selected?.monto) || 0;
     if (monto <= 0 || periodosAll.length === 0) return m;
     const pgs = pagos.map((p) => ({ f: dISO(p.fecha_pago), imp: Number(p.importe) || 0 }));
+    const ultimoNum = periodosAll[periodosAll.length - 1]?.numero;
     for (const p of periodosAll) {
       if (dISO(p.inicio) > hoy) continue;                     // periodo futuro: sin punto
-      const cutoff = dISO(p.fin) <= hoy ? dISO(p.fin) : hoy;  // periodo en curso: corta en hoy
+      // P5 (22-jun): el periodo terminal (y el periodo en curso) acumulan TODOS los pagos hasta hoy → un pago
+      // posterior al fin del programa ya NO queda fuera de la ventana (el KPI 'Financiero a hoy' deja de marcar 0%).
+      const cutoff = (p.numero === ultimoNum || dISO(p.fin) > hoy) ? hoy : dISO(p.fin);
       const acum = pgs.reduce((s, x) => (x.f && x.f <= cutoff ? s + x.imp : s), 0);
       m[p.numero] = (acum / monto) * 100;
     }

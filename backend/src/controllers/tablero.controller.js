@@ -64,6 +64,9 @@ function periodoLabel(periodoFin) {
 // JS reusando esParteOSupervision, igual que los GET de estimaciones.controller.)
 async function tableroEstimaciones(req, res) {
   try {
+    // HU-17 (22-jun) — CA-5: a Finanzas el sistema le OCULTA el tablero. Antes solo se ocultaba en la UI
+    // (permisos.js finanzas:null); ahora se bloquea también server-side (coherente con lo que ve el usuario).
+    if (req.user.rol === 'finanzas') return res.status(403).json({ error: 'El tablero de estimaciones no está disponible para Finanzas.' });
     // Trae las estimaciones con la carátula (montos congelados) + los punteros del
     // contrato para el acotamiento. dias_en_estado se DERIVA en SQL desde el sello
     // más reciente disponible (enviada_en si ya se envió; si no, integrada_en);
