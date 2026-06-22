@@ -95,9 +95,10 @@ autorizada, rechazada, **reingreso**, pagada) — ideal para recorrer sin captur
   catálogo (**art. 118 RLOPSRM**).
 - **Reingreso** tras rechazo = **bloque nuevo completo** (HU-16), no "marcar qué observación se atendió".
 
-**⚠️ Honestidad si pregunta:** el **bloque de generadores del ambiente guiado** y el de **soportes/fotos** son
-**placeholders** que delegan a la pantalla de integración (los generadores en sí funcionan ahí); el registro
-**fotográfico** y la **carga de archivos** están diferidos (hoy solo metadatos).
+**⚠️ Honestidad si pregunta:** el **bloque de generadores del ambiente guiado** es un **placeholder** que
+delega a la pantalla de integración (los generadores en sí funcionan ahí). El **registro fotográfico YA está
+implementado** (21-jun: fotos JPEG/PNG como BYTEA en `estimacion_fotos`, subida/galería en el expediente, art.
+132 fr. IV RLOPSRM); solo la **carga de otros soportes** (carpeta de PDFs) sigue diferida (hoy solo metadatos).
 
 ---
 

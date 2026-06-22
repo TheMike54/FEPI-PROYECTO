@@ -121,7 +121,7 @@ export default function NotificacionesCentro({ open, onClose }) {
                           secundario={a.objeto ? `${a.objeto}` : 'Firma de la apertura'} />
                       ))}
                       {notas.map((n) => (
-                        <Item key={`nt-${n.id}`} to={`/bitacora/consulta?contrato=${n.contrato_id}`} onClick={onClose}
+                        <Item key={`nt-${n.id}`} to={`/bitacora/notas?contrato=${n.contrato_id}`} onClick={onClose}
                           principal={`Nota #${n.numero} — ${n.contrato_folio || 'contrato'}`}
                           secundario={n.asunto || n.tipo_etiqueta || 'Bitácora · nota'} />
                       ))}

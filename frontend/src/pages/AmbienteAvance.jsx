@@ -145,15 +145,17 @@ export default function AmbienteAvance() {
         </LinkHU>
       </Bloque>
 
-      {/* BLOQUE 5 — Evidencia fotográfica: FUERA DE ALCANCE de la Etapa 1 (FASE 5, decisión de alcance). */}
-      <Bloque n={5} titulo="Evidencia fotográfica por periodo">
+      {/* BLOQUE 5 — Evidencia fotográfica: se carga POR ESTIMACIÓN en el Expediente (art. 132 fr. IV RLOPSRM),
+          no por periodo de avance. El texto redirige al lugar correcto (antes decía "no disponible" = confuso). */}
+      <Bloque n={5} titulo="Evidencia fotográfica">
         <p className="text-sm text-slate-700">
-          El registro fotográfico del avance por periodo es <strong>opcional</strong>:
-          la ley no lo exige como requisito (el avance se sustenta con los números ejecutados por concepto y la
-          nota de bitácora). El acumulado contra lo contratado (art. 118 RLOPSRM) es el control vigente.
+          El registro fotográfico se carga y consulta <strong>por estimación, en el Expediente</strong> (HU-04):
+          la ley ubica las fotografías como soporte de <strong>cada estimación</strong> (art. 132 fr. IV RLOPSRM),
+          no del avance por periodo. El avance por concepto se sustenta con los números ejecutados y su nota de bitácora.
         </p>
         <p className="text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-md px-3 py-2 mt-3" data-testid="evidencia-placeholder">
-          El registro fotográfico de evidencias por periodo no está disponible en esta versión del sistema.
+          📷 Para subir o ver fotos, abre el <strong>Expediente</strong> del contrato → “Resumen de estimaciones” →
+          botón “+ Agregar foto” en cada estimación.
         </p>
       </Bloque>
     </div>

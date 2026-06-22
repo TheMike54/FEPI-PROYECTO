@@ -137,7 +137,37 @@ En [historial/integraciones-equipos/](historial/integraciones-equipos/):
 
 **Estado tras esto:** suite e2e **258 passed / 8 skipped / 0 failed**; todo integrado y desplegado.
 
-## 7. Referencias vigentes de uso diario
+## 7. Junio 12–21: empresas, navegación, fase de BD y evidencia fotográfica
+
+> El detalle entrada-por-entrada de este tramo vive en la **cabecera de `estado/ESTADO_ACTUAL.md`** (entradas
+> 1–14) y en `reportes/`; aquí queda el resumen cronológico.
+
+- **12–17 jun:** orden de `docs/` (reorg por función); revisión del profe (planes 15/16-jun): plan de
+  amortización proporcional al programa (art. 143 fr. I), deduplicación fuerte de empresas, **seed de datos
+  demo**, expediente HU-04 + oficio del convenio, apertura redactada, **FINIQUITO (HU-24)**, e integración de
+  HU-18/HU-02/HU-11/HU-20 a backend real.
+- **18 jun:** **rediseño match-mockup** (sidebar plano por ciclos + wizards); **Plan Grande** (empresas/padrón
+  + acotamiento por empresa + `[validar profe]` a cero + navegación modo-sistema); **Oleadas 1–3** (fixes +
+  notificaciones + ley: avance append-only, convenio con autorización, HU-20 partida). Suite **337/8/0**.
+- **19–21 jun:** diagnóstico integral de UX/navegación y su ejecución (chip de HU centralizado, notificaciones
+  accionables, sidebar colapsable); commits **`4eaf044`** (6 citas legales + limpieza) y **`bc3f03a`**
+  (evidencia fotográfica + 2 bugs + 24 contratos de prueba + empresas realistas + cuentas por empresa).
+
+### 7.1 Cierre de la fase de BD en Render (21-jun, `main = cb10b27`)
+Jornada dedicada a dejar Render consistente y cerrar la deuda de esquema:
+- **2 bugs:** el contrato activo ya no se hereda entre cuentas (modal "Elige tu contrato" se relanza); el chip
+  de HU muestra la HU puntual + **indicador de HU global** (chip dorado en la barra superior, todas las pantallas).
+- **Evidencia fotográfica IMPLEMENTADA** (fotos BYTEA en `estimacion_fotos`, `/api/estimacion-fotos`, galería
+  en el expediente; art. 132 fr. IV RLOPSRM) — deja de estar "fuera de alcance".
+- **Render reconstruido desde cero** con el runbook `docs/RUNBOOK_BD_RENDER_21jun.md` (backup → DROP SCHEMA →
+  `schema.sql` → migraciones → reseed → **24 contratos `PRUEBA-HU-01..24`** + **9 empresas realistas**).
+  Resuelto el **bug 4 "Autorizar = Error interno"** (era `bitacora_notas.tipo` ENUM viejo en Render → ahora
+  VARCHAR + catálogo) y diagnosticado/corregido el **500 de la curva de avance (HU-05)** en Render.
+- **5 migraciones plegadas a `schema.sql`** (avance append-only, `atraso_asentado`, `estimacion_fotos`, hu20
+  partida_fk, convenio_autorizacion): el patrón "migración sin plegar" quedó **cerrado de raíz**, cero bombas
+  latentes (verificado `schema.sql` desde cero exit 0 + 2ª pasada idempotente).
+
+## 8. Referencias vigentes de uso diario
 
 | Doc | Para qué |
 |---|---|
@@ -148,7 +178,7 @@ En [historial/integraciones-equipos/](historial/integraciones-equipos/):
 | `docs/Cuentas_Prueba_SIGECOP.md` | Credenciales demo (gitignored, NO mover ni versionar) |
 | `docs/comandos usuario.txt` | Chuleta de Maiki: crear/borrar usuarios (untracked) |
 
-## 8. Copias apartadas (no borradas)
+## 9. Copias apartadas (no borradas)
 
 - `historial/_duplicados/Revision_Profesor_Sprint1-2_Analisis_y_Plan_copia-exacta.md` — duplicado byte-a-byte del de revisiones-profe/.
 - `historial/contexto/` — versiones superadas: 3 copias del contexto de respaldo (04-jun/06-jun/09-jun),

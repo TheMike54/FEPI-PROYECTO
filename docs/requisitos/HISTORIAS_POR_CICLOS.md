@@ -74,8 +74,8 @@
 | **4 · Soportes y notas** | `TabNotasVinculadas` + modal de notas FIRMADAS | HU-12 cr. 5 (solo notas firmadas, sin apertura) |
 | **5 · Integrar y presentar** | candado de cierre + `Integrar` (HU-12) + enlace a `Presentar` (HU-13) | HU-12 cr. 1 (superintendente + PDF + anticipo) e integra; enlace a HU-13 |
 
-> El paso 4 también explicita que el **registro fotográfico** queda **fuera de alcance de la Etapa 1** (la ley
-> no lo exige; el expediente del art. 132 RLOPSRM se integra con generadores + notas). La **revisión/autorización
+> El paso 4 incluye el **registro fotográfico**, ya **IMPLEMENTADO (21-jun)**: fotos JPEG/PNG como BYTEA en
+> `estimacion_fotos`, subida/galería en el expediente (art. 132 fr. IV RLOPSRM). La **revisión/autorización
 > (HU-15)** es un **wizard aparte de otro actor** (supervisión turna → residencia autoriza/rechaza).
 
 ### Checklist de conservación (criterio viejo == criterio nuevo)
@@ -148,9 +148,9 @@ wizard solo los ordena por pasos). [x] HU-10/11 **conservados e intactos** (pant
 ## CICLO: Avance y seguimiento → HU-05, 06, 07  ✅ **hecho (FASE 4)**
 
 **Ambiente de avance** — `/seguimiento/ambiente`. La **acción** del flujo es **registrar el avance (HU-06)**;
-**Curva (HU-05)** y **Atrasos (HU-07)** van **en paralelo** (lectura). La **evidencia fotográfica** queda
-**fuera del alcance de la Etapa 1** (la ley no la exige; el avance se sustenta con números ejecutados + nota
-de bitácora — copy suavizado en FASE 5). El **registro de avance (HU-06) es append-only**: no se edita ni se
+**Curva (HU-05)** y **Atrasos (HU-07)** van **en paralelo** (lectura). La **evidencia fotográfica** ya está
+**IMPLEMENTADA (21-jun)**: fotos JPEG/PNG como BYTEA en `estimacion_fotos`, galería en el expediente (art. 132
+fr. IV RLOPSRM). El **registro de avance (HU-06) es append-only**: no se edita ni se
 elimina; corregir = anular la entrada anterior y registrar una nueva vinculada (art. 123 fr. VI/VII RLOPSRM).
 **Checklist:** [x] HU-05/06/07 **conservados** (registro con tope art. 118 y corrección append-only; curva y
 alertas como lectura; sin cambio de requisitos).

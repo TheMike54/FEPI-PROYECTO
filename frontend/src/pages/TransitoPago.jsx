@@ -416,15 +416,6 @@ export default function TransitoPago() {
             </div>
           )}
 
-          {/* Tras la instrucción, Finanzas REGISTRA el pago (HU-21) — siguiente eslabón del ciclo de cobro. */}
-          {instr && (
-            <div className="mt-4 pt-3 border-t border-borde">
-              <p className="text-sm text-tinta-sec mb-2">Emitida la instrucción, Finanzas <strong>registra el pago</strong> (importe = neto, no se paga dos veces — HU-21).</p>
-              {/* NAV-C: /pagos/registro es HU-21 (contratista=null) → un <Link> crudo rebotaría al contratista.
-                  LinkHU lo gatea por acceso (chip deshabilitado con motivo si el rol no puede registrar). */}
-              <LinkHU hu="HU-21" to={`/pagos/registro?contrato=${transito.estimacion.contrato_id}`} className="sg-btn-secondary inline-block" data-testid="link-registrar-pago" actor="Lo registra Finanzas.">Ir a registrar el pago (HU-21) →</LinkHU>
-            </div>
-          )}
           </div>
           )}
 

@@ -4,6 +4,8 @@
 > **Demo objetivo:** 24-jun (≈3 días).
 > **Encargo del profe:** carga de **fotos reales** del avance físico / estimación. Hoy es solo placeholder; es parte de la **versión final** (NO "Etapa 2" ni "fase diferida").
 > **Alcance ACOTADO (respetar):** SOLO fotos del **avance físico (HU-06)** y donde el **expediente (HU-04)** las pida. **NO** carga de archivos en todo el sistema, **NO** PDFs de soporte. Solo fotos del avance.
+>
+> **✅ ESTADO (21-jun): IMPLEMENTADO.** Fotos JPEG/PNG como BYTEA en `estimacion_fotos` (4 columnas `mime/tamano/contenido/subido_por`) + `/api/estimacion-fotos` + galería en el expediente; migración plegada a `schema.sql`. Este documento queda como referencia de diseño.
 
 ---
 

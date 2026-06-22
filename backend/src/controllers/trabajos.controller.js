@@ -23,6 +23,7 @@
 //   El rol contratista (escritura) lo exige el router.
 const { pool } = require('../db/pool');
 const { esParteOSupervision } = require('../lib/acceso');
+const { contratoCerrado, msgCerrado } = require('../lib/gateCierre');
 // O4: nota automática de avance (folio atómico + texto), reutilizada del controller de bitácora.
 const { insertarNotaAtomica, textoNotaAvance } = require('./bitacora.controller');
 // Cuantiza a 3 decimales = escala REAL de concepto_avance.cantidad (NUMERIC(14,3)) y del
@@ -245,6 +246,11 @@ async function registrarAvance(req, res) {
         await client.query('ROLLBACK');
         return res.status(403).json({ error: 'No tienes acceso a este contrato' });
       }
+      // FIX #3 (22-jun) — contrato cerrado (finiquito) = SOLO-LECTURA (art. 64 LOPSRM).
+      if (await contratoCerrado(client, concepto.contrato_id)) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: msgCerrado('no se registra avance') });
+      }
 
       // O4: el periodo viene del SELECTOR; debe existir en el programa del contrato.
       const periodo = await cargarPeriodoPorNumero(client, concepto.contrato_id, periodoNumero);
@@ -357,6 +363,8 @@ async function corregirAvance(req, res) {
       const concepto = await cargarConceptoContrato(client, original.contrato_concepto_id);
       if (!concepto) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Concepto no encontrado' }); }
       if (!esParteOSupervision(req.user, concepto)) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'No tienes acceso a este contrato' }); }
+      // FIX #3 (22-jun) — contrato cerrado (finiquito) = SOLO-LECTURA (art. 64 LOPSRM).
+      if (await contratoCerrado(client, concepto.contrato_id)) { await client.query('ROLLBACK'); return res.status(409).json({ error: msgCerrado('no se corrige avance') }); }
 
       // Periodo del original (la corrección conserva el periodo).
       let periodo = null;

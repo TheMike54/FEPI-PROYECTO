@@ -8,6 +8,7 @@
 // de la tabla garantia_endosos en schema.sql, no son fundamentos distintos).
 const { pool } = require('../db/pool');
 const { esParteOSupervision } = require('../lib/acceso');
+const { contratoCerrado, msgCerrado } = require('../lib/gateCierre');
 
 const numOrNull = (v) => { if (v === '' || v == null) return null; const n = Number(v); return Number.isFinite(n) ? n : null; };
 
@@ -84,6 +85,8 @@ async function crearGarantia(req, res) {
     const contrato = await getContrato(pool, id);
     if (!contrato) return res.status(404).json({ error: 'Contrato no encontrado' });
     if (!puedeGestionar(req.user, contrato)) return res.status(403).json({ error: 'Solo la dependencia o el residente asignado puede registrar garantías' });
+    // FIX #3 (22-jun) — contrato cerrado (finiquito) = SOLO-LECTURA (art. 64 LOPSRM).
+    if (await contratoCerrado(pool, id)) return res.status(409).json({ error: msgCerrado('no se registran garantías') });
     const b = req.body || {};
     const err = validarGarantia(b, contrato.monto);
     if (err) return res.status(400).json({ error: err });
@@ -136,6 +139,8 @@ async function registrarEndoso(req, res) {
     const g = await getGarantiaConContrato(pool, gid);
     if (!g) return res.status(404).json({ error: 'Garantía no encontrada' });
     if (!puedeGestionar(req.user, g)) return res.status(403).json({ error: 'Solo la dependencia o el residente asignado puede registrar endosos' });
+    // FIX #3 (22-jun) — contrato cerrado (finiquito) = SOLO-LECTURA (art. 64 LOPSRM).
+    if (await contratoCerrado(pool, g.contrato_id)) return res.status(409).json({ error: msgCerrado('no se registran endosos') });
     const b = req.body || {};
     const MOTIVOS = ['ampliacion_monto', 'prorroga_vigencia', 'mixto', 'otro'];
     const motivo = MOTIVOS.includes(b.motivo) ? b.motivo : 'otro';

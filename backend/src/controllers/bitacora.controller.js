@@ -3,6 +3,7 @@
 // desde SU cuenta (POST /:aperturaId/firmar). El estado "completa" se DERIVA.
 const { pool } = require('../db/pool');
 const { esParteOSupervision } = require('../lib/acceso');
+const { contratoCerrado, msgCerrado } = require('../lib/gateCierre');
 
 // Construye el acta (primera nota): snapshot inmutable de los datos minimos del art. 123
 // fr. III RLOPSRM, tomados del contrato + el roster de firmantes (identidad por cuenta).
@@ -558,6 +559,8 @@ async function emitirNota(req, res) {
       const { notFound, apertura, rolEnContrato } = await cargarAperturaYRol(client, aperturaId, req.user.id);
       if (notFound) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'El contrato no tiene bitácora aperturada' }); }
       if (!rolEnContrato) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'No eres parte firmante de este contrato; no puedes emitir notas' }); }
+      // FIX #3 (22-jun) — contrato cerrado (finiquito) = SOLO-LECTURA: no se emiten notas nuevas (art. 64 LOPSRM).
+      if (await contratoCerrado(client, apertura.contrato_id)) { await client.query('ROLLBACK'); return res.status(409).json({ error: msgCerrado('no se emiten notas') }); }
 
       // PUNTO 3 (candado de emisión, SERVER-SIDE): NO se puede emitir una nota hasta que la
       // APERTURA esté firmada por TODOS los participantes requeridos. art. 123 fr. III: la

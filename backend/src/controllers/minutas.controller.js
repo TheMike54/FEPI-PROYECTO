@@ -7,6 +7,7 @@
 // art. 123 fr. VI RLOPSRM — el trigger de inmutabilidad de la nota queda intacto).
 const { pool } = require('../db/pool');
 const { esParteOSupervision } = require('../lib/acceso');
+const { contratoCerrado, msgCerrado } = require('../lib/gateCierre');
 
 async function getContrato(client, id) {
   const c = await client.query(
@@ -54,6 +55,8 @@ async function crearMinuta(req, res) {
     const contrato = await getContrato(pool, id);
     if (!contrato) return res.status(404).json({ error: 'Contrato no encontrado' });
     if (!puedeRegistrar(req.user, contrato)) return res.status(403).json({ error: 'Solo el residente asignado al contrato puede registrar minutas' });
+    // FIX #3 (22-jun) — contrato cerrado (finiquito) = SOLO-LECTURA: no se registran actos nuevos (art. 64 LOPSRM).
+    if (await contratoCerrado(pool, id)) return res.status(409).json({ error: msgCerrado('no se registran minutas') });
     const b = req.body || {};
     if (!b.titulo || !String(b.titulo).trim()) return res.status(400).json({ error: 'El asunto/título de la minuta es obligatorio' });
     if (!b.fecha) return res.status(400).json({ error: 'La fecha de la minuta es obligatoria' });
@@ -151,6 +154,8 @@ async function crearVisita(req, res) {
     const contrato = await getContrato(pool, id);
     if (!contrato) return res.status(404).json({ error: 'Contrato no encontrado' });
     if (!puedeRegistrar(req.user, contrato)) return res.status(403).json({ error: 'Solo el residente asignado al contrato puede agendar visitas' });
+    // FIX #3 (22-jun) — contrato cerrado (finiquito) = SOLO-LECTURA (art. 64 LOPSRM).
+    if (await contratoCerrado(pool, id)) return res.status(409).json({ error: msgCerrado('no se agendan visitas') });
     const b = req.body || {};
     if (!b.fecha_programada) return res.status(400).json({ error: 'La fecha programada de la visita es obligatoria' });
     const r = await pool.query(

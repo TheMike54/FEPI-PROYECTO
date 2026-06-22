@@ -14,6 +14,7 @@
 // diseño (snapshots en estimacion_generadores + carátula congelada) — no cambian por un convenio.
 const { pool } = require('../db/pool');
 const { esParteOSupervision } = require('../lib/acceso');
+const { contratoCerrado, msgCerrado } = require('../lib/gateCierre');
 const { guardarMatriz } = require('../lib/programa');
 // O6: el convenio asienta su nota en la bitácora (art. 123 fr. III RLOPSRM). Reutiliza el folio atómico
 // + la redacción del controller de bitácora (no se duplica la lógica de inmutabilidad de notas).
@@ -150,6 +151,8 @@ async function crearConvenio(req, res) {
       // (art. 99: el residente sustenta el dictamen técnico; el servidor que firmó el contrato lo suscribe).
       const puede = req.user.rol === 'dependencia' || contrato.residente_id === req.user.id || contrato.created_by === req.user.id;
       if (!puede) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'Solo la dependencia o el residente asignado puede registrar convenios' }); }
+      // FIX #3 (22-jun) — contrato cerrado (finiquito) = SOLO-LECTURA (art. 64 LOPSRM).
+      if (await contratoCerrado(client, contratoId)) { await client.query('ROLLBACK'); return res.status(409).json({ error: msgCerrado('no se registran convenios') }); }
 
       const montoAnterior = contrato.monto;   // string NUMERIC
       const plazoAnterior = contrato.plazo_dias;
@@ -343,7 +346,7 @@ async function autorizarConvenio(req, res) {
     try {
       await client.query('BEGIN');
       const cv = await client.query(
-        `SELECT cm.id, cm.estado, cm.delta_monto_pct, cm.delta_plazo_pct,
+        `SELECT cm.id, cm.contrato_id, cm.estado, cm.delta_monto_pct, cm.delta_plazo_pct,
                 c.created_by, c.residente_id, c.superintendente_id, c.supervision_id
            FROM convenios_modificatorios cm JOIN contratos c ON c.id = cm.contrato_id
           WHERE cm.id = $1 FOR UPDATE OF cm`, [convenioId]);
@@ -351,6 +354,8 @@ async function autorizarConvenio(req, res) {
       const conv = cv.rows[0];
       if (!esParteOSupervision(req.user, conv)) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'No tienes acceso a este convenio' }); }
       if (conv.estado !== 'registrado') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'El convenio ya está autorizado; el acto de autorización es único (art. 59 LOPSRM)' }); }
+      // FIX #3 (22-jun) — contrato cerrado (finiquito) = SOLO-LECTURA (art. 64 LOPSRM).
+      if (await contratoCerrado(client, conv.contrato_id)) { await client.query('ROLLBACK'); return res.status(409).json({ error: msgCerrado('no se autorizan convenios') }); }
 
       // Guardrail art. 102 RLOPSRM: variación de monto o plazo > 25% exige el oficio/soporte YA cargado.
       const absM = conv.delta_monto_pct != null ? Math.abs(Number(conv.delta_monto_pct)) : null;

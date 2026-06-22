@@ -15,6 +15,7 @@
 // firmas FUTURAS, nunca las pasadas.
 const { pool } = require('../db/pool');
 const { esParteOSupervision } = require('../lib/acceso');
+const { contratoCerrado, msgCerrado } = require('../lib/gateCierre');
 // Pase 2.3 — la sustitución asienta su nota en la bitácora (art. 123 fr. III / 125 fr. I g RLOPSRM).
 // Se reutiliza el folio atómico y la redacción del controller de bitácora (NO se duplica la lógica).
 const { insertarNotaAtomica, textoNotaSustitucion } = require('./bitacora.controller');
@@ -122,6 +123,8 @@ async function sustituirPersona(req, res) {
         || contrato.residente_id === req.user.id
         || contrato.created_by === req.user.id;
       if (!puede) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'Solo la dependencia o el residente asignado puede sustituir personas del roster' }); }
+      // FIX #3 (22-jun) — contrato cerrado (finiquito) = SOLO-LECTURA (art. 64 LOPSRM).
+      if (await contratoCerrado(client, contratoId)) { await client.query('ROLLBACK'); return res.status(409).json({ error: msgCerrado('no se sustituyen personas del roster') }); }
 
       // El nuevo debe existir, estar ACTIVO y tener el rol de cuenta esperado para el slot.
       const ures = await client.query('SELECT id, rol, estado, nombre, empresa_id FROM usuarios WHERE id = $1', [nuevoUsuarioId]);

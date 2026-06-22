@@ -384,7 +384,7 @@
 - DEDUCTIVAS son retenciones ECONÓMICAS (art.46/46 Bis LOPSRM), distintas del 5 al millar FISCAL (controller:291-294); validadas >=0.
 
 **Recomendaciones / criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
-- Registro FOTOGRÁFICO y SOPORTES documentales del expediente (CA-1 ficha vieja) NO están construidos: TabPlaceholder existe (jsx:493-503) pero no se renderiza; sin tabla ni endpoint. Diferidos.
+- **Registro FOTOGRÁFICO: IMPLEMENTADO (21-jun)** — fotos JPEG/PNG como BYTEA en `estimacion_fotos` (`/api/estimacion-fotos`), subida/galería en el expediente (art. 132 fr. IV RLOPSRM). **SOPORTES** documentales (carpeta de PDFs) siguen diferidos (solo metadatos).
 - La 'apertura del periodo' de la ficha se reduce HOY a capturar periodo inicio/fin (no hay entidad/acción formal de apertura separada de la integración).
 - Definición de avance FÍSICO vs FINANCIERO y regla de disparo de la retención por atraso: criterio del equipo (default conservador, B7) — por concepto en unidades (programado al periodo − ejecutado), sin umbral; el avance financiero se mide sin IVA (art. 2 fr. XIX RLOPSRM) (controller:266, prep:135).
 - CMIC / 2 al millar: parametrizable y DIFERIDO; tasa y aplicabilidad a confirmar (controller:293-294).
@@ -467,7 +467,7 @@
 
 **Recomendaciones / criterios adoptados (resueltos — ver docs/reportes/TABLA_VALIDAR_PROFE_RESUELTOS_18jun.md):**
 - ¿Las observaciones deben poder anclarse 'por concepto' (renglón del generador) y no solo por sección, como pedía la ficha CA-1? Hoy es por sección.
-- ¿Es aceptable que las secciones 'registro fotográfico' y 'soportes' no se muestren (faltan archivos reales) aunque la ficha CA-1 las nombra? Backend ya las acepta.
+- **Registro fotográfico: ya se muestra (implementado 21-jun, fotos BYTEA en `estimacion_fotos`).** Pendiente solo la sección de **soportes** (carpeta de PDFs), que sigue como metadatos.
 - Umbrales del semáforo 7/12 días son del prototipo, no de ley: confirmar con el profe los cortes verde/amarillo/rojo y si debe haber bloqueo al vencer (hoy solo informa).
 - ¿El plazo de 15 días debe correr desde la PRESENTACIÓN (enviada_en, como hoy) o desde una 'fecha de recepción' separada? En el flujo reconciliado se asumió que presentación = recepción a revisión.
 - Validar emisor/firma legal de la autorización y del rechazo (hoy solo se sella estado + autor de la observación, sin firma formal).

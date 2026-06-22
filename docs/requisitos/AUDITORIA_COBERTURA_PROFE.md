@@ -30,7 +30,9 @@ a pago YA funcionales**. Schema de 36 tablas + seed idempotente para probar sin 
    (c) el **catálogo no aplica a las dependencias** (la dependencia se elige como cuenta, no del catálogo).
 2. **Varios candados legales viven SOLO en el cliente** (un POST directo los salta): anticipo > umbral,
    PDF de autorización del anticipo, y el plazo de presentación del art. 54 (es aviso, no candado).
-3. **Notificaciones, registro fotográfico y carga de archivos binarios están diferidos** (esqueleto/metadatos).
+3. **Registro fotográfico: IMPLEMENTADO (21-jun)** — fotos JPEG/PNG como BYTEA en `estimacion_fotos`, subida/galería
+   en el expediente (`/api/estimacion-fotos`, art. 132 fr. IV RLOPSRM). Siguen diferidos: **notificaciones** (sin
+   push real, todo pull) y la **carga de otros soportes binarios** (carpeta de PDFs = solo metadatos).
 4. **La congruencia descansa en parte en cambios LOCALES aún sin commit** (varias sesiones); el doc refleja el
    estado **local**, no necesariamente lo desplegado en Render.
 
@@ -104,8 +106,8 @@ a pago YA funcionales**. Schema de 36 tablas + seed idempotente para probar sin 
 | 47 | Plazo art. 54 **habilita/inhabilita "Enviar"** (HU-13) | 🟡 | El botón se habilita por **estado** (`integrada`), no por el vencimiento del plazo. El plazo es **aviso/semáforo**, no candado. |
 | 48 | Registro de **pago** (no "a pagar"), gate estricto art. 54 (HU-21) | ✅ | `pagos.controller` solo paga `autorizada`; importe = neto server-side. |
 | 49 | Tablero de estimaciones aceptadas **línea de tiempo** (HU-17) | 🟡 | Es un **dashboard agregado** (conteos/montos por estado), no una línea de tiempo cronológica; "días en estado" limitado (mismo tope que #45). |
-| 50 | **Soportes** (carpeta) + **registro fotográfico** | 🟡 | Solo **metadatos** (`estimacion_soportes`); `upload_archivos.disponible=false`. **No hay carga de archivos** ni carpeta real; el registro fotográfico es placeholder. |
-| 51 | Wizard de estimación **por bloques aislado** (FASE 5) | 🟡 | `AmbienteEstimacion.jsx` es un **cascarón** de navegación: solo la carátula es real; generadores/soportes/fotos son placeholders; integra/envía por `Link` a HU-12/13. No es un wizard funcional aislado end-to-end. |
+| 50 | **Soportes** (carpeta) + **registro fotográfico** | ✅ foto / 🟡 soportes | **Registro fotográfico ✅ (21-jun):** fotos JPEG/PNG como BYTEA en `estimacion_fotos` (`/api/estimacion-fotos`), subida/galería en el expediente, art. 132 fr. IV. **Soportes (carpeta de PDFs)** sigue solo metadatos (`estimacion_soportes`), sin carga de archivos. |
+| 51 | Wizard de estimación **por bloques aislado** (FASE 5) | 🟡 | `AmbienteEstimacion.jsx` es un **cascarón** de navegación: solo la carátula es real; generadores/soportes delegan a HU-12 (**fotos YA reales, 21-jun**); integra/envía por `Link` a HU-12/13. No es un wizard funcional aislado end-to-end. |
 | 52 | HU-20 tránsito a pago (suficiencia art. 24, instrucción) | ✅ | `instruccion-pago.controller` (suficiencia=techo−comprometido, instrucción real, gates). |
 
 ### §5–6 Avance/alertas/curva (HU-05/06/07) + Expediente/convenios/roster (HU-04/03/22) + Portafolio (HU-18)
@@ -150,8 +152,9 @@ a pago YA funcionales**. Schema de 36 tablas + seed idempotente para probar sin 
    eventos no aparecen fechados. Afecta también a HU-17 ("días en estado").
 5. **Amortización — la carátula no obedece el plan editable (Fase B):** las reglas R2/R3 están en el alta,
    pero la carátula de la estimación sigue **proporcional**, no obedece el plan editado. **[validar profe].**
-6. **Soportes y registro fotográfico:** solo metadatos; no hay carga de archivos binarios. **No funcional con
-   archivos.** El registro fotográfico es placeholder.
+6. **Soportes (carpeta de PDFs):** solo metadatos, sin carga de archivos binarios. **Registro fotográfico:
+   IMPLEMENTADO (21-jun)** — fotos JPEG/PNG como BYTEA en `estimacion_fotos`, subida/galería en el expediente;
+   ya NO es placeholder.
 7. **Wizard de estimación por bloques (FASE 5):** cascarón de navegación, no un wizard aislado funcional.
 8. **Revisión por sección (HU-15):** la UI expone 3 de 5 secciones.
 9. **Notificaciones** ("en revisión" y "por firmar"): no hay push real; todo es pull/estado en pantalla.

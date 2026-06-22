@@ -941,14 +941,16 @@ docker exec -i sigecop_db psql -U sigecop -d sigecop_db -c \
 | HU-21: selector de pago SOLO `autorizada` | ✅ |
 | Convenio + acto de autorización · partida obligatoria · editor de programa (Monto) | ✅ |
 | **Regla de oro TIPO B** (siempre-accesibles, estado vacío) | ✅ |
-| Evidencia fotográfica | ❌ fuera de alcance Etapa 1 |
+| Evidencia fotográfica | ✅ (21-jun: fotos JPEG/PNG como BYTEA en `estimacion_fotos`, subida/galería en el expediente, art. 132 fr. IV) |
 
-## 10. Apéndice — si reseteaste la BD: aplicar las 4 DDL en local
+## 10. Apéndice — si reseteaste la BD
+**Ya NO hay que aplicar DDL a mano.** Desde el 21-jun las **5 migraciones** (`atraso_asentado`, avance
+append-only, hu20 partida_fk, convenio autorización y `estimacion_fotos`) están **plegadas en `schema.sql`**;
+un reset (`docker compose down -v && docker compose up -d --build`) recrea el esquema completo ya con todo.
+Para recargar los 24 contratos de prueba:
 ```bash
 cd /c/Users/migue/Downloads/Proyectofepy/sigecop
-for f in migracion_atraso_asentado avance_append_only migracion_hu20_partida_fk migracion_convenio_autorizacion; do
-  echo "== $f ==" ; docker exec -i sigecop_db psql -U sigecop -d sigecop_db -v ON_ERROR_STOP=1 < backend/scripts/$f.sql ;
-done
+docker exec -i sigecop_db psql -U sigecop -d sigecop_db -v ON_ERROR_STOP=1 < backend/scripts/seed_demo_24.sql
 docker restart sigecop_backend
 ```
 
