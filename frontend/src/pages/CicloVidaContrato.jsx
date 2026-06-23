@@ -33,7 +33,7 @@ const BLOQUES = [
   { n: 7,  titulo: 'Integración de la estimación (HU-12)',      route: '/estimaciones/ambiente',          roles: ['contratista', 'residente', 'supervision'], desc: 'Arma la estimación paso a paso (carátula automática).', sub: true },
   { n: 8,  titulo: 'Presentación de la estimación (HU-13)',     route: '/estimaciones/envio',             roles: ['residente', 'contratista', 'supervision'], desc: 'El contratista presenta la estimación (art. 54).' },
   { n: 9,  titulo: 'Revisión y autorización (HU-15)',           route: '/estimaciones/revision',          roles: ['residente', 'supervision', 'dependencia'], desc: 'Supervisión observa/turna; la residencia autoriza o rechaza.' },
-  { n: 10, titulo: 'Reingreso tras rechazo (HU-16, si aplica)', route: '/estimaciones/reingreso',         roles: ['residente', 'contratista'], desc: 'Una estimación rechazada se reingresa como nueva versión.' },
+  { n: 10, titulo: 'Re-integración tras rechazo (HU-12, si aplica)', route: '/estimaciones/integracion',     roles: ['residente', 'contratista'], desc: 'Una estimación rechazada se vuelve a integrar y presentar desde cero (HU-12).' },
   // n: 11 (pago) se renderiza aparte como bloque informativo + enlace gateado al ambiente de pago.
   { n: 12, titulo: 'Coordinación: historial, tablero y portafolio (HU-14/17/18)', route: '/estimaciones/tablero', roles: ['residente', 'contratista', 'supervision', 'dependencia'], desc: 'Vista agregada del estado de las estimaciones y la cartera.' },
   { n: 13, titulo: 'Expediente integral (HU-04)',               route: '/contratos/expediente-ambiente',  roles: ['residente', 'contratista', 'supervision', 'dependencia'], desc: 'Arma el expediente y exporta el paquete.', sub: true },

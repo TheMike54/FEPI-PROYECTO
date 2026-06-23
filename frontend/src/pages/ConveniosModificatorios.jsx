@@ -100,6 +100,7 @@ export default function ConveniosModificatorios() {
   const [tipo, setTipo] = useState('plazo');
   const [plazoNuevo, setPlazoNuevo] = useState('');
   const [motivo, setMotivo] = useState('');
+  const [oficioRef, setOficioRef] = useState(''); // FIX 22-jun: oficio de soporte (previo, obligatorio)
   const [folio, setFolio] = useState('');
   const [registrando, setRegistrando] = useState(false);
   // B5: mensaje de rechazo PERSISTENTE (no toast efímero) para que el usuario entienda el "piso" de lo estimado.
@@ -157,7 +158,7 @@ export default function ConveniosModificatorios() {
     setContratoId(id);
     setConvenios([]); setVersiones([]); setDetalle(null);
     setVerVersionId(null); setDetalleVersion(null);
-    setPlazoNuevo(''); setMotivo(''); setFolio('');
+    setPlazoNuevo(''); setMotivo(''); setOficioRef(''); setFolio('');
     setCmConceptos([]); setCmCeldas({}); setCmPeriodos([]); setEditorError(null);
     precargaToken.current++; // invalida cualquier precarga del contrato anterior aún en vuelo
     cargarContrato(id);
@@ -295,7 +296,7 @@ export default function ConveniosModificatorios() {
   // guardrail 25% que es aviso + rechazo server-side, como en el plazo de Fase 1).
   const plazoCambiaOk = plazoNuevoNum > 0 && plazoVigente != null && plazoNuevoNum !== plazoVigente;
   const programaOk = cmCamposOk && cmSinDup && cmCuadra;
-  const datosOk = motivo.trim().length > 0 && (
+  const datosOk = motivo.trim().length > 0 && oficioRef.trim().length > 0 && (
     tipo === 'plazo' ? plazoCambiaOk
       : tipo === 'mixto' ? (programaOk && plazoCambiaOk)
         : programaOk // monto | programa
@@ -306,7 +307,7 @@ export default function ConveniosModificatorios() {
     if (!puedeRegistrar) return;
     setRegistrando(true);
     try {
-      const payload = { tipo, motivo: motivo.trim() };
+      const payload = { tipo, motivo: motivo.trim(), oficio: oficioRef.trim() };
       if (folio.trim()) payload.folio = folio.trim();
       if (tocaPlazo) payload.plazo_nuevo_dias = plazoNuevoNum;
       if (tocaPrograma) {
@@ -337,14 +338,14 @@ export default function ConveniosModificatorios() {
       const notaMsg = res.nota_diferida
         ? ' · su nota de bitácora se asentará al abrir la bitácora'
         : (res.nota ? ` · nota de bitácora #${res.nota.numero} asentada` : '');
-      showToast(`Convenio ${ref} registrado${cambios.length ? ' (' + cambios.join(' · ') + ')' : ''}${avisos.length ? ' · ' + avisos.join(' · ') : ''}${notaMsg}.`);
+      showToast(`Convenio ${ref} promovido${cambios.length ? ' (' + cambios.join(' · ') + ')' : ''}${avisos.length ? ' · ' + avisos.join(' · ') : ''}${notaMsg}.`);
       setErrorRegistro('');
-      setPlazoNuevo(''); setMotivo(''); setFolio('');
+      setPlazoNuevo(''); setMotivo(''); setOficioRef(''); setFolio('');
       setCmConceptos([]); setCmCeldas({}); setCmPeriodos([]);
       await cargarContrato(contratoId); // recarga vigente + historial; la precarga del editor se redispara
     } catch (e) {
       const msg = e.payload?.error || (
-        e.status === 403 ? 'Solo la dependencia o el residente asignado puede registrar convenios'
+        e.status === 403 ? 'Solo la dependencia o el residente asignado puede promover convenios'
           : e.status === 409 ? 'Conflicto de versión del programa; recarga e inténtalo de nuevo'
             : 'No se pudo registrar el convenio');
       setErrorRegistro(msg);
@@ -440,7 +441,7 @@ export default function ConveniosModificatorios() {
 
       {sinSesion && (
         <div className="bg-pagina border border-borde rounded-md px-4 py-3 mb-4 text-sm text-slate-600">
-          Inicia sesión para consultar o registrar convenios modificatorios.
+          Inicia sesión para consultar o promover convenios modificatorios.
         </div>
       )}
 
@@ -467,7 +468,7 @@ export default function ConveniosModificatorios() {
           {/* Formulario de creación — SOLO dependencia (nivel 'E'); el resto ve solo-consulta. */}
           {!soloLectura && (
             <div className="bg-white border border-borde rounded-lg p-6 mb-6">
-              <h2 className="text-lg font-bold text-sigecop-blue mb-1">Nuevo convenio modificatorio</h2>
+              <h2 className="text-lg font-bold text-sigecop-blue mb-1">Promover convenio modificatorio</h2>
               <p className="text-xs text-slate-500 mb-4">
                 Art. 59 LOPSRM. Convenios de <strong>plazo</strong>, <strong>monto</strong>, <strong>programa</strong> o
                 <strong> mixto</strong>. Para monto/programa/mixto se re-captura el catálogo y el programa completos
@@ -577,6 +578,19 @@ export default function ConveniosModificatorios() {
                     />
                   </div>
 
+                  {/* FIX 22-jun (profe): subir soportes ANTES — el oficio es previo y obligatorio. */}
+                  <div>
+                    <label className="sg-label">Oficio de soporte (solicitud / autorización) * <span className="text-slate-400">(art. 99 RLOPSRM)</span></label>
+                    <input
+                      className="sg-input"
+                      value={oficioRef}
+                      onChange={(e) => setOficioRef(e.target.value)}
+                      placeholder="Folio/referencia del oficio (sube los soportes ANTES de capturar)…"
+                      data-testid="cm-oficio"
+                    />
+                    <p className="text-xs text-slate-500 mt-1">El soporte documental es previo: sin el oficio de solicitud/autorización el convenio no procede. El PDF se adjunta tras promoverlo.</p>
+                  </div>
+
                   <div className="max-w-xs">
                     <label className="sg-label">Folio del convenio <span className="text-slate-400">· opcional</span></label>
                     <input
@@ -626,7 +640,7 @@ export default function ConveniosModificatorios() {
                   onClick={handleRegistrar}
                   data-testid="btn-registrar-convenio"
                 >
-                  {registrando ? 'Registrando…' : 'Registrar convenio modificatorio'}
+                  {registrando ? 'Promoviendo…' : 'Promover convenio modificatorio'}
                 </button>
               </div>
             </div>

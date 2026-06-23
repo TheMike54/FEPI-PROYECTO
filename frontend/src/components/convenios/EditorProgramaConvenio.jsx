@@ -38,7 +38,8 @@ export default function EditorProgramaConvenio({
         <h3 className="text-base font-bold text-sigecop-blue mb-1">Catálogo de conceptos (nuevo)</h3>
         <p className="text-xs text-slate-600 mb-3">
           El <strong>monto se DERIVA</strong> = Σ ROUND(cantidad × P.U., 2), al centavo (art. 45 fr. IX RLOPSRM).
-          Los conceptos existentes no se borran (catálogo completo); puedes ajustar cantidad/P.U. y agregar nuevos.
+          Los conceptos <strong>originales se CONGELAN</strong> (no se modifican por convenio); solo agregas
+          conceptos <strong>ADICIONALES</strong> (se estiman y pagan aparte), de hoy en adelante.
         </p>
         <div className="overflow-x-auto border border-borde rounded-md">
           <table className="w-full text-sm">
@@ -77,10 +78,11 @@ export default function EditorProgramaConvenio({
                       <input className="sg-input" maxLength={20} value={c.unidad || ''} onChange={(e) => onConceptoField(i, 'unidad', e.target.value)} disabled={soloLectura || c.existente} data-testid={`cm-concepto-unidad-${i}`} />
                     </td>
                     <td className="px-2 py-1 align-top">
-                      <input type="number" min="0" step="0.001" className="sg-input text-right" value={c.cantidad} onChange={(e) => onConceptoField(i, 'cantidad', e.target.value)} disabled={soloLectura} data-testid={`cm-concepto-cantidad-${i}`} />
+                      {/* FIX 22-jun (profe): los conceptos ORIGINALES se CONGELAN (cantidad/PU no editables); los cambios van como ADICIONALES. */}
+                      <input type="number" min="0" step="0.001" className="sg-input text-right" value={c.cantidad} onChange={(e) => onConceptoField(i, 'cantidad', e.target.value)} disabled={soloLectura || c.existente} title={c.existente ? 'Concepto original CONGELADO: no se modifica por convenio (agrega un concepto adicional)' : undefined} data-testid={`cm-concepto-cantidad-${i}`} />
                     </td>
                     <td className="px-2 py-1 align-top">
-                      <input type="number" min="0" step="0.0001" className="sg-input text-right" value={c.pu} onChange={(e) => onConceptoField(i, 'pu', e.target.value)} disabled={soloLectura} data-testid={`cm-concepto-pu-${i}`} />
+                      <input type="number" min="0" step="0.0001" className="sg-input text-right" value={c.pu} onChange={(e) => onConceptoField(i, 'pu', e.target.value)} disabled={soloLectura || c.existente} title={c.existente ? 'Concepto original CONGELADO: no se modifica por convenio' : undefined} data-testid={`cm-concepto-pu-${i}`} />
                     </td>
                     <td className="px-2 py-1 align-top text-right font-semibold text-slate-700" data-testid={`cm-concepto-importe-${i}`}>{fmtMXN.format(importe)}</td>
                     <td className="px-2 py-1 text-center align-top">
@@ -159,7 +161,8 @@ export default function EditorProgramaConvenio({
                             className="sg-input text-right text-xs w-20"
                             value={celdas[`${c.rid}:${p.numero}`] || ''}
                             onChange={(e) => onCelda(c.rid, p.numero, e.target.value)}
-                            disabled={soloLectura}
+                            disabled={soloLectura || c.existente}
+                            title={c.existente ? 'Programa del concepto original CONGELADO' : undefined}
                             data-testid={`cm-celda-${i}-${p.numero}`}
                           />
                         </td>

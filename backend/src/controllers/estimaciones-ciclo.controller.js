@@ -59,7 +59,15 @@ async function historialEstimaciones(req, res) {
               e.subtotal, e.amortizacion, e.retencion, e.deductivas, e.neto,
               e.integrada_por, u.nombre AS integrada_por_nombre, e.integrada_en,
               e.enviada_por, ue.nombre AS enviada_por_nombre, e.enviada_en,
-              e.reemplaza_a
+              e.reemplaza_a,
+              -- G7 (mínima, SIN DDL): fechas de autorización/rechazo/pago DERIVADAS de datos ya existentes
+              -- (no hay columnas-sello en estimaciones). Autorización = fecha de la nota res_estimaciones;
+              -- rechazo = fecha de la observación tipo 'rechazo'; pago = fecha del pago registrado.
+              (SELECT p.fecha_pago FROM pagos p WHERE p.estimacion_id = e.id ORDER BY p.id LIMIT 1) AS pagada_en,
+              (SELECT MIN(bn.fecha) FROM estimacion_notas en JOIN bitacora_notas bn ON bn.id = en.nota_id
+                WHERE en.estimacion_id = e.id AND bn.tipo = 'res_estimaciones' AND bn.tag = 'estimacion') AS autorizada_en,
+              (SELECT MIN(eo.created_at) FROM estimacion_observaciones eo
+                WHERE eo.estimacion_id = e.id AND eo.tipo = 'rechazo') AS rechazada_en
          FROM estimaciones e
          LEFT JOIN usuarios u  ON u.id  = e.integrada_por
          LEFT JOIN usuarios ue ON ue.id = e.enviada_por
@@ -94,6 +102,11 @@ async function historialEstimaciones(req, res) {
           por_nombre: e.enviada_por_nombre
         });
       }
+      // G7 (mínima, SIN DDL): autorización / rechazo / pago con fecha DERIVADA (ver SELECT). por/por_nombre
+      // quedan null porque no se sella el autor sin columnas nuevas; la FECHA es lo que pide el historial.
+      if (e.autorizada_en) transiciones.push({ estado: 'autorizada', estado_anterior: 'enviada', en: e.autorizada_en, por: null, por_nombre: null });
+      if (e.rechazada_en)  transiciones.push({ estado: 'rechazada',  estado_anterior: 'enviada', en: e.rechazada_en,  por: null, por_nombre: null });
+      if (e.pagada_en)     transiciones.push({ estado: 'pagada',     estado_anterior: 'autorizada', en: e.pagada_en, por: null, por_nombre: null });
       return {
         id: e.id,
         numero: e.numero,
@@ -169,6 +182,17 @@ async function enviarEstimacion(req, res) {
     }
     if (row.estado !== 'integrada') {
       return res.status(409).json({ error: `No se puede presentar una estimación en estado '${row.estado}'` });
+    }
+
+    // FIX 22-jun (profe): SIN bitácora abierta NO se opera nada — cierra la asimetría del ciclo de
+    // estimación (antes solo se omitía la nota, pero dejaba presentar). El contrato se opera DENTRO de
+    // su bitácora (art. 122 RLOPSRM). Se señala `requiereBitacora` para que el front redirija a abrirla.
+    const bitChk = await pool.query('SELECT id FROM bitacora_aperturas WHERE contrato_id = $1', [row.contrato_id]);
+    if (bitChk.rowCount === 0) {
+      return res.status(409).json({
+        error: 'La bitácora del contrato no está abierta; ábrela primero para presentar la estimación (art. 122 RLOPSRM).',
+        requiereBitacora: true, contratoId: row.contrato_id
+      });
     }
 
     // (4) Sello ATÓMICO + nota automática, en UNA transacción: el WHERE estado='integrada' serializa y
@@ -321,11 +345,10 @@ async function crearObservacion(req, res) {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'id inválido' });
 
-    const { seccion, tipo, severidad, descripcion } = req.body || {};
+    const { seccion, tipo, descripcion } = req.body || {};
     if (!SECCIONES.includes(seccion)) return res.status(400).json({ error: 'seccion inválida' });
     if (!TIPOS.includes(tipo)) return res.status(400).json({ error: 'tipo inválido' });
-    const sev = severidad || 'menor';
-    if (!SEVERIDADES.includes(sev)) return res.status(400).json({ error: 'severidad inválida' });
+    // FIX 22-jun (profe): se ELIMINA la severidad — no hay término medio; toda observación cuenta por igual.
     const desc = typeof descripcion === 'string' ? descripcion.trim() : '';
     if (!desc) return res.status(400).json({ error: 'La descripción de la observación es obligatoria' });
 
@@ -343,10 +366,10 @@ async function crearObservacion(req, res) {
     }
 
     const ins = await pool.query(
-      `INSERT INTO estimacion_observaciones (estimacion_id, seccion, tipo, severidad, descripcion, autor_id)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO estimacion_observaciones (estimacion_id, seccion, tipo, descripcion, autor_id)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING id, estimacion_id, seccion, tipo, severidad, descripcion, estado, turnado_a, autor_id, created_at`,
-      [id, seccion, tipo, sev, desc, req.user.id]
+      [id, seccion, tipo, desc, req.user.id]
     );
     return res.status(201).json(ins.rows[0]);
   } catch (err) {
@@ -446,8 +469,8 @@ async function turnarEstimacion(req, res) {
     } else {
       // Marcador del turnado sin observaciones: deja constancia de quién/cuándo turnó.
       await client.query(
-        `INSERT INTO estimacion_observaciones (estimacion_id, seccion, tipo, severidad, descripcion, turnado_a, autor_id)
-         VALUES ($1, 'caratula', 'aclaracion', 'menor', 'Turnada a residencia sin observaciones de supervisión.', 'residencia', $2)`,
+        `INSERT INTO estimacion_observaciones (estimacion_id, seccion, tipo, descripcion, turnado_a, autor_id)
+         VALUES ($1, 'caratula', 'aclaracion', 'Turnada a residencia sin observaciones de supervisión.', 'residencia', $2)`,
         [id, req.user.id]
       );
     }
@@ -537,44 +560,49 @@ async function rechazarEstimacion(req, res) {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'id inválido' });
 
-    const { motivo, seccion, severidad } = req.body || {};
+    const { motivo, seccion } = req.body || {};
     const mot = typeof motivo === 'string' ? motivo.trim() : '';
     if (!mot) return res.status(400).json({ error: 'El motivo del rechazo es obligatorio' });
     const sec = SECCIONES.includes(seccion) ? seccion : 'caratula';
-    const sev = SEVERIDADES.includes(severidad) ? severidad : 'mayor';
 
     const est = await cargarEstimacionConContrato(id);
     if (!est) return res.status(404).json({ error: 'Estimación no encontrada' });
-    if (est.residente_id !== req.user.id) {
-      return res.status(403).json({ error: 'Solo la residencia asignada al contrato puede rechazar la estimación' });
+    // FIX 22-jun (profe): la SUPERVISIÓN puede RECHAZAR DIRECTO (sin turnar) o turnar; la RESIDENCIA
+    // rechaza tras el turnado. Antes solo la residencia podía rechazar y exigía turnado previo.
+    const esResidencia = est.residente_id === req.user.id;
+    const esSupervision = est.supervision_id === req.user.id;
+    if (!esResidencia && !esSupervision) {
+      return res.status(403).json({ error: 'Solo la supervisión o la residencia del contrato pueden rechazar la estimación' });
     }
     if (gateContratoCerrado(res, est, 'no se rechazan estimaciones')) return; // FIX 1.1
     if (est.estado !== 'enviada') {
       return res.status(409).json({ error: `No se puede rechazar una estimación '${est.estado}'` });
     }
-    if (!(await estaTurnada(id))) {
+    // La residencia exige turnado previo; la supervisión rechaza directo (no requiere turnado).
+    const exigeTurnado = esResidencia && !esSupervision;
+    if (exigeTurnado && !(await estaTurnada(id))) {
       return res.status(409).json({ error: 'La estimación aún no ha sido turnada por supervisión' });
     }
 
     await client.query('BEGIN');
-    // Atómico (endurecido): exige estado='enviada' Y el TURNADO previo DENTRO del UPDATE (cierra el
-    // TOCTOU entre estaTurnada() y el UPDATE), todo en la misma transacción del INSERT del rechazo.
+    // Atómico: exige estado='enviada'. Si quien rechaza es SOLO residencia, exige además el TURNADO
+    // previo DENTRO del UPDATE (cierra el TOCTOU); la supervisión rechaza directo sin esa condición.
     const upd = await client.query(
       `UPDATE estimaciones SET estado = 'rechazada'
         WHERE id = $1 AND estado = 'enviada'
-          AND EXISTS (SELECT 1 FROM estimacion_observaciones WHERE estimacion_id = $1 AND turnado_a = 'residencia')
+          AND ($2::boolean = false OR EXISTS (SELECT 1 FROM estimacion_observaciones WHERE estimacion_id = $1 AND turnado_a = 'residencia'))
         RETURNING id, numero, contrato_id, estado`,
-      [id]
+      [id, exigeTurnado]
     );
     if (upd.rowCount === 0) {
       await client.query('ROLLBACK');
       return res.status(409).json({ error: 'La estimación ya fue resuelta o no está turnada' });
     }
     const obs = await client.query(
-      `INSERT INTO estimacion_observaciones (estimacion_id, seccion, tipo, severidad, descripcion, turnado_a, autor_id)
-       VALUES ($1, $2, 'rechazo', $3, $4, 'contratista', $5)
+      `INSERT INTO estimacion_observaciones (estimacion_id, seccion, tipo, descripcion, turnado_a, autor_id)
+       VALUES ($1, $2, 'rechazo', $3, 'contratista', $4)
        RETURNING id, estimacion_id, seccion, tipo, severidad, descripcion, estado, turnado_a, autor_id, created_at`,
-      [id, sec, sev, mot, req.user.id]
+      [id, sec, mot, req.user.id]
     );
     await client.query('COMMIT');
     return res.status(200).json({ estimacion: upd.rows[0], observacion: obs.rows[0] });

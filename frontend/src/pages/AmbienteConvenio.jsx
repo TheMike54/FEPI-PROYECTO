@@ -116,7 +116,7 @@ export default function AmbienteConvenio() {
         )}
       </Bloque>
 
-      {/* BLOQUE 2 — Registrar convenio (HU-03, lee ?contrato=). */}
+      {/* BLOQUE 2 — Promover convenio (HU-03, lee ?contrato=). */}
       <Bloque n={2} titulo="Registrar el convenio (HU-03)">
         <p className="text-sm text-slate-700 mb-3">El convenio (de plazo, monto o mixto) se registra en su pantalla, con su historial inmutable de versiones. Lo crea la dependencia (art. 59 LOPSRM).</p>
         <LinkHU hu="HU-03" to={`/contratos/modificatorios${q}`} className="sg-btn-primary" data-testid="link-convenio" actor="Lo registra la Dependencia o Residencia">

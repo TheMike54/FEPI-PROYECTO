@@ -125,7 +125,10 @@ function BloqueCatalogo({ conceptos }) {
           {conceptos.map((c, i) => (
             <tr key={c.id ?? i} className="border-t border-slate-200 hover:bg-slate-50">
               <td className="px-3 py-2 font-mono text-xs text-slate-600" data-testid={`exp-concepto-clave-${i}`}>{c.clave || '—'}</td>
-              <td className="px-3 py-2">{c.concepto}</td>
+              <td className="px-3 py-2">
+                {c.concepto}
+                {c.es_adicional && <span className="ml-2 inline-block text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-800 border border-amber-200 rounded px-1.5 py-0.5 align-middle" title="Concepto ADICIONAL de convenio modificatorio (art. 101 RLOPSRM): se administra por separado de los originales." data-testid={`exp-concepto-adicional-${i}`}>Adicional</span>}
+              </td>
               <td className="px-3 py-2 text-slate-600">{c.unidad}</td>
               <td className="px-3 py-2 text-right">{num(c.cantidad).toLocaleString()}</td>
               <td className="px-3 py-2 text-right">${num(c.pu).toFixed(2)}</td>
@@ -483,7 +486,7 @@ function BloqueEstimaciones({ estimaciones, soloLectura = false }) {
     <div data-testid="estimaciones-expediente">
       <p className="text-xs text-slate-500 mb-3">
         Resumen del ciclo de cobro: {filas.length} estimación(es). El detalle (carátula, generadores) vive en sus HU (12–21).
-        Las estimaciones <strong>rechazadas</strong> se muestran por trazabilidad pero <strong>no suman</strong> al total (su reingreso ya cuenta).
+        Las estimaciones <strong>rechazadas</strong> se muestran por trazabilidad pero <strong>no suman</strong> al total (al volver a integrarse, la nueva estimación cuenta aparte).
       </p>
       <div className="overflow-x-auto border border-slate-200 rounded-md">
         <table className="w-full text-sm">
@@ -520,7 +523,7 @@ function BloqueEstimaciones({ estimaciones, soloLectura = false }) {
         {filas.map((e) => (
           <div key={`fotos-${e.id}`} className="border border-borde rounded-md px-3 py-2 bg-white">
             <div className="text-xs font-semibold text-tinta-sec">Estimación #{e.numero} · {labelEstadoEstimacion(e.estado)}</div>
-            <FotosEstimacion estimacionId={e.id} soloLectura={soloLectura} />
+            <FotosEstimacion estimacionId={e.id} soloLectura={soloLectura} porGenerador />
           </div>
         ))}
       </div>

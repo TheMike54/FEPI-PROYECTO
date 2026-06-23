@@ -192,11 +192,12 @@ async function estadoTransito(req, res) {
     if (!esParteOSupervision(req.user, est)) return res.status(403).json({ error: 'No tienes acceso a esta estimación' });
 
     const ejercicio = ejercicioDe(est.fecha_inicio);
-    const [suficiencia, soportes, ancla, ip] = await Promise.all([
+    const [suficiencia, soportes, ancla, ip, arch] = await Promise.all([
       calcularSuficiencia(est.dependencia_id, est.dependencia, ejercicio, est.id, est.neto),
       leerSoportes(est.id, est.contrato_id),
       anclaAutorizacion(est.id),
       pool.query('SELECT * FROM instruccion_pago WHERE estimacion_id = $1', [est.id]),
+      pool.query('SELECT id, tipo, nombre, mime, tamano, subido_por, created_at FROM cobro_soportes WHERE estimacion_id = $1 ORDER BY id', [est.id]),
     ]);
 
     return res.status(200).json({
@@ -213,8 +214,10 @@ async function estadoTransito(req, res) {
       soportes,
       semaforo_plazo: semaforoPlazo(ancla, soportes.factura?.fecha || null),
       instruccion: ip.rowCount ? ip.rows[0] : null,
-      // CA-3: la subida de archivos binarios no está disponible (sin infra de almacenamiento).
-      upload_archivos: { disponible: false, nota: 'carga de archivo no disponible (falta infra de almacenamiento)' },
+      // FOLLOW-ON b (22-jun): soportes binarios de cobro (CFDI/oficio) cargados (tabla cobro_soportes, BYTEA).
+      archivos: arch.rows,
+      // El contratista sube el PDF del CFDI / oficio de autorización; Finanzas lo descarga desde la cola.
+      upload_archivos: { disponible: true, nota: 'El contratista sube el PDF del CFDI y/o del oficio de autorización; Finanzas los descarga desde la cola.' },
     });
   } catch (err) {
     console.error('[estadoTransito]', err);
@@ -235,8 +238,14 @@ async function cargarSoporte(req, res) {
     const est = await cargarEstimacionContrato(id);
     if (!est) return res.status(404).json({ error: 'Estimación no encontrada' });
     if (!esParteOSupervision(req.user, est)) return res.status(403).json({ error: 'No tienes acceso a esta estimación' });
-    if (!['contratista', 'finanzas'].includes(req.user.rol)) {
-      return res.status(403).json({ error: 'Solo el contratista o finanzas pueden cargar soportes' }); // criterio del equipo (default conservador): contratista aporta soportes, finanzas opera el pago
+    // FIX 22-jun (profe): el CONTRATISTA promueve su cobro (sube CFDI, oficio, datos bancarios SPEI);
+    // finanzas solo REVISA la cola y paga. La promoción es del contratista, no de finanzas.
+    if (req.user.rol !== 'contratista') {
+      return res.status(403).json({ error: 'Solo el contratista promueve su cobro (sube CFDI, oficio y datos bancarios). Finanzas revisa la cola y paga.' });
+    }
+    // FIX 22-jun: los datos bancarios SPEI son NUMÉRICOS (clave de rastreo / CLABE). Se validan al cargarlos.
+    if (/spei|bancari|clabe/i.test(nombre) && descripcion && !/^\d{6,30}$/.test(descripcion.replace(/\s/g, ''))) {
+      return res.status(400).json({ error: 'Los datos bancarios (SPEI/CLABE) deben ser numéricos.' });
     }
     // Consistencia con generarInstruccion: si el contrato está cerrado (finiquito), no se cargan soportes
     // nuevos del tránsito a pago (art. 64 LOPSRM: derechos y obligaciones extinguidos).
@@ -265,8 +274,9 @@ async function generarInstruccion(req, res) {
     const est = await cargarEstimacionContrato(id);
     if (!est) return res.status(404).json({ error: 'Estimación no encontrada' });
     if (!esParteOSupervision(req.user, est)) return res.status(403).json({ error: 'No tienes acceso a esta estimación' });
-    if (!['contratista', 'finanzas'].includes(req.user.rol)) {
-      return res.status(403).json({ error: 'Solo el contratista o finanzas pueden generar la instrucción de pago' }); // criterio del equipo (default conservador): contratista/finanzas en el tránsito a pago
+    // FIX 22-jun (profe): el CONTRATISTA promueve su cobro (genera la solicitud); finanzas la revisa en la cola y paga.
+    if (req.user.rol !== 'contratista') {
+      return res.status(403).json({ error: 'Solo el contratista promueve su cobro. Finanzas revisa la cola de solicitudes y paga.' });
     }
     // Gate de cierre: si el contrato ya tiene finiquito elaborado (estado 'cerrado'), NO se genera una
     // nueva instrucción de pago. Al determinarse el saldo del finiquito quedan "extinguidos los derechos y
@@ -410,4 +420,149 @@ async function crearPresupuesto(req, res) {
   }
 }
 
-module.exports = { estadoTransito, cargarSoporte, generarInstruccion, consultarPresupuesto, crearPresupuesto };
+// GET /api/instruccion-pago/cola — COLA GLOBAL de solicitudes de cobro para FINANZAS (FIX 22-jun, profe):
+// todas las instrucciones de pago 'emitida' (de TODOS los contratos), con su contrato/estimación/neto/
+// fecha, para que finanzas REVISE (folio fiscal, firmas) y mande a cobranza, SIN tener que entrar contrato
+// por contrato. El profe: "una cola de solicitudes de cobro, cada una a qué contrato pertenece". Acotada por
+// participación: finanzas (transversal) ve todas; los roles operativos solo las de sus contratos.
+async function colaCobro(req, res) {
+  try {
+    const r = await pool.query(
+      `SELECT ip.id AS instruccion_id, ip.estado, ip.monto, ip.factura_cfdi, ip.notificado_finanzas_en, ip.instruida_por,
+              e.id AS estimacion_id, e.numero AS estimacion_numero, e.estado AS estimacion_estado,
+              e.periodo_inicio, e.periodo_fin,
+              c.id AS contrato_id, c.folio, c.contratista, c.dependencia,
+              c.created_by, c.residente_id, c.superintendente_id, c.supervision_id,
+              EXISTS (SELECT 1 FROM pagos p WHERE p.estimacion_id = e.id) AS pagada,
+              COALESCE((SELECT json_agg(json_build_object('id', cs.id, 'tipo', cs.tipo, 'nombre', cs.nombre) ORDER BY cs.id)
+                          FROM cobro_soportes cs WHERE cs.estimacion_id = e.id), '[]'::json) AS archivos
+         FROM instruccion_pago ip
+         JOIN estimaciones e ON e.id = ip.estimacion_id
+         JOIN contratos c ON c.id = e.contrato_id
+        WHERE ip.estado = 'emitida'
+        ORDER BY ip.notificado_finanzas_en ASC NULLS LAST, ip.id ASC`
+    );
+    const filas = r.rows
+      .filter((row) => esParteOSupervision(req.user, row))
+      .map((row) => ({
+        instruccion_id: row.instruccion_id, estado: row.estado, monto: r2(row.monto).toFixed(2),
+        factura_cfdi: row.factura_cfdi, notificado_finanzas_en: row.notificado_finanzas_en,
+        estimacion_id: row.estimacion_id, estimacion_numero: row.estimacion_numero, estimacion_estado: row.estimacion_estado,
+        periodo_inicio: row.periodo_inicio, periodo_fin: row.periodo_fin,
+        contrato_id: row.contrato_id, folio: row.folio, contratista: row.contratista, dependencia: row.dependencia,
+        pagada: !!row.pagada,
+        archivos: Array.isArray(row.archivos) ? row.archivos : [],
+      }));
+    return res.status(200).json(filas);
+  } catch (err) { console.error('[colaCobro]', err); return res.status(500).json({ error: 'Error interno' }); }
+}
+
+// G5 (23-jun, profe): NOTIFICACIÓN "ve a presentar documentos a cobro". Estimaciones AUTORIZADAS por la
+// residencia (art. 54 LOPSRM) que AÚN NO tienen instrucción de pago promovida (el contratista todavía no
+// presentó sus documentos). Se DERIVA, sin tabla nueva. Acotado por participación (esParteOSupervision): el
+// contratista ve las de sus contratos; finanzas (transversal) y dependencia las ven también.
+async function porCobrar(req, res) {
+  try {
+    const r = await pool.query(
+      `SELECT e.id AS estimacion_id, e.numero AS estimacion_numero, e.neto,
+              e.periodo_inicio, e.periodo_fin,
+              c.id AS contrato_id, c.folio, c.contratista,
+              c.created_by, c.residente_id, c.superintendente_id, c.supervision_id
+         FROM estimaciones e
+         JOIN contratos c ON c.id = e.contrato_id
+        WHERE e.estado = 'autorizada'
+          AND NOT EXISTS (SELECT 1 FROM instruccion_pago ip WHERE ip.estimacion_id = e.id)
+        ORDER BY e.id`
+    );
+    const filas = r.rows
+      .filter((row) => esParteOSupervision(req.user, row))
+      .map((row) => ({
+        estimacion_id: row.estimacion_id, estimacion_numero: row.estimacion_numero,
+        neto: r2(row.neto).toFixed(2), periodo_inicio: row.periodo_inicio, periodo_fin: row.periodo_fin,
+        contrato_id: row.contrato_id, folio: row.folio, contratista: row.contratista,
+      }));
+    return res.status(200).json(filas);
+  } catch (err) { console.error('[porCobrar]', err); return res.status(500).json({ error: 'Error interno' }); }
+}
+
+// ── FOLLOW-ON b (22-jun, profe): CARGA BINARIA del CFDI / oficio de autorización ─────────────────────
+// El profe: el CONTRATISTA promueve su cobro y SUBE sus soportes (CFDI + oficio de autorización que genera el
+// sistema); Finanzas los DESCARGA desde la cola y paga. Binario INLINE en BYTEA (tabla cobro_soportes, aditiva).
+// subido_por = JWT, nunca del body. Acceso por participación (finanzas transversal en lib/acceso).
+const TIPOS_ARCHIVO_COBRO = ['cfdi', 'oficio', 'otro'];
+function esPdf(buffer) {
+  return !!buffer && buffer.length > 4 && buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46; // '%PDF'
+}
+
+// POST /api/instruccion-pago/estimacion/:id/archivo — sube un PDF (multipart, campo 'documento'); body.tipo ∈ cfdi|oficio|otro.
+async function subirArchivoCobro(req, res) {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'id inválido' });
+    if (!req.file || !req.file.buffer) return res.status(400).json({ error: 'Falta el archivo (campo "documento")' });
+    if (!esPdf(req.file.buffer)) return res.status(400).json({ error: 'El archivo no es un PDF válido' });
+    let tipo = typeof req.body?.tipo === 'string' ? req.body.tipo.trim().toLowerCase() : 'otro';
+    if (!TIPOS_ARCHIVO_COBRO.includes(tipo)) tipo = 'otro';
+
+    const est = await cargarEstimacionContrato(id);
+    if (!est) return res.status(404).json({ error: 'Estimación no encontrada' });
+    if (!esParteOSupervision(req.user, est)) return res.status(403).json({ error: 'No tienes acceso a esta estimación' });
+    // El contratista promueve su cobro y sube sus soportes (CFDI/oficio); finanzas solo descarga y paga.
+    if (req.user.rol !== 'contratista') {
+      return res.status(403).json({ error: 'Solo el contratista sube los soportes de cobro (CFDI / oficio). Finanzas los descarga de la cola y paga.' });
+    }
+    if (est.contrato_estado === 'cerrado') {
+      return res.status(409).json({ error: 'El contrato ya está cerrado (finiquito elaborado); no se cargan soportes de cobro (art. 64 LOPSRM).' });
+    }
+    const { buffer, originalname, mimetype, size } = req.file;
+    const r = await pool.query(
+      `INSERT INTO cobro_soportes (estimacion_id, tipo, nombre, mime, tamano, contenido, subido_por)
+       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, tipo, nombre, mime, tamano, subido_por, created_at`,
+      [id, tipo, originalname || `${tipo}.pdf`, mimetype || 'application/pdf', size, buffer, req.user.id]
+    );
+    return res.status(201).json(r.rows[0]);
+  } catch (err) { console.error('[subirArchivoCobro]', err); return res.status(500).json({ error: 'Error interno' }); }
+}
+
+// GET /api/instruccion-pago/estimacion/:id/archivos — metadatos (no el binario) de los soportes de cobro (por participación).
+async function listarArchivosCobro(req, res) {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'id inválido' });
+    const est = await cargarEstimacionContrato(id);
+    if (!est) return res.status(404).json({ error: 'Estimación no encontrada' });
+    if (!esParteOSupervision(req.user, est)) return res.status(403).json({ error: 'No tienes acceso a esta estimación' });
+    const r = await pool.query(
+      'SELECT id, tipo, nombre, mime, tamano, subido_por, created_at FROM cobro_soportes WHERE estimacion_id = $1 ORDER BY id',
+      [id]
+    );
+    return res.status(200).json(r.rows);
+  } catch (err) { console.error('[listarArchivosCobro]', err); return res.status(500).json({ error: 'Error interno' }); }
+}
+
+// GET /api/instruccion-pago/archivo/:archivoId — sirve el PDF (inline) por participación (finanzas transversal).
+async function descargarArchivoCobro(req, res) {
+  try {
+    const archivoId = Number(req.params.archivoId);
+    if (!Number.isInteger(archivoId) || archivoId <= 0) return res.status(400).json({ error: 'archivo inválido' });
+    const r = await pool.query(
+      `SELECT cs.nombre, cs.mime, cs.tamano, cs.contenido,
+              c.created_by, c.residente_id, c.superintendente_id, c.supervision_id
+         FROM cobro_soportes cs
+         JOIN estimaciones e ON e.id = cs.estimacion_id
+         JOIN contratos c ON c.id = e.contrato_id
+        WHERE cs.id = $1`,
+      [archivoId]
+    );
+    if (r.rowCount === 0) return res.status(404).json({ error: 'Archivo no encontrado' });
+    const f = r.rows[0];
+    if (!esParteOSupervision(req.user, f)) return res.status(403).json({ error: 'No tienes acceso a este archivo' });
+    if (!f.contenido) return res.status(404).json({ error: 'El archivo no tiene contenido' });
+    res.setHeader('Content-Type', f.mime || 'application/pdf');
+    res.setHeader('Content-Length', f.tamano);
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(f.nombre || 'soporte.pdf')}"`);
+    return res.status(200).send(f.contenido);
+  } catch (err) { console.error('[descargarArchivoCobro]', err); return res.status(500).json({ error: 'Error interno' }); }
+}
+
+module.exports = { estadoTransito, cargarSoporte, generarInstruccion, consultarPresupuesto, crearPresupuesto, colaCobro, porCobrar, subirArchivoCobro, listarArchivosCobro, descargarArchivoCobro };

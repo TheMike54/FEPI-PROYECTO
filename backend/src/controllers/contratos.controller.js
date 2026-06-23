@@ -368,13 +368,28 @@ async function crearContrato(req, res) {
     try {
       await client.query('BEGIN');
 
+      // FIX 22-jun (profe): EMPRESA PRIMERO. El contrato REGISTRA la empresa con la que firma cada parte:
+      // el contratista ELIGE su empresa al firmar; la supervisión externa va a SU empresa. Viene del alta
+      // (contratistaEmpresaId/supervisionEmpresaId); si no, se deriva de la empresa base del usuario
+      // asignado (retrocompat). ADITIVO: el detalle del contrato puede leer ESTA empresa, no la del usuario.
+      let contratistaEmpresaId = Number((req.body || {}).contratistaEmpresaId) || null;
+      let supervisionEmpresaId = Number((req.body || {}).supervisionEmpresaId) || null;
+      if (!contratistaEmpresaId && superintendenteId) {
+        const re = await client.query('SELECT empresa_id FROM usuarios WHERE id = $1', [superintendenteId]);
+        contratistaEmpresaId = re.rows[0]?.empresa_id || null;
+      }
+      if (!supervisionEmpresaId && supervisionId) {
+        const rs = await client.query('SELECT empresa_id FROM usuarios WHERE id = $1', [supervisionId]);
+        supervisionEmpresaId = rs.rows[0]?.empresa_id || null;
+      }
+
       const cab = await client.query(
         `INSERT INTO contratos
            (folio, tipo, objeto, contratista, dependencia, monto, plazo_dias,
             fecha_inicio, fecha_termino, created_by, datos_juridicos, anticipo_pct,
             residente_id, superintendente_id, supervision_id, ciclo_estimacion, dependencia_id,
-            pena_convencional_pct, ubicacion)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
+            pena_convencional_pct, ubicacion, contratista_empresa_id, supervision_empresa_id)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
          RETURNING id`,
         [
           folio, tipo, objeto, contratista, dependencia, monto, plazoDias,
@@ -382,7 +397,7 @@ async function crearContrato(req, res) {
           juridicos ? JSON.stringify(juridicos) : null,
           anticipoPct,
           req.user.id, superintendenteId, supervisionId, ciclo, dependenciaId,
-          penaConvencionalPct, ubicacion
+          penaConvencionalPct, ubicacion, contratistaEmpresaId, supervisionEmpresaId
         ]
       );
       const contratoId = cab.rows[0].id;
@@ -566,8 +581,12 @@ async function detalleContrato(req, res) {
          LEFT JOIN usuarios su ON su.id = c.superintendente_id
          LEFT JOIN usuarios sv ON sv.id = c.supervision_id
          LEFT JOIN empresas re ON re.id = ru.empresa_id
-         LEFT JOIN empresas se ON se.id = su.empresa_id
-         LEFT JOIN empresas ve ON ve.id = sv.empresa_id
+         -- FIX 22-jun (profe, decisión #3 aprobada): la empresa del contratista/supervisión se lee de la
+         -- COLUMNA DEL CONTRATO (contratista_empresa_id/supervision_empresa_id), no del JOIN del usuario.
+         -- COALESCE a la empresa del usuario para contratos legados sin la columna (el backfill dejó el
+         -- mismo valor, así que el detalle no cambia de forma visible en los contratos existentes).
+         LEFT JOIN empresas se ON se.id = COALESCE(c.contratista_empresa_id, su.empresa_id)
+         LEFT JOIN empresas ve ON ve.id = COALESCE(c.supervision_empresa_id, sv.empresa_id)
         WHERE c.id = $1`,
       [id]
     );

@@ -1,5 +1,23 @@
 # SIGECOP — Estado actual del sistema (documento canónico)
 
+> **🔄 Actualización 2026-06-23 (sesión autónoma, LOCAL sin push) — 2 auditorías + 2 follow-on:**
+> - **Auditorías (solo lectura):** `docs/requisitos/INSUMOS_HISTORIAS_22jun.md` (insumos de las 27 unidades para
+>   reescribir las historias en el formato del profe: qué hace + criterio de éxito + ¿cambió? + brechas, con
+>   `archivo:función` y cita legal) y `docs/reportes/AUDITORIA_REPORTES_22jun.md` (mapa de ~20 exportaciones +
+>   10 huecos; veredicto: salida cruda sin formato; la "curva en blanco" = datos seed, no bug; carátula de
+>   estimación no exportable = hueco crítico).
+> - **Follow-on (a) — foto por generador (HU-12/04):** `FotosEstimacion.jsx` gana modo `porGenerador` (renglón
+>   por concepto, sube con `contrato_concepto_id`, galería filtrada); activado en el expediente. UI pura, sin
+>   esquema ni backend. Smoke API verde.
+> - **Follow-on (b) — carga binaria del CFDI/oficio en el cobro (HU-20):** tabla NUEVA `cobro_soportes` (BYTEA,
+>   aditiva idempotente, ya plegada a `schema.sql`); el **contratista** sube el PDF (CFDI/oficio, valida `%PDF`,
+>   solo contratista, gate de contrato cerrado art. 64) en `TransitoPago`, y **Finanzas** lo descarga desde la
+>   **cola global** (`AmbientePago`). Endpoints en `instruccion-pago` (no congelado): `POST .../estimacion/:id/archivo`,
+>   `GET .../estimacion/:id/archivos`, `GET .../archivo/:archivoId`. Smoke API verde; residuo limpiado.
+> - **Único toque a zona congelada:** `schema.sql` += `cobro_soportes` (aditivo, autorizado por Maiki para este
+>   follow-on). NO se tocaron auth, `server.js`, `permisos.js`, `App.jsx`, ni los controllers congelados.
+>   Build `vite build` verde; login de los 5 roles intacto. Reporte: `docs/reportes/REPORTE_SESION_AUTONOMA_23jun.md`.
+>
 > **🔄 Actualización 2026-06-21 (CIERRE DE JORNADA) — `main = cb10b27`, DESPLEGADO en Render (reconstruido
 > desde cero hoy):** cerró la fase de BD + 2 bugs + evidencia fotográfica + datos de prueba. **Hecho hoy:**
 > - **2 bugs corregidos:** (a) el **contrato activo ya NO se hereda entre cuentas** — `ContratoActivoContext`

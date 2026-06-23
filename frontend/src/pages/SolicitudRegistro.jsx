@@ -137,6 +137,38 @@ export default function SolicitudRegistro() {
                 </div>
               )}
               <div className="space-y-4">
+                {/* FIX 22-jun (profe): EMPRESA PRIMERO. La empresa es lo general; la persona se registra
+                    DENTRO de una empresa (no la empresa colgada de la persona). Se elige del padrón. */}
+                <div className="border border-sigecop-blue/20 bg-sigecop-blue-light/40 rounded-lg p-4">
+                  <h2 className="text-sm font-bold text-sigecop-blue mb-1">1 · Empresa</h2>
+                  <p className="text-xs text-slate-600 mb-3">Te registras <strong>dentro de una empresa</strong>: elígela del padrón (obligatoria para contratista y supervisión). Si aún no está, regístrala y la dependencia la validará.</p>
+                  <label className="sg-label" htmlFor="sol-empresa-select">
+                    Empresa {empresaObligatoriaPara(rolSolicitado) ? '*' : '(opcional para tu rol)'}
+                  </label>
+                  <select id="sol-empresa-select" data-testid="sol-empresa-select" className="sg-input"
+                    value={empresaSel} onChange={(e) => setEmpresaSel(e.target.value)} disabled={loading}>
+                    <option value="">— Elige tu empresa del padrón —</option>
+                    {empresas.map((e) => <option key={e.id} value={String(e.id)}>{e.nombre}</option>)}
+                    <option value={EMPRESA_NUEVA}>➕ Registrar nueva empresa…</option>
+                  </select>
+                  {empresaSel === EMPRESA_NUEVA ? (
+                    <div className="mt-2">
+                      <input id="sol-empresa-nueva" data-testid="sol-empresa-nueva" className="sg-input"
+                        placeholder="Nombre de la nueva empresa"
+                        value={empresaNueva} onChange={(e) => setEmpresaNueva(e.target.value)} disabled={loading} />
+                      {(() => {
+                        const ya = empresaNueva.trim() ? empresaExistentePorNombre(empresas, empresaNueva) : null;
+                        return ya
+                          ? <p className="text-xs text-exito mt-1" data-testid="sol-empresa-existente">✓ Ya existe «{ya.nombre}»: mejor selecciónala arriba (no se duplicará).</p>
+                          : <p className="text-xs text-slate-500 mt-1">Se dará de alta en el catálogo y quedará disponible para los demás.</p>;
+                      })()}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-500 mt-1">Elige tu empresa del catálogo; si no está, usa «Registrar nueva empresa».</p>
+                  )}
+                </div>
+
+                <h2 className="text-sm font-bold text-sigecop-blue pt-1">2 · Tus datos (dentro de la empresa)</h2>
                 <div>
                   <label className="sg-label" htmlFor="sol-nombres">Nombre(s) *</label>
                   <input id="sol-nombres" data-testid="sol-nombres" className="sg-input" placeholder="Ej. María"
@@ -159,33 +191,6 @@ export default function SolicitudRegistro() {
                     {ROLES.map((r) => <option key={r.id} value={r.id}>{r.nombre}</option>)}
                   </select>
                   <p className="text-xs text-slate-500 mt-1">Informativo: la dependencia confirma el rol definitivo al aprobar.</p>
-                </div>
-                {/* O3/FASE 1 (profe 15-jun): empresa = SELECTOR del catálogo (no texto libre). */}
-                <div>
-                  <label className="sg-label" htmlFor="sol-empresa-select">
-                    Empresa {empresaObligatoriaPara(rolSolicitado) ? '*' : '(opcional)'}
-                  </label>
-                  <select id="sol-empresa-select" data-testid="sol-empresa-select" className="sg-input"
-                    value={empresaSel} onChange={(e) => setEmpresaSel(e.target.value)} disabled={loading}>
-                    <option value="">— Sin empresa / elige tu empresa —</option>
-                    {empresas.map((e) => <option key={e.id} value={String(e.id)}>{e.nombre}</option>)}
-                    <option value={EMPRESA_NUEVA}>➕ Registrar nueva empresa…</option>
-                  </select>
-                  {empresaSel === EMPRESA_NUEVA ? (
-                    <div className="mt-2">
-                      <input id="sol-empresa-nueva" data-testid="sol-empresa-nueva" className="sg-input"
-                        placeholder="Nombre de la nueva empresa"
-                        value={empresaNueva} onChange={(e) => setEmpresaNueva(e.target.value)} disabled={loading} />
-                      {(() => {
-                        const ya = empresaNueva.trim() ? empresaExistentePorNombre(empresas, empresaNueva) : null;
-                        return ya
-                          ? <p className="text-xs text-exito mt-1" data-testid="sol-empresa-existente">✓ Ya existe «{ya.nombre}»: mejor selecciónala arriba (no se duplicará).</p>
-                          : <p className="text-xs text-slate-500 mt-1">Se dará de alta en el catálogo y quedará disponible para los demás.</p>;
-                      })()}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-slate-500 mt-1">Elige tu empresa del catálogo; si no está, usa «Registrar nueva empresa».</p>
-                  )}
                 </div>
                 <div>
                   <label className="sg-label" htmlFor="sol-password">Contraseña (mín. 8 caracteres) *</label>

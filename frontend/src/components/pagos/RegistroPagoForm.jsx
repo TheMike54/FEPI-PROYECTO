@@ -18,7 +18,7 @@ const fmtFecha = (s) => { if (!s) return '—'; const [y, m, d] = String(s).slic
 // selector solo lista lo que el backend acepta. (No se toca la lógica server-side, que es la fuente de verdad.)
 const PAGABLES = new Set(['autorizada']);
 
-export default function RegistroPagoForm({ contratoId, soloLectura = false, onRegistrado }) {
+export default function RegistroPagoForm({ contratoId, soloLectura = false, onRegistrado, estimacionIdInicial = '' }) {
   const { rol } = useSesion();
   const { showToast } = useToast();
   const hoy = new Date().toISOString().slice(0, 10);
@@ -35,6 +35,7 @@ export default function RegistroPagoForm({ contratoId, soloLectura = false, onRe
   const [fechaFactura, setFechaFactura] = useState('');
   const [fechaAutorizacion, setFechaAutorizacion] = useState('');
   const [observaciones, setObservaciones] = useState('');
+  const [cfdiHeredado, setCfdiHeredado] = useState(false); // G4: folio CFDI heredado del tránsito (lo subió el contratista)
 
   const estSel = estimaciones.find((e) => String(e.id) === String(estimacionId)) || null;
   const importeNeto = estSel ? estSel.neto : null; // el importe lo DERIVA el servidor del neto
@@ -48,6 +49,30 @@ export default function RegistroPagoForm({ contratoId, soloLectura = false, onRe
   }, []);
 
   useEffect(() => { setEstimacionId(''); setUltimo(null); cargarEstimaciones(contratoId); }, [contratoId, cargarEstimaciones]);
+
+  // G4: si se llega desde la cola global de finanzas con ?estimacion=, preselecciona esa estimación.
+  useEffect(() => {
+    if (estimacionIdInicial && estimaciones.some((e) => String(e.id) === String(estimacionIdInicial))) {
+      setEstimacionId(String(estimacionIdInicial));
+    }
+  }, [estimacionIdInicial, estimaciones]);
+
+  // G4 (profe "finanzas solo revisa lo que ya viene"): al elegir la estimación, HEREDA el folio CFDI que el
+  // contratista promovió en el tránsito a pago (instruccion_pago.factura_cfdi). Finanzas lo revisa, no lo
+  // re-teclea. Si la estimación no tiene instrucción aún (pago directo), el campo queda vacío para captura.
+  useEffect(() => {
+    if (!estimacionId) { setCfdiHeredado(false); return; }
+    let vivo = true;
+    api.transitoEstimacion(estimacionId)
+      .then((t) => {
+        if (!vivo) return;
+        const folio = (t && t.instruccion && t.instruccion.factura_cfdi) || (t && t.soportes && t.soportes.folio_cfdi) || '';
+        setFacturaCfdi(folio);
+        setCfdiHeredado(!!folio);
+      })
+      .catch(() => { if (vivo) setCfdiHeredado(false); });
+    return () => { vivo = false; };
+  }, [estimacionId]);
 
   const requeridosOk = estimacionId && fechaPago && referencia.trim() && facturaCfdi.trim() && fechaFactura;
   // El registro lo EJECUTA Finanzas (art. 54); el contenedor además puede imponer soloLectura.
@@ -123,17 +148,21 @@ export default function RegistroPagoForm({ contratoId, soloLectura = false, onRe
             </div>
 
             <div>
-              <label className="sg-label">Referencia bancaria (SPEI) *</label>
-              <input className="sg-input" placeholder="Clave de rastreo / folio de transferencia" value={referencia} onChange={(e) => setReferencia(e.target.value)} data-testid="pago-referencia" />
+              <label className="sg-label">Referencia bancaria (clave de rastreo SPEI) *</label>
+              {/* FIX 22-jun (profe): la clave de rastreo SPEI es numérica; se filtran letras al escribir. */}
+              <input className="sg-input" inputMode="numeric" pattern="\d*" placeholder="Clave de rastreo SPEI (solo dígitos)" value={referencia} onChange={(e) => setReferencia(e.target.value.replace(/\D/g, ''))} data-testid="pago-referencia" />
+              <p className="text-[11px] text-slate-500 mt-1">Solo dígitos (la clave de rastreo SPEI es numérica).</p>
             </div>
             <div>
               <label className="sg-label">Folio fiscal (CFDI) *</label>
-              <input className="sg-input" placeholder="UUID del CFDI" value={facturaCfdi} onChange={(e) => setFacturaCfdi(e.target.value)} data-testid="pago-cfdi" />
+              <input className="sg-input" placeholder="UUID del CFDI" value={facturaCfdi} onChange={(e) => { setFacturaCfdi(e.target.value); setCfdiHeredado(false); }} data-testid="pago-cfdi" />
+              {cfdiHeredado && <p className="text-[11px] text-sigecop-green-validation mt-1" data-testid="pago-cfdi-heredado">✓ Heredado del tránsito a pago (lo promovió el contratista). Revísalo; puedes editarlo si hace falta.</p>}
             </div>
 
             <div>
               <label className="sg-label">Fecha de la factura *</label>
-              <input type="date" className="sg-input" value={fechaFactura} onChange={(e) => setFechaFactura(e.target.value)} data-testid="pago-fecha-factura" />
+              {/* FIX 22-jun (profe): la factura no puede estar post-fechada (no futura). */}
+              <input type="date" className="sg-input" max={new Date().toISOString().slice(0, 10)} value={fechaFactura} onChange={(e) => setFechaFactura(e.target.value)} data-testid="pago-fecha-factura" />
             </div>
             <div>
               <label className="sg-label">Fecha de autorización de la estimación</label>

@@ -13,6 +13,7 @@ import { api } from '../services/api.js';
 import { labelEstadoEstimacion } from '../data/estadoEstimacion.js';
 import { monedaMXN as moneda, round2 } from '../utils/formato.js';
 import DocumentoNota from '../components/notas/DocumentoNota.jsx';
+import DocumentoCaratula from '../components/estimacion/DocumentoCaratula.jsx';
 import MatrizProgramaLectura, { periodoQueContiene } from '../components/programa/MatrizProgramaLectura.jsx';
 import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
 
@@ -138,7 +139,7 @@ function ModalVincularNotas({ onCerrar, onConfirmar, notas, tipos, yaVinculadas 
 // (GET /estimaciones/:id): carátula + generadores (importe/acumulado/% avance) +
 // notas vinculadas + estado.
 // ---------------------------------------------------------------------------
-function ModalDetalle({ estimacion, onCerrar, onVerDocumento }) {
+function ModalDetalle({ estimacion, onCerrar, onVerDocumento, onVerCaratula }) {
   const e = estimacion;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 p-4" data-testid="modal-detalle">
@@ -234,7 +235,8 @@ function ModalDetalle({ estimacion, onCerrar, onVerDocumento }) {
             )}
           </div>
         </div>
-        <div className="px-6 py-3 border-t border-slate-200 flex justify-end">
+        <div className="px-6 py-3 border-t border-slate-200 flex justify-end gap-2">
+          <button type="button" className="sg-btn-primary" onClick={() => onVerCaratula(e)} data-testid="btn-ver-caratula-doc">📄 Ver / Imprimir carátula</button>
           <button type="button" className="sg-btn-secondary" onClick={onCerrar}>Cerrar</button>
         </div>
       </div>
@@ -270,14 +272,16 @@ function TabGeneradores({ filas, onCantidad, tienePlan }) {
               <th className="text-left px-3 py-2 w-20">Clave</th>
               <th className="text-left px-3 py-2">Concepto</th>
               <th className="text-left px-3 py-2 w-16">Unidad</th>
-              <th className="text-right px-3 py-2 w-28">Contratado</th>
-              <th className="text-right px-3 py-2 w-28">Ya estimado</th>
+              {/* FIX 22-jun (profe): columnas del RESUMEN GACM (copia literal del formato de la estimación). */}
+              <th className="text-right px-3 py-2 w-28" title="Cantidad contratada (según proyecto)">Según proyecto</th>
+              <th className="text-right px-3 py-2 w-28" title="Estimado hasta la estimación anterior">Hasta est. anterior</th>
               {tienePlan && <th className="text-right px-3 py-2 w-28" title="Planeado en el programa hasta este periodo (curva S)">Planeado</th>}
               {tienePlan && <th className="text-right px-3 py-2 w-28" title="Disponible para estimar este periodo = planeado − ya estimado">Disp. periodo</th>}
-              <th className="text-right px-3 py-2 w-32">PU</th>
-              <th className="text-right px-3 py-2 w-32">Este periodo</th>
+              <th className="text-right px-3 py-2 w-32">Precio unitario</th>
+              <th className="text-right px-3 py-2 w-32">De esta estimación</th>
               <th className="text-right px-3 py-2 w-32">Importe</th>
-              <th className="text-right px-3 py-2 w-28">Acumulado</th>
+              <th className="text-right px-3 py-2 w-28">Total estimado</th>
+              <th className="text-right px-3 py-2 w-28" title="Por ejecutar = según proyecto − total estimado">Por ejecutar</th>
               <th className="text-right px-3 py-2 w-24">% avance</th>
             </tr>
           </thead>
@@ -290,6 +294,7 @@ function TabGeneradores({ filas, onCantidad, tienePlan }) {
                 <td className="px-3 py-2">
                   {malo && <span title={f.excede ? 'Excede lo contratado (art. 118)' : 'Excede lo planeado para el periodo'} className="text-red-600 mr-1">⚠</span>}
                   {f.concepto}
+                  {f.es_adicional && <span className="ml-2 inline-block text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-800 border border-amber-200 rounded px-1.5 py-0.5 align-middle" title="Concepto ADICIONAL de convenio modificatorio (art. 101 RLOPSRM): se administra y estima por separado de los originales." data-testid={`gen-adicional-${f.contrato_concepto_id}`}>Adicional</span>}
                 </td>
                 <td className="px-3 py-2 text-slate-600">{f.unidad}</td>
                 <td className="px-3 py-2 text-right">{num(f.contratado)}</td>
@@ -310,6 +315,7 @@ function TabGeneradores({ filas, onCantidad, tienePlan }) {
                 </td>
                 <td className="px-3 py-2 text-right font-mono">{moneda(f.importe)}</td>
                 <td className={`px-3 py-2 text-right font-semibold ${malo ? 'text-red-700' : ''}`}>{num(f.acumulado)}</td>
+                <td className="px-3 py-2 text-right text-slate-600" data-testid={`gen-por-ejecutar-${f.contrato_concepto_id}`}>{num(Math.max(0, f.contratado - f.acumulado))}</td>
                 <td className={`px-3 py-2 text-right ${malo ? 'text-red-700 font-bold' : ''}`}>{f.avancePct.toFixed(1)}%</td>
               </tr>
             );})}
@@ -336,7 +342,7 @@ function TabGeneradores({ filas, onCantidad, tienePlan }) {
   );
 }
 
-function TabCaratula({ caratula, anticipoPct, deductivas, onDeductivas, acumulados, numeroEstimacion, periodoNumero, periodoInicio, periodoFin }) {
+function TabCaratula({ caratula, anticipoPct, deductivas, onDeductivas, acumulados, numeroEstimacion, periodoNumero, periodoInicio, periodoFin, contrato }) {
   const renglones = [
     { label: 'Importe bruto del periodo', importe: caratula.subtotal, formula: 'Σ ROUND(volumen ejecutado × PU, 2) de los generadores con avance' },
     { label: `(−) Amortización de anticipo (${anticipoPct}%)`, importe: -caratula.amortizacion, formula: `subtotal × ${anticipoPct}/100 — art. 143 fr. I RLOPSRM`, art: 'art. 143 RLOPSRM' },
@@ -358,6 +364,20 @@ function TabCaratula({ caratula, anticipoPct, deductivas, onDeductivas, acumulad
               <span className="font-normal text-sm text-slate-600"> ({fechaMX(periodoInicio) || '…'} – {fechaMX(periodoFin) || '…'})</span>
             )}
           </span>
+        </div>
+      )}
+      {/* FIX 22-jun (profe): encabezado del documento de estimación (formato GACM): descripción de obra,
+          contrato, fecha del contrato y contratista. Cero libertad creativa: copia del formato del GACM. */}
+      {contrato && (
+        <div className="border border-slate-200 rounded-md mb-4 max-w-2xl overflow-hidden" data-testid="caratula-encabezado-doc">
+          <table className="w-full text-sm">
+            <tbody>
+              <tr className="border-b border-slate-200"><td className="px-4 py-2 bg-slate-50 font-semibold text-slate-600 w-56">Descripción de la obra o servicio</td><td className="px-4 py-2 text-slate-800">{contrato.objeto || '—'}</td></tr>
+              <tr className="border-b border-slate-200"><td className="px-4 py-2 bg-slate-50 font-semibold text-slate-600">Contrato</td><td className="px-4 py-2 font-mono text-slate-800">{contrato.folio || '—'}</td></tr>
+              <tr className="border-b border-slate-200"><td className="px-4 py-2 bg-slate-50 font-semibold text-slate-600">Fecha del contrato</td><td className="px-4 py-2 text-slate-800">{fechaMX(contrato.fecha_inicio) || '—'}</td></tr>
+              <tr><td className="px-4 py-2 bg-slate-50 font-semibold text-slate-600">Contratista</td><td className="px-4 py-2 text-slate-800">{contrato.contratista || '—'}</td></tr>
+            </tbody>
+          </table>
         </div>
       )}
       <p className="text-xs text-amber-700 mb-3 italic">
@@ -425,6 +445,27 @@ function TabCaratula({ caratula, anticipoPct, deductivas, onDeductivas, acumulad
               <tr className="border-t border-slate-200 font-semibold text-sigecop-blue"><td className="px-4 py-2">Saldo por estimar</td><td className="px-4 py-2 text-right font-mono" data-testid="saldo-por-estimar">{moneda(acumulados.saldoPorEstimar)}</td><td className="px-4 py-2 text-right">{acumulados.pct(acumulados.saldoPorEstimar)}</td></tr>
             </tbody>
           </table>
+        </div>
+      )}
+      {/* FIX 22-jun (profe): bloque de FIRMAS del formato GACM (residente, superintendente, supervisión
+          externa y autorizó/dependencia). Bloque imprimible para firma; los nombres salen del roster. */}
+      {contrato && (
+        <div className="mt-6 mb-4 max-w-3xl" data-testid="caratula-firmas">
+          <p className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-3">Firmas</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+            {[
+              { rol: 'Residente de obra', nombre: contrato.residente_nombre },
+              { rol: 'Superintendente', nombre: contrato.superintendente_nombre },
+              { rol: 'Supervisión externa', nombre: contrato.supervision_nombre },
+              { rol: 'Autorizó (dependencia)', nombre: contrato.dependencia },
+            ].map((f, i) => (
+              <div key={i} className="text-center">
+                <div className="border-b border-slate-400 h-10 mb-1" />
+                <div className="text-xs font-semibold text-slate-700">{f.nombre || '—'}</div>
+                <div className="text-[11px] text-slate-500">{f.rol}</div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
       <div className="bg-guinda-soft border-l-4 border-guinda px-4 py-3 text-sm text-tinta rounded-r-md max-w-2xl">
@@ -527,6 +568,7 @@ export default function IntegracionEstimacion() {
   const [resultado, setResultado] = useState(null);
   const [errorIntegrar, setErrorIntegrar] = useState(null);
   const [detalle, setDetalle] = useState(null);
+  const [caratulaDoc, setCaratulaDoc] = useState(null);  // G3: estimación a mostrar como documento imprimible
 
   // FASE 3 (rediseño por bloques) — WIZARD "Nueva estimación": la captura se presenta como pasos
   // encadenados (patrón del Alta), reusando los MISMOS componentes/testids. `paso` = índice activo;
@@ -602,6 +644,20 @@ export default function IntegracionEstimacion() {
     recargarPrep(contratoId, periodoFin);
   }, [contratoId, periodoFin, recargarPrep]);
 
+  // (c) FIX 22-jun (profe): al elegir el periodo, PRELLENA cada concepto del periodo con su AVANCE
+  // terminado reportado en ese periodo (jalar de las notas/avance); el usuario solo MODIFICA. Solo
+  // cuando prep ya trae los datos del periodo exacto (avance_periodo/programado_periodo).
+  useEffect(() => {
+    if (!periodoFin || !prep || !Array.isArray(prep.conceptos)) return;
+    const next = {};
+    prep.conceptos.forEach((p) => {
+      if (p.programado_periodo != null && p.programado_periodo > 0 && p.avance_periodo != null) {
+        next[p.contrato_concepto_id] = String(p.avance_periodo);
+      }
+    });
+    setCantidades(next);
+  }, [periodoFin, prep]);
+
   // Datos de plan por concepto (semáforo): del endpoint de solo lectura (Etapa A).
   const prepMap = useMemo(() => {
     const m = new Map();
@@ -621,7 +677,15 @@ export default function IntegracionEstimacion() {
     return periodoQueContiene(ps, periodoFin || periodoInicio || new Date().toISOString().slice(0, 10));
   }, [programa, periodoFin, periodoInicio]);
 
-  const filas = useMemo(() => avance.map((a) => {
+  const filas = useMemo(() => avance
+    .filter((a) => {
+      // FIX 22-jun (profe): (b) SOLO los conceptos de ESE periodo. Sin periodo elegido, muestra todos
+      // (referencia); con periodo, solo los que tienen plan en ese periodo exacto (programado_periodo>0).
+      if (!periodoFin) return true;
+      const pp = prepMap.get(a.contrato_concepto_id);
+      return !!(pp && pp.programado_periodo != null && pp.programado_periodo > 0);
+    })
+    .map((a) => {
     const valor = cantidades[a.contrato_concepto_id] ?? '';
     const periodo = Number(valor) || 0;
     const contratado = Number(a.cantidad_contratada);
@@ -635,9 +699,9 @@ export default function IntegracionEstimacion() {
     const planeado = p && p.planeado_hasta_periodo != null ? Number(p.planeado_hasta_periodo) : null;
     const disponible = p ? Number(p.disponible_periodo) : Math.max(0, contratado - anterior);
     const excedePlan = planeado != null && periodo > disponible + EPS;
-    return { ...a, clave: (p && p.clave) || a.clave || null, valor, periodo, contratado, anterior, pu, acumulado, excede,
+    return { ...a, clave: (p && p.clave) || a.clave || null, es_adicional: !!(p && p.es_adicional), valor, periodo, contratado, anterior, pu, acumulado, excede,
       planeado, disponible, excedePlan, avancePct, importe: round2(periodo * pu) };
-  }), [avance, cantidades, prepMap]);
+  }), [avance, cantidades, prepMap, periodoFin]);
 
   const hayExceso = filas.some((f) => f.excede);          // art. 118 (contratado)
   const hayExcesoPlan = filas.some((f) => f.excedePlan);  // plan del periodo (semáforo)
@@ -899,13 +963,23 @@ export default function IntegracionEstimacion() {
                     }}
                   >
                     <option value="">— Elige un periodo del programa —</option>
-                    {programa.periodos.map((p) => (
-                      <option key={p.numero} value={p.numero}>
-                        Periodo {p.numero} ({String(p.inicio).slice(0, 10)} — {String(p.fin).slice(0, 10)})
-                      </option>
-                    ))}
+                    {programa.periodos.map((p) => {
+                      // FIX 22-jun (profe): solo se estima un periodo VENCIDO (mes terminado). Los periodos
+                      // en curso / futuros se muestran deshabilitados con su estado.
+                      const fin = String(p.fin).slice(0, 10);
+                      const ini = String(p.inicio).slice(0, 10);
+                      const hoy = new Date().toISOString().slice(0, 10);
+                      const vencido = fin < hoy;
+                      const enCurso = ini <= hoy && hoy <= fin;
+                      const etiqueta = vencido ? 'vencido · estimable' : enCurso ? 'en curso · aún no cierra' : 'futuro';
+                      return (
+                        <option key={p.numero} value={p.numero} disabled={!vencido}>
+                          Periodo {p.numero} ({ini} — {fin}) · {etiqueta}
+                        </option>
+                      );
+                    })}
                   </select>
-                  <p className="text-xs text-slate-500 mt-1">Elige el periodo y las fechas se llenan solas; puedes afinarlas abajo.</p>
+                  <p className="text-xs text-slate-500 mt-1">Solo se estima un periodo <strong>vencido</strong> (mes terminado). Al elegirlo se cargan las cantidades terminadas del avance; tú solo las afinas.</p>
                 </div>
               )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -931,7 +1005,10 @@ export default function IntegracionEstimacion() {
               <div className="bg-white border border-slate-200 rounded-md p-4" data-testid="barras-avance">
                 <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">Avance del contrato</h3>
                 <div className="space-y-3 max-w-2xl">
-                  <BarraAvance label="Avance físico (ejecutado/estimado acumulado, en valor)" pct={avanceFisicoPct} color="bg-sigecop-accent" testid="barra-fisico" />
+                  {/* FIX 22-jun (profe): el "avance físico" muestra lo REPORTADO (HU-06), no Σ estimaciones
+                      (antes salía 14.9%). Se separa del "avance estimado" (valor estimado acumulado). */}
+                  <BarraAvance label="Avance físico (ejecutado reportado, HU-06)" pct={prep.avance?.fisico_real_pct} color="bg-sigecop-accent" testid="barra-fisico" />
+                  <BarraAvance label="Avance estimado acumulado (valor estimado, incl. esta estimación)" pct={avanceFisicoPct} color="bg-sigecop-accent/60" testid="barra-estimado" />
                   {tienePlan && <BarraAvance label="Avance programado (curva S del programa hasta el periodo)" pct={prep.avance?.planeado_pct} color="bg-blue-400" testid="barra-programado" />}
                   <BarraAvance label="Avance financiero (pagado acumulado / monto)" pct={prep.avance?.financiero_pct} color="bg-emerald-400" testid="barra-financiero" />
                 </div>
@@ -961,7 +1038,7 @@ export default function IntegracionEstimacion() {
           {paso === 2 && (
             <div data-testid="wstep-caratula">
               {wrapTab(<TabCaratula caratula={caratula} anticipoPct={anticipoPct} deductivas={deductivas} onDeductivas={setDeductivas} acumulados={acumulados}
-                numeroEstimacion={proximoNumeroEstimacion} periodoNumero={periodoResaltadoEstim} periodoInicio={periodoInicio} periodoFin={periodoFin} />)}
+                numeroEstimacion={proximoNumeroEstimacion} periodoNumero={periodoResaltadoEstim} periodoInicio={periodoInicio} periodoFin={periodoFin} contrato={selected} />)}
             </div>
           )}
 
@@ -1092,8 +1169,9 @@ export default function IntegracionEstimacion() {
           onCerrar={() => setModalAbierto(false)}
         />
       )}
-      {detalle && <ModalDetalle estimacion={detalle} onCerrar={() => setDetalle(null)} onVerDocumento={verDocumentoNota} />}
+      {detalle && <ModalDetalle estimacion={detalle} onCerrar={() => setDetalle(null)} onVerDocumento={verDocumentoNota} onVerCaratula={setCaratulaDoc} />}
       {notaDoc && <DocumentoNota nota={notaDoc} contrato={selected} onCerrar={() => setNotaDoc(null)} />}
+      {caratulaDoc && <DocumentoCaratula estimacion={caratulaDoc} contrato={selected} onCerrar={() => setCaratulaDoc(null)} />}
     </div>
   );
 }

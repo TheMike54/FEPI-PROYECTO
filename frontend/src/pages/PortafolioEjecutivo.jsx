@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import Kpi from '../components/ui/Kpi.jsx';
@@ -97,12 +98,23 @@ function PanelDetalle({ contrato, onCerrar }) {
         />
       </div>
 
+      {/* G6 (profe "pagaste sin avance reportado"): bandera de riesgo cuando lo pagado supera el avance físico. */}
+      {contrato.riesgos?.pago_sin_avance && (
+        <div className="mt-3 bg-red-50 border-l-4 border-peligro px-4 py-2 rounded-r-md text-sm text-peligro" data-testid="riesgo-pago-sin-avance">
+          ⚠ <strong>Pago sin respaldo de avance:</strong> lo pagado (financiero) supera el avance físico reportado en{' '}
+          <strong>{contrato.riesgos.excedente_financiero_pp} pp</strong>. El pago debe corresponder a obra ejecutada (art. 54 LOPSRM); revisa el avance del contrato.
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-3 text-xs text-tinta-sec">
         <div>
           <span className="font-semibold text-tinta">Programado:</span> {pct(a.programado_pct)}
           {' · '}
           <span className="font-semibold text-tinta">Desviación:</span>{' '}
-          {a.desviacion_pp == null ? 'sin programa' : `${a.desviacion_pp} pp`}
+          {a.desviacion_pp == null ? 'sin programa'
+            : a.desviacion_pp < 0 ? `atraso de ${Math.abs(a.desviacion_pp)} pp`
+            : a.desviacion_pp > 0 ? `adelanto de ${a.desviacion_pp} pp`
+            : 'en programa'}
         </div>
         <div>
           <span className="font-semibold text-tinta">Conceptos en atraso:</span> {at.conceptos_en_atraso}
@@ -128,6 +140,8 @@ function PanelDetalle({ contrato, onCerrar }) {
 }
 
 function FilaContrato({ c, onSeleccionar, esActivo }) {
+  const navigate = useNavigate();
+  const irAlExpediente = (e) => { e.stopPropagation(); navigate(`/contratos/expediente?contrato=${c.contrato_id}`); };
   const sem = SEMAFORO[c.semaforo.color];
   const tooltip = c.semaforo.desglose
     .map((d) => `${d.factor}: ${d.valor} (${d.puntos == null ? 'n/a' : `+${d.puntos}`})`)
@@ -140,10 +154,14 @@ function FilaContrato({ c, onSeleccionar, esActivo }) {
       data-testid={`fila-portafolio-${c.folio}`}
     >
       <td className="p-3 text-center">
-        <span
-          className={`inline-block w-3 h-3 rounded-full ${sem.dot}`}
+        <button
+          type="button"
+          onClick={irAlExpediente}
+          className={`inline-block w-3 h-3 rounded-full cursor-pointer ${sem.dot}`}
           data-testid={`semaforo-dot-${c.folio}`}
           data-color={c.semaforo.color}
+          title="Ver expediente del contrato"
+          aria-label={`Ver expediente del contrato ${c.folio}`}
         />
       </td>
       <td className="p-3 font-mono text-xs font-semibold">{c.folio}</td>
@@ -152,12 +170,15 @@ function FilaContrato({ c, onSeleccionar, esActivo }) {
       <td className="p-3"><VariacionMesBadge delta={c.comparacion.delta_pp} /></td>
       <td className="p-3 text-right">{c.pendientes.total}</td>
       <td className="p-3">
-        <span
-          className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${sem.badge}`}
+        <button
+          type="button"
+          onClick={irAlExpediente}
+          className={`inline-block px-2 py-0.5 rounded text-xs font-semibold cursor-pointer ${sem.badge}`}
           data-testid={`semaforo-badge-${c.folio}`}
+          title="Ver expediente del contrato"
         >
           {sem.label}{c.semaforo.parcial ? ' *' : ''}
-        </span>
+        </button>
       </td>
     </tr>
   );
@@ -291,7 +312,7 @@ export default function PortafolioEjecutivo() {
               </div>
               <div className="md:col-span-2">
                 <p className="text-xs text-tinta-sec">
-                  Doble clic sobre una fila para ver el detalle. El color del semáforo se calcula en el
+                  Clic en el semáforo para ir al expediente del contrato. Doble clic sobre la fila para ver el detalle. El color del semáforo se calcula en el
                   servidor a partir de avance vs programado, atrasos en plazos y pendientes sin atender
                   (hover sobre la fila para ver el desglose). <strong>*</strong> = semáforo parcial (contrato
                   sin programa de obra). La comparación con el mes anterior es solo del <em>avance físico</em>.

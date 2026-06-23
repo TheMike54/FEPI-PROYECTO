@@ -48,7 +48,7 @@ async function listarFotos(req, res) {
     if (!est) return res.status(404).json({ error: 'Estimación no encontrada' });
     if (!esParteOSupervision(req.user, est)) return res.status(403).json({ error: 'No tienes acceso a esta estimación' });
     const r = await pool.query(
-      `SELECT id, nombre, descripcion, mime, tamano, subido_por, created_at,
+      `SELECT id, contrato_concepto_id, nombre, descripcion, mime, tamano, subido_por, created_at,
               (contenido IS NOT NULL) AS tiene_foto
          FROM estimacion_fotos WHERE estimacion_id = $1 ORDER BY id`,
       [estId]
@@ -70,10 +70,17 @@ async function subirFoto(req, res) {
     if (!est) return res.status(404).json({ error: 'Estimación no encontrada' });
     if (!esParteOSupervision(req.user, est)) return res.status(403).json({ error: 'No participas en este contrato' });
     const descripcion = (req.body && typeof req.body.descripcion === 'string') ? req.body.descripcion.slice(0, 300) : null;
+    // FIX 22-jun (profe): foto POR GENERADOR/concepto (formato GACM: una foto de actividad por concepto).
+    // contrato_concepto_id es OPCIONAL; si se envía, se valida que sea un concepto del contrato de la estimación.
+    let conceptoId = Number(req.body?.contrato_concepto_id) || null;
+    if (conceptoId) {
+      const ok = await pool.query('SELECT 1 FROM contrato_conceptos WHERE id=$1 AND contrato_id=$2', [conceptoId, est.contrato_id]);
+      if (ok.rowCount === 0) conceptoId = null; // no pertenece al contrato → se guarda como foto general
+    }
     const r = await pool.query(
-      `INSERT INTO estimacion_fotos (estimacion_id, nombre, descripcion, mime, tamano, contenido, subido_por)
-       VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, nombre, descripcion, mime, tamano, subido_por, created_at`,
-      [estId, originalname || 'foto.jpg', descripcion, mimetype, size, buffer, req.user.id]
+      `INSERT INTO estimacion_fotos (estimacion_id, contrato_concepto_id, nombre, descripcion, mime, tamano, contenido, subido_por)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id, contrato_concepto_id, nombre, descripcion, mime, tamano, subido_por, created_at`,
+      [estId, conceptoId, originalname || 'foto.jpg', descripcion, mimetype, size, buffer, req.user.id]
     );
     return res.status(201).json({ ...r.rows[0], tiene_foto: true });
   } catch (err) { console.error('[subirFoto]', err); return res.status(500).json({ error: 'Error interno' }); }

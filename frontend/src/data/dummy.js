@@ -170,14 +170,19 @@ export const historiasUsuario = [
     icono: '📤',
     ruta: '/estimaciones/envio'
   },
-  {
-    codigo: 'HU-16',
-    titulo: 'Reingreso de estimación tras rechazo',
-    descripcion: 'Reingreso como nueva versión independiente con histórico vinculado; observaciones descargables en PDF o Excel.',
-    sprint: 'Sprint 8',
-    icono: '↩️',
-    ruta: '/estimaciones/reingreso'
-  },
+  // HU-16 (reingreso de estimación) RETIRADO de la UI por decisión del profe (22-jun): un rechazo se
+  // resuelve volviendo a INTEGRAR (HU-12) y PRESENTAR (HU-13); la rechazada queda en el historial con su
+  // motivo. Se quita de historiasUsuario para que NO aparezca en el sidebar ("Otras pantallas"), Inicio ni
+  // breadcrumb. La página ReingresoEstimacion.jsx y el endpoint /reingresar se CONSERVAN (código muerto
+  // inofensivo). Para revivirlo, descomenta este bloque.
+  // {
+  //   codigo: 'HU-16',
+  //   titulo: 'Reingreso de estimación tras rechazo',
+  //   descripcion: 'Reingreso como nueva versión independiente con histórico vinculado; observaciones descargables en PDF o Excel.',
+  //   sprint: 'Sprint 8',
+  //   icono: '↩️',
+  //   ruta: '/estimaciones/reingreso'
+  // },
   {
     codigo: 'HU-17',
     titulo: 'Tablero de estimaciones',

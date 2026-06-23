@@ -37,11 +37,15 @@ async function registrarPago(req, res) {
   if (!Number.isInteger(contratoId) || contratoId <= 0) return res.status(400).json({ error: 'El contrato (contrato_id) es requerido' });
   if (!Number.isInteger(estimacionId) || estimacionId <= 0) return res.status(400).json({ error: 'La estimación (estimacion_id) es requerida; selecciona una estimación del contrato' });
   if (!fechaValida(fechaPago)) return res.status(400).json({ error: 'La fecha de pago es requerida y debe tener formato AAAA-MM-DD válido' });
-  if (!referencia) return res.status(400).json({ error: 'La referencia bancaria (SPEI) es requerida' });
+  if (!referencia) return res.status(400).json({ error: 'La referencia bancaria (clave de rastreo SPEI) es requerida' });
   if (referencia.length > 100) return res.status(400).json({ error: 'La referencia bancaria no puede exceder 100 caracteres' });
+  // FIX 22-jun (profe): la clave de rastreo SPEI es NUMÉRICA — antes el formulario aceptaba letras sin validar.
+  if (!/^\d{6,100}$/.test(referencia)) return res.status(400).json({ error: 'La referencia bancaria (clave de rastreo SPEI) debe ser numérica (solo dígitos)' });
   if (!facturaCfdi) return res.status(400).json({ error: 'El folio fiscal (factura_cfdi) es requerido' });
   if (facturaCfdi.length > 60) return res.status(400).json({ error: 'El folio fiscal no puede exceder 60 caracteres' });
   if (!fechaValida(fechaFactura)) return res.status(400).json({ error: 'La fecha de la factura es requerida y debe tener formato AAAA-MM-DD válido' });
+  // FIX 22-jun (profe): la factura NO puede estar POST-FECHADA (fecha futura). "No emito una factura un mes después".
+  if (fechaFactura > new Date().toISOString().slice(0, 10)) return res.status(400).json({ error: `La fecha de la factura (${fechaFactura}) no puede ser futura` });
   let fechaAutorizacion = null;
   if (fechaAutorizacionRaw !== undefined && fechaAutorizacionRaw !== null && fechaAutorizacionRaw !== '') {
     if (!fechaValida(fechaAutorizacionRaw)) return res.status(400).json({ error: 'La fecha de autorización, si se envía, debe tener formato AAAA-MM-DD válido' });
@@ -73,6 +77,19 @@ async function registrarPago(req, res) {
       const dup = await client.query('SELECT 1 FROM pagos WHERE estimacion_id = $1 LIMIT 1', [estimacionId]);
       if (dup.rowCount > 0) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'Esta estimación ya tiene un pago registrado' }); }
 
+      // FIX 22-jun (profe): NO se paga sin AVANCE físico reportado del contrato (HU-06). El profe: "acabas
+      // de pagar y no tienes reportado tu avance". Se exige al menos un registro de avance vigente.
+      const av = await client.query(
+        `SELECT 1 FROM concepto_avance ca
+            JOIN contrato_conceptos cc ON cc.id = ca.contrato_concepto_id
+          WHERE cc.contrato_id = $1 AND ca.estado = 'vigente' LIMIT 1`,
+        [contratoId]
+      );
+      if (av.rowCount === 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'No se puede pagar: el contrato no tiene avance físico reportado (HU-06). Registra el avance antes de pagar.' });
+      }
+
       // Plan2 Pase3: la fecha del pago NO puede ser anterior al día en que se integró la estimación
       // (integrada_en). No se paga antes de que la estimación exista formalmente. Comparación por DÍA
       // en UTC: fecha_pago es DATE (sin hora); integrada_en es TIMESTAMPTZ. El MISMO día de la
@@ -99,6 +116,11 @@ async function registrarPago(req, res) {
       );
       // Avanza la estimación a 'pagada' (CA-1). El trigger sigecop_estimacion_inmutable deja libre 'estado'.
       await client.query("UPDATE estimaciones SET estado = 'pagada' WHERE id = $1", [estimacionId]);
+      // G4 (23-jun): cierra la instrucción de pago de esa estimación (emitida→cumplida) en la MISMA tx, para
+      // que la solicitud SALGA de la cola global de finanzas (colaCobro filtra estado='emitida') en vez de
+      // quedarse ahí marcada "pagada" para siempre. instruccion_pago no tiene trigger de inmutabilidad y el
+      // CHECK ya admite 'cumplida'. Si no hubo instrucción (pago directo sin tránsito), el UPDATE no afecta filas.
+      await client.query("UPDATE instruccion_pago SET estado = 'cumplida' WHERE estimacion_id = $1 AND estado = 'emitida'", [estimacionId]);
       await client.query('COMMIT');
       return res.status(201).json(ins.rows[0]);
     } catch (e) {

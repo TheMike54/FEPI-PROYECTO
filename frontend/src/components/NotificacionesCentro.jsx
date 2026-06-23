@@ -43,12 +43,14 @@ export default function NotificacionesCentro({ open, onClose }) {
   const puedeFirmar = ROLES_FIRMA.includes(rol);
   const esDependencia = rol === 'dependencia';
   const veAtrasos = rol === 'residente' || rol === 'supervision'; // HU-07 (residente E, supervisión C)
+  const esContratista = rol === 'contratista'; // G5: estimaciones autorizadas por cobrar
 
   const [soloActivo, setSoloActivo] = useState(true);
   const [aperturas, setAperturas] = useState([]);
   const [notas, setNotas] = useState([]);
   const [atrasos, setAtrasos] = useState([]);
   const [solicitudes, setSolicitudes] = useState([]);
+  const [porCobrar, setPorCobrar] = useState([]);
   const [cargando, setCargando] = useState(false);
 
   const scope = (soloActivo && contratoId) ? String(contratoId) : null;
@@ -62,20 +64,22 @@ export default function NotificacionesCentro({ open, onClose }) {
       puedeFirmar ? api.notasPendientes().catch(() => []) : Promise.resolve([]),
       veAtrasos ? api.alertasDetalle(scope || undefined).catch(() => []) : Promise.resolve([]),
       esDependencia ? api.listarUsuarios('pendiente').catch(() => []) : Promise.resolve([]),
-    ]).then(([ap, nt, at, so]) => {
+      esContratista ? api.porCobrar().catch(() => []) : Promise.resolve([]),
+    ]).then(([ap, nt, at, so, pc]) => {
       if (!vivo) return;
       const f = (arr) => (scope ? arr.filter((x) => String(x.contrato_id) === scope) : arr);
       setAperturas(f(Array.isArray(ap) ? ap : []));
       setNotas(f(Array.isArray(nt) ? nt : []));
       setAtrasos(Array.isArray(at) ? at : []); // ya viene acotado por `scope` server-side
       setSolicitudes(Array.isArray(so) ? so : []);
+      setPorCobrar(f(Array.isArray(pc) ? pc : []));
     }).finally(() => { if (vivo) setCargando(false); });
     return () => { vivo = false; };
-  }, [open, token, scope, puedeFirmar, veAtrasos, esDependencia]);
+  }, [open, token, scope, puedeFirmar, veAtrasos, esDependencia, esContratista]);
 
   if (!open) return null;
   const totalFirmas = aperturas.length + notas.length;
-  const total = totalFirmas + atrasos.length + (esDependencia ? solicitudes.length : 0);
+  const total = totalFirmas + atrasos.length + (esDependencia ? solicitudes.length : 0) + (esContratista ? porCobrar.length : 0);
 
   return (
     <>
@@ -146,6 +150,16 @@ export default function NotificacionesCentro({ open, onClose }) {
                     <Item key={`so-${u.id}`} to="/usuarios/solicitudes" onClick={onClose}
                       principal={u.nombre || u.email || 'Solicitud de acceso'}
                       secundario={`${u.rol || ''}${u.email ? ` · ${u.email}` : ''}`.trim() || 'Alta de cuenta por aprobar'} />
+                  ))}
+                </Grupo>
+              )}
+
+              {esContratista && (
+                <Grupo icono="💸" titulo="Estimaciones por cobrar" n={porCobrar.length}>
+                  {porCobrar.length === 0 ? <Vacio texto="Sin estimaciones autorizadas por presentar a cobro." /> : porCobrar.map((e) => (
+                    <Item key={`pc-${e.estimacion_id}`} to={`/pagos/ambiente?contrato=${e.contrato_id}`} onClick={onClose}
+                      principal={`Estimación #${e.estimacion_numero} autorizada — presenta documentos a cobro`}
+                      secundario={`${e.folio || 'contrato'} · neto $${e.neto}`} />
                   ))}
                 </Grupo>
               )}

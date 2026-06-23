@@ -312,7 +312,6 @@ function observacionesExcel(d, contrato, periodo) {
       Estimacion: `EST-${String(o.estimacion_numero).padStart(3, '0')}`,
       Seccion: SECCION_OBS_LBL[o.seccion] || o.seccion,
       Tipo: TIPO_OBS_LBL[o.tipo] || o.tipo,
-      Severidad: o.severidad,
       Estado: o.estado,
       'Turnado a': o.turnado_a || '',
       Autor: o.autor_nombre || '',

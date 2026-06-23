@@ -52,6 +52,7 @@ export default function RegistroPago() {
 
   const [searchParams] = useSearchParams();
   const contratoQuery = searchParams.get('contrato');
+  const estimacionQuery = searchParams.get('estimacion'); // G4: viene de la cola de finanzas para preseleccionar + heredar el folio
   useEffect(() => {
     // B6b/A-3A: preselecciona el contrato del ?contrato=ID (consistencia entre pantallas).
     if (sinSesion || !contratoQuery || contratoId) return;
@@ -87,7 +88,7 @@ export default function RegistroPago() {
               de pago). Solo lo ve quien EJECUTA (finanzas: HU-21='E'); el botón se gatea a finanzas dentro del
               form. La estimación a pagar se elige dentro del form. */}
           {contratoId && !soloLectura && (
-            <RegistroPagoForm contratoId={contratoId} soloLectura={soloLectura} onRegistrado={() => cargarPagos(contratoId)} />
+            <RegistroPagoForm contratoId={contratoId} soloLectura={soloLectura} estimacionIdInicial={estimacionQuery} onRegistrado={() => cargarPagos(contratoId)} />
           )}
 
           {contratoId && (

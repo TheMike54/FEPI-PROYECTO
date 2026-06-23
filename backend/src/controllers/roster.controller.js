@@ -164,6 +164,31 @@ async function sustituirPersona(req, res) {
 
       if (anteriorUsuarioId === nuevoUsuarioId) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'La persona indicada ya ocupa ese rol' }); }
 
+      // FIX 22-jun (profe): NO se puede sustituir a una persona con PENDIENTES. Si la sustituyes, ya no
+      // podrá firmar lo que le corresponde. "Pendiente" = nota emitida por OTRA parte que el saliente aún
+      // DEBE firmar y todavía está dentro de su plazo de firma (no aceptada tácitamente por vencimiento).
+      // Interpretativo [validar]: el art. 125 fr. I g RLOPSRM no fija la regla; es criterio del equipo.
+      if (anteriorUsuarioId != null) {
+        const pend = await client.query(
+          `SELECT COUNT(*)::int AS n
+             FROM bitacora_notas bn
+             JOIN bitacora_aperturas ba ON ba.id = bn.bitacora_id
+            WHERE ba.contrato_id = $1
+              AND bn.emisor_id IS DISTINCT FROM $2
+              AND NOT EXISTS (SELECT 1 FROM bitacora_nota_firmas f WHERE f.nota_id = bn.id AND f.usuario_id = $2)
+              AND now() <= bn.fecha + (ba.plazo_firma_dias || ' days')::interval`,
+          [contratoId, anteriorUsuarioId]
+        );
+        const nPend = pend.rows[0]?.n || 0;
+        if (nPend > 0) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({
+            error: `No se puede sustituir: la persona saliente tiene ${nPend} nota(s) de bitácora pendiente(s) de su firma. Debe firmarlas (o vencer su plazo) antes de ser sustituida (art. 125 RLOPSRM).`,
+            pendientes: nPend
+          });
+        }
+      }
+
       // REGLA 4 (BLOQUE 1 — empresa): la sustitución reemplaza a la PERSONA, NUNCA a la EMPRESA del
       // contrato. El contrato se liga a la EMPRESA, no a la persona; por eso el sustituto debe pertenecer
       // a la MISMA empresa que la persona saliente. Fundamento: criterio del equipo (default conservador);

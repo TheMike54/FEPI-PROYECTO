@@ -103,6 +103,9 @@ export default function TransitoPago() {
   const [cfdiFolio, setCfdiFolio] = useState('');
   const [techoVal, setTechoVal] = useState('');
   const [partidaVal, setPartidaVal] = useState('');
+  // FOLLOW-ON b (22-jun): carga binaria del CFDI / oficio (PDF) en la promoción de cobro.
+  const [archTipo, setArchTipo] = useState('cfdi');
+  const [subiendoArch, setSubiendoArch] = useState(false);
 
   // FASE 4 (rediseño por bloques) — WIZARD del tránsito a pago: Suficiencia → Soportes → Instrucción
   // (patrón del Alta/Estimación). Reusa los MISMOS componentes/testids; navegación libre entre pasos
@@ -159,6 +162,25 @@ export default function TransitoPago() {
       await cargarTransito(estimacionId);
       showToast(`${nombre} registrado`);
     } catch (e) { showToast(e.payload?.error || `No se pudo registrar ${nombre}`); }
+  };
+
+  // FOLLOW-ON b (22-jun): el contratista sube el PDF del CFDI / oficio de autorización; finanzas lo descarga.
+  const subirArchivoCobro = async (file) => {
+    if (!file) return;
+    setSubiendoArch(true);
+    try {
+      await api.subirArchivoCobro(estimacionId, file, archTipo);
+      await cargarTransito(estimacionId);
+      showToast('Soporte digital (PDF) subido');
+    } catch (e) { showToast(e.message || e.payload?.error || 'No se pudo subir el archivo'); }
+    finally { setSubiendoArch(false); }
+  };
+  const descargarArchivoCobro = async (id) => {
+    try {
+      const url = await api.descargarArchivoCobro(id);
+      window.open(url, '_blank');
+      setTimeout(() => { try { URL.revokeObjectURL(url); } catch { /* noop */ } }, 60000);
+    } catch (e) { showToast(e.message || 'No se pudo descargar el soporte'); }
   };
 
   const guardarTecho = async () => {
@@ -363,9 +385,51 @@ export default function TransitoPago() {
                 </tbody>
               </table>
             </div>
-            <p className="text-[11px] text-tinta-sec mt-2" data-testid="nota-upload-deshabilitado">
-              ⛔ Carga de archivo no disponible (falta infra de almacenamiento): se registran metadatos (folio CFDI) y la fianza se lee de las garantías del contrato.
+            <p className="text-[11px] text-tinta-sec mt-2">
+              La fianza se lee de las garantías del contrato (HU-01). El folio del CFDI se registra arriba como metadato.
             </p>
+          </div>
+
+          {/* FOLLOW-ON b (22-jun, profe): SOPORTES DIGITALES (PDF) — el contratista sube su CFDI y el oficio de
+              autorización; Finanzas los descarga desde la cola (art. 54 LOPSRM). Binario en BYTEA. */}
+          <div className="bg-white border border-borde rounded-md p-5 mb-6" data-testid="soportes-archivos-cobro">
+            <h2 className="text-lg font-bold text-guinda mb-1">Soportes digitales para cobro (PDF)</h2>
+            <p className="text-[12px] text-tinta-sec mb-3">
+              El <strong>contratista</strong> sube el PDF de su <strong>CFDI</strong> y del <strong>oficio de autorización</strong>;
+              <strong> Finanzas</strong> los descarga desde la cola de solicitudes de cobro.
+            </p>
+            {Array.isArray(transito.archivos) && transito.archivos.length > 0 ? (
+              <ul className="text-sm mb-3 space-y-1" data-testid="lista-archivos-cobro">
+                {transito.archivos.map((a) => (
+                  <li key={a.id} className="flex items-center gap-2">
+                    <span className="inline-block px-1.5 py-0.5 rounded text-[11px] font-semibold bg-guinda-soft text-guinda uppercase">{a.tipo}</span>
+                    <span className="text-tinta-sec">{a.nombre}</span>
+                    <button type="button" className="text-sigecop-accent hover:underline text-xs font-semibold" onClick={() => descargarArchivoCobro(a.id)} data-testid={`archivo-cobro-${a.id}`}>Descargar</button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-xs text-tinta-ter mb-3">Aún no se han subido soportes digitales (CFDI / oficio).</p>
+            )}
+            {!soloLectura && rol === 'contratista' ? (
+              <div className="flex items-end gap-2 flex-wrap">
+                <div>
+                  <label className="sg-label">Tipo de soporte</label>
+                  <select className="sg-input max-w-[200px]" value={archTipo} onChange={(e) => setArchTipo(e.target.value)} data-testid="select-tipo-archivo-cobro">
+                    <option value="cfdi">CFDI</option>
+                    <option value="oficio">Oficio de autorización</option>
+                    <option value="otro">Otro</option>
+                  </select>
+                </div>
+                <label className="text-sm font-semibold text-sigecop-accent hover:underline cursor-pointer pb-2" data-testid="btn-subir-archivo-cobro">
+                  {subiendoArch ? 'Subiendo…' : '⬆ Subir PDF'}
+                  <input type="file" accept="application/pdf" className="hidden" disabled={subiendoArch}
+                    onChange={(e) => { const f = e.target.files && e.target.files[0]; e.target.value = ''; subirArchivoCobro(f); }} />
+                </label>
+              </div>
+            ) : (
+              <p className="text-[11px] text-tinta-ter">La carga la realiza el <strong>contratista</strong>; aquí Finanzas/Residencia descargan.</p>
+            )}
           </div>
           </div>
           )}

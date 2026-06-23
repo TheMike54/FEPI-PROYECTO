@@ -15,6 +15,15 @@ async function request(path, options = {}) {
   const data = text ? JSON.parse(text) : null;
 
   if (!res.ok) {
+    // FIX 22-jun (profe): SESIÓN ÚNICA. Si esta sesión fue reemplazada por un login posterior
+    // (token_version), el backend devuelve 401 + sesionReemplazada → se cierra la sesión local y se
+    // vuelve al login (con aviso en el arranque de la pantalla de login).
+    if (res.status === 401 && data?.sesionReemplazada && typeof window !== 'undefined') {
+      localStorage.removeItem('sigecop_token');
+      localStorage.removeItem('sigecop_user');
+      try { sessionStorage.setItem('sigecop_sesion_reemplazada', '1'); } catch { /* ignore */ }
+      window.location.assign('/');
+    }
     const err = new Error(data?.error || `HTTP ${res.status}`);
     err.status = res.status;
     err.payload = data;
@@ -108,8 +117,27 @@ export const api = {
   transitoEstimacion: (estimacionId) => request(`/instruccion-pago/estimacion/${estimacionId}`),
   cargarSoporteTransito: (estimacionId, payload) => request(`/instruccion-pago/estimacion/${estimacionId}/soportes`, { method: 'POST', body: JSON.stringify(payload) }),
   generarInstruccionPago: (estimacionId) => request(`/instruccion-pago/estimacion/${estimacionId}`, { method: 'POST' }),
+  // FIX 22-jun (profe): cola GLOBAL de solicitudes de cobro para finanzas (todas las instrucciones 'emitida').
+  colaCobro: () => request('/instruccion-pago/cola'),
+  // G5 (23-jun): estimaciones autorizadas sin instrucción aún (notificación al contratista "ve a cobrar").
+  porCobrar: () => request('/instruccion-pago/por-cobrar'),
   consultarPresupuesto: (ejercicio, dependencia) => request(`/instruccion-pago/presupuesto?ejercicio=${encodeURIComponent(ejercicio)}&dependencia=${encodeURIComponent(dependencia)}`),
   crearPresupuesto: (payload) => request('/instruccion-pago/presupuesto', { method: 'POST', body: JSON.stringify(payload) }),
+  // FOLLOW-ON b (22-jun, profe): carga binaria del CFDI / oficio en la promoción de cobro (BYTEA). El
+  // contratista sube el PDF; Finanzas lo descarga desde la cola.
+  listarArchivosCobro: (estId) => request(`/instruccion-pago/estimacion/${estId}/archivos`),
+  subirArchivoCobro: (estId, file, tipo) => {
+    const fd = new FormData(); fd.append('documento', file); if (tipo) fd.append('tipo', tipo);
+    const token = localStorage.getItem('sigecop_token');
+    return fetch(`${API_URL}/instruccion-pago/estimacion/${estId}/archivo`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd })
+      .then(async (res) => { const t = await res.text(); const d = t ? JSON.parse(t) : null; if (!res.ok) { const e = new Error(d?.error || `HTTP ${res.status}`); e.status = res.status; throw e; } return d; });
+  },
+  descargarArchivoCobro: async (archivoId) => {
+    const token = localStorage.getItem('sigecop_token');
+    const res = await fetch(`${API_URL}/instruccion-pago/archivo/${archivoId}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) { let m = `HTTP ${res.status}`; try { m = JSON.parse(await res.text())?.error || m; } catch (_) { /* binario */ } const e = new Error(m); e.status = res.status; throw e; }
+    return URL.createObjectURL(await res.blob());
+  },
   // PLAN GRANDE BLOQUE 1: administración del padrón de empresas (solo dependencia).
   padronEmpresas: () => request('/empresas/padron'),
   empresasPorValidar: () => request('/empresas/por-validar'),
@@ -149,8 +177,9 @@ export const api = {
   vincularNotaVisita: (visitaId, notaId) => request(`/minutas/visita/${visitaId}/nota`, { method: 'PATCH', body: JSON.stringify({ nota_id: notaId }) }),
   // EVIDENCIA FOTOGRÁFICA de la estimación (art. 132 fr. IV RLOPSRM) — fotos en BYTEA (patrón PDF de minutas).
   listarFotosEstimacion: (estId) => request(`/estimacion-fotos/estimacion/${estId}`),
-  subirFotoEstimacion: (estId, file, descripcion) => {
+  subirFotoEstimacion: (estId, file, descripcion, contratoConceptoId) => {
     const fd = new FormData(); fd.append('documento', file); if (descripcion) fd.append('descripcion', descripcion);
+    if (contratoConceptoId) fd.append('contrato_concepto_id', String(contratoConceptoId)); // FIX 22-jun: foto por generador
     const token = localStorage.getItem('sigecop_token');
     return fetch(`${API_URL}/estimacion-fotos/estimacion/${estId}`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd })
       .then(async (res) => { const t = await res.text(); const d = t ? JSON.parse(t) : null; if (!res.ok) { const e = new Error(d?.error || `HTTP ${res.status}`); e.status = res.status; throw e; } return d; });
@@ -162,6 +191,21 @@ export const api = {
     return URL.createObjectURL(await res.blob());
   },
   eliminarFotoEstimacion: (fotoId) => request(`/estimacion-fotos/${fotoId}`, { method: 'DELETE' }),
+  // FIX 22-jun (profe): EVIDENCIA FOTOGRÁFICA del AVANCE (HU-06) — fotos en BYTEA, colgadas del registro de avance.
+  listarFotosAvance: (avanceId) => request(`/avance-fotos/avance/${avanceId}`),
+  subirFotoAvance: (avanceId, file, descripcion) => {
+    const fd = new FormData(); fd.append('documento', file); if (descripcion) fd.append('descripcion', descripcion);
+    const token = localStorage.getItem('sigecop_token');
+    return fetch(`${API_URL}/avance-fotos/avance/${avanceId}`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd })
+      .then(async (res) => { const t = await res.text(); const d = t ? JSON.parse(t) : null; if (!res.ok) { const e = new Error(d?.error || `HTTP ${res.status}`); e.status = res.status; throw e; } return d; });
+  },
+  descargarFotoAvance: async (fotoId) => {
+    const token = localStorage.getItem('sigecop_token');
+    const res = await fetch(`${API_URL}/avance-fotos/archivo/${fotoId}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) { let m = `HTTP ${res.status}`; try { m = JSON.parse(await res.text())?.error || m; } catch (_) { /* binario */ } const e = new Error(m); e.status = res.status; throw e; }
+    return URL.createObjectURL(await res.blob());
+  },
+  eliminarFotoAvance: (fotoId) => request(`/avance-fotos/${fotoId}`, { method: 'DELETE' }),
   subirPdfMinuta: (minutaId, file) => {
     const fd = new FormData(); fd.append('documento', file);
     const token = localStorage.getItem('sigecop_token');

@@ -65,6 +65,22 @@ async function integrarEstimacion(req, res) {
     return res.status(400).json({ error: 'El periodo de la estimación no puede exceder un mes (art. 54)' });
   }
 
+  // FIX 22-jun (profe): SIN bitácora abierta NO se opera nada — tampoco se integra la estimación
+  // (art. 122 RLOPSRM). El contrato se opera DENTRO de su bitácora. `requiereBitacora` para que el front
+  // redirija a abrirla. Consistente con el gate de presentación (estimaciones-ciclo) y avance/convenio.
+  const bitInt = await pool.query('SELECT id FROM bitacora_aperturas WHERE contrato_id = $1', [contratoId]);
+  if (bitInt.rowCount === 0) {
+    return res.status(409).json({ error: 'La bitácora del contrato no está abierta; ábrela primero para integrar la estimación (art. 122 RLOPSRM).', requiereBitacora: true, contratoId });
+  }
+
+  // FIX 22-jun (profe): SOLO se estima un periodo VENCIDO (mes ya terminado). No se integra una estimación
+  // de un periodo que AÚN NO CIERRA — "esa mes vencido tú trabajas y te pagan el mes que trabajaste" (art.
+  // 54 LOPSRM). Comparación contra CURRENT_DATE (TZ-safe): el periodo cierra en periodo_fin → debe ser < hoy.
+  const cierreR = await pool.query("SELECT ($1::date < CURRENT_DATE) AS cerrado, to_char(CURRENT_DATE,'YYYY-MM-DD') AS hoy", [periodoFin]);
+  if (!cierreR.rows[0].cerrado) {
+    return res.status(409).json({ error: `No se puede estimar el periodo aún: cierra el ${periodoFin} (hoy es ${cierreR.rows[0].hoy}). Solo se estima un periodo ya VENCIDO al terminar el mes (art. 54 LOPSRM).`, periodoNoCerrado: true });
+  }
+
   // deductivas: manual, opcional, default 0; no negativo (art. 46 Bis LOPSRM).
   let deductivas = 0;
   if (body.deductivas !== undefined && body.deductivas !== null && body.deductivas !== '') {

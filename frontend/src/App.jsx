@@ -27,7 +27,7 @@ import CurvaAvance from './pages/CurvaAvance.jsx';
 import TrabajosTerminados from './pages/TrabajosTerminados.jsx';
 import MinutasVisitas from './pages/MinutasVisitas.jsx';
 import EnvioEstimacion from './pages/EnvioEstimacion.jsx';
-import ReingresoEstimacion from './pages/ReingresoEstimacion.jsx';
+// import ReingresoEstimacion from './pages/ReingresoEstimacion.jsx'; // HU-16 retirado de la UI (profe 22-jun): ruta desconectada; archivo conservado.
 import TableroEstimaciones from './pages/TableroEstimaciones.jsx';
 import PortafolioEjecutivo from './pages/PortafolioEjecutivo.jsx';
 import ExportacionReportes from './pages/ExportacionReportes.jsx';
@@ -88,7 +88,9 @@ export default function App() {
             <Route path="/bitacora/minutas" element={<WithLayout><MinutasVisitas /></WithLayout>} />
             <Route path="/estimaciones/integracion" element={<WithLayout><IntegracionEstimacion /></WithLayout>} />
             <Route path="/estimaciones/envio" element={<WithLayout><EnvioEstimacion /></WithLayout>} />
-            <Route path="/estimaciones/reingreso" element={<WithLayout><ReingresoEstimacion /></WithLayout>} />
+            {/* HU-16 reingreso RETIRADO de la UI (profe 22-jun): un rechazo se vuelve a integrar (HU-12) + presentar (HU-13).
+                Ruta desconectada; ReingresoEstimacion.jsx se conserva en disco, sin ruta ni enlace.
+            <Route path="/estimaciones/reingreso" element={<WithLayout><ReingresoEstimacion /></WithLayout>} /> */}
             <Route path="/estimaciones/tablero" element={<WithLayout><TableroEstimaciones /></WithLayout>} />
             <Route path="/portafolio" element={<WithLayout><PortafolioEjecutivo /></WithLayout>} />
             <Route path="/reportes" element={<WithLayout><ExportacionReportes /></WithLayout>} />

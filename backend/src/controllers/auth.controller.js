@@ -52,11 +52,17 @@ async function login(req, res) {
     return res.status(403).json({ error, estado: usuario.estado });
   }
 
+  // FIX 22-jun (profe): SESIÓN ÚNICA (last-login-wins). Al iniciar sesión se incrementa token_version,
+  // lo que INVALIDA cualquier token anterior de esta cuenta (el middleware compara `tv`). Se firma el nuevo `tv`.
+  const tv = (await query(
+    'UPDATE usuarios SET token_version = token_version + 1 WHERE id = $1 RETURNING token_version',
+    [usuario.id]
+  )).rows[0].token_version;
+
   const token = jwt.sign(
-    // ADITIVO: conserva {id, rol, nombre} idénticos; SOLO añade empresa_id (null si la cuenta no tiene).
-    // Token viejo sin empresa_id → req.user.empresa_id = undefined → comportamiento legado (acotamiento
-    // dormido), retrocompatible. Alimenta el acotamiento por empresa de lib/acceso.js.
-    { id: usuario.id, rol: usuario.rol, nombre: usuario.nombre, empresa_id: usuario.empresa_id ?? null },
+    // ADITIVO: conserva {id, rol, nombre, empresa_id}; añade `tv` (token_version) para la sesión única.
+    // Token viejo sin empresa_id/tv → comportamiento legado retrocompatible (el middleware no exige tv).
+    { id: usuario.id, rol: usuario.rol, nombre: usuario.nombre, empresa_id: usuario.empresa_id ?? null, tv },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || '8h' }
   );

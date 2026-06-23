@@ -120,11 +120,16 @@ async function listarEmpresas(req, res) {
 async function listarPadron(req, res) {
   try {
     const r = await query(
+      // FIX 22-jun (profe): cuenta los contratos por la EMPRESA DEL CONTRATO (contratista_empresa_id /
+      // supervision_empresa_id) — la empresa con la que se firmó — en vez de derivarla del usuario.
+      // COALESCE a la derivación por usuario para contratos legados sin la columna (retrocompat).
       `SELECT e.id, e.nombre, e.tipo, e.estado,
               (SELECT COUNT(*) FROM usuarios u WHERE u.empresa_id = e.id) AS personas,
               (SELECT COUNT(DISTINCT c.id) FROM contratos c
-                 JOIN usuarios su ON su.id = c.superintendente_id
-                WHERE su.empresa_id = e.id) AS contratos
+                 LEFT JOIN usuarios su ON su.id = c.superintendente_id
+                 LEFT JOIN usuarios sv ON sv.id = c.supervision_id
+                WHERE COALESCE(c.contratista_empresa_id, su.empresa_id) = e.id
+                   OR COALESCE(c.supervision_empresa_id, sv.empresa_id) = e.id) AS contratos
          FROM empresas e
         WHERE e.tipo IN ('contratista','supervision')
         ORDER BY (e.estado = 'por_validar') DESC, e.nombre ASC`);

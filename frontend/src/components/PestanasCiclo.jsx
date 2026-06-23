@@ -23,7 +23,8 @@ const CICLOS = {
     { key: 'integrar', label: 'Integrar', to: '/estimaciones/integracion', hu: 'HU-12' },
     { key: 'presentar', label: 'Presentar', to: '/estimaciones/envio', hu: 'HU-13' },
     { key: 'revision', label: 'Revisión', to: '/estimaciones/revision', hu: 'HU-15' },
-    { key: 'reingreso', label: 'Reingreso', to: '/estimaciones/reingreso', hu: 'HU-16' },
+    // Reingreso (HU-16) retirado de la UI por indicación del profe (22-jun): un rechazo se vuelve a
+    // presentar como integración nueva (HU-12). La ruta sigue existiendo pero ya no se enlaza.
     { key: 'historial', label: 'Historial', to: '/estimaciones/historial', hu: 'HU-14' },
     { key: 'tablero', label: 'Tablero', to: '/estimaciones/tablero', hu: 'HU-17' },
   ],

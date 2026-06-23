@@ -37,7 +37,6 @@ const GRUPOS = [
       { hu: 'HU-12', icono: '📐', label: 'Ciclo de estimación', children: [
         { hu: 'HU-13', label: 'Presentar' },
         { hu: 'HU-15', label: 'Revisión / autorización' },
-        { hu: 'HU-16', label: 'Reingreso' },
         { hu: 'HU-14', label: 'Historial' },
       ] },
       { ruta: '/bitacora/ambiente', roles: T, icono: '📓', label: 'Bitácora', children: [

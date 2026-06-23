@@ -81,8 +81,15 @@ export default function TrabajosTerminados() {
     const data = await api.trabajosDeContrato(id);
     setConceptos(Array.isArray(data?.conceptos) ? data.conceptos : []);
     setAvances(Array.isArray(data?.avances) ? data.avances : []);
-    setPeriodos(Array.isArray(data?.periodos) ? data.periodos : []);
+    const pers = Array.isArray(data?.periodos) ? data.periodos : [];
+    setPeriodos(pers);
     setPrograma(Array.isArray(data?.programa) ? data.programa : []);
+    // FIX 22-jun (profe): preselecciona el periodo EN CURSO (el que contiene hoy) o, si el contrato ya
+    // terminó, el último que ya inició. El avance se reporta sobre el periodo vigente, no uno libre.
+    const hoy = new Date().toISOString().slice(0, 10);
+    const vig = pers.find((p) => String(p.inicio).slice(0, 10) <= hoy && hoy <= String(p.fin).slice(0, 10))
+      || [...pers].reverse().find((p) => String(p.inicio).slice(0, 10) <= hoy) || null;
+    if (vig) setForm((f) => (f.periodoNumero ? f : { ...f, periodoNumero: String(vig.numero) }));
   }, []);
 
   const seleccionarContrato = useCallback(async (id) => {
@@ -113,6 +120,13 @@ export default function TrabajosTerminados() {
   // ---- Renglón del programa para el concepto + periodo seleccionados (referencia P14) ----
   const conceptoSel = form.conceptoId ? conceptoById.get(Number(form.conceptoId)) : null;
   const periodoSel = form.periodoNumero ? periodos.find((p) => String(p.numero) === String(form.periodoNumero)) || null : null;
+  // FIX 22-jun: número del periodo EN CURSO (para marcarlo en el selector).
+  const periodoVigenteNum = (() => {
+    const hoy = new Date().toISOString().slice(0, 10);
+    const v = periodos.find((p) => String(p.inicio).slice(0, 10) <= hoy && hoy <= String(p.fin).slice(0, 10))
+      || [...periodos].reverse().find((p) => String(p.inicio).slice(0, 10) <= hoy);
+    return v ? v.numero : null;
+  })();
   const cantNueva = Number(form.cantidad) || 0;
 
   // Programado del periodo, programado acumulado (≤ periodo sel) y ejecutado acumulado (≤ periodo sel),
@@ -176,7 +190,10 @@ export default function TrabajosTerminados() {
       });
       const baseMsg = r?.nota_diferida ? 'Avance registrado. La nota de bitácora se asentará al abrir la bitácora.' : 'Avance registrado y nota de bitácora asentada.';
       // O-PROFE: el backend puede devolver un aviso (no bloqueante) si el avance excede lo programado.
-      showToast(r?.aviso_programa ? `${baseMsg} ⚠ ${r.aviso_programa}` : baseMsg);
+      {
+        const avisos = [r?.aviso_periodo, r?.aviso_programa].filter(Boolean);
+        showToast(avisos.length ? `${baseMsg} ⚠ ${avisos.join(' · ')}` : baseMsg);
+      }
       setForm(FORM_VACIO);
       await recargar(contratoId);
     } catch (e) {
@@ -189,6 +206,17 @@ export default function TrabajosTerminados() {
 
   // ---- Edición de una entrada existente (cantidad / observaciones; la nota es de sistema) ----
   const abrirEdicion = (a) => setEdicion({ id: a.id, cantidad: String(a.cantidad), observaciones: a.observaciones || '' });
+
+  // FIX 22-jun (profe): evidencia fotográfica del avance (HU-06) — se sube y guarda ligada al registro.
+  const subirFotoAv = async (avanceId, file) => {
+    if (!file) return;
+    try {
+      await api.subirFotoAvance(avanceId, file);
+      showToast('Evidencia fotográfica del avance guardada.');
+    } catch (e) {
+      showToast(e.message || 'No se pudo subir la foto');
+    }
+  };
   const setEdicionCampo = (campo, valor) => setEdicion((prev) => ({ ...prev, [campo]: valor }));
 
   // FIX 3.3 — append-only: "corregir" NO edita la fila; anula la original y registra una NUEVA vinculada
@@ -337,7 +365,7 @@ export default function TrabajosTerminados() {
                     >
                       <option value="">— Selecciona un periodo —</option>
                       {periodos.map((p) => (
-                        <option key={p.id} value={p.numero}>Periodo {p.numero} ({fechaMX(p.inicio)} – {fechaMX(p.fin)})</option>
+                        <option key={p.id} value={p.numero}>Periodo {p.numero} ({fechaMX(p.inicio)} – {fechaMX(p.fin)}){p.numero === periodoVigenteNum ? ' — en curso' : ''}</option>
                       ))}
                     </select>
                     {periodos.length === 0 && (
@@ -505,7 +533,15 @@ export default function TrabajosTerminados() {
                                   {a.estado === 'anulada' ? (
                                     <span className="text-xs text-slate-400 italic" data-testid={`avance-anulado-${a.id}`}>anulada (corregida)</span>
                                   ) : (
-                                    <button type="button" className="text-xs text-sigecop-blue hover:underline" onClick={() => abrirEdicion(a)} data-testid={`btn-corregir-${a.id}`}>Corregir</button>
+                                    <>
+                                      <button type="button" className="text-xs text-sigecop-blue hover:underline" onClick={() => abrirEdicion(a)} data-testid={`btn-corregir-${a.id}`}>Corregir</button>
+                                      {/* FIX 22-jun (profe): evidencia fotográfica del avance (HU-06). */}
+                                      <label className="text-xs text-sigecop-blue hover:underline cursor-pointer ml-3" data-testid={`btn-foto-${a.id}`}>
+                                        📷 Foto
+                                        <input type="file" accept="image/jpeg,image/png" className="hidden"
+                                          onChange={(e) => { const f = e.target.files?.[0]; if (f) subirFotoAv(a.id, f); e.target.value = ''; }} />
+                                      </label>
+                                    </>
                                   )}
                                 </>
                               )}

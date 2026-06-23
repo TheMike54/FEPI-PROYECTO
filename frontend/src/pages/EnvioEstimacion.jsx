@@ -87,12 +87,20 @@ const SEMAFORO_CLASE = {
 };
 
 // Plazo de presentación (informativo): días transcurridos desde el corte (periodo_fin).
+// FIX 22-jun (profe): si el periodo AÚN NO cierra, la resta sale negativa; antes mostraba
+// "hace -22 días". Ahora se distingue ese caso y se reporta "faltan X días para el corte".
 function presentacion(periodoFinIso) {
   const s = (periodoFinIso || '').slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
   const corte = new Date(s + 'T00:00:00Z');
   const transcurridos = Math.floor((Date.now() - corte.getTime()) / MS_DIA);
-  return { transcurridos, dentro: transcurridos >= 0 && transcurridos <= PLAZO_PRESENTACION_DIAS };
+  const antesDelCorte = transcurridos < 0;
+  return {
+    transcurridos,
+    antesDelCorte,
+    faltan: antesDelCorte ? -transcurridos : 0,
+    dentro: transcurridos >= 0 && transcurridos <= PLAZO_PRESENTACION_DIAS,
+  };
 }
 
 export default function EnvioEstimacion() {
@@ -254,9 +262,11 @@ export default function EnvioEstimacion() {
                               <div className="space-y-2" data-testid={`semaforo-plazo-${e.id}`}>
                                 {pres && (
                                   <div className={`text-xs ${pres.dentro ? 'text-slate-500' : 'text-sigecop-amber-attention'}`}>
-                                    {pres.dentro
-                                      ? `Dentro de los ${PLAZO_PRESENTACION_DIAS} días para presentar desde el corte (art. 54).`
-                                      : `Fuera de los ${PLAZO_PRESENTACION_DIAS} días para presentar desde el corte (hace ${pres.transcurridos} días, art. 54).`}
+                                    {pres.antesDelCorte
+                                      ? `El periodo aún no termina: faltan ${pres.faltan} día${pres.faltan === 1 ? '' : 's'} para el corte. La estimación se presenta al cerrar el periodo (art. 54).`
+                                      : pres.dentro
+                                        ? `Dentro de los ${PLAZO_PRESENTACION_DIAS} días para presentar desde el corte (art. 54).`
+                                        : `Fuera de los ${PLAZO_PRESENTACION_DIAS} días para presentar desde el corte (hace ${pres.transcurridos} días, art. 54).`}
                                   </div>
                                 )}
                                 {!soloLectura && (
@@ -290,8 +300,9 @@ export default function EnvioEstimacion() {
 
                             {/* Revisión profe 16-jun: la disponibilidad de "Presentar" se gobierna por
                                 ESTADO, no por la validación de montos. Una estimación se presenta UNA sola
-                                vez: ya autorizada/pagada no se vuelve a presentar; rechazada se vuelve a
-                                presentar mediante REINGRESO (HU-16), no aquí. */}
+                                vez: ya autorizada/pagada no se vuelve a presentar; una RECHAZADA se vuelve a
+                                INTEGRAR (HU-12) y a presentar desde cero (el reingreso aparte se retiró por
+                                indicación del profe), como dice el aviso de abajo. */}
                             {(e.estado === 'autorizada' || e.estado === 'pagada') && (
                               <span className="text-xs text-slate-500 italic" data-testid={`no-presentable-${e.id}`}>
                                 Ya {labelEstadoEstimacion(e.estado).toLowerCase()} — una estimación se presenta una sola vez (art. 54 LOPSRM).
@@ -299,8 +310,9 @@ export default function EnvioEstimacion() {
                             )}
                             {e.estado === 'rechazada' && (
                               <span className="text-xs text-slate-500" data-testid={`no-presentable-${e.id}`}>
-                                Rechazada — para volver a presentarla, créala de nuevo en{' '}
-                                <Link to="/estimaciones/reingreso" className="text-sigecop-accent hover:underline font-semibold">Reingreso</Link> (HU-16).
+                                Rechazada — atiende las observaciones y vuelve a{' '}
+                                <Link to="/estimaciones/integracion" className="text-sigecop-accent hover:underline font-semibold">integrarla</Link>{' '}
+                                y presentarla desde cero (HU-12).
                               </span>
                             )}
                           </td>

@@ -43,7 +43,7 @@ async function preparacionEstimacion(req, res) {
     // Conceptos del catálogo + PU + contratado (clave puede no existir en contratos legacy).
     const cc = await pool.query(
       `SELECT cc.id AS contrato_concepto_id, cc.orden, cc.clave, cc.concepto, cc.unidad,
-              cc.cantidad AS cantidad_contratada, cc.pu
+              cc.cantidad AS cantidad_contratada, cc.pu, cc.es_adicional
          FROM contrato_conceptos cc
         WHERE cc.contrato_id = $1
         ORDER BY cc.orden`,
@@ -53,7 +53,8 @@ async function preparacionEstimacion(req, res) {
       return res.status(200).json({
         contrato: { monto: contrato.monto, anticipo_pct: anticipoPct, importe_anticipo: importeAnticipo.toFixed(2), pena_convencional_pct: penaPct },
         tiene_programa: false, periodo_fin: periodoFin, conceptos: [],
-        avance: { fisico_ejecutado: '0.00', fisico_pct: null, planeado_valor: '0.00', planeado_pct: null,
+        avance: { fisico_ejecutado: '0.00', fisico_pct: null, fisico_real_ejecutado: '0.00', fisico_real_pct: null,
+                  planeado_valor: '0.00', planeado_pct: null,
                   pagado_acumulado: pagadoAcum.toFixed(2), financiero_pct: financieroPct, atraso_previo: false }
       });
     }
@@ -68,6 +69,35 @@ async function preparacionEstimacion(req, res) {
       [contratoId, ids]
     );
     const acuMap = new Map(acu.rows.map((r) => [r.cid, Number(r.acum)]));
+
+    // FIX 22-jun (profe): el AVANCE FÍSICO del contrato se mide del avance REPORTADO (HU-06,
+    // concepto_avance vigente), NO de Σ estimaciones. Antes el "avance del contrato" salía 14.9%
+    // (= valor ya estimado / monto); este es el avance físico real (0% si no se ha reportado nada).
+    const fis = await pool.query(
+      `SELECT ca.contrato_concepto_id AS cid, COALESCE(SUM(ca.cantidad),0) AS ejec
+         FROM concepto_avance ca
+        WHERE ca.contrato_concepto_id = ANY($1::int[]) AND ca.estado = 'vigente'
+        GROUP BY ca.contrato_concepto_id`,
+      [ids]
+    );
+    const fisMap = new Map(fis.rows.map((r) => [r.cid, Number(r.ejec)]));
+
+    // FIX 22-jun (profe): (b) "solo conceptos del periodo" y (c) "jalar del avance" necesitan el periodo
+    // EXACTO seleccionado (el contrato_periodo cuyo fin coincide con periodo_fin). Por concepto:
+    // programado_periodo (plan de ESE periodo) y avance_periodo (terminado reportado en ESE periodo).
+    let periodoSelId = null;
+    if (periodoFin) {
+      const psq = await pool.query("SELECT id FROM contrato_periodos WHERE contrato_id=$1 AND to_char(fin,'YYYY-MM-DD')=$2 LIMIT 1", [contratoId, periodoFin]);
+      periodoSelId = psq.rows[0]?.id || null;
+    }
+    let progPerMap = new Map();
+    let avPerMap = new Map();
+    if (periodoSelId) {
+      const ppq = await pool.query('SELECT contrato_concepto_id AS cid, COALESCE(SUM(cantidad),0) AS q FROM programa_obra WHERE contrato_periodo_id=$1 GROUP BY contrato_concepto_id', [periodoSelId]);
+      progPerMap = new Map(ppq.rows.map((r) => [r.cid, Number(r.q)]));
+      const apq = await pool.query("SELECT contrato_concepto_id AS cid, COALESCE(SUM(cantidad),0) AS q FROM concepto_avance WHERE contrato_periodo_id=$1 AND estado='vigente' GROUP BY contrato_concepto_id", [periodoSelId]);
+      avPerMap = new Map(apq.rows.map((r) => [r.cid, Number(r.q)]));
+    }
 
     // ¿tiene programa A2? (igual gating que el POST 6c).
     const tp = await pool.query(
@@ -97,7 +127,8 @@ async function preparacionEstimacion(req, res) {
       planMap = new Map(plan.rows.map((r) => [r.cid, Number(r.planeado)]));
     }
 
-    let fisicoValor = 0;     // Σ (ya_estimado × pu) — valor de obra ya estimada/ejecutada acumulada
+    let fisicoValor = 0;     // Σ (ya_estimado × pu) — valor de obra ya ESTIMADA acumulada (carátula)
+    let fisicoRealValor = 0; // Σ (avance_fisico_reportado × pu) — avance FÍSICO real (HU-06)
     let planeadoValor = 0;   // Σ (planeado_hasta_periodo × pu) — curva S esperada a la fecha
     const conceptos = cc.rows.map((r) => {
       const cid = r.contrato_concepto_id;
@@ -109,17 +140,23 @@ async function preparacionEstimacion(req, res) {
       const tope = tienePrograma ? Math.min(planeado, contratado) : contratado;
       const disponible = Math.max(0, tope - yaEstimado);
       fisicoValor += yaEstimado * pu;
+      fisicoRealValor += (fisMap.get(cid) || 0) * pu;
       if (tienePrograma) planeadoValor += (planeado || 0) * pu;
       return {
         contrato_concepto_id: cid,
         clave: r.clave || null,
         concepto: r.concepto,
         unidad: r.unidad,
+        es_adicional: r.es_adicional === true,   // G2 (art. 101 RLOPSRM): conceptos de convenio se distinguen
         cantidad_contratada: r.cantidad_contratada,
         pu: r.pu,
         ya_estimado: yaEstimado,
         planeado_hasta_periodo: planeado,
-        disponible_periodo: disponible
+        disponible_periodo: disponible,
+        // FIX 22-jun: (b) plan del periodo EXACTO (>0 ⇒ el concepto pertenece al periodo) y (c) avance
+        // terminado reportado en ese periodo (para prellenar la estimación). null si no hay periodo elegido.
+        programado_periodo: periodoSelId ? (progPerMap.get(cid) || 0) : null,
+        avance_periodo: periodoSelId ? (avPerMap.get(cid) || 0) : null
       };
     });
 
@@ -139,6 +176,9 @@ async function preparacionEstimacion(req, res) {
       avance: {
         fisico_ejecutado: fisicoValor.toFixed(2),
         fisico_pct: pct(fisicoValor, montoContrato),
+        // FIX 22-jun: avance FÍSICO real (HU-06), separado del "estimado acumulado" de la carátula.
+        fisico_real_ejecutado: fisicoRealValor.toFixed(2),
+        fisico_real_pct: pct(fisicoRealValor, montoContrato),
         planeado_valor: planeadoValor.toFixed(2),
         planeado_pct: tienePrograma ? pct(planeadoValor, montoContrato) : null,
         pagado_acumulado: pagadoAcum.toFixed(2),

@@ -10,7 +10,7 @@ import RegionEditable from '../components/vista/RegionEditable.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { api } from '../services/api.js';
 import MatrizProgramaLectura, { periodoQueContiene } from '../components/programa/MatrizProgramaLectura.jsx';
-import { Link } from 'react-router-dom'; // Pase 4: acceso directo a la lista de alertas del contrato
+import { Link, useNavigate } from 'react-router-dom'; // Pase 4: acceso directo a la lista de alertas del contrato
 import { round2 } from '../utils/formato.js';
 // alta-v2 (4.2): el alta arranca VACÍA (sin datos dummy). Ya no se importa conceptosDummy
 // ni polizasGarantiaDummy.
@@ -1290,6 +1290,7 @@ const IDX_REGISTRADOS = ULTIMO_PASO_WIZARD + 1;
 
 export default function AltaContrato() {
   const { showToast } = useToast();
+  const navigate = useNavigate();
   const { soloLectura } = useVistaHU('HU-01');
   const { token, usuario } = useSesion();
   const sinSesion = !token;
@@ -1785,6 +1786,10 @@ export default function AltaContrato() {
         superintendenteId: Number(superintendenteId),
         supervisionId: supervisionId ? Number(supervisionId) : null,
         dependenciaId: dependenciaId ? Number(dependenciaId) : null,
+        // FIX 22-jun (profe): la EMPRESA con la que firma cada parte se registra EN EL CONTRATO (no se
+        // deriva del usuario aguas abajo). Sale de la empresa de la persona elegida (modelo 1:1 persona→empresa).
+        contratistaEmpresaId: (asignablesContratista.find((u) => String(u.id) === String(superintendenteId)) || {}).empresa_id || null,
+        supervisionEmpresaId: supervisionId ? ((asignablesSupervision.find((u) => String(u.id) === String(supervisionId)) || {}).empresa_id || null) : null,
         anticipoPct: anticipoPct === '' || anticipoPct === null ? null : Number(anticipoPct),
         juridicos: datosJuridicos,
         // monto NO se envía: el backend lo deriva = Σ ROUND(cantidad×pu,2). clave por concepto.
@@ -1822,12 +1827,18 @@ export default function AltaContrato() {
         catch (e) { showToast('Contrato guardado, pero la autorización del anticipo no se adjuntó: ' + (e.message || 'error')); }
       }
       setErrorWizard(null);
-      // BUG 1: alta exitosa → limpia TODOS los campos (alta nueva vacía + pestañas re-bloqueadas)
-      // y REDIRIGE a "Registrados". Ya no hay estado de éxito con "Ver registrados →".
       resetFormulario();
-      setTabActivo(IDX_REGISTRADOS); // pestaña "Registrados"
-      await cargarContratos();
-      showToast('Contrato guardado: ' + payload.folio + '. Disponible en Registrados.');
+      // FIX 22-jun (profe): INVERTIR EL FLUJO. Al crear el contrato se fuerza la apertura de la
+      // bitácora (sin bitácora no se opera nada: avance, estimación, convenio ni sustitución).
+      // Se redirige a HU-08 con el contrato preseleccionado en vez de mandar a "Registrados".
+      if (nuevoId) {
+        showToast('Contrato guardado: ' + payload.folio + '. Abre su bitácora para poder operar el contrato.');
+        navigate(`/bitacora/apertura?contrato=${nuevoId}`);
+      } else {
+        setTabActivo(IDX_REGISTRADOS);
+        await cargarContratos();
+        showToast('Contrato guardado: ' + payload.folio + '. Disponible en Registrados.');
+      }
     } catch (err) {
       // alta-v2 (1.3): los errores del guardado también van al banner PERSISTENTE.
       if (err.status === 409) { setErrores({ ...ERR0, campos: { folio: true } }); setTabActivo(0); setErrorWizard('El folio ya existe; usa uno distinto.'); }

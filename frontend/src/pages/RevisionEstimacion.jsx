@@ -25,19 +25,14 @@ import { labelEstadoEstimacion } from '../data/estadoEstimacion.js';
 
 const PLAZO_REVISION_DIAS = 15;
 
-// Tipos/severidades alineados al CHECK de estimacion_observaciones (texto, no numérico).
+// Tipos de observación (texto). FIX 22-jun (profe): se ELIMINÓ la severidad — no hay término medio,
+// toda observación cuenta por igual; si la estimación tiene observaciones, no está aprobada.
 const TIPOS = [
   { value: 'aclaracion', label: 'Aclaración' },
   { value: 'correccion', label: 'Corrección' },
   { value: 'rechazo', label: 'Rechazo' }
 ];
-const SEVERIDADES = [
-  { value: 'menor', label: 'Menor' },
-  { value: 'mayor', label: 'Mayor' },
-  { value: 'critica', label: 'Crítica' }
-];
 const labelTipo = (v) => TIPOS.find((t) => t.value === v)?.label || v;
-const labelSeveridad = (v) => SEVERIDADES.find((s) => s.value === v)?.label || v;
 
 // moneda: utilidad compartida (utils/formato.js)
 
@@ -93,12 +88,11 @@ const cap = (s) => (s ? s.charAt(0).toUpperCase() + s.slice(1) : s);
 function ObservacionesSeccion({ seccionKey, observaciones, puedeEditar, onAgregar, onEliminar, agregando }) {
   const [texto, setTexto] = useState('');
   const [tipo, setTipo] = useState(TIPOS[0].value);
-  const [severidad, setSeveridad] = useState(SEVERIDADES[0].value);
 
   const agregar = async () => {
     if (!texto.trim()) return;
-    const ok = await onAgregar({ seccion: seccionKey, tipo, severidad, descripcion: texto.trim() });
-    if (ok) { setTexto(''); setTipo(TIPOS[0].value); setSeveridad(SEVERIDADES[0].value); }
+    const ok = await onAgregar({ seccion: seccionKey, tipo, descripcion: texto.trim() });
+    if (ok) { setTexto(''); setTipo(TIPOS[0].value); }
   };
 
   return (
@@ -134,9 +128,6 @@ function ObservacionesSeccion({ seccionKey, observaciones, puedeEditar, onAgrega
                 <span className="inline-block px-2 py-0.5 bg-sigecop-blue-light text-sigecop-blue font-semibold rounded">
                   {labelTipo(o.tipo)}
                 </span>
-                <span className="inline-block px-2 py-0.5 bg-slate-100 text-slate-700 font-semibold rounded">
-                  {labelSeveridad(o.severidad)}
-                </span>
                 <span className="text-slate-500">
                   {o.autor_nombre || '—'} · {fechaHoraMX(o.created_at) || '—'}
                 </span>
@@ -156,17 +147,11 @@ function ObservacionesSeccion({ seccionKey, observaciones, puedeEditar, onAgrega
             onChange={(e) => setTexto(e.target.value)}
             data-testid={`obs-${seccionKey}-nueva-texto`}
           />
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2 items-end">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2 items-end">
             <div>
               <label className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold block mb-0.5">Tipo</label>
               <select className="sg-input" value={tipo} onChange={(e) => setTipo(e.target.value)} data-testid={`obs-${seccionKey}-nueva-tipo`}>
                 {TIPOS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold block mb-0.5">Severidad</label>
-              <select className="sg-input" value={severidad} onChange={(e) => setSeveridad(e.target.value)} data-testid={`obs-${seccionKey}-nueva-severidad`}>
-                {SEVERIDADES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
               </select>
             </div>
             <button
@@ -519,7 +504,7 @@ export default function RevisionEstimacion() {
       await api.rechazarEstimacion(estimacionId, { motivo: motivoRechazo.trim() });
       await cargarRevision(estimacionId);
       cargarEstimaciones(contratoId);
-      showToast('Estimación rechazada. Debe reingresarse (HU-16).');
+      showToast('Estimación rechazada. El contratista debe volver a integrarla y presentarla (HU-12).');
     } catch (e) {
       showToast(e.message || 'No se pudo rechazar la estimación');
     } finally {
@@ -652,12 +637,12 @@ export default function RevisionEstimacion() {
           )}
           {estado === 'rechazada' && (
             <div className="bg-sigecop-amber-bg border-l-4 border-sigecop-amber-attention px-4 py-3 mb-4 rounded-r-md" data-testid="banner-rechazada">
-              <div className="text-sm font-semibold text-sigecop-amber-attention">⚠ Estimación rechazada — debe ser reingresada (HU-16).</div>
+              <div className="text-sm font-semibold text-sigecop-amber-attention">⚠ Estimación rechazada — el contratista debe volver a integrarla y presentarla (HU-12).</div>
               <p className="text-sm text-slate-800 mt-1">Observaciones a resolver ({totalObs}):</p>
               <ul className="list-disc list-inside text-sm text-slate-800 mt-1 space-y-0.5">
                 {(revision.observaciones || []).map((o) => (
                   <li key={o.id}>
-                    <strong className="capitalize">{o.seccion}</strong> · {labelTipo(o.tipo)} · {labelSeveridad(o.severidad)}: {o.descripcion}
+                    <strong className="capitalize">{o.seccion}</strong> · {labelTipo(o.tipo)}: {o.descripcion}
                   </li>
                 ))}
               </ul>
@@ -699,6 +684,34 @@ export default function RevisionEstimacion() {
                     >
                       ➡ Turnar a residencia
                     </button>
+                  </div>
+
+                  {/* FIX 22-jun (profe): la supervisión puede RECHAZAR DIRECTO (sin turnar a residencia). */}
+                  <div className="mt-4 pt-4 border-t border-slate-200">
+                    <p className="text-sm text-slate-700 mb-2">
+                      O bien, la supervisión puede <strong>rechazar directamente</strong> la estimación, sin turnarla a residencia.
+                    </p>
+                    <label className="sg-label">Motivo del rechazo</label>
+                    <textarea
+                      className="sg-input mb-3"
+                      rows={2}
+                      placeholder="Motivo del rechazo…"
+                      value={motivoRechazo}
+                      onChange={(e) => setMotivoRechazo(e.target.value)}
+                      data-testid="motivo-rechazo-supervision"
+                    />
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        className="px-4 py-2 rounded-md border border-red-500 text-red-700 font-medium hover:bg-red-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={accion || !motivoRechazo.trim()}
+                        onClick={rechazar}
+                        data-testid="btn-rechazar-supervision"
+                        title={!motivoRechazo.trim() ? 'Indica el motivo del rechazo.' : ''}
+                      >
+                        ✗ Rechazar (supervisión)
+                      </button>
+                    </div>
                   </div>
                 </>
               )}
@@ -754,7 +767,7 @@ export default function RevisionEstimacion() {
       <SeccionCriterios
         huId="HU-15"
         criterios={[
-          { numero: 1, texto: 'La revisión permite ir sección por sección (carátula, generadores, registro fotográfico, soportes y notas) y registrar observaciones con tipo y severidad por concepto.' },
+          { numero: 1, texto: 'La revisión permite ir sección por sección (carátula, generadores, registro fotográfico, soportes y notas) y registrar observaciones con su tipo por concepto; toda observación cuenta por igual (no hay niveles de severidad): si hay observaciones, la estimación no está aprobada.' },
           { numero: 2, texto: 'La autorización queda condicionada al turnado secuencial: primero supervisión, luego residencia; residencia no puede resolver antes del turnado.' },
           { numero: 3, texto: 'El sistema controla el plazo de 15 días naturales de revisión conforme al art. 54 LOPSRM mediante un semáforo basado en la fecha real de recepción.' }
         ]}

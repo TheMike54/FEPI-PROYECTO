@@ -353,6 +353,9 @@ CREATE TRIGGER trg_contrato_documentos_append_only
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS rol_solicitado TEXT;
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS aprobado_por INTEGER REFERENCES usuarios(id) ON DELETE SET NULL;
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS aprobado_en TIMESTAMPTZ;
+-- FIX 22-jun (profe): SESIÓN ÚNICA (last-login-wins). El login incrementa token_version e incluye `tv`
+-- en el JWT; el middleware compara `tv` contra este valor → 401 si llega un token de una sesión anterior.
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS token_version INTEGER NOT NULL DEFAULT 0;
 -- 'rol' pasa a NULLABLE: las altas nuevas nacen sin rol efectivo. Las cuentas
 -- sembradas y previas conservan su rol (este ALTER no toca datos).
 ALTER TABLE usuarios ALTER COLUMN rol DROP NOT NULL;
@@ -611,6 +614,31 @@ ALTER TABLE estimacion_fotos ADD COLUMN IF NOT EXISTS mime        TEXT;
 ALTER TABLE estimacion_fotos ADD COLUMN IF NOT EXISTS tamano      INTEGER;
 ALTER TABLE estimacion_fotos ADD COLUMN IF NOT EXISTS contenido   BYTEA;
 ALTER TABLE estimacion_fotos ADD COLUMN IF NOT EXISTS subido_por  INTEGER REFERENCES usuarios(id);
+
+-- ── FIX 22-jun (profe) — MENORES FROZEN (DDL aditivo idempotente) ─────────────────────────────────────
+-- 1) Evidencia fotográfica AL REGISTRAR EL AVANCE (HU-06): tabla nueva, mismo patrón BYTEA inline que
+--    estimacion_fotos (disco de Render efímero). Colgada del registro de avance (concepto_avance).
+CREATE TABLE IF NOT EXISTS avance_fotos (
+  id          SERIAL PRIMARY KEY,
+  avance_id   INTEGER NOT NULL REFERENCES concepto_avance(id) ON DELETE CASCADE,
+  nombre      TEXT,
+  descripcion TEXT,
+  mime        TEXT,
+  tamano      INTEGER,
+  contenido   BYTEA,
+  subido_por  INTEGER REFERENCES usuarios(id),
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_avance_fotos_avance ON avance_fotos(avance_id);
+
+-- 2) Foto POR GENERADOR/concepto en la estimación (carátula GACM: una foto por generador).
+ALTER TABLE estimacion_fotos ADD COLUMN IF NOT EXISTS contrato_concepto_id INTEGER REFERENCES contrato_conceptos(id) ON DELETE SET NULL;
+
+-- 3) Observación de revisión ANCLADA a un generador/elemento (no solo a la sección).
+ALTER TABLE estimacion_observaciones ADD COLUMN IF NOT EXISTS estimacion_generador_id INTEGER REFERENCES estimacion_generadores(id) ON DELETE SET NULL;
+
+-- 4) Convenios: distinguir conceptos ORIGINALES (congelados) de ADICIONALES (etiquetados aparte).
+ALTER TABLE contrato_conceptos ADD COLUMN IF NOT EXISTS es_adicional BOOLEAN NOT NULL DEFAULT false;
 -- ── fin del plegado 21-jun (estimacion_fotos) ────────────────────────────────────────────────────────
 
 -- (5) Inmutabilidad. Tras integrar, la CARÁTULA/contenido de la estimación es
@@ -1697,6 +1725,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_empresas_nombre_norm
 ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS empresa_id INTEGER REFERENCES empresas(id);
 CREATE INDEX IF NOT EXISTS idx_usuarios_empresa ON usuarios(empresa_id);
 
+-- FIX 22-jun (profe): EMPRESA PRIMERO (modelo invertido). El CONTRATO registra la empresa con la que
+-- firma cada parte: el contratista ELIGE su empresa al firmar; la supervisión externa va a SU empresa.
+-- Antes la empresa del contrato se DERIVABA del usuario (JOIN por su.empresa_id). ADITIVO: NO quita
+-- usuarios.empresa_id (la "empresa base" de la persona); el contrato manda sobre la derivación.
+ALTER TABLE contratos ADD COLUMN IF NOT EXISTS contratista_empresa_id INTEGER REFERENCES empresas(id);
+ALTER TABLE contratos ADD COLUMN IF NOT EXISTS supervision_empresa_id INTEGER REFERENCES empresas(id);
+ALTER TABLE contrato_roster ADD COLUMN IF NOT EXISTS empresa_id INTEGER REFERENCES empresas(id);
+-- Backfill idempotente: la empresa del contrato = la del usuario asignado (solo si NULL → no pisa).
+UPDATE contratos c SET contratista_empresa_id = u.empresa_id FROM usuarios u
+  WHERE u.id = c.superintendente_id AND c.contratista_empresa_id IS NULL AND u.empresa_id IS NOT NULL;
+UPDATE contratos c SET supervision_empresa_id = u.empresa_id FROM usuarios u
+  WHERE u.id = c.supervision_id AND c.supervision_empresa_id IS NULL AND u.empresa_id IS NOT NULL;
+
 -- SEED de 3 empresas demo. Idempotente vía WHERE NOT EXISTS sobre la forma NORMALIZADA (el
 -- índice es funcional, así que ON CONFLICT requeriría nombrar la expresión; este patrón es más claro).
 INSERT INTO empresas (nombre)
@@ -1862,3 +1903,26 @@ UPDATE empresas SET tipo = 'supervision' WHERE lower(btrim(regexp_replace(nombre
 -- Las empresas pre-existentes quedan 'validada' (ya están en uso); las que se registren después
 -- las marca 'por_validar' el backend (empresas.controller::resolverOCrearEmpresa) para que la
 -- dependencia las valide (art. 43 RLOPSRM).
+
+-- =====================================================================
+-- (FIX 22-jun, profe — FOLLOW-ON b) CARGA BINARIA DEL CFDI / OFICIO EN LA PROMOCIÓN DE COBRO.
+-- El profe: el CONTRATISTA promueve su cobro y SUBE sus soportes (el oficio de autorización que genera el
+-- sistema + su CFDI); Finanzas los REVISA en la cola y paga. Hasta ahora `estimacion_soportes` solo guardaba
+-- METADATOS (folio CFDI como texto); faltaba el ARCHIVO. Esta tabla NUEVA guarda el binario INLINE como BYTEA
+-- (mismo patrón que estimacion_fotos / minutas.pdf_* / contrato_garantias.pdf_* — el disco de Render es
+-- efímero, la BD persiste). Fundamento: art. 54 LOPSRM (la factura/CFDI es precondición del pago) y la
+-- promoción de cobro por el contratista (criterio del equipo). ADITIVO E IDEMPOTENTE: tabla nueva, NO altera
+-- tablas existentes ni toca auth. Controller/route: instruccion-pago (NO congelado).
+-- =====================================================================
+CREATE TABLE IF NOT EXISTS cobro_soportes (
+  id            SERIAL PRIMARY KEY,
+  estimacion_id INTEGER NOT NULL REFERENCES estimaciones(id) ON DELETE CASCADE,
+  tipo          VARCHAR(20) NOT NULL CHECK (tipo IN ('cfdi','oficio','otro')),  -- CFDI del contratista u oficio de autorización
+  nombre        TEXT,
+  mime          TEXT,
+  tamano        INTEGER,
+  contenido     BYTEA NOT NULL,                                                 -- el PDF inline (disco de Render efímero)
+  subido_por    INTEGER REFERENCES usuarios(id),                               -- del JWT, nunca del body
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_cobro_soportes_estimacion ON cobro_soportes(estimacion_id);

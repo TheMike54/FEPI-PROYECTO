@@ -179,8 +179,18 @@ export default function AppShell({ children }) {
     api.listarUsuarios('pendiente').then((l) => { if (vivo) setSolicitudes(Array.isArray(l) ? l.length : 0); }).catch(() => { if (vivo) setSolicitudes(0); });
     return () => { vivo = false; };
   }, [token, esDependencia, pathname]);
+  // G5 (23-jun, profe): estimaciones AUTORIZADAS sin instrucción de pago → notificación al CONTRATISTA
+  // "ve a presentar documentos a cobro" (la orden la promueve él; art. 54 LOPSRM). Falla en silencio.
+  const esContratista = rol === 'contratista';
+  const [porCobrar, setPorCobrar] = useState([]);
+  useEffect(() => {
+    if (!token || !esContratista) { setPorCobrar([]); return; }
+    let vivo = true;
+    api.porCobrar().then((l) => { if (vivo) setPorCobrar(Array.isArray(l) ? l : []); }).catch(() => { if (vivo) setPorCobrar([]); });
+    return () => { vivo = false; };
+  }, [token, esContratista, pathname]);
   const totalFirmas = pendientes.length + notasFirma.length;                       // aperturas + notas
-  const totalNotif = (sinAccesoAtraso ? 0 : atrasos) + totalFirmas + solicitudes;  // badge unificado de la campana
+  const totalNotif = (sinAccesoAtraso ? 0 : atrasos) + totalFirmas + solicitudes + porCobrar.length;  // badge unificado de la campana
 
   // FRENTE 4 — accesos DIRECTOS por ítem (acotados al contrato activo): cada uno lleva a su destino EXACTO.
   const scopeId = contratoId ? String(contratoId) : null;
@@ -199,6 +209,11 @@ export default function AppShell({ children }) {
       sub: `${a.folio || ''} · déficit ${a.deficit} ${a.unidad || ''}`.trim(),
       to: `/seguimiento/alertas?contrato=${a.contrato_id}&concepto=${a.contrato_concepto_id}`,
     }))),
+    // G5: estimaciones autorizadas listas para que el contratista presente documentos a cobro.
+    ...porCobrar.filter((e) => enContrato(e.contrato_id)).map((e) => ({
+      key: `pc-${e.estimacion_id}`, icono: '💸', texto: `Estimación #${e.estimacion_numero} autorizada — presenta documentos a cobro`,
+      sub: `${e.folio || 'contrato'} · neto $${e.neto}`, to: `/pagos/ambiente?contrato=${e.contrato_id}`,
+    })),
   ].slice(0, 6);
 
   // Al cambiar de pantalla, cierra cualquier dropdown abierto.

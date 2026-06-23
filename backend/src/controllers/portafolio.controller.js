@@ -231,6 +231,15 @@ async function portafolio(req, res) {
       const rechazadasSinReingreso = Number(e.rechazadas_sin_reingreso || 0);
       const pendientes = obsAbiertas + rechazadasSinReingreso;
 
+      // G6 (23-jun, profe "pagaste sin avance reportado"): bandera de riesgo cuando lo PAGADO (financiero)
+      // supera al avance FÍSICO ejecutado por más de la holgura (1 pp, criterio del equipo). Concepto fundado:
+      // el pago debe corresponder a obra ejecutada/estimada (art. 54 LOPSRM) y el anticipo se amortiza
+      // proporcional al avance (art. 143 fr. I RLOPSRM); pagar por encima del avance devengado es la
+      // incoherencia que pidió señalar. Se DERIVA (sin schema): compara los dos % que ya se calculan.
+      const HOLGURA_PAGO_PP = 1;
+      const pagoSinAvance = (fisicoPct != null && financieroPct != null && financieroPct > fisicoPct + HOLGURA_PAGO_PP);
+      const excedentePagoPp = pagoSinAvance ? r1(financieroPct - fisicoPct) : null;
+
       // --- Puntajes ---
       const pAvance = tienePrograma ? puntaje(desviacion, UMBRALES.desviacion_pp) : null;
       let pAtraso = puntaje(diasVencidos, UMBRALES.dias_vencidos);
@@ -278,6 +287,11 @@ async function portafolio(req, res) {
           total: pendientes,
           observaciones_abiertas: obsAbiertas,
           rechazadas_sin_reingreso: rechazadasSinReingreso,
+        },
+        // G6: riesgo derivado "pago sin respaldo de avance" (financiero > físico + 1 pp).
+        riesgos: {
+          pago_sin_avance: pagoSinAvance,
+          excedente_financiero_pp: excedentePagoPp,
         },
         // Penalización REAL (carátula congelada). null cuando no hay retención (la UI muestra "—").
         penalizaciones: penalizacion > 0 ? penalizacion.toFixed(2) : null,

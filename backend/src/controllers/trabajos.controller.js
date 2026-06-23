@@ -265,6 +265,22 @@ async function registrarAvance(req, res) {
         return res.status(400).json({ error: `El periodo ${periodoNumero} no existe en el programa de este contrato` });
       }
 
+      // FIX 22-jun (profe): "validar periodo = ACTUAL". NO se reporta avance de un periodo que AÚN NO
+      // INICIA (trabajo no ejecutado) → bloqueo. Un periodo YA CERRADO se permite (registro tardío) pero
+      // con AVISO; el "periodo en curso" es el que contiene hoy. Comparación en SQL (evita zona horaria).
+      const posPer = await client.query(
+        "SELECT (inicio > CURRENT_DATE) AS futuro, (fin < CURRENT_DATE) AS cerrado, to_char(inicio,'YYYY-MM-DD') AS inicio_iso FROM contrato_periodos WHERE id = $1",
+        [periodo.id]
+      );
+      const pp = posPer.rows[0] || {};
+      if (pp.futuro) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: `El periodo ${periodoNumero} aún no inicia (comienza el ${pp.inicio_iso}); no se puede reportar avance de trabajo no ejecutado.` });
+      }
+      const avisoPeriodo = pp.cerrado
+        ? `El periodo ${periodoNumero} ya cerró; estás registrando un avance tardío. El avance corriente se reporta en el periodo en curso.`
+        : null;
+
       // O4 + O-PROFE — VALIDACIÓN INFORMATIVA (AVISO, ya NO bloquea) contra el programa por periodo. El
       // profe: adelantar avance a precios pactados NO requiere convenio → se registra con un aviso. Solo
       // si hay programa. El BLOQUEO real es el art. 118 (abajo). El aviso viaja en la respuesta 201.
@@ -320,7 +336,9 @@ async function registrarAvance(req, res) {
         aviso: notaDiferida ? 'El avance quedó registrado; su nota de bitácora se asentará automáticamente al abrir la bitácora.' : null,
         // O-PROFE: aviso (no bloqueante) si el avance excede lo programado del periodo o el concepto no
         // estaba programado. El registro se hizo igual (solo art. 118 bloquea).
-        aviso_programa: avisoPrograma
+        aviso_programa: avisoPrograma,
+        // FIX 22-jun: aviso si el periodo ya cerró (registro tardío).
+        aviso_periodo: avisoPeriodo
       });
     } catch (e) {
       try { await client.query('ROLLBACK'); } catch (_) { /* el client pudo morir */ }

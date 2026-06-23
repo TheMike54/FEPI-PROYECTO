@@ -48,11 +48,22 @@ export default function AmbientePago() {
   const [contratoId, setContratoId] = useState('');
   const [estimaciones, setEstimaciones] = useState([]);
   const [pagos, setPagos] = useState([]);
+  const [cola, setCola] = useState([]); // FIX 22-jun: cola global de solicitudes de cobro (finanzas)
 
   useEffect(() => {
     if (sinSesion) return;
     api.listarContratos().then((l) => setContratos(Array.isArray(l) ? l : [])).catch(() => setContratos([]));
+    api.colaCobro().then((c) => setCola(Array.isArray(c) ? c : [])).catch(() => setCola([]));
   }, [sinSesion]);
+
+  // FOLLOW-ON b (22-jun): Finanzas descarga el PDF del CFDI / oficio que subió el contratista, desde la cola.
+  const descargarArchivoCobro = async (archivoId) => {
+    try {
+      const url = await api.descargarArchivoCobro(archivoId);
+      window.open(url, '_blank');
+      setTimeout(() => { try { URL.revokeObjectURL(url); } catch { /* noop */ } }, 60000);
+    } catch (e) { showToast(e.message || 'No se pudo descargar el soporte'); }
+  };
 
   const seleccionarContrato = useCallback(async (id) => {
     setContratoId(id); setEstimaciones([]); setPagos([]);
@@ -97,6 +108,67 @@ export default function AmbientePago() {
         <div className="bg-slate-50 border border-slate-200 rounded-md px-4 py-3 text-sm text-slate-600">
           Inicia sesión para recorrer el ciclo de pago de un contrato.
         </div>
+      )}
+
+      {/* FIX 22-jun (profe): COLA GLOBAL de solicitudes de cobro para FINANZAS — todas las instrucciones
+          'emitida' de TODOS los contratos, sin entrar contrato por contrato. El contratista promueve; finanzas revisa y paga. */}
+      {!sinSesion && (
+        <Bloque n={'★'} titulo="Cola global de solicitudes de cobro (Finanzas)" estado={cola.length ? 'activo' : 'listo'}>
+          <p className="text-sm text-slate-700 mb-3">
+            El <strong>contratista promueve su cobro</strong> (sube CFDI, oficio y datos bancarios SPEI) y genera la
+            solicitud. Aquí <strong>Finanzas ve TODAS las solicitudes</strong> de todos los contratos, revisa el
+            folio fiscal y manda a cobranza.{rol !== 'finanzas' && <em> (Solo ves las solicitudes de tus contratos.)</em>}
+          </p>
+          {cola.length === 0 ? (
+            <p className="text-sm text-slate-500 italic" data-testid="cola-cobro-vacia">No hay solicitudes de cobro pendientes.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm" data-testid="cola-cobro">
+                <thead className="bg-pagina text-tinta-sec">
+                  <tr>
+                    <th className="text-left px-3 py-2">Contrato</th>
+                    <th className="text-left px-3 py-2">Estimación</th>
+                    <th className="text-left px-3 py-2">Periodo</th>
+                    <th className="text-right px-3 py-2">Neto</th>
+                    <th className="text-left px-3 py-2">Folio CFDI</th>
+                    <th className="text-left px-3 py-2">Soportes (PDF)</th>
+                    <th className="text-left px-3 py-2">Estado</th>
+                    <th className="px-3 py-2"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {cola.map((s) => (
+                    <tr key={s.instruccion_id} className="border-t border-borde" data-testid={`cola-fila-${s.instruccion_id}`}>
+                      <td className="px-3 py-2 font-mono text-xs">{s.folio}<div className="text-[11px] text-tinta-sec">{s.contratista}</div></td>
+                      <td className="px-3 py-2">#{s.estimacion_numero}</td>
+                      <td className="px-3 py-2 text-xs">{String(s.periodo_inicio).slice(0, 10)} – {String(s.periodo_fin).slice(0, 10)}</td>
+                      <td className="px-3 py-2 text-right font-semibold">{moneda(s.monto)}</td>
+                      <td className="px-3 py-2 text-xs">{s.factura_cfdi || '—'}</td>
+                      <td className="px-3 py-2 text-xs">
+                        {Array.isArray(s.archivos) && s.archivos.length > 0 ? (
+                          <div className="flex flex-col gap-0.5" data-testid={`cola-archivos-${s.instruccion_id}`}>
+                            {s.archivos.map((a) => (
+                              <button key={a.id} type="button" onClick={() => descargarArchivoCobro(a.id)}
+                                className="text-sigecop-accent hover:underline text-left" title={a.nombre} data-testid={`cola-archivo-${a.id}`}>
+                                📎 {a.tipo.toUpperCase()}
+                              </button>
+                            ))}
+                          </div>
+                        ) : <span className="text-tinta-ter">—</span>}
+                      </td>
+                      <td className="px-3 py-2">{s.pagada ? <span className="text-emerald-700 text-xs font-semibold">pagada</span> : <span className="text-amber-700 text-xs font-semibold">por cobrar</span>}</td>
+                      <td className="px-3 py-2 text-right">
+                        {!s.pagada && (
+                          <LinkHU hu="HU-21" to={`/pagos/registro?contrato=${s.contrato_id}&estimacion=${s.estimacion_id}`} className="text-sigecop-accent hover:underline text-xs font-semibold" data-testid={`cola-pagar-${s.instruccion_id}`} actor="Lo registra Finanzas">Registrar pago →</LinkHU>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Bloque>
       )}
 
       {/* BLOQUE 1 — Estimación autorizada (siembra el ciclo). */}

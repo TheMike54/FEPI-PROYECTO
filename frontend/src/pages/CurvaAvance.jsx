@@ -182,6 +182,7 @@ export default function CurvaAvance() {
   const [programa, setPrograma] = useState(null);   // { periodos, conceptos, celdas }
   const [trabajos, setTrabajos] = useState(null);   // { conceptos, avances, periodos }
   const [pagos, setPagos] = useState([]); // { fecha_pago, importe } del contrato (para la curva financiero)
+  const [versiones, setVersiones] = useState([]); // G1: versiones del programa (convenios) → monto por versión, para congelar el % financiero histórico
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState(null);
 
@@ -201,7 +202,7 @@ export default function CurvaAvance() {
 
   const seleccionarContrato = useCallback(async (id) => {
     setContratoId(id);
-    setPrograma(null); setTrabajos(null); setPagos([]); setError(null);
+    setPrograma(null); setTrabajos(null); setPagos([]); setVersiones([]); setError(null);
     setConceptoFiltro('Todos'); setRango('todo');
     if (!id) return;
     setCargando(true);
@@ -222,6 +223,14 @@ export default function CurvaAvance() {
         setPagos(Array.isArray(pg) ? pg : []);
       } catch (_) {
         setPagos([]);
+      }
+      // G1: versiones del programa (convenios) para congelar el % financiero histórico (monto por versión).
+      // Si el contrato no tiene convenios, el endpoint devuelve versiones=[] y el financiero usa el monto vigente.
+      try {
+        const conv = await api.convenios(id);
+        setVersiones(Array.isArray(conv?.versiones) ? conv.versiones : []);
+      } catch (_) {
+        setVersiones([]);
       }
     } catch (e) {
       const msg = e.status === 403 ? 'No tienes acceso al programa de este contrato' : (e.payload?.error || 'No se pudieron cargar los datos del contrato');
@@ -288,10 +297,27 @@ export default function CurvaAvance() {
   // YA INICIADOS (inicio ≤ hoy); para el periodo EN CURSO el corte es hoy (no su fin), de modo que su
   // punto = Σ pagos ≤ hoy ÷ monto y la curva financiero termina alineada con ejecutado. Periodos futuros
   // sin punto. null global si no hay monto (no se puede normalizar).
+  // G1 (23-jun, profe "26% hoy, 13% mañana"): monto del contrato VIGENTE a una fecha = el de la versión del
+  // programa (snapshot por convenio) cuya ventana [created_at, supersedido_en) contiene esa fecha. Así el %
+  // financiero de un periodo ya cerrado NO se re-escala cuando un convenio posterior sube el monto: cada punto
+  // se divide por el monto que regía entonces. Sin convenios, versiones=[] → siempre el monto vigente (idéntico
+  // al comportamiento previo, sin regresión).
+  const montoEnFecha = useCallback((fechaISO) => {
+    const base = Number(selected?.monto) || 0;
+    const vs = (versiones || []).filter((v) => Number(v.monto) > 0 && v.created_at);
+    if (vs.length === 0 || !fechaISO) return base;
+    const aplica = vs.filter((v) => dISO(v.created_at) <= fechaISO && (!v.supersedido_en || dISO(v.supersedido_en) > fechaISO));
+    if (aplica.length) return Number(aplica[aplica.length - 1].monto);
+    // Fecha anterior a toda versión registrada → usa la versión más antigua (programa original v1).
+    const ordenadas = [...vs].sort((a, b) => dISO(a.created_at).localeCompare(dISO(b.created_at)));
+    return Number(ordenadas[0].monto) || base;
+  }, [versiones, selected]);
+
   const financieroMap = useMemo(() => {
     const m = {};
-    const monto = Number(selected?.monto) || 0;
-    if (monto <= 0 || periodosAll.length === 0) return m;
+    if (periodosAll.length === 0) return m;
+    const baseMonto = Number(selected?.monto) || 0;
+    if (baseMonto <= 0 && (versiones || []).length === 0) return m;  // sin monto y sin versiones: no se puede normalizar
     const pgs = pagos.map((p) => ({ f: dISO(p.fecha_pago), imp: Number(p.importe) || 0 }));
     const ultimoNum = periodosAll[periodosAll.length - 1]?.numero;
     for (const p of periodosAll) {
@@ -299,11 +325,13 @@ export default function CurvaAvance() {
       // P5 (22-jun): el periodo terminal (y el periodo en curso) acumulan TODOS los pagos hasta hoy → un pago
       // posterior al fin del programa ya NO queda fuera de la ventana (el KPI 'Financiero a hoy' deja de marcar 0%).
       const cutoff = (p.numero === ultimoNum || dISO(p.fin) > hoy) ? hoy : dISO(p.fin);
+      const montoCorte = montoEnFecha(cutoff);                // G1: monto vigente a la fecha de corte del periodo
+      if (!(montoCorte > 0)) continue;
       const acum = pgs.reduce((s, x) => (x.f && x.f <= cutoff ? s + x.imp : s), 0);
-      m[p.numero] = (acum / monto) * 100;
+      m[p.numero] = (acum / montoCorte) * 100;
     }
     return m;
-  }, [pagos, selected, periodosAll, hoy]);
+  }, [pagos, selected, periodosAll, hoy, versiones, montoEnFecha]);
 
   // Ventana de periodos visibles (filtro de rango): recorta columnas/curvas; los acumulados
   // se siguen calculando desde el inicio del contrato (numero ≤ p.numero).
@@ -519,10 +547,13 @@ export default function CurvaAvance() {
             <Kpi label="Ejecutado (acum. a hoy)"  valor={fmtPct(kpis.ejecutado)}  tono="base" />
             <Kpi label="Financiero (acum. a hoy)" valor={fmtPct(kpis.financiero)} tono="base" />
             <Kpi
-              label="Desviación (ejec. − prog.)"
-              valor={desviacion == null ? '—' : `${desviacion > 0 ? '+' : ''}${desviacion.toFixed(1)}%`}
+              label="Desviación vs programa"
+              valor={desviacion == null ? '—'
+                : desviacion < 0 ? `Atraso de ${Math.abs(desviacion).toFixed(1)}%`
+                : desviacion > 0 ? `Adelanto de ${desviacion.toFixed(1)}%`
+                : 'En programa'}
               tono={desviacion == null ? 'base' : (desviacion < 0 ? 'aviso' : 'exito')}
-              sub={desviacion == null ? undefined : (desviacion < 0 ? 'Avance por debajo del programa' : 'Avance en o por encima del programa')}
+              sub={desviacion == null ? undefined : (desviacion < 0 ? 'Avance por debajo del programa' : desviacion > 0 ? 'Avance por encima del programa' : 'Avance conforme al programa')}
             />
           </div>
 
@@ -540,6 +571,13 @@ export default function CurvaAvance() {
               <code>financiero_pct</code> canónico, acumulado por fecha), a nivel contrato
               {conceptoSelId != null && <strong> (el financiero se reporta a nivel contrato, no por concepto)</strong>}.
             </p>
+            {(versiones || []).length > 1 && (
+              <p className="text-xs text-amber-700 mt-2 text-center bg-amber-50 border border-amber-200 rounded-md px-3 py-2" data-testid="curva-nota-convenio">
+                ⓘ Este contrato tiene <strong>convenio(s) modificatorio(s)</strong>. El % <strong>financiero histórico</strong> se calcula con el
+                monto vigente en cada periodo (<strong>no se re-escala</strong> al subir el monto con un convenio). El programado/ejecutado se
+                miden sobre el alcance vigente; los conceptos adicionales se administran por separado (art. 101 RLOPSRM).
+              </p>
+            )}
           </div>
 
           {/* Matriz programa de obra (criterio 1). */}

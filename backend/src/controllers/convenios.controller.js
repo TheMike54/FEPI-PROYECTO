@@ -117,7 +117,8 @@ async function crearConvenio(req, res) {
   if (!Number.isInteger(contratoId) || contratoId <= 0) return res.status(404).json({ error: 'Contrato no encontrado' });
   const body = req.body || {};
   const tipo = String(body.tipo || '').trim();
-  const motivo = (body.motivo != null ? String(body.motivo).trim() : '') || null;
+  let motivo = (body.motivo != null ? String(body.motivo).trim() : '') || null;
+  const oficio = body.oficio != null ? String(body.oficio).trim() : ''; // FIX 22-jun (a): oficio de soporte (previo)
   const folio = body.folio != null ? String(body.folio).trim() : null;
   const conceptos = Array.isArray(body.conceptos) ? body.conceptos : [];
   const celdas = Array.isArray(body.celdas) ? body.celdas : [];
@@ -125,6 +126,12 @@ async function crearConvenio(req, res) {
 
   if (!['monto', 'plazo', 'programa', 'mixto'].includes(tipo)) return res.status(400).json({ error: 'tipo inválido (monto|plazo|programa|mixto)' });
   if (!motivo) return res.status(400).json({ error: 'El motivo (razones fundadas y explícitas / dictamen técnico, art. 99 RLOPSRM) es obligatorio' });
+  // FIX 22-jun (profe): (a) SUBIR SOPORTES ANTES — sin el oficio de solicitud/autorización NO procede el
+  // convenio (el soporte documental es PREVIO a capturarlo; art. 99 RLOPSRM exige el dictamen/soporte). Se
+  // exige la REFERENCIA del oficio al promover; el PDF se adjunta con subirOficioConvenio. La referencia
+  // queda asentada en el motivo (sin columna nueva en el esquema congelado).
+  if (!oficio) return res.status(409).json({ error: 'Sube/indica primero el oficio de solicitud o autorización del convenio: el soporte es previo a capturarlo (art. 99 RLOPSRM).', requiereOficio: true });
+  motivo = `[Oficio de soporte: ${oficio}] ${motivo}`;
   const tocaPrograma = ['monto', 'programa', 'mixto'].includes(tipo);
   const tocaPlazo = ['plazo', 'mixto'].includes(tipo);
   if (tocaPrograma && (conceptos.length === 0 || celdas.length === 0)) return res.status(400).json({ error: 'Para un convenio de monto/programa, envía el catálogo (conceptos) y el programa (celdas) NUEVOS completos' });
@@ -202,6 +209,7 @@ async function crearConvenio(req, res) {
       let montoNuevo = montoAnterior;
       let plazoNuevoFinal = plazoAnterior;
       const idPorClave = new Map();
+      const clavesAdicionales = new Set(); // FIX 22-jun: claves de conceptos NUEVOS (adicionales del convenio)
       if (tocaPlazo) {
         plazoNuevoFinal = plazoNuevo;
         const ft = contrato.fecha_inicio ? new Date(new Date(contrato.fecha_inicio).getTime() + (plazoNuevoFinal - 1) * 86400000).toISOString().slice(0, 10) : null;
@@ -210,18 +218,28 @@ async function crearConvenio(req, res) {
         // re-mapeo de celdas a periodos nuevos); el programa conserva los periodos vigentes.
       }
       if (tocaPrograma) {
-        const existing = await client.query('SELECT id, clave FROM contrato_conceptos WHERE contrato_id = $1', [contratoId]);
-        for (const r of existing.rows) idPorClave.set(String(r.clave), r.id);
+        const existing = await client.query('SELECT id, clave, cantidad, pu FROM contrato_conceptos WHERE contrato_id = $1', [contratoId]);
+        const datosPorClave = new Map();
+        for (const r of existing.rows) { idPorClave.set(String(r.clave), r.id); datosPorClave.set(String(r.clave), { cantidad: Number(r.cantidad), pu: Number(r.pu) }); }
         let maxOrden = (await client.query('SELECT COALESCE(MAX(orden),0) AS m FROM contrato_conceptos WHERE contrato_id = $1', [contratoId])).rows[0].m;
         for (const c of conceptos) {
           if (idPorClave.has(String(c.clave))) {
-            await client.query('UPDATE contrato_conceptos SET concepto=$1, unidad=$2, cantidad=$3::numeric(14,3), pu=$4::numeric(16,4) WHERE id=$5',
-              [c.concepto ?? '', c.unidad ?? '', c.cantidad, c.pu, idPorClave.get(String(c.clave))]);
+            // FIX 22-jun (profe): los conceptos ORIGINALES se CONGELAN. No se modifican por convenio (nada de
+            // "524 → 1500"); los cambios se agregan como conceptos ADICIONALES (es_adicional). Solo se permite
+            // re-enviarlos IGUAL (el front manda el catálogo completo); cualquier cambio se RECHAZA.
+            const orig = datosPorClave.get(String(c.clave));
+            if (Math.abs(Number(c.cantidad) - orig.cantidad) > 1e-6 || Math.abs(Number(c.pu) - orig.pu) > 1e-4) {
+              await client.query('ROLLBACK');
+              return res.status(409).json({ error: `El concepto original "${c.clave}" no se modifica por convenio (se congela): cantidad ${orig.cantidad}, PU ${orig.pu}. Los cambios se agregan como conceptos ADICIONALES, no editando el original.`, conceptoCongelado: String(c.clave) });
+            }
+            // Sin cambios → NO-OP: el original queda congelado (no se reescribe ni cantidad/pu ni texto).
           } else {
+            // Concepto NUEVO = ADICIONAL: se INSERTA etiquetado es_adicional=true (se estima/paga aparte).
             maxOrden += 1;
-            const ins = await client.query('INSERT INTO contrato_conceptos (contrato_id, orden, concepto, unidad, cantidad, pu, clave) VALUES ($1,$2,$3,$4,$5::numeric(14,3),$6::numeric(16,4),$7) RETURNING id',
+            const ins = await client.query('INSERT INTO contrato_conceptos (contrato_id, orden, concepto, unidad, cantidad, pu, clave, es_adicional) VALUES ($1,$2,$3,$4,$5::numeric(14,3),$6::numeric(16,4),$7,true) RETURNING id',
               [contratoId, maxOrden, c.concepto ?? '', c.unidad ?? '', c.cantidad, c.pu, c.clave]);
             idPorClave.set(String(c.clave), ins.rows[0].id);
+            clavesAdicionales.add(String(c.clave));
           }
         }
         // Monto CANÓNICO desde el catálogo VIVO (fuente única, al centavo) y sincroniza la cabecera.
@@ -286,14 +304,22 @@ async function crearConvenio(req, res) {
       // (F) Re-cuadre del programa + nueva versión (solo si toca el programa).
       let nuevaVerId = null;
       if (tocaPrograma) {
-        const periodos = await client.query('SELECT id, numero FROM contrato_periodos WHERE contrato_id = $1', [contratoId]);
+        // FIX 22-jun (profe): (c) no se ADICIONA a un periodo PASADO (solo de hoy en adelante). Se marca qué
+        // periodos ya cerraron (fin < hoy) para bloquear celdas de conceptos ADICIONALES en periodos vencidos.
+        const periodos = await client.query('SELECT id, numero, (fin < CURRENT_DATE) AS cerrado FROM contrato_periodos WHERE contrato_id = $1', [contratoId]);
         const idPorPeriodo = new Map(periodos.rows.map((r) => [Number(r.numero), r.id]));
+        const cerradoPorPeriodo = new Map(periodos.rows.map((r) => [Number(r.numero), r.cerrado]));
         const celdasResueltas = [];
         for (const cel of celdas) {
           const ccId = idPorClave.get(String(cel.clave));
           const pId = idPorPeriodo.get(Number(cel.periodoNumero));
           if (!ccId) { await client.query('ROLLBACK'); return res.status(400).json({ error: `Celda de clave inexistente "${cel.clave}"` }); }
           if (!pId) { await client.query('ROLLBACK'); return res.status(400).json({ error: `Celda de periodo inexistente #${cel.periodoNumero}` }); }
+          // (c) un concepto ADICIONAL no puede programarse en un periodo YA CERRADO (no se adiciona al pasado).
+          if (clavesAdicionales.has(String(cel.clave)) && Number(cel.cantidad) > 0 && cerradoPorPeriodo.get(Number(cel.periodoNumero))) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: `No se puede adicionar el concepto "${cel.clave}" al periodo #${cel.periodoNumero}: ese periodo ya cerró. Los conceptos adicionales solo se programan de hoy en adelante.`, periodoCerrado: Number(cel.periodoNumero) });
+          }
           celdasResueltas.push({ contrato_concepto_id: ccId, contrato_periodo_id: pId, cantidad: cel.cantidad });
         }
         await guardarMatriz(client, contratoId, celdasResueltas, { convenioId });  // re-cuadre, exento del freeze
