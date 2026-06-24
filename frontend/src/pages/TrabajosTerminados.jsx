@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import EncabezadoContrato from '../components/ui/EncabezadoContrato.jsx';
@@ -9,6 +9,7 @@ import PestanasCiclo from '../components/PestanasCiclo.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
+import { redimensionarImagen } from '../utils/imagen.js';
 
 // HU-06 v2 (O4, 10-jun) — registro de avance POR PERIODO + NOTA automática + validación contra el
 // programa VIGENTE (P14 del profe). Cada captura imputa una cantidad ejecutada a un concepto del
@@ -28,6 +29,99 @@ const fechaMX = (iso) => {
 };
 
 const FORM_VACIO = { conceptoId: '', periodoNumero: '', cantidad: '', observaciones: '' };
+
+// FIX 23-jun (Maiki): galería de EVIDENCIA FOTOGRÁFICA del AVANCE (HU-06). Espejo del patrón YA PROBADO de
+// FotosEstimacion.jsx, adaptado a los endpoints de avance (api.listarFotosAvance / descargarFotoAvance /
+// subirFotoAvance / eliminarFotoAvance). El backend (tabla avance_fotos en BYTEA) ya estaba completo; lo que
+// faltaba era LISTAR y PINTAR lo subido. Una instancia por registro de avance (como una galería por estimación).
+// Flujo completo: subir (con redimensionarImagen → no choca con el tope de 5 MB de multer) → ver de inmediato
+// (recarga tras el POST) → eliminar (con recarga). Los blob URLs se revocan al recargar y al desmontar (sin fugas).
+function FotosDeAvance({ avanceId, soloLectura = false }) {
+  const [fotos, setFotos] = useState([]);      // metadatos de las fotos de ESTE avance
+  const [urls, setUrls] = useState({});         // fotoId -> blobURL (descargado con Authorization)
+  const [cargando, setCargando] = useState(false);
+  const [subiendo, setSubiendo] = useState(false);
+  const [error, setError] = useState('');
+  const urlsRef = useRef({});                   // espejo de `urls` para revocar al desmontar sin capturar estado viejo
+
+  const setUrlsSafe = useCallback((updater) => {
+    setUrls((prev) => { const next = typeof updater === 'function' ? updater(prev) : updater; urlsRef.current = next; return next; });
+  }, []);
+
+  const cargar = useCallback(async () => {
+    if (!avanceId) return;
+    setCargando(true); setError('');
+    try {
+      const lista = await api.listarFotosAvance(avanceId);
+      const arr = Array.isArray(lista) ? lista : [];
+      const nuevos = {};
+      await Promise.all(arr.map(async (f) => { try { nuevos[f.id] = await api.descargarFotoAvance(f.id); } catch { /* skip */ } }));
+      setFotos(arr);
+      setUrlsSafe((prev) => { Object.values(prev).forEach((u) => { try { URL.revokeObjectURL(u); } catch { /* noop */ } }); return nuevos; });
+    } catch { setError('No se pudieron cargar las fotos'); setFotos([]); }
+    finally { setCargando(false); }
+  }, [avanceId, setUrlsSafe]);
+
+  useEffect(() => { cargar(); }, [cargar]);
+  // Libera los blob URLs al desmontar (usa el ref para no fugar la última tanda cargada).
+  useEffect(() => () => { Object.values(urlsRef.current).forEach((u) => { try { URL.revokeObjectURL(u); } catch { /* noop */ } }); }, []);
+
+  // Sube una foto y RECARGA la galería: la recién subida aparece sola (resuelve el "no sé si se guardó").
+  const subir = useCallback(async (file) => {
+    if (!file) return;
+    setSubiendo(true); setError('');
+    try {
+      const liviana = await redimensionarImagen(file);   // baja una foto de celular (>5 MB) por debajo del tope de multer
+      await api.subirFotoAvance(avanceId, liviana, '');
+      await cargar();
+    } catch (err) { setError(err.message || 'No se pudo subir la foto'); }
+    finally { setSubiendo(false); }
+  }, [avanceId, cargar]);
+
+  const onEliminar = async (fotoId) => {
+    setError('');
+    try { await api.eliminarFotoAvance(fotoId); await cargar(); }
+    catch (err) { setError(err.message || 'No se pudo eliminar'); }
+  };
+
+  return (
+    <div data-testid={`fotos-avance-${avanceId}`}>
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-tinta-ter">📷 Evidencia fotográfica del avance (art. 132 fr. IV RLOPSRM)</span>
+        {!soloLectura && (
+          <label className="text-[11px] font-semibold text-sigecop-blue hover:underline cursor-pointer whitespace-nowrap" data-testid={`foto-avance-subir-${avanceId}`}>
+            {subiendo ? 'Subiendo…' : '+ Agregar foto'}
+            <input type="file" accept="image/jpeg,image/png" className="hidden"
+              onChange={(e) => { const f = e.target.files && e.target.files[0]; e.target.value = ''; subir(f); }}
+              disabled={subiendo} />
+          </label>
+        )}
+      </div>
+      {error && <p className="text-[11px] text-red-600 mb-1">{error}</p>}
+      {cargando ? (
+        <p className="text-[11px] text-tinta-ter">Cargando…</p>
+      ) : fotos.length === 0 ? (
+        <p className="text-[11px] text-tinta-ter">Sin fotos de este avance.{soloLectura ? '' : ' Sube JPEG/PNG (se redimensionan automáticamente).'}</p>
+      ) : (
+        <div className="flex flex-wrap gap-2">
+          {fotos.map((f) => (
+            <div key={f.id} className="relative group">
+              <a href={urls[f.id] || '#'} target="_blank" rel="noopener noreferrer" title={f.nombre || 'foto'}>
+                {urls[f.id]
+                  ? <img src={urls[f.id]} alt={f.nombre || 'foto de avance'} className="w-20 h-20 object-cover rounded border border-borde" />
+                  : <div className="w-20 h-20 rounded border border-borde bg-pagina flex items-center justify-center text-base">📷</div>}
+              </a>
+              {!soloLectura && (
+                <button type="button" onClick={() => onEliminar(f.id)} title="Eliminar foto"
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-600 text-white text-[11px] leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 transition" data-testid={`foto-avance-eliminar-${f.id}`}>×</button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function TrabajosTerminados() {
   const { token } = useSesion();
@@ -206,17 +300,6 @@ export default function TrabajosTerminados() {
 
   // ---- Edición de una entrada existente (cantidad / observaciones; la nota es de sistema) ----
   const abrirEdicion = (a) => setEdicion({ id: a.id, cantidad: String(a.cantidad), observaciones: a.observaciones || '' });
-
-  // FIX 22-jun (profe): evidencia fotográfica del avance (HU-06) — se sube y guarda ligada al registro.
-  const subirFotoAv = async (avanceId, file) => {
-    if (!file) return;
-    try {
-      await api.subirFotoAvance(avanceId, file);
-      showToast('Evidencia fotográfica del avance guardada.');
-    } catch (e) {
-      showToast(e.message || 'No se pudo subir la foto');
-    }
-  };
   const setEdicionCampo = (campo, valor) => setEdicion((prev) => ({ ...prev, [campo]: valor }));
 
   // FIX 3.3 — append-only: "corregir" NO edita la fila; anula la original y registra una NUEVA vinculada
@@ -487,7 +570,8 @@ export default function TrabajosTerminados() {
                       const per = a.contrato_periodo_id ? periodoById.get(a.contrato_periodo_id) : null;
                       const editando = edicion && edicion.id === a.id;
                       return (
-                        <tr key={a.id} className={`border-t border-borde ${editando ? 'bg-sigecop-blue-light' : 'hover:bg-pagina'}`} data-avance-id={a.id}>
+                        <Fragment key={a.id}>
+                        <tr className={`border-t border-borde ${editando ? 'bg-sigecop-blue-light' : 'hover:bg-pagina'}`} data-avance-id={a.id}>
                           <td className="p-3">{c ? c.concepto : `#${a.contrato_concepto_id}`}</td>
                           <td className="p-3 text-right font-mono">
                             {editando ? (
@@ -533,21 +617,20 @@ export default function TrabajosTerminados() {
                                   {a.estado === 'anulada' ? (
                                     <span className="text-xs text-slate-400 italic" data-testid={`avance-anulado-${a.id}`}>anulada (corregida)</span>
                                   ) : (
-                                    <>
-                                      <button type="button" className="text-xs text-sigecop-blue hover:underline" onClick={() => abrirEdicion(a)} data-testid={`btn-corregir-${a.id}`}>Corregir</button>
-                                      {/* FIX 22-jun (profe): evidencia fotográfica del avance (HU-06). */}
-                                      <label className="text-xs text-sigecop-blue hover:underline cursor-pointer ml-3" data-testid={`btn-foto-${a.id}`}>
-                                        📷 Foto
-                                        <input type="file" accept="image/jpeg,image/png" className="hidden"
-                                          onChange={(e) => { const f = e.target.files?.[0]; if (f) subirFotoAv(a.id, f); e.target.value = ''; }} />
-                                      </label>
-                                    </>
+                                    <button type="button" className="text-xs text-sigecop-blue hover:underline" onClick={() => abrirEdicion(a)} data-testid={`btn-corregir-${a.id}`}>Corregir</button>
                                   )}
                                 </>
                               )}
                             </td>
                           )}
                         </tr>
+                        {/* FIX 23-jun (Maiki): galería de evidencia fotográfica de ESTE avance (subir → ver → eliminar). */}
+                        <tr className="border-t border-borde/60 bg-pagina/40" data-testid={`fotos-avance-row-${a.id}`}>
+                          <td colSpan={soloLectura ? 5 : 6} className="px-6 pb-4 pt-0">
+                            <FotosDeAvance avanceId={a.id} soloLectura={soloLectura || a.estado === 'anulada'} />
+                          </td>
+                        </tr>
+                        </Fragment>
                       );
                     })
                   )}
