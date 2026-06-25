@@ -251,7 +251,12 @@ export const api = {
   // GENERA la nota de bitácora tipo `avance` (diferida si no hay bitácora). payload: {contrato_concepto_id,
   // periodo_numero, cantidad, observaciones}.
   trabajosDeContrato: (contratoId) => request(`/trabajos/contrato/${contratoId}`),
-  registrarAvance: (payload) => request('/trabajos', { method: 'POST', body: JSON.stringify(payload) }),
+  // H2-B2-1 (25-jun): el avance se crea con su(s) foto(s) en UNA petición multipart (FormData: campos + 'fotos' + 'descripciones').
+  registrarAvance: (formData) => {
+    const token = localStorage.getItem('sigecop_token');
+    return fetch(`${API_URL}/trabajos`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: formData })
+      .then(async (res) => { const t = await res.text(); const d = t ? JSON.parse(t) : null; if (!res.ok) { const e = new Error(d?.error || `HTTP ${res.status}`); e.status = res.status; throw e; } return d; });
+  },
   // FIX 3.3 — avance append-only: corregir = registro nuevo vinculado (anula el original), no editar/borrar.
   corregirAvance: (id, payload) => request(`/trabajos/${id}/corregir`, { method: 'POST', body: JSON.stringify(payload) }),
   // HU-13: PRESENTACIÓN de la estimación por el CONTRATISTA (art. 54 LOPSRM). Reusa el endpoint /enviar

@@ -229,6 +229,16 @@ async function registrarAvance(req, res) {
   }
   const observaciones = typeof body.observaciones === 'string' ? body.observaciones.trim() || null : null;
 
+  // H2-B2-1 (25-jun) — la foto de evidencia es OBLIGATORIA y se sube EN LA MISMA petición (multipart). El avance
+  // NO se registra sin al menos una foto (cierra #22; antes la foto iba en un POST aparte y era salteable por API).
+  // art. 132 fr. IV RLOPSRM / criterio del equipo A1. Descripción por foto (descripciones[] paralelo).
+  const fotos = Array.isArray(req.files) ? req.files : [];
+  const esImgValida = (b) => b && b.length >= 4 && ((b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) || (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47));
+  if (fotos.length === 0) return res.status(400).json({ error: 'Debes adjuntar al menos una foto de evidencia para registrar el avance (art. 132 fr. IV RLOPSRM / criterio del equipo).' });
+  for (const f of fotos) { if (!esImgValida(f.buffer)) return res.status(400).json({ error: 'Una de las imágenes no es un JPEG/PNG válido.' }); }
+  let descripcionesFoto = [];
+  try { const dj = JSON.parse(body.descripciones || '[]'); if (Array.isArray(dj)) descripcionesFoto = dj; } catch (_) { /* sin descripciones */ }
+
   let client;
   try {
     client = await pool.connect();
@@ -325,6 +335,18 @@ async function registrarAvance(req, res) {
          RETURNING id, contrato_concepto_id, contrato_periodo_id, nota_id, cantidad, fecha, observaciones, registrado_por`,
         [conceptoId, periodo.id, notaId, cantidad, periodo.fin, observaciones, req.user.id]
       );
+
+      // H2-B2-1 — guarda la(s) foto(s) en la MISMA transacción que el avance (BYTEA inline), con su descripción.
+      const avanceNuevoId = ins.rows[0].id;
+      for (let i = 0; i < fotos.length; i++) {
+        const f = fotos[i];
+        const desc = (typeof descripcionesFoto[i] === 'string' && descripcionesFoto[i].trim()) ? descripcionesFoto[i].slice(0, 300) : null;
+        await client.query(
+          `INSERT INTO avance_fotos (avance_id, nombre, descripcion, mime, tamano, contenido, subido_por)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [avanceNuevoId, f.originalname || 'foto.jpg', desc, f.mimetype, f.size, f.buffer, req.user.id]
+        );
+      }
 
       await client.query('COMMIT');
       // nota_diferida: hubo avance real pero aún no hay bitácora → la nota se asienta al abrir.

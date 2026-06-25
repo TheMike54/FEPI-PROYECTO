@@ -197,7 +197,10 @@ export default function EmisionNotas() {
     const yaFirme = (n.firmas || []).some((f) => f.usuario_id === usuario?.id);
     const puedeAnular = !soloLectura && esParte && soyEmisor && n.estado === 'emitida' && n.aceptacion !== 'respondida';
     const puedeResponder = !soloLectura && esParte && n.estado === 'emitida';
-    const puedeFirmar = !soloLectura && esParte && !soyEmisor && !yaFirme && n.estado === 'emitida';
+    // #20-front (25-jun): si el plazo de firma venció (aceptada tácita, art. 123 fr. III) ya NO se ofrece firmar
+    // (coherente con el gate server que devuelve 409 y con la bandeja "Por firmar" que la oculta). La insignia
+    // "Aceptada (tácita)" sigue visible para que el usuario vea el estado.
+    const puedeFirmar = !soloLectura && esParte && !soyEmisor && !yaFirme && n.estado === 'emitida' && n.aceptacion !== 'aceptada_tacita';
     return (
       <div key={n.id} className={`border rounded-md p-3 ${n.estado === 'anulada' ? 'border-slate-200 bg-slate-50' : 'border-slate-200 hover:bg-slate-50'}`} data-testid={`nota-${n.numero}`}>
         <div className="flex items-center justify-between gap-2 flex-wrap mb-1">

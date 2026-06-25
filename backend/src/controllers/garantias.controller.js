@@ -23,8 +23,14 @@ function vigenciaVencida(iso) {
 }
 
 // Validación de una garantía (misma regla que crearContrato: tipo, monto>0, monto≤contrato, vigencia no vencida).
+const TIPOS_GARANTIA_VALIDOS = new Set(['anticipo', 'cumplimiento', 'vicios_ocultos']);
 function validarGarantia({ tipo, monto, vigencia }, montoContrato) {
   if (!tipo || !String(tipo).trim()) return 'El tipo de garantía es obligatorio (art. 48 LOPSRM)';
+  // #17 (25-jun) — whitelist del catálogo legal (art. 48 fr. I anticipo / fr. II cumplimiento / art. 66 vicios
+  // ocultos). Se normaliza igual que al grabar (minúsculas+guion_bajo). Solo afecta HU-02; el alta (congelado)
+  // conserva su propia validación, ese flanco queda para Maik.
+  if (!TIPOS_GARANTIA_VALIDOS.has(String(tipo).trim().toLowerCase().replace(/\s+/g, '_')))
+    return 'El tipo de garantía debe ser: anticipo, cumplimiento o vicios ocultos (art. 48 fr. I/II y art. 66 LOPSRM)';
   const gm = numOrNull(monto);
   if (gm === null || gm <= 0) return 'El monto afianzado debe ser mayor a 0';
   if (montoContrato != null && gm > Number(montoContrato)) return `El monto (${gm}) no puede exceder el monto del contrato (${montoContrato})`;
@@ -117,14 +123,19 @@ async function editarGarantia(req, res) {
     const g = await getGarantiaConContrato(pool, gid);
     if (!g) return res.status(404).json({ error: 'Garantía no encontrada' });
     if (!puedeGestionar(req.user, g)) return res.status(403).json({ error: 'Solo la dependencia o el residente asignado puede editar garantías' });
+    // #5 (25-jun) — contrato cerrado (finiquito) = SOLO-LECTURA (art. 64 LOPSRM); editar es mutación → 409.
+    if (await contratoCerrado(pool, g.contrato_id)) return res.status(409).json({ error: msgCerrado('no se edita la garantía') });
     const b = req.body || {};
     const err = validarGarantia(b, g.contrato_monto);
     if (err) return res.status(400).json({ error: err });
+    // #4 (25-jun) — canonicalizar `tipo` igual que crearGarantia, para que el UNIQUE(contrato_id,tipo) muerda
+    // (antes editar grababa 'Anticipo' crudo y burlaba el índice contra 'anticipo').
+    const tipoNorm = String(b.tipo || '').trim().toLowerCase().replace(/\s+/g, '_');
     try {
       const r = await pool.query(
         `UPDATE contrato_garantias SET tipo=$1, afianzadora=$2, poliza=$3, monto=$4, vigencia=$5
           WHERE id=$6 RETURNING id, tipo, afianzadora, poliza, monto, vigencia, created_at`,
-        [String(b.tipo).trim(), b.afianzadora ? String(b.afianzadora).trim() : null,
+        [tipoNorm, b.afianzadora ? String(b.afianzadora).trim() : null,
          b.poliza ? String(b.poliza).trim() : null, numOrNull(b.monto), b.vigencia || null, gid]);
       return res.status(200).json(r.rows[0]);
     } catch (e) {
@@ -181,6 +192,8 @@ async function subirPdfGarantia(req, res) {
     const g = await getGarantiaConContrato(pool, gid);
     if (!g) return res.status(404).json({ error: 'Garantía no encontrada' });
     if (!puedeGestionar(req.user, g)) return res.status(403).json({ error: 'Solo la dependencia o el residente asignado puede subir el PDF de la póliza' });
+    // #5 (25-jun) — contrato cerrado (finiquito) = SOLO-LECTURA (art. 64 LOPSRM); subir PDF es mutación → 409.
+    if (await contratoCerrado(pool, g.contrato_id)) return res.status(409).json({ error: msgCerrado('no se sube el PDF de la póliza') });
     await pool.query(
       'UPDATE contrato_garantias SET pdf_nombre=$1, pdf_mime=$2, pdf_tamano=$3, pdf_contenido=$4 WHERE id=$5',
       [originalname, mimetype, size, buffer, gid]);

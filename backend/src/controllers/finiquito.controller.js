@@ -61,10 +61,14 @@ async function calcularFiniquito(client, contrato, ajustes = 0) {
 
 // Lee el contrato con los campos de equipo (acceso) + estado/monto/anticipo.
 async function getContrato(client, id) {
+  // #7 (25-jun) — trae dependencia_empresa_id (empresa de la dependencia del contrato) para que
+  // esParteOSupervision ACOTE por empresa; antes el SELECT no lo traía y la rama dependencia caía en el
+  // 'return true' legado (fail-open: cualquier dependencia leía el finiquito de un contrato ajeno).
   const c = await client.query(
-    `SELECT id, folio, objeto, monto, anticipo_pct, estado, cerrado_en,
-            created_by, residente_id, superintendente_id, supervision_id, dependencia_id
-       FROM contratos WHERE id = $1`, [id]);
+    `SELECT c.id, c.folio, c.objeto, c.monto, c.anticipo_pct, c.estado, c.cerrado_en,
+            c.created_by, c.residente_id, c.superintendente_id, c.supervision_id, c.dependencia_id,
+            du.empresa_id AS dependencia_empresa_id
+       FROM contratos c LEFT JOIN usuarios du ON du.id = c.dependencia_id WHERE c.id = $1`, [id]);
   return c.rowCount ? c.rows[0] : null;
 }
 
@@ -106,12 +110,16 @@ async function cerrarFiniquito(req, res) {
     try {
       await client.query('BEGIN');
       // Lock del contrato (serializa el cierre).
-      const cres = await client.query('SELECT * FROM contratos WHERE id = $1 FOR UPDATE', [id]);
+      // #7 (25-jun) — incluye dependencia_empresa_id para que esParteOSupervision acote por empresa (IDOR de cierre).
+      const cres = await client.query('SELECT c.*, du.empresa_id AS dependencia_empresa_id FROM contratos c LEFT JOIN usuarios du ON du.id = c.dependencia_id WHERE c.id = $1 FOR UPDATE OF c', [id]);
       if (cres.rowCount === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Contrato no encontrado' }); }
       const contrato = cres.rows[0];
-      // Autoridad (= convenios, art. 99/53): la dependencia o el residente/creador elabora el finiquito.
-      const puede = req.user.rol === 'dependencia' || contrato.residente_id === req.user.id || contrato.created_by === req.user.id;
-      if (!puede) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'Solo la dependencia o el residente asignado puede elaborar el finiquito' }); }
+      // #7 (25-jun) — acota por empresa (esParteOSupervision, con dependencia_empresa_id ya presente) Y exige la
+      // autoridad de finiquito (dependencia / residente / creador). Antes el gate era solo por rol → una dependencia
+      // de OTRA empresa podía CERRAR el contrato ajeno (IDOR / confused deputy). Fundamento: art. 99/53 + acotamiento.
+      const tieneAcceso = esParteOSupervision(req.user, contrato);
+      const autoridad = req.user.rol === 'dependencia' || contrato.residente_id === req.user.id || contrato.created_by === req.user.id;
+      if (!tieneAcceso || !autoridad) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'Solo la dependencia de la empresa del contrato (o el residente asignado) puede elaborar el finiquito' }); }
       // Una sola vez: si ya está cerrado o ya hay finiquito, no se rehace (inmutable).
       if (contrato.estado === 'cerrado') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'El contrato ya está cerrado (finiquito elaborado)' }); }
       const yaFin = await client.query('SELECT 1 FROM finiquitos WHERE contrato_id = $1', [id]);

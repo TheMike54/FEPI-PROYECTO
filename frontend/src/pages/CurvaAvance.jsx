@@ -84,9 +84,14 @@ export function CurvaSVG({ datos, hoyIndex, contratoQ = '' }) {
   const yFor = (pct) => padT + innerH - (innerH * Math.max(0, Math.min(100, pct))) / 100;
   const yTicks = [0, 25, 50, 75, 100];
 
+  // H8-B8-3 (25-jun) — en las curvas POR ETAPA (con convenio) se grafican DOS series de ejecutado:
+  // "nuevo desde el convenio" (ventana) y "acumulado total" (todas las versiones). En la curva normal,
+  // sin `ejecutadoTotal`, se mantiene una sola serie "Ejecutado".
+  const tieneTotal = datos.some((d) => d.ejecutadoTotal != null);
   const series = [
     { key: 'programado', label: 'Programado', color: '#0D2F5A' },
-    { key: 'ejecutado',  label: 'Ejecutado',  color: '#2563eb' },
+    { key: 'ejecutado',  label: tieneTotal ? 'Nuevo (desde convenio)' : 'Ejecutado',  color: '#2563eb' },
+    ...(tieneTotal ? [{ key: 'ejecutadoTotal', label: 'Acumulado total', color: '#7c3aed' }] : []),
     { key: 'financiero', label: 'Financiero', color: '#10b981' }
   ];
 
@@ -610,7 +615,7 @@ export default function CurvaAvance() {
                     </div>
                     <div className="p-4">
                       <CurvaSVG datos={et.curva} hoyIndex={null} contratoQ={contratoQ} />
-                      <div className="grid grid-cols-2 gap-2 mt-3">
+                      <div className={`grid ${et.vigente ? 'grid-cols-3' : 'grid-cols-2'} gap-2 mt-3`}>
                         <div className="border border-borde rounded-md px-3 py-2">
                           <div className="text-[10px] uppercase tracking-wider text-slate-500">{et.vigente ? 'Programado a hoy' : 'Programado al corte'}</div>
                           <div className="text-lg font-bold text-slate-700" data-testid={`etapa-prog-${et.numero}`}>{fmtPct(et.kpiProgramado)}</div>
@@ -619,6 +624,13 @@ export default function CurvaAvance() {
                           <div className="text-[10px] uppercase tracking-wider text-slate-500">{et.vigente ? 'Ejecutado (nuevo)' : 'Ejecutado (congelado)'}</div>
                           <div className="text-lg font-bold text-sigecop-blue" data-testid={`etapa-ejec-${et.numero}`}>{fmtPct(et.kpiEjecutado)}</div>
                         </div>
+                        {/* H8-B8-3: en la etapa vigente, KPI del ACUMULADO TOTAL (todas las versiones) sobre el plan vigente. */}
+                        {et.vigente && (
+                          <div className="border border-guinda/30 rounded-md px-3 py-2 bg-guinda-soft/40">
+                            <div className="text-[10px] uppercase tracking-wider text-slate-500">Acumulado total</div>
+                            <div className="text-lg font-bold text-guinda" data-testid={`etapa-ejec-total-${et.numero}`}>{fmtPct(et.kpiEjecutadoTotal)}</div>
+                          </div>
+                        )}
                       </div>
                       <p className="text-[11px] text-slate-500 mt-2">
                         Plan Σ {num(et.denom)} · {et.nPeriodos} periodo(s) · {et.vigente ? `vigente (corte a hoy ${fechaMXCorta(et.fechaCorte)})` : `histórico hasta ${fechaMXCorta(et.fechaCorte)}`}.

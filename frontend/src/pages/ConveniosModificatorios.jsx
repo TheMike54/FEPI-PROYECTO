@@ -66,7 +66,8 @@ const pct = (n) => (n == null ? '—' : `${Number(n) >= 0 ? '+' : ''}${round2(n)
 function snapshotAMatriz(detalle) {
   if (!detalle) return null;
   const conceptos = (detalle.conceptos || []).map((c) => ({
-    id: c.clave, clave: c.clave, concepto: c.concepto, cantidad: c.cantidad
+    id: c.clave, clave: c.clave, concepto: c.concepto, cantidad: c.cantidad,
+    es_adicional: !!c.es_adicional, // H9-front (25-jun): etiqueta "Adicional" en versiones (leída del snapshot)
   }));
   const periodosMap = new Map();
   (detalle.celdas || []).forEach((cel) => {

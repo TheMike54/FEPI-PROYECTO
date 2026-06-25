@@ -50,8 +50,10 @@ async function snapshotVersion(client, contratoId, numero, convenioId, vigente) 
   );
   const verId = ver.rows[0].id;
   await client.query(
-    `INSERT INTO programa_version_concepto (programa_version_id, clave, concepto, unidad, cantidad, pu, orden)
-     SELECT $1, clave, concepto, unidad, cantidad, pu, orden FROM contrato_conceptos WHERE contrato_id = $2`,
+    // H9 (25-jun) — incluye es_adicional en el snapshot para que las versiones ANTERIORES muestren la etiqueta
+    // "adicional" igual que el programa vigente (antes el SELECT lo omitía → las versiones perdían el flag).
+    `INSERT INTO programa_version_concepto (programa_version_id, clave, concepto, unidad, cantidad, pu, orden, es_adicional)
+     SELECT $1, clave, concepto, unidad, cantidad, pu, orden, es_adicional FROM contrato_conceptos WHERE contrato_id = $2`,
     [verId, contratoId]
   );
   await client.query(
@@ -103,7 +105,7 @@ async function detalleVersion(req, res) {
          FROM programa_version pv JOIN contratos c ON c.id = pv.contrato_id WHERE pv.id = $1`, [versionId]);
     if (v.rowCount === 0) return res.status(404).json({ error: 'La versión indicada no existe' });
     if (!esParteOSupervision(req.user, v.rows[0])) return res.status(403).json({ error: 'No tienes acceso a esta versión' });
-    const conceptos = await pool.query('SELECT clave, concepto, unidad, cantidad, pu, orden FROM programa_version_concepto WHERE programa_version_id = $1 ORDER BY orden', [versionId]);
+    const conceptos = await pool.query('SELECT clave, concepto, unidad, cantidad, pu, orden, es_adicional FROM programa_version_concepto WHERE programa_version_id = $1 ORDER BY orden', [versionId]);
     const celdas = await pool.query('SELECT concepto_clave, periodo_numero, periodo_inicio, periodo_fin, cantidad FROM programa_version_celda WHERE programa_version_id = $1 ORDER BY concepto_clave, periodo_numero', [versionId]);
     const { created_by, residente_id, superintendente_id, supervision_id, ...version } = v.rows[0];
     return res.status(200).json({ version, conceptos: conceptos.rows, celdas: celdas.rows });
@@ -399,15 +401,13 @@ async function autorizarConvenio(req, res) {
       // FIX #3 (22-jun) — contrato cerrado (finiquito) = SOLO-LECTURA (art. 64 LOPSRM).
       if (await contratoCerrado(client, conv.contrato_id)) { await client.query('ROLLBACK'); return res.status(409).json({ error: msgCerrado('no se autorizan convenios') }); }
 
-      // Guardrail art. 102 RLOPSRM: variación de monto o plazo > 25% exige el oficio/soporte YA cargado.
-      const absM = conv.delta_monto_pct != null ? Math.abs(Number(conv.delta_monto_pct)) : null;
-      const absP = conv.delta_plazo_pct != null ? Math.abs(Number(conv.delta_plazo_pct)) : null;
-      if ((absM != null && absM > 25) || (absP != null && absP > 25)) {
-        const ofi = await client.query('SELECT 1 FROM contrato_documentos WHERE convenio_id = $1 LIMIT 1', [convenioId]);
-        if (ofi.rowCount === 0) {
-          await client.query('ROLLBACK');
-          return res.status(409).json({ error: 'La variación supera el 25% (art. 102 RLOPSRM): carga el oficio/soporte de aprobación antes de autorizar.' });
-        }
+      // H7-B7-2 (25-jun, decisión de Maik) — exigir el oficio/soporte de aprobación (PDF) cargado para autorizar
+      // TODO convenio (no solo >25%), conforme art. 99 RLOPSRM (soporte/dictamen previo de cualquier convenio).
+      // El umbral del 25% (art. 102) ya no condiciona la EXIGENCIA del documento; sigue marcando el aviso SFP aparte.
+      const ofi = await client.query('SELECT 1 FROM contrato_documentos WHERE convenio_id = $1 LIMIT 1', [convenioId]);
+      if (ofi.rowCount === 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Antes de autorizar, carga el oficio/soporte de aprobación del convenio en PDF (art. 99 RLOPSRM: todo convenio requiere su soporte documental).' });
       }
 
       const upd = await client.query(

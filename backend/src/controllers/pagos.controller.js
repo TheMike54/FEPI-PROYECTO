@@ -5,6 +5,7 @@
 //   lectura (no se almacena).
 const { pool } = require('../db/pool');
 const { esParteOSupervision } = require('../lib/acceso');
+const { contratoCerrado, msgCerrado } = require('../lib/gateCierre');
 
 const PATRON_FECHA = /^\d{4}-\d{2}-\d{2}$/;
 function fechaValida(s) {
@@ -60,6 +61,10 @@ async function registrarPago(req, res) {
       await client.query('BEGIN');
       const c = await client.query('SELECT id FROM contratos WHERE id = $1', [contratoId]);
       if (c.rowCount === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'El contrato indicado no existe' }); }
+      // #2 (gate art. 64): un contrato cerrado (finiquito elaborado) es SOLO-LECTURA; el saldo se liquida
+      // por el finiquito. NO se registran pagos por separado (evita doble liquidación). Coherente con
+      // instruccion-pago/convenios/garantías que ya bloquean por art. 64.
+      if (await contratoCerrado(client, contratoId)) { await client.query('ROLLBACK'); return res.status(409).json({ error: msgCerrado('no se registran pagos') }); }
 
       // Estimación REAL: existe, del contrato, estado pagable, no pagada. FOR UPDATE serializa el
       // no-doble-pago contra otra transacción concurrente.
@@ -88,6 +93,15 @@ async function registrarPago(req, res) {
       if (av.rowCount === 0) {
         await client.query('ROLLBACK');
         return res.status(409).json({ error: 'No se puede pagar: el contrato no tiene avance físico reportado (HU-06). Registra el avance antes de pagar.' });
+      }
+
+      // H6-B6-3 (25-jun, decisión de Maik) — el COBRO lo PROMUEVE el contratista: Finanzas no registra el pago
+      // hasta que el contratista haya subido el CFDI del cobro (cobro_soportes tipo='cfdi') en el tránsito a pago.
+      // art. 54 LOPSRM (la factura/CFDI es precondición del pago). [El rediseño de UI de B6-3 va aparte.]
+      const cfdiSop = await client.query("SELECT 1 FROM cobro_soportes WHERE estimacion_id = $1 AND tipo = 'cfdi' LIMIT 1", [estimacionId]);
+      if (cfdiSop.rowCount === 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'Falta el CFDI del cobro: el contratista debe subir el comprobante fiscal en el tránsito a pago antes de que Finanzas registre el pago (art. 54 LOPSRM).' });
       }
 
       // Plan2 Pase3: la fecha del pago NO puede ser anterior al día en que se integró la estimación

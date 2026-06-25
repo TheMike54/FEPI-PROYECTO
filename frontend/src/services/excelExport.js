@@ -149,7 +149,7 @@ export function construirWorkbookReporte(spec) {
       const sumKeys = tabla.totales.sumKeys || [];
       const vals = cols.map((c) => {
         if (c.key === labelKey) return tabla.totales.label || 'TOTALES';
-        if (sumKeys.includes(c.key)) return tabla.filas.reduce((s, f) => s + (Number(f[c.key]) || 0), 0);
+        if (sumKeys.includes(c.key)) return tabla.filas.reduce((s, f) => s + (f._excluirTotal ? 0 : (Number(f[c.key]) || 0)), 0);
         return null;
       });
       const row = ws.addRow(vals);

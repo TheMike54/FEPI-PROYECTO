@@ -59,20 +59,40 @@ export function derivarEtapas({ versiones, snapshots, avances, hoy }) {
       if (p) ejecPorPeriodo.set(p.numero, (ejecPorPeriodo.get(p.numero) || 0) + a.cant);
     }
 
+    // H8-B8-3 (25-jun) — segunda serie "ACUMULADO TOTAL": TODO el ejecutado (todas las versiones), no solo el
+    // de la ventana, sobre el denom de ESTA versión. Lo anterior al 1er periodo va al acumulado de arranque.
+    const periodo0 = periodos[0];
+    let ejecPreTotal = 0;
+    let ejecTotalGlobal = 0;
+    const ejecPorPeriodoTotal = new Map();
+    for (const a of av) {
+      ejecTotalGlobal += a.cant;
+      if (a.f === '') { const last = periodos[periodos.length - 1]; if (last) ejecPorPeriodoTotal.set(last.numero, (ejecPorPeriodoTotal.get(last.numero) || 0) + a.cant); continue; }
+      if (periodo0 && a.f < periodo0.inicio) { ejecPreTotal += a.cant; continue; }
+      const p = periodos.find((pp) => a.f >= pp.inicio && a.f <= pp.fin) || periodos[periodos.length - 1];
+      if (p) ejecPorPeriodoTotal.set(p.numero, (ejecPorPeriodoTotal.get(p.numero) || 0) + a.cant);
+    }
+
     // Curva: programado y ejecutado acumulados por periodo, ÷ denom. Origen en 0% (inicio del contrato).
-    const curva = [{ label: 'Inicio', numero: 0, programado: denom > 0 ? 0 : null, ejecutado: denom > 0 ? 0 : null, financiero: null }];
-    let progRun = 0, ejecRun = 0;
+    // H8-B8-3: `ejecutado` = NUEVO desde el convenio (ventana); `ejecutadoTotal` = ACUMULADO total (todas las versiones).
+    const pctIni = denom > 0 ? Number(((ejecPreTotal / denom) * 100).toFixed(2)) : null;
+    const curva = [{ label: 'Inicio', numero: 0, programado: denom > 0 ? 0 : null, ejecutado: denom > 0 ? 0 : null, ejecutadoTotal: pctIni, financiero: null }];
+    let progRun = 0, ejecRun = 0, ejecRunTotal = ejecPreTotal;
     for (const p of periodos) {
       progRun += p.cant;
       ejecRun += ejecPorPeriodo.get(p.numero) || 0;
+      ejecRunTotal += ejecPorPeriodoTotal.get(p.numero) || 0;
       const programado = denom > 0 ? Number(((progRun / denom) * 100).toFixed(2)) : null;
       const muestraEjec = p.fin <= corte || (p.inicio <= corte && corte <= p.fin); // ejecutado se detiene en el corte
       const ejecutado = (denom > 0 && muestraEjec) ? Number(((ejecRun / denom) * 100).toFixed(2)) : null;
-      curva.push({ label: mesCorto(p.fin), numero: p.numero, programado, ejecutado, financiero: null });
+      const ejecutadoTotal = (denom > 0 && muestraEjec) ? Number(((ejecRunTotal / denom) * 100).toFixed(2)) : null;
+      curva.push({ label: mesCorto(p.fin), numero: p.numero, programado, ejecutado, ejecutadoTotal, financiero: null });
     }
 
     // KPIs: ejecutado de la etapa (CONGELADO si es histórica) y programado al corte.
     const kpiEjecutado = denom > 0 ? Number(((ejecTotal / denom) * 100).toFixed(1)) : null;
+    // H8-B8-3: KPI del acumulado TOTAL (todas las versiones) sobre el denom de esta versión.
+    const kpiEjecutadoTotal = denom > 0 ? Number(((ejecTotalGlobal / denom) * 100).toFixed(1)) : null;
     let progAlCorte = 0;
     for (const p of periodos) if (p.inicio <= corte) progAlCorte += p.cant;
     const kpiProgramado = denom > 0 ? Number(((progAlCorte / denom) * 100).toFixed(1)) : null;
@@ -99,7 +119,7 @@ export function derivarEtapas({ versiones, snapshots, avances, hoy }) {
       denom, nPeriodos: periodos.length,
       fechaInicio: periodos[0]?.inicio || inicioVent,
       fechaCorte: vigente ? hoyD : finVent,
-      curva, kpiProgramado, kpiEjecutado, programa,
+      curva, kpiProgramado, kpiEjecutado, kpiEjecutadoTotal, programa,
     };
   }).filter(Boolean);
 }

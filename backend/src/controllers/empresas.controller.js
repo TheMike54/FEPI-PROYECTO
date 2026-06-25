@@ -178,8 +178,10 @@ async function validarEmpresa(req, res) {
 }
 
 // POST /api/empresas/:id/fusionar  body { canonica_id } — funde una empresa duplicada en la canónica:
-// reapunta las personas a la canónica y elimina la duplicada (transaccional). No toca contratos
-// (cuelgan de las personas; la empresa del contrato es la del superintendente, que se reapunta).
+// reapunta personas Y las FK de contratos/roster a la canónica, y elimina la duplicada (transaccional).
+// (#3, 25-jun: antes "no tocaba contratos"; el schema del 22-jun añadió contratos.contratista_empresa_id /
+//  supervision_empresa_id / contrato_roster.empresa_id con ON DELETE NO ACTION → el DELETE daba 500 si el
+//  duplicado tenía contratos. Ahora se reapuntan antes de borrar.)
 async function fusionarEmpresa(req, res) {
   const id = Number(req.params.id);
   const canon = Number(req.body?.canonica_id);
@@ -191,6 +193,10 @@ async function fusionarEmpresa(req, res) {
     const c = await client.query('SELECT id FROM empresas WHERE id = $1', [canon]);
     if (!c.rowCount) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'La empresa canónica no existe' }); }
     await client.query('UPDATE usuarios SET empresa_id = $1 WHERE empresa_id = $2', [canon, id]);
+    // #3 (25-jun) — reapuntar TAMBIÉN las FK de contratos/roster (NO ACTION) o el DELETE viola la FK (500).
+    await client.query('UPDATE contratos SET contratista_empresa_id = $1 WHERE contratista_empresa_id = $2', [canon, id]);
+    await client.query('UPDATE contratos SET supervision_empresa_id = $1 WHERE supervision_empresa_id = $2', [canon, id]);
+    await client.query('UPDATE contrato_roster SET empresa_id = $1 WHERE empresa_id = $2', [canon, id]);
     const del = await client.query('DELETE FROM empresas WHERE id = $1 RETURNING id', [id]);
     await client.query('COMMIT');
     if (!del.rowCount) return res.status(404).json({ error: 'Empresa a fusionar no encontrada' });

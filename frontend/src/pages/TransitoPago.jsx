@@ -492,7 +492,8 @@ export default function TransitoPago() {
               Emitida la instrucción, <strong>Finanzas registra el pago</strong> de la estimación (importe = neto,
               no se paga dos veces — art. 54 LOPSRM).{rol !== 'finanzas' && ' El registro del pago lo ejecuta Finanzas.'}
             </p>
-            <RegistroPagoForm contratoId={contratoId} soloLectura={rol !== 'finanzas'} />
+            {/* H6 (25-jun): preselecciona la estimación del tránsito para que Finanzas vea de una la REVISIÓN de sus soportes. */}
+            <RegistroPagoForm contratoId={contratoId} soloLectura={rol !== 'finanzas'} estimacionIdInicial={transito?.estimacion?.id ? String(transito.estimacion.id) : ''} />
           </div>
           )}
 

@@ -545,7 +545,8 @@ async function emitirNota(req, res) {
   const { tipo, asunto, contenido, tag } = leerCamposNota(req.body || {});
   if (!tipo) return res.status(400).json({ error: 'Falta el tipo de nota' });
   // La nota de apertura (folio #1) la genera la apertura; no se emite a mano.
-  if (tipo === 'apertura') return res.status(400).json({ error: 'La nota de apertura (folio #1) la genera la apertura de bitácora, no se emite a mano' });
+  // #21 (25-jun) — los asientos generados por flujo formal (apertura/cierre/finiquito) NO se emiten a mano.
+  if (['apertura', 'cierre', 'finiquito'].includes(tipo)) return res.status(400).json({ error: `La nota de "${tipo}" la genera el sistema (apertura/cierre del contrato); no se emite a mano` });
   if (!contenido) return res.status(400).json({ error: 'Falta el contenido de la nota' });
   if (contenido.length > 5000) return res.status(400).json({ error: 'El contenido no puede exceder 5000 caracteres' });
   if (asunto.length > 200) return res.status(400).json({ error: 'El asunto no puede exceder 200 caracteres' });
@@ -772,6 +773,11 @@ async function anularNota(req, res) {
       const nota = nres.rows[0];
       // La nota de apertura (folio #1) es el acta de inicio: no se anula (art. 123 fr. III/V/VI).
       if (nota.tipo === 'apertura') { await client.query('ROLLBACK'); return res.status(403).json({ error: 'La nota de apertura (folio #1) no puede anularse' }); }
+      // #10 (25-jun) — la nota de FINIQUITO es el acta de cierre: tan inmutable como la apertura (art. 64 / 172 RLOPSRM).
+      if (nota.tipo === 'finiquito') { await client.query('ROLLBACK'); return res.status(403).json({ error: 'La nota de finiquito (acta de cierre del contrato) no puede anularse (art. 64 LOPSRM / 172 RLOPSRM)' }); }
+      // #10 (25-jun) — gate art. 64: en contrato cerrado la bitácora es solo-lectura, no se anulan notas.
+      const apoCer = await client.query('SELECT contrato_id FROM bitacora_aperturas WHERE id = $1', [nota.bitacora_id]);
+      if (apoCer.rowCount && await contratoCerrado(client, apoCer.rows[0].contrato_id)) { await client.query('ROLLBACK'); return res.status(409).json({ error: msgCerrado('no se anulan notas') }); }
       if (nota.emisor_id !== req.user.id) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'Solo el emisor puede anular su nota' }); }
       if (nota.estado !== 'emitida') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'La nota ya está anulada' }); }
 
@@ -780,6 +786,13 @@ async function anularNota(req, res) {
         [notaId, req.user.id]
       );
       if (resp.rowCount > 0) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'La nota ya fue respondida por otra parte; no puede anularse' }); }
+      // #8 (25-jun) — una nota YA FIRMADA/aceptada por la contraparte NO puede anularse, ni por el emisor original
+      // (art. 123 fr. VI RLOPSRM: prohibido modificar notas ya firmadas; la anulación fr. VII es solo PRE-firma).
+      const firmadaContraparte = await client.query(
+        'SELECT 1 FROM bitacora_nota_firmas WHERE nota_id = $1 AND usuario_id IS DISTINCT FROM $2 LIMIT 1',
+        [notaId, nota.emisor_id]
+      );
+      if (firmadaContraparte.rowCount > 0) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'La nota ya fue firmada/aceptada por la contraparte; no puede anularse (art. 123 fr. VI RLOPSRM).' }); }
 
       await client.query("UPDATE bitacora_notas SET estado = 'anulada' WHERE id = $1", [notaId]);
 
@@ -829,6 +842,8 @@ async function vincularNota(req, res) {
       const { notFound, apertura, rolEnContrato } = await cargarAperturaYRol(client, bitacoraId, req.user.id);
       if (notFound) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'El contrato no tiene bitácora aperturada' }); }
       if (!rolEnContrato) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'No eres parte firmante de este contrato; no puedes responder notas' }); }
+      // #9 (25-jun) — contrato cerrado (finiquito) = SOLO-LECTURA: vincular crea una nota NUEVA igual que emitir → 409 (art. 64 LOPSRM).
+      if (await contratoCerrado(client, apertura.contrato_id)) { await client.query('ROLLBACK'); return res.status(409).json({ error: msgCerrado('no se vinculan notas') }); }
 
       // B-2 (auditoría — art. 123 fr. VI RLOPSRM: trazabilidad/auditabilidad de las referencias de la
       // bitácora): la nota-respuesta DEBE quedar en la MISMA
@@ -893,10 +908,19 @@ async function firmarNota(req, res) {
       if (nota.tipo === 'apertura') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'La apertura (nota #1) se firma en "Por firmar" (firma conjunta de TODOS los participantes)' }); }
       if (nota.estado !== 'emitida') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'La nota está anulada; no puede firmarse' }); }
 
-      const { notFound, rolEnContrato } = await cargarAperturaYRol(client, nota.bitacora_id, req.user.id);
+      const { notFound, apertura, rolEnContrato } = await cargarAperturaYRol(client, nota.bitacora_id, req.user.id);
       if (notFound) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'El contrato no tiene bitácora aperturada' }); }
       if (!rolEnContrato) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'No eres parte de este contrato; no puedes firmar sus notas' }); }
       if (nota.emisor_id === req.user.id) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'El emisor ya firmó la nota al emitirla; la firma aquí es de la contraparte' }); }
+      // #19 (25-jun) — contrato cerrado (finiquito) = SOLO-LECTURA; firmar/aceptar es mutación append → 409 (art. 64), coherente con emitir/minuta/visita.
+      if (await contratoCerrado(client, apertura.contrato_id)) { await client.query('ROLLBACK'); return res.status(409).json({ error: msgCerrado('no se firman/aceptan notas') }); }
+      // #20 (25-jun) — si el plazo de firma venció, la nota ya está ACEPTADA TÁCITAMENTE (art. 123 fr. III); no se firma
+      // fuera de plazo (coherente con la bandeja "Por firmar", que la oculta al vencer).
+      const plz = await client.query(
+        'SELECT (NOW() > n.fecha + make_interval(days => ba.plazo_firma_dias)) AS vencido FROM bitacora_notas n JOIN bitacora_aperturas ba ON ba.id = n.bitacora_id WHERE n.id = $1',
+        [notaId]
+      );
+      if (plz.rows[0] && plz.rows[0].vencido) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'El plazo de firma de la nota venció; ya se considera aceptada tácitamente (art. 123 fr. III RLOPSRM).' }); }
 
       const ins = await client.query(
         `INSERT INTO bitacora_nota_firmas (nota_id, usuario_id, rol_en_firma)

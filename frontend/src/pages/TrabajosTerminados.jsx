@@ -140,8 +140,9 @@ export default function TrabajosTerminados() {
 
   const [form, setForm] = useState(FORM_VACIO);
   const [guardando, setGuardando] = useState(false);
-  // A1 (CRITERIO DEL EQUIPO, no es ley): el registro de avance EXIGE al menos una foto de evidencia.
-  const [fotoEvidencia, setFotoEvidencia] = useState(null);
+  // H2-B2-1 (25-jun): el registro de avance EXIGE ≥1 foto de evidencia (server-side); cada foto lleva descripción.
+  // Estado: lista de { file, descripcion, key }.
+  const [fotos, setFotos] = useState([]);
 
   // Edición inline de una entrada: { id, cantidad, observaciones } o null.
   const [edicion, setEdicion] = useState(null);
@@ -266,7 +267,7 @@ export default function TrabajosTerminados() {
   // O-PROFE: SOLO el art. 118 (acumulado sobre lo contratado) BLOQUEA el registro. noProgramado y
   // excedePeriodo son AVISOS (no bloquean): adelantar avance a precios pactados no requiere convenio.
   const puedeGuardar = !soloLectura && !guardando && !!conceptoSel && !!periodoSel && cantNueva > 0
-    && !validacion.excede118 && !!fotoEvidencia; // A1: sin foto de evidencia no se puede registrar (criterio del equipo)
+    && !validacion.excede118 && fotos.length > 0; // H2/A1: ≥1 foto de evidencia obligatoria para registrar
 
   // Toggle "Ejecuté todo lo programado del periodo" → autollena la cantidad con lo disponible.
   const autollenarTodo = () => {
@@ -278,28 +279,26 @@ export default function TrabajosTerminados() {
     if (!puedeGuardar) return;
     setGuardando(true);
     try {
-      // A1 (criterio del equipo): se redimensiona la foto ANTES de crear el avance. El endpoint de fotos
-      // necesita el id del avance ya creado, así que se sube inmediatamente DESPUÉS del POST del avance.
-      const fotoLiviana = await redimensionarImagen(fotoEvidencia);
-      const r = await api.registrarAvance({
-        contrato_concepto_id: Number(form.conceptoId),
-        periodo_numero: Number(form.periodoNumero),
-        cantidad: cantNueva,
-        observaciones: form.observaciones || null
-      });
-      let fotoOk = false;
-      try {
-        if (r?.avance?.id) { await api.subirFotoAvance(r.avance.id, fotoLiviana, ''); fotoOk = true; }
-      } catch (_) { /* se avisa abajo; el avance ya quedó registrado */ }
-      const baseMsg = r?.nota_diferida ? 'Avance registrado. La nota de bitácora se asentará al abrir la bitácora.' : 'Avance registrado y nota de bitácora asentada.';
-      // O-PROFE: el backend puede devolver un aviso (no bloqueante) si el avance excede lo programado.
-      {
-        const avisos = [r?.aviso_periodo, r?.aviso_programa].filter(Boolean);
-        const fotoMsg = fotoOk ? '' : ' ⚠ La foto no se pudo subir; agrégala desde la galería del avance.';
-        showToast((avisos.length ? `${baseMsg} ⚠ ${avisos.join(' · ')}` : baseMsg) + fotoMsg);
+      // H2-B2-1 (25-jun): la(s) foto(s) van EN LA MISMA petición que crea el avance (multipart). Se redimensionan
+      // en cliente antes de enviar; el backend exige ≥1 foto (cierra #22) y guarda la descripción por foto.
+      const fd = new FormData();
+      fd.append('contrato_concepto_id', String(Number(form.conceptoId)));
+      fd.append('periodo_numero', String(Number(form.periodoNumero)));
+      fd.append('cantidad', String(cantNueva));
+      if (form.observaciones) fd.append('observaciones', form.observaciones);
+      const descripciones = [];
+      for (const f of fotos) {
+        const liviana = await redimensionarImagen(f.file);
+        fd.append('fotos', liviana, (f.file && f.file.name) || 'foto.jpg');
+        descripciones.push(f.descripcion || '');
       }
+      fd.append('descripciones', JSON.stringify(descripciones));
+      const r = await api.registrarAvance(fd);
+      const baseMsg = r?.nota_diferida ? 'Avance registrado. La nota de bitácora se asentará al abrir la bitácora.' : 'Avance registrado y nota de bitácora asentada.';
+      const avisos = [r?.aviso_periodo, r?.aviso_programa].filter(Boolean);
+      showToast(avisos.length ? `${baseMsg} ⚠ ${avisos.join(' · ')}` : baseMsg);
       setForm(FORM_VACIO);
-      setFotoEvidencia(null);
+      setFotos([]);
       await recargar(contratoId);
     } catch (e) {
       // 409 art.118 / programa por periodo; 400 forma; 403 no parte — mensaje del backend tal cual.
@@ -522,22 +521,45 @@ export default function TrabajosTerminados() {
                   </div>
                 </div>
 
-                {/* A1 — Foto de evidencia REQUERIDA (criterio del equipo, NO es requisito de ley). */}
+                {/* H2-B2-1 — Fotos de evidencia REQUERIDAS (≥1), con descripción por foto. Se adjuntan AL registrar. */}
                 <div className="mt-4">
                   <label className="sg-label">
-                    Foto de evidencia <span className="text-red-600">*</span>
-                    <span className="text-xs font-normal text-slate-500"> (requerida — criterio del equipo)</span>
+                    Fotos de evidencia <span className="text-red-600">*</span>
+                    <span className="text-xs font-normal text-slate-500"> (al menos una — se adjuntan al registrar; puedes agregar varias)</span>
                   </label>
                   <input
                     type="file"
                     accept="image/jpeg,image/png"
+                    multiple
                     className="sg-input"
-                    onChange={(e) => setFotoEvidencia(e.target.files && e.target.files[0] ? e.target.files[0] : null)}
+                    onChange={(e) => {
+                      const nuevas = Array.from(e.target.files || []).map((file) => ({ file, descripcion: '', key: `${file.name}-${file.size}-${Math.random().toString(36).slice(2)}` }));
+                      if (nuevas.length) setFotos((prev) => [...prev, ...nuevas]);
+                      e.target.value = '';
+                    }}
                     data-testid="cap-foto-evidencia"
                   />
-                  {fotoEvidencia
-                    ? <p className="text-xs text-emerald-700 mt-1" data-testid="foto-evidencia-ok">📷 {fotoEvidencia.name} — se adjuntará como evidencia del avance.</p>
-                    : <p className="text-xs text-amber-700 mt-1" data-testid="foto-evidencia-falta">No se puede registrar el avance sin al menos una foto de evidencia (criterio del equipo).</p>}
+                  {fotos.length === 0
+                    ? <p className="text-xs text-amber-700 mt-1" data-testid="foto-evidencia-falta">No se puede registrar el avance sin al menos una foto de evidencia.</p>
+                    : (
+                      <ul className="mt-2 space-y-2" data-testid="foto-evidencia-ok">
+                        {fotos.map((f, i) => (
+                          <li key={f.key} className="flex items-center gap-2 text-xs">
+                            <span className="text-emerald-700 shrink-0">📷 {f.file.name}</span>
+                            <input
+                              type="text"
+                              className="sg-input flex-1 py-1 text-xs"
+                              placeholder="Descripción de esta foto (opcional)"
+                              value={f.descripcion}
+                              maxLength={300}
+                              onChange={(e) => setFotos((prev) => prev.map((x, j) => (j === i ? { ...x, descripcion: e.target.value } : x)))}
+                              data-testid={`foto-descripcion-${i}`}
+                            />
+                            <button type="button" className="text-red-600 hover:underline shrink-0" onClick={() => setFotos((prev) => prev.filter((_, j) => j !== i))} data-testid={`foto-quitar-${i}`}>quitar</button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                 </div>
 
                 {validacion.excede118 && (

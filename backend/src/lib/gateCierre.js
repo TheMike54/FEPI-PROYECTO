@@ -9,8 +9,10 @@
 // Mismo espíritu que estimaciones-ciclo.controller::gateContratoCerrado, generalizado a cualquier dominio.
 // `db` admite el `pool` (endpoints sin transacción) o el `client` de una transacción.
 //
-// EXCEPCIÓN (NO usar este gate ahí): pagar una estimación AUTORIZADA antes del cierre SÍ procede (el
-// finiquito ya la descuenta como saldo a favor, art. 64) → pagos.controller NO llama este gate.
+// NOTA (#2, 25-jun): el pago SÍ aplica este gate. Antes existía una "EXCEPCIÓN" (pagar una estimación
+// AUTORIZADA post-cierre) cuya premisa ("el finiquito ya la descuenta") es FALSA: el finiquito suma el
+// neto de la estimación al saldo pero NO la marca pagada ni impide pagarla luego → doble liquidación
+// (art. 64 LOPSRM). registrarPago ahora llama contratoCerrado() y devuelve 409.
 
 async function contratoCerrado(db, contratoId) {
   const r = await db.query('SELECT estado FROM contratos WHERE id = $1', [contratoId]);

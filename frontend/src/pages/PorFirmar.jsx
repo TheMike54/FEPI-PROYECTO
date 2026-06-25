@@ -17,14 +17,20 @@ export default function PorFirmar() {
   const [sp] = useSearchParams();
   const contratoQuery = sp.get('contrato');
   const [pendientes, setPendientes] = useState([]);
+  const [notas, setNotas] = useState([]); // H1 (25-jun): notas de bitácora pendientes de firma (antes solo aperturas)
   const [cargando, setCargando] = useState(false);
   const [firmando, setFirmando] = useState(null);
+  const [firmandoNota, setFirmandoNota] = useState(null); // H1
 
   const cargar = useCallback(async () => {
     if (sinSesion) return;
     setCargando(true);
-    try { const l = await api.pendientesPorFirmar(); setPendientes(Array.isArray(l) ? l : []); }
-    catch (e) { showToast('No se pudieron cargar tus pendientes'); }
+    try {
+      // H1 (25-jun): la bandeja "Por firmar" ahora también lista las NOTAS pendientes de firma (no solo aperturas).
+      const [l, ns] = await Promise.all([api.pendientesPorFirmar(), api.notasPendientes()]);
+      setPendientes(Array.isArray(l) ? l : []);
+      setNotas(Array.isArray(ns) ? ns : []);
+    } catch (e) { showToast('No se pudieron cargar tus pendientes'); }
     finally { setCargando(false); }
   }, [sinSesion, showToast]);
 
@@ -44,10 +50,25 @@ export default function PorFirmar() {
     } finally { setFirmando(null); }
   };
 
+  // H1 (25-jun): firmar (aceptar) una NOTA pendiente desde la misma bandeja.
+  const firmarNotaFn = async (notaId) => {
+    setFirmandoNota(notaId);
+    try {
+      await api.firmarNota(notaId);
+      showToast('Firmaste la nota.');
+      setNotas((prev) => prev.filter((x) => x.id !== notaId));
+    } catch (err) {
+      if (err.status === 409) showToast(err.message || 'La nota ya está firmada o su plazo venció');
+      else if (err.status === 403) showToast('No eres firmante de esta nota');
+      else showToast(err.message || 'No se pudo firmar la nota');
+      cargar();
+    } finally { setFirmandoNota(null); }
+  };
+
   return (
     <div>
       <Breadcrumb items={[{ label: 'Inicio', href: '/' }, { label: 'Bitácora' }, { label: 'Por firmar' }]} />
-      <h1 className="text-2xl font-bold text-sigecop-blue mb-2">Por firmar — aperturas de bitácora</h1>
+      <h1 className="text-2xl font-bold text-sigecop-blue mb-2">Por firmar — aperturas y notas de bitácora</h1>
 
       {sinSesion ? (
         <div className="bg-slate-50 border border-slate-200 rounded-md px-4 py-6 text-center text-sm text-slate-600">
@@ -64,7 +85,7 @@ export default function PorFirmar() {
 
           {cargando && <p className="text-sm text-slate-500">Cargando…</p>}
 
-          {!cargando && pendientes.length === 0 && (
+          {!cargando && pendientes.length === 0 && notas.length === 0 && (
             <div data-testid="por-firmar-vacio" className="rounded-md border border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
               No tienes firmas pendientes.
             </div>
@@ -94,6 +115,41 @@ export default function PorFirmar() {
                         <button type="button" data-testid="btn-firmar" onClick={() => firmar(p.apertura_id)} disabled={firmando === p.apertura_id}
                           className="px-3 py-1.5 rounded-md bg-sigecop-blue text-white text-xs font-semibold hover:opacity-90 disabled:opacity-50">
                           {firmando === p.apertura_id ? 'Firmando…' : 'Firmar'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* H1 (25-jun) — NOTAS de bitácora pendientes de firma (no solo aperturas). */}
+          {!cargando && notas.length > 0 && (
+            <div className="bg-white border border-slate-200 rounded-md overflow-hidden mt-6" data-testid="por-firmar-notas-panel">
+              <div className="px-4 py-2 bg-slate-50 text-xs uppercase tracking-wider text-slate-600 font-semibold">Notas de bitácora pendientes de firma</div>
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider">
+                  <tr>
+                    <th className="text-left px-4 py-3">Contrato</th>
+                    <th className="text-left px-4 py-3">Nota</th>
+                    <th className="text-left px-4 py-3">Asunto</th>
+                    <th className="text-left px-4 py-3">Fecha</th>
+                    <th className="text-right px-4 py-3">Acción</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {notas.map((n) => (
+                    <tr key={`nt-${n.id}`} data-testid="fila-nota-por-firmar" data-folio={n.contrato_folio} data-contrato={n.contrato_id}
+                      className={String(n.contrato_id) === contratoQuery ? 'bg-sigecop-blue-light' : undefined}>
+                      <td className="px-4 py-3 font-mono text-xs">{n.contrato_folio}</td>
+                      <td className="px-4 py-3">#{n.numero} · {n.tipo_etiqueta || n.tipo}</td>
+                      <td className="px-4 py-3 text-slate-700">{n.asunto || '—'}</td>
+                      <td className="px-4 py-3 text-slate-600">{fechaHora(n.fecha)}</td>
+                      <td className="px-4 py-3 text-right">
+                        <button type="button" data-testid="btn-firmar-nota" onClick={() => firmarNotaFn(n.id)} disabled={firmandoNota === n.id}
+                          className="px-3 py-1.5 rounded-md bg-sigecop-blue text-white text-xs font-semibold hover:opacity-90 disabled:opacity-50">
+                          {firmandoNota === n.id ? 'Firmando…' : 'Firmar nota'}
                         </button>
                       </td>
                     </tr>

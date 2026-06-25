@@ -69,7 +69,7 @@ async function portafolio(req, res) {
     //    presupuestal); dias_post_termino para el plazo
     //    de ejecución (art. 52/54): días transcurridos desde fecha_termino (0 si aún no vence).
     const cq = await pool.query(
-      `SELECT id, folio, contratista, tipo, monto, fecha_inicio, fecha_termino,
+      `SELECT id, folio, contratista, tipo, monto, fecha_inicio, fecha_termino, estado,
               EXTRACT(YEAR FROM fecha_inicio)::int AS ejercicio,
               GREATEST(0, CURRENT_DATE - fecha_termino) AS dias_post_termino,
               created_by, residente_id, superintendente_id, supervision_id,
@@ -199,6 +199,10 @@ async function portafolio(req, res) {
     const cuenta = { verde: 0, amarillo: 0, rojo: 0 };
     const filas = contratos.map((c) => {
       const monto = N(c.monto);
+      // #18 (25-jun) — un contrato CERRADO (finiquito elaborado) ya no está en ejecución: no se evalúan
+      // atraso/avance/pendientes (no es "riesgo"). Se conserva en la lista (segregado por `estado`) con el
+      // semáforo neutro (verde), en vez de pintarlo rojo/ámbar por atraso de una obra ya extinguida (art. 64).
+      const cerrado = c.estado === 'cerrado';
       const a = avMap.get(c.id) || {};
       const p = progMap.get(c.id) || {};
       const e = esMap.get(c.id) || {};
@@ -209,7 +213,7 @@ async function portafolio(req, res) {
       const fisicoPct = pct(a.fisico_total);
       const programadoPct = tienePrograma ? pct(p.planeado_valor) : null;
       const financieroPct = pct(pgMap.get(c.id));
-      const desviacion = (tienePrograma && fisicoPct != null && programadoPct != null)
+      const desviacion = (!cerrado && tienePrograma && fisicoPct != null && programadoPct != null)
         ? r1(programadoPct - fisicoPct) : null;
 
       // Comparación CA-3 — SOLO Δ de avance físico (no del semáforo): cierre mes actual vs anterior.
@@ -220,16 +224,16 @@ async function portafolio(req, res) {
 
       // Factor 2 — atrasos en plazos legales FECHABLES. Omitido: vencido-en-autorización/pago
       // (faltan sellos autorizada_en/pagada_en en el esquema; ver ESTADO_ACTUAL §5.2 / §8).
-      const diasEjecucion = (fisicoPct != null && fisicoPct < 100) ? Number(c.dias_post_termino || 0) : 0;
-      const diasArt54 = Math.max(0, Number(e.dias_enviada_max || 0) - PLAZO_ART54_REVISION_DIAS);
+      const diasEjecucion = (!cerrado && fisicoPct != null && fisicoPct < 100) ? Number(c.dias_post_termino || 0) : 0;
+      const diasArt54 = cerrado ? 0 : Math.max(0, Number(e.dias_enviada_max || 0) - PLAZO_ART54_REVISION_DIAS);
       const diasVencidos = Math.max(diasEjecucion, diasArt54);
-      const conceptosAtraso = defiMap.get(c.id) || 0;
+      const conceptosAtraso = cerrado ? 0 : (defiMap.get(c.id) || 0);
       const hayAtrasoFisico = conceptosAtraso > 0;
 
       // Factor 3 — pendientes sin atender.
       const obsAbiertas = obMap.get(c.id) || 0;
       const rechazadasSinReingreso = Number(e.rechazadas_sin_reingreso || 0);
-      const pendientes = obsAbiertas + rechazadasSinReingreso;
+      const pendientes = cerrado ? 0 : (obsAbiertas + rechazadasSinReingreso);
 
       // G6 (23-jun, profe "pagaste sin avance reportado"): bandera de riesgo cuando lo PAGADO (financiero)
       // supera al avance FÍSICO ejecutado por más de la holgura (1 pp, criterio del equipo). Concepto fundado:
@@ -237,7 +241,7 @@ async function portafolio(req, res) {
       // proporcional al avance (art. 143 fr. I RLOPSRM); pagar por encima del avance devengado es la
       // incoherencia que pidió señalar. Se DERIVA (sin schema): compara los dos % que ya se calculan.
       const HOLGURA_PAGO_PP = 1;
-      const pagoSinAvance = (fisicoPct != null && financieroPct != null && financieroPct > fisicoPct + HOLGURA_PAGO_PP);
+      const pagoSinAvance = (!cerrado && fisicoPct != null && financieroPct != null && financieroPct > fisicoPct + HOLGURA_PAGO_PP);
       const excedentePagoPp = pagoSinAvance ? r1(financieroPct - fisicoPct) : null;
 
       // --- Puntajes ---
@@ -262,6 +266,7 @@ async function portafolio(req, res) {
         tipo: c.tipo,                 // modalidad de obra (NO el procedimiento de adjudicación)
         ejercicio: c.ejercicio,       // derivado de fecha_inicio (criterio del equipo: año de inicio = ejercicio presupuestal)
         monto: monto.toFixed(2),
+        estado: c.estado, // #18: el front puede etiquetar "Cerrado"; su semáforo queda neutro (verde)
         fecha_inicio: c.fecha_inicio,
         fecha_termino: c.fecha_termino,
         avance: {
@@ -299,7 +304,7 @@ async function portafolio(req, res) {
           color,
           total,
           parcial,
-          nota: parcial ? 'Sin programa de obra: el factor avance vs programado no se evaluó.' : null,
+          nota: cerrado ? 'Contrato cerrado (finiquito elaborado): no se evalúa atraso/avance (art. 64).' : (parcial ? 'Sin programa de obra: el factor avance vs programado no se evaluó.' : null),
           desglose: [
             {
               factor: 'Avance vs programado',

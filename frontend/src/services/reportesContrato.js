@@ -233,6 +233,8 @@ function avanceFinancieroExcel(d, contrato, periodo) {
   const filas = (d.historial || [])
     .filter((e) => enVentana(e.periodo_fin, win))
     .map((e) => ({
+      // #6: las rechazadas se MUESTRAN (trazabilidad) pero NO suman en la fila TOTALES.
+      _excluirTotal: e.estado === 'rechazada',
       estim: `EST-${String(e.numero).padStart(3, '0')}`,
       periodo: rangoPeriodo(e.periodo_inicio, e.periodo_fin),
       estado: labelEstadoEstimacion(e.estado),
@@ -287,6 +289,8 @@ function estimacionesExcel(d, contrato, periodo) {
   // INCLUYE las rechazadas (trazabilidad): no se filtra por estado. "Presentada" = sello de envío HU-13
   // (columna enviada_en/por; arranca el plazo del art. 54 LOPSRM).
   const filas = (d.historial || []).map((e) => ({
+    // #6: las rechazadas se MUESTRAN (trazabilidad) pero NO suman en la fila TOTALES.
+    _excluirTotal: e.estado === 'rechazada',
     estim: `EST-${String(e.numero).padStart(3, '0')}`,
     periodo: rangoPeriodo(e.periodo_inicio, e.periodo_fin),
     estado: labelEstadoEstimacion(e.estado),
@@ -454,7 +458,7 @@ function penalizacionesExcel(d, contrato, periodo) {
 // `requiereBitacora` => se deshabilita si el contrato no tiene bitácora aperturada.
 // ---------------------------------------------------------------------------
 export const CATALOGO_REPORTES = [
-  { id: 1, slug: 'avance-fisico', nombre: 'Avance físico vs programado', descripcion: 'Curva S + concepto × periodo (programa, trabajos y pagos reales).', formatos: ['PDF', 'Excel'], disponible: true },
+  { id: 1, slug: 'avance-fisico', nombre: 'Avance físico vs programado', descripcion: 'Curva S + concepto × periodo (programa, trabajos y pagos reales).', formatos: ['PDF'], disponible: true }, // H11 (25-jun): solo PDF (se quitó el Excel a pedido del equipo)
   { id: 2, slug: 'avance-financiero', nombre: 'Avance financiero', descripcion: 'Por estimación: subtotal, amortización, retención, deductivas, pena por atraso y neto + pagado acumulado.', formatos: ['Excel'], disponible: true },
   { id: 3, slug: 'estimaciones', nombre: 'Listado de estimaciones', descripcion: 'Una fila por estimación con estado, periodo, importes y sellos de integración/presentación.', formatos: ['Excel'], disponible: true },
   { id: 4, slug: 'observaciones', nombre: 'Listado de observaciones', descripcion: 'Observaciones de la revisión técnica (HU-15): estimación, sección, tipo, severidad, estado, turnado, autor y fecha.', formatos: ['Excel'], disponible: true },

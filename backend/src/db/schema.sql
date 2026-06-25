@@ -1644,9 +1644,12 @@ CREATE TABLE IF NOT EXISTS programa_version_concepto (
   unidad              VARCHAR(20),
   cantidad            NUMERIC(14,3),
   pu                  NUMERIC(16,4),
-  orden               INTEGER
+  orden               INTEGER,
+  es_adicional        BOOLEAN NOT NULL DEFAULT false   -- H9 (25-jun): snapshot de la etiqueta "adicional" por versión
 );
 CREATE INDEX IF NOT EXISTS idx_programa_version_concepto_ver ON programa_version_concepto(programa_version_id);
+-- H9 (25-jun) — ADITIVO E IDEMPOTENTE para BD existentes (Render): añade es_adicional al snapshot del programa.
+ALTER TABLE programa_version_concepto ADD COLUMN IF NOT EXISTS es_adicional BOOLEAN NOT NULL DEFAULT false;
 
 -- (2b) Snapshot de las CELDAS de la versión (concepto × periodo). Referencia el concepto por clave
 --      dentro de la versión (self-contained, no FK al catálogo vivo que el convenio puede cambiar).

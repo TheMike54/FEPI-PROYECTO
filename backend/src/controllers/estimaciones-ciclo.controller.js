@@ -104,9 +104,13 @@ async function historialEstimaciones(req, res) {
       }
       // G7 (mínima, SIN DDL): autorización / rechazo / pago con fecha DERIVADA (ver SELECT). por/por_nombre
       // quedan null porque no se sella el autor sin columnas nuevas; la FECHA es lo que pide el historial.
-      if (e.autorizada_en) transiciones.push({ estado: 'autorizada', estado_anterior: 'enviada', en: e.autorizada_en, por: null, por_nombre: null });
-      if (e.rechazada_en)  transiciones.push({ estado: 'rechazada',  estado_anterior: 'enviada', en: e.rechazada_en,  por: null, por_nombre: null });
-      if (e.pagada_en)     transiciones.push({ estado: 'pagada',     estado_anterior: 'autorizada', en: e.pagada_en, por: null, por_nombre: null });
+      // #24 (25-jun) — la derivación ahora es CONSISTENTE con e.estado (antes pintaba transiciones imposibles
+      // ante señales colaterales inconsistentes): NO se pinta 'rechazada' si el estado final es autorizada/pagada,
+      // y SÍ se pinta 'autorizada' cuando el estado final lo implica aunque falte la nota res_estimaciones.
+      const autorizadaOPagada = (e.estado === 'autorizada' || e.estado === 'pagada');
+      if (e.autorizada_en || autorizadaOPagada) transiciones.push({ estado: 'autorizada', estado_anterior: 'enviada', en: e.autorizada_en, por: null, por_nombre: null });
+      if (e.rechazada_en && e.estado === 'rechazada') transiciones.push({ estado: 'rechazada', estado_anterior: 'enviada', en: e.rechazada_en, por: null, por_nombre: null });
+      if (e.pagada_en) transiciones.push({ estado: 'pagada', estado_anterior: 'autorizada', en: e.pagada_en, por: null, por_nombre: null });
       return {
         id: e.id,
         numero: e.numero,

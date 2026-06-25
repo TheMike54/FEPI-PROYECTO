@@ -3,7 +3,6 @@ import { useSearchParams } from 'react-router-dom';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import PestanasCiclo from '../components/PestanasCiclo.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
-import RegistroPagoForm from '../components/pagos/RegistroPagoForm.jsx';
 import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
@@ -63,10 +62,10 @@ export default function RegistroPago() {
     <div>
       <HeaderVista
         huId="HU-21"
-        titulo="Registro del pago efectuado"
+        titulo="Pagos del contrato — historial"
         sprint="Sprint 2"
         rolAcademico="Finanzas"
-        descripcion="Registra el pago de una ESTIMACIÓN del contrato. El importe = neto de la estimación (no se teclea). Quien registra se toma de tu sesión (art. 54 LOPSRM)."
+        descripcion="Historial de pagos del contrato. El registro del pago se hace en el TRÁNSITO a pago (Finanzas revisa el CFDI/factura del contratista y confirma). El importe = neto de la estimación (art. 54 LOPSRM)."
         breadcrumb={[{ label: 'Inicio', href: '/' }, { label: 'Pagos' }, { label: 'Registro de pago' }]}
       />
 
@@ -84,11 +83,13 @@ export default function RegistroPago() {
 
           {!contratoId && <p className="text-sm text-slate-500">Selecciona un contrato para registrar o ver sus pagos.</p>}
 
-          {/* F6: el formulario de registro (HU-21) es un componente COMPARTIDO (el mismo del 4º paso del wizard
-              de pago). Solo lo ve quien EJECUTA (finanzas: HU-21='E'); el botón se gatea a finanzas dentro del
-              form. La estimación a pagar se elige dentro del form. */}
-          {contratoId && !soloLectura && (
-            <RegistroPagoForm contratoId={contratoId} soloLectura={soloLectura} estimacionIdInicial={estimacionQuery} onRegistrado={() => cargarPagos(contratoId)} />
+          {/* H6-B6-3 (25-jun): esta pantalla pasa a ser SOLO HISTORIAL. El registro del pago vive en el TRÁNSITO
+              a pago (paso "Registrar pago"), donde Finanzas revisa los soportes del contratista y paga; ya no se
+              captura aquí (se quitó el formulario duplicado). */}
+          {contratoId && (
+            <div className="bg-sigecop-blue-light border border-sigecop-blue/20 px-4 py-3 mb-6 rounded-md text-sm text-sigecop-blue" data-testid="pago-registro-via-transito">
+              Para <strong>registrar</strong> un pago, entra por <strong>Tránsito a pago</strong> (la cola de Finanzas): ahí revisas el CFDI/factura que subió el contratista y confirmas el pago. Esta vista es el <strong>historial</strong> de pagos del contrato.
+            </div>
           )}
 
           {contratoId && (

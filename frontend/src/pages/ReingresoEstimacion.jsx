@@ -43,20 +43,8 @@ const fechaMX = (iso) => {
   return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' });
 };
 
-// Severidad real (estimacion_observaciones): menor/mayor/critica.
-const SEVERIDAD_LABEL = { menor: 'Menor', mayor: 'Mayor', critica: 'Crítica' };
-const SEVERIDAD_CLASE = {
-  critica: 'bg-red-100 text-red-700',
-  mayor:   'bg-amber-100 text-sigecop-amber-attention',
-  menor:   'bg-slate-200 text-slate-700'
-};
-function SeveridadBadge({ severidad }) {
-  return (
-    <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${SEVERIDAD_CLASE[severidad] || 'bg-slate-200 text-slate-600'}`}>
-      {SEVERIDAD_LABEL[severidad] || severidad}
-    </span>
-  );
-}
+// #23 (fix profe): la severidad de observaciones se ELIMINÓ aquí, igual que en HU-15 (RevisionEstimacion):
+// "no hay término medio, toda observación cuenta por igual". Sin badge ni columna ni export de Severidad.
 const TIPO_LABEL = { aclaracion: 'Aclaración', correccion: 'Corrección', rechazo: 'Rechazo' };
 const SECCION_LABEL = { caratula: 'Carátula', generadores: 'Números generadores', fotos: 'Registro fotográfico', soportes: 'Soportes', notas: 'Notas vinculadas' };
 
@@ -82,7 +70,6 @@ const obsAFilas = (observaciones) =>
     '#': i + 1,
     Sección: SECCION_LABEL[o.seccion] || o.seccion,
     Tipo: TIPO_LABEL[o.tipo] || o.tipo,
-    Severidad: SEVERIDAD_LABEL[o.severidad] || o.severidad,
     Observación: o.descripcion
   }));
 
@@ -97,7 +84,7 @@ function exportarObservacionesPdf(observaciones, folio, est) {
 
   let y = 52;
   doc.setFontSize(11);
-  doc.text('# | Seccion | Tipo | Severidad | Observacion', 14, y);
+  doc.text('# | Seccion | Tipo | Observacion', 14, y);
   y += 4;
   doc.setDrawColor(180);
   doc.line(14, y, 196, y);
@@ -105,7 +92,7 @@ function exportarObservacionesPdf(observaciones, folio, est) {
   doc.setFontSize(10);
   obsAFilas(observaciones).forEach((f) => {
     const lineas = doc.splitTextToSize(
-      `${f['#']}. [${f.Severidad}] ${f.Sección} · ${f.Tipo}: ${f.Observación}`,
+      `${f['#']}. ${f.Sección} · ${f.Tipo}: ${f.Observación}`,
       180
     );
     if (y + lineas.length * 5 > 280) { doc.addPage(); y = 20; }
@@ -362,7 +349,6 @@ export default function ReingresoEstimacion() {
                     <th className={`${thClass} w-10`}>#</th>
                     <th className={thClass}>Sección</th>
                     <th className={thClass}>Tipo</th>
-                    <th className={`${thClass} w-28`}>Severidad</th>
                     <th className={thClass}>Observación</th>
                   </tr>
                 </thead>
@@ -372,7 +358,6 @@ export default function ReingresoEstimacion() {
                       <td className="p-3 font-mono text-xs">{i + 1}</td>
                       <td className="p-3 font-semibold">{SECCION_LABEL[o.seccion] || o.seccion}</td>
                       <td className="p-3 text-slate-700">{TIPO_LABEL[o.tipo] || o.tipo}</td>
-                      <td className="p-3"><SeveridadBadge severidad={o.severidad} /></td>
                       <td className="p-3 text-slate-700">{o.descripcion}</td>
                     </tr>
                   ))}

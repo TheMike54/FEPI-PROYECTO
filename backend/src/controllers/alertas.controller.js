@@ -55,7 +55,7 @@ async function deficitsDeContrato(db, contratoId, paNum) {
                        WHERE po.contrato_concepto_id = cc.id AND cp.numero <= $2), 0) AS programado_acum,
             COALESCE((SELECT SUM(ca.cantidad)
                         FROM concepto_avance ca
-                       WHERE ca.contrato_concepto_id = cc.id), 0) AS ejecutado_acum
+                       WHERE ca.contrato_concepto_id = cc.id AND ca.estado = 'vigente'), 0) AS ejecutado_acum
        FROM contrato_conceptos cc
       WHERE cc.contrato_id = $1
       ORDER BY cc.orden`,
@@ -141,7 +141,7 @@ async function resumenAtrasos(req, res) {
                              AND cp.numero <= COALESCE(pa.pa_num, 0)), 0)
               - COALESCE((SELECT SUM(ca.cantidad)
                             FROM concepto_avance ca
-                           WHERE ca.contrato_concepto_id = cc.id), 0) AS deficit
+                           WHERE ca.contrato_concepto_id = cc.id AND ca.estado = 'vigente'), 0) AS deficit
            FROM contrato_conceptos cc
            JOIN contratos_acc ON contratos_acc.id = cc.contrato_id
            LEFT JOIN pa ON pa.contrato_id = cc.contrato_id
@@ -296,7 +296,7 @@ async function alertasDetalle(req, res) {
               ( COALESCE((SELECT SUM(po.cantidad) FROM programa_obra po
                            JOIN contrato_periodos cp ON cp.id = po.contrato_periodo_id
                           WHERE po.contrato_concepto_id = cc.id AND cp.numero <= COALESCE(pa.pa_num, 0)), 0)
-              - COALESCE((SELECT SUM(av.cantidad) FROM concepto_avance av WHERE av.contrato_concepto_id = cc.id), 0)
+              - COALESCE((SELECT SUM(av.cantidad) FROM concepto_avance av WHERE av.contrato_concepto_id = cc.id AND av.estado = 'vigente'), 0)
               ) AS deficit
          FROM contrato_conceptos cc
          JOIN contratos_acc ca_c ON ca_c.id = cc.contrato_id
