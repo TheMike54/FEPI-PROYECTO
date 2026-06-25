@@ -884,8 +884,13 @@ DO $$ BEGIN
 END $$;
 -- Un documento por (contrato, tipo). Las filas previas (≤1 por contrato, ahora 'contrato')
 -- no violan el UNIQUE. Guard explícito sobre pg_constraint (idempotente).
+-- IDEMPOTENCIA: este UNIQUE general es SUPERSEDED más abajo por los índices parciales
+-- (uq_contrato_doc_singleton / uq_contrato_doc_oficio_convenio), porque un contrato puede tener
+-- VARIOS oficios de convenio. Si ese reemplazo ya corrió (existe uq_contrato_doc_singleton), NO
+-- recreamos el UNIQUE general: hacerlo chocaría con los oficios múltiples legítimos (error 23505).
 DO $$ BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_contrato_documentos_tipo') THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'uq_contrato_documentos_tipo')
+     AND NOT EXISTS (SELECT 1 FROM pg_class WHERE relname = 'uq_contrato_doc_singleton') THEN
     ALTER TABLE contrato_documentos ADD CONSTRAINT uq_contrato_documentos_tipo UNIQUE (contrato_id, tipo);
   END IF;
 END $$;
