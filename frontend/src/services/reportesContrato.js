@@ -19,8 +19,7 @@
 // no el valor crudo del esquema. La PENA POR ATRASO (art. 46 Bis LOPSRM + arts. 86–88 RLOPSRM) se DERIVA por identidad de la
 // carátula porque el endpoint del historial aún no expone `retencion_atraso` (ver penaAtrasoDerivada).
 
-import jsPDF from 'jspdf';
-import { descargarExcelHoja, descargarExcelMultihoja } from './excelExport.js';
+import { descargarExcelMultihoja, descargarExcelReporte } from './excelExport.js';
 import { labelEstadoEstimacion } from '../data/estadoEstimacion.js';
 
 // ---------------------------------------------------------------------------
@@ -30,9 +29,8 @@ const MESES_ABR = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep'
 const dISO = (v) => (v == null ? '' : String(v).slice(0, 10)); // DATE/ISO -> 'AAAA-MM-DD'
 const mesCorto = (iso) => MESES_ABR[Number(dISO(iso).slice(5, 7)) - 1] || '';
 const stamp = () => new Date().toISOString().slice(0, 10);
-const fechaMX = () => new Date().toLocaleDateString('es-MX');
 // 'hoy' en hora local 'AAAA-MM-DD' (mismo cálculo que CurvaAvance.hoyISO, sin desfase UTC).
-function hoyISO() {
+export function hoyISO() {
   const d = new Date();
   const z = (x) => String(x).padStart(2, '0');
   return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`;
@@ -73,12 +71,12 @@ export function ventanaPeriodo(fechasISO, periodo) {
 const enVentana = (iso, win) => !win || (dISO(iso) > win.desde && dISO(iso) <= win.hasta);
 
 // Recorta una lista de períodos del programa (ordenados) al período elegido.
-function recortarPeriodos(periodos, periodo) {
+export function recortarPeriodos(periodos, periodo) {
   if (periodo === 'Trimestral') return periodos.slice(-3);
   if (periodo === 'Mensual') return periodos.slice(-1);
   return periodos; // Acumulado
 }
-const periodosOrdenados = (programa) =>
+export const periodosOrdenados = (programa) =>
   (programa?.periodos || []).slice().sort((a, b) => a.numero - b.numero);
 
 // ---------------------------------------------------------------------------
@@ -169,57 +167,49 @@ export function ganttMatriz(programa, trabajos, periodosVisibles) {
   });
 }
 
-// Encabezado común de los PDF.
-function encabezadoPDF(doc, titulo, contrato, periodo, subtitulo) {
-  doc.setFontSize(14);
-  doc.text(titulo, 14, 18);
-  doc.setFontSize(10);
-  doc.text(`Contrato: ${contrato?.folio || '—'} · ${contrato?.contratista || ''}`, 14, 25);
-  let y = 31;
-  doc.text(`Periodo: ${periodo} · Generado: ${fechaMX()}`, 14, y);
-  if (subtitulo) { y += 6; doc.text(subtitulo, 14, y); }
-  return y + 11;
+// Matriz concepto × período con SEMÁFORO (mismo criterio que CurvaAvance.colorCelda):
+//   vacio  = sin programa en la celda (no planeado)        · gris
+//   ejecutado = hay avance imputado a la celda             · verde
+//   atraso = programado VENCIDO sin ejecutar (fin < hoy)   · rojo
+//   pendiente = programado por venir (aún no vence)        · ámbar
+// Devuelve, por concepto, sus celdas (estado por período visible) + contratado/ejecutado/% real.
+export function ganttSemaforo(programa, trabajos, periodosVisibles, hoy = hoyISO()) {
+  const planeado = new Map();
+  for (const cel of (programa?.celdas || [])) {
+    planeado.set(`${cel.contrato_concepto_id}|${cel.contrato_periodo_id}`, Number(cel.cantidad) || 0);
+  }
+  const ejecCelda = new Map();
+  for (const a of (trabajos?.avances || [])) {
+    if (a.contrato_periodo_id == null) continue;
+    const k = `${a.contrato_concepto_id}|${a.contrato_periodo_id}`;
+    ejecCelda.set(k, (ejecCelda.get(k) || 0) + (Number(a.cantidad) || 0));
+  }
+  const ejecAcum = new Map((trabajos?.conceptos || []).map((c) => [c.contrato_concepto_id, Number(c.acumulado_ejecutado) || 0]));
+  return (programa?.conceptos || []).map((c) => {
+    const cont = Number(c.cantidad) || 0;
+    const ej = ejecAcum.get(c.id) || 0;
+    const celdas = periodosVisibles.map((p) => {
+      const plan = planeado.get(`${c.id}|${p.id}`) || 0;
+      let estado;
+      if (plan <= 0) estado = 'vacio';
+      else if ((ejecCelda.get(`${c.id}|${p.id}`) || 0) > 0) estado = 'ejecutado';
+      else estado = dISO(p.fin) < hoy ? 'atraso' : 'pendiente';
+      return { numero: p.numero, mes: mesCorto(p.inicio), estado, planeado: plan };
+    });
+    return {
+      clave: c.clave || '', concepto: c.concepto, unidad: c.unidad,
+      contratado: cont, ejecutado: ej,
+      pct: cont > 0 ? Number(((ej / cont) * 100).toFixed(1)) : null,
+      celdas
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
-// 1) Avance físico vs programado (PDF + Excel)
+// 1) Avance físico vs programado — el PDF se generó antes con jsPDF crudo; REDISEÑO 24-jun: ahora el PDF
+//    es un DOCUMENTO imprimible (components/reportes/DocumentoAvanceFisico.jsx, patrón window.print de la
+//    carátula), por eso HANDLERS[1].PDF = 'modal' (la página abre el documento). El Excel sigue aquí.
 // ---------------------------------------------------------------------------
-function avanceFisicoPDF(d, contrato, periodo) {
-  const curvaCompleta = curvaS(d.programa, d.trabajos, d.pagos, contrato?.monto);
-  const visibles = recortarPeriodos(periodosOrdenados(d.programa), periodo);
-  const visiblesNum = new Set(visibles.map((p) => p.numero));
-  const curva = curvaCompleta.filter((c) => visiblesNum.has(c.numero));
-
-  const doc = new jsPDF();
-  let y = encabezadoPDF(doc, 'Reporte 1 — Avance físico vs programado', contrato, periodo);
-
-  doc.setFontSize(11); doc.text('Curva S (% acumulado)', 14, y); y += 8;
-  doc.setFontSize(9);
-  doc.text('Mes | Programado | Ejecutado | Financiero', 14, y); y += 4;
-  doc.setDrawColor(200); doc.line(14, y, 196, y); y += 4;
-  if (curva.length === 0) { doc.text('Sin programa de obra para el periodo seleccionado.', 14, y); y += 5; }
-  curva.forEach((c) => {
-    const f = (v) => (v == null ? '—' : `${v}%`);
-    doc.text(`${c.mes}  |  ${f(c.programado)}  |  ${f(c.ejecutado)}  |  ${f(c.financiero)}`, 14, y);
-    y += 5;
-    if (y > 280) { doc.addPage(); y = 20; }
-  });
-
-  y += 6;
-  doc.setFontSize(11); doc.text('Concepto × periodo (cantidad planeada)', 14, y); y += 6;
-  doc.setFontSize(8);
-  const gantt = ganttMatriz(d.programa, d.trabajos, visibles);
-  const cols = gantt.length > 0 ? Object.keys(gantt[0]) : [];
-  if (cols.length) { doc.text(cols.join(' | '), 14, y); y += 4; doc.line(14, y, 196, y); y += 4; }
-  gantt.forEach((r) => {
-    doc.text(cols.map((k) => String(r[k] ?? '')).join(' | '), 14, y);
-    y += 5;
-    if (y > 280) { doc.addPage(); y = 20; }
-  });
-
-  doc.save(`${baseName(1, 'avance-fisico', periodo)}.pdf`);
-}
-
 function avanceFisicoExcel(d, contrato, periodo) {
   const curvaCompleta = curvaS(d.programa, d.trabajos, d.pagos, contrato?.monto);
   const visibles = recortarPeriodos(periodosOrdenados(d.programa), periodo);
@@ -243,58 +233,90 @@ function avanceFinancieroExcel(d, contrato, periodo) {
   const filas = (d.historial || [])
     .filter((e) => enVentana(e.periodo_fin, win))
     .map((e) => ({
-      Estimacion: `EST-${String(e.numero).padStart(3, '0')}`,
-      Periodo: rangoPeriodo(e.periodo_inicio, e.periodo_fin),
-      Estado: labelEstadoEstimacion(e.estado),
-      Subtotal: Number(e.subtotal) || 0,
-      Amortizacion: Number(e.amortizacion) || 0,
-      'Retencion (5 al millar)': Number(e.retencion) || 0,
-      Deductivas: Number(e.deductivas) || 0,
-      'Retencion por atraso': penaAtrasoDerivada(e),
-      Neto: Number(e.neto) || 0
+      estim: `EST-${String(e.numero).padStart(3, '0')}`,
+      periodo: rangoPeriodo(e.periodo_inicio, e.periodo_fin),
+      estado: labelEstadoEstimacion(e.estado),
+      subtotal: Number(e.subtotal) || 0,
+      amortizacion: Number(e.amortizacion) || 0,
+      retencion: Number(e.retencion) || 0,
+      deductivas: Number(e.deductivas) || 0,
+      ret_atraso: penaAtrasoDerivada(e),
+      neto: Number(e.neto) || 0
     }));
   // Pagado y % financiero DERIVADOS de los pagos reales (Σ listarPagos ÷ monto): misma definición
   // que la curva de CurvaAvance, no una fuente paralela. Sin invención de importes.
   const monto = Number(contrato?.monto) || 0;
   const pagadoAcum = (d.pagos || []).reduce((s, p) => s + (Number(p.importe) || 0), 0);
-  const resumen = [
-    { Concepto: 'Monto del contrato', Valor: monto },
-    // Suma de netos de estimaciones NO rechazadas (incluye integradas/presentadas/autorizadas/pagadas).
-    // NO se rotula "autorizado": el ciclo es integrada→Presentada(HU-13)→Autorizada(HU-15)→pagada y el
-    // gate de pago es permisivo, así que "no rechazada" ≠ "autorizada por la residencia".
-    { Concepto: 'Σ Neto de estimaciones no rechazadas', Valor: (d.historial || []).filter((e) => e.estado !== 'rechazada').reduce((s, e) => s + (Number(e.neto) || 0), 0) },
-    { Concepto: 'Pagado acumulado', Valor: pagadoAcum },
-    { Concepto: 'Avance financiero % (pagado ÷ monto)', Valor: monto > 0 ? Number(((pagadoAcum / monto) * 100).toFixed(2)) : '' },
-    { Concepto: 'Comprometido / disponible presupuestal', Valor: 'PENDIENTE — depende de HU-20 (presupuesto_anual)' }
-  ];
-  return descargarExcelMultihoja(`${baseName(2, 'avance-financiero', periodo)}.xlsx`, [
-    { nombre: 'Por estimacion', filas },
-    { nombre: 'Resumen', filas: resumen }
-  ]);
+  const estimadoNoRech = (d.historial || []).filter((e) => e.estado !== 'rechazada').reduce((s, e) => s + (Number(e.neto) || 0), 0);
+  // El "comprometido/disponible presupuestal" (techo anual) depende de HU-20 (no cableado): se OMITE en vez
+  // de meter un texto "PENDIENTE" en una columna de números (sería un dato ficticio).
+  return descargarExcelReporte(`${baseName(2, 'avance-financiero', periodo)}.xlsx`, {
+    hojaNombre: 'Avance financiero',
+    titulo: 'Reporte 2 · Avance financiero (sin IVA)',
+    generado: stamp(),
+    contrato: { folio: contrato?.folio, contratista: contrato?.contratista, periodo },
+    tablas: [{
+      titulo: 'Por estimación',
+      columnas: [
+        { header: 'Estim.', key: 'estim', width: 12, fmt: 'text' },
+        { header: 'Periodo', key: 'periodo', width: 26, fmt: 'text' },
+        { header: 'Estado', key: 'estado', width: 14, fmt: 'text' },
+        { header: 'Subtotal', key: 'subtotal', width: 16, fmt: 'money' },
+        { header: 'Amortización', key: 'amortizacion', width: 16, fmt: 'money' },
+        { header: '5 al millar', key: 'retencion', width: 14, fmt: 'money' },
+        { header: 'Deductivas', key: 'deductivas', width: 14, fmt: 'money' },
+        { header: 'Ret. atraso', key: 'ret_atraso', width: 14, fmt: 'money' },
+        { header: 'Neto', key: 'neto', width: 16, fmt: 'money' }
+      ],
+      filas,
+      totales: { label: 'TOTALES', labelKey: 'estim', sumKeys: ['subtotal', 'amortizacion', 'retencion', 'deductivas', 'ret_atraso', 'neto'] }
+    }],
+    metricas: [
+      { label: 'Monto del contrato', valor: monto, fmt: 'money' },
+      { label: 'Estimado (Σ neto de estimaciones no rechazadas)', valor: estimadoNoRech, fmt: 'money' },
+      { label: 'Pagado acumulado', valor: pagadoAcum, fmt: 'money' },
+      { label: 'Avance financiero % (pagado ÷ monto)', valor: monto > 0 ? Number(((pagadoAcum / monto) * 100).toFixed(2)) : 0, fmt: 'pct' }
+    ]
+  });
 }
 
 // ---------------------------------------------------------------------------
 // 3) Listado de estimaciones (Excel) — período = etiqueta (contenido no se altera, CA-2).
 // ---------------------------------------------------------------------------
 function estimacionesExcel(d, contrato, periodo) {
+  // INCLUYE las rechazadas (trazabilidad): no se filtra por estado. "Presentada" = sello de envío HU-13
+  // (columna enviada_en/por; arranca el plazo del art. 54 LOPSRM).
   const filas = (d.historial || []).map((e) => ({
-    Estimacion: `EST-${String(e.numero).padStart(3, '0')}`,
-    Periodo: rangoPeriodo(e.periodo_inicio, e.periodo_fin),
-    Estado: labelEstadoEstimacion(e.estado),
-    Subtotal: Number(e.subtotal) || 0,
-    Amortizacion: Number(e.amortizacion) || 0,
-    'Retencion (5 al millar)': Number(e.retencion) || 0,
-    Deductivas: Number(e.deductivas) || 0,
-    'Retencion por atraso': penaAtrasoDerivada(e),
-    Neto: Number(e.neto) || 0,
-    'Integrada en': dISO(e.integrada_en),
-    'Integrada por': e.integrada_por_nombre || '',
-    // Sello de PRESENTACIÓN (HU-13). La columna del esquema es `enviada_en/por`; en el flujo reconciliado
-    // O7↔HU-15 "enviada" = la estimación que el contratista PRESENTÓ (arranca el plazo del art. 54 LOPSRM).
-    'Presentada en': dISO(e.enviada_en),
-    'Presentada por': e.enviada_por_nombre || ''
+    estim: `EST-${String(e.numero).padStart(3, '0')}`,
+    periodo: rangoPeriodo(e.periodo_inicio, e.periodo_fin),
+    estado: labelEstadoEstimacion(e.estado),
+    subtotal: Number(e.subtotal) || 0,
+    neto: Number(e.neto) || 0,
+    integrada_en: dISO(e.integrada_en),
+    integrada_por: e.integrada_por_nombre || '',
+    presentada_en: dISO(e.enviada_en)
   }));
-  return descargarExcelHoja(`${baseName(3, 'estimaciones', periodo)}.xlsx`, 'Estimaciones', filas);
+  return descargarExcelReporte(`${baseName(3, 'estimaciones', periodo)}.xlsx`, {
+    hojaNombre: 'Estimaciones',
+    titulo: 'Reporte 3 · Listado de estimaciones',
+    generado: stamp(),
+    contrato: { folio: contrato?.folio, contratista: contrato?.contratista, periodo },
+    tablas: [{
+      columnas: [
+        { header: 'Estim.', key: 'estim', width: 12, fmt: 'text' },
+        { header: 'Periodo', key: 'periodo', width: 26, fmt: 'text' },
+        { header: 'Estado', key: 'estado', width: 16, fmt: 'text' },
+        { header: 'Subtotal', key: 'subtotal', width: 16, fmt: 'money' },
+        { header: 'Neto', key: 'neto', width: 16, fmt: 'money' },
+        { header: 'Integrada (fecha)', key: 'integrada_en', width: 16, fmt: 'date' },
+        { header: 'Integró', key: 'integrada_por', width: 24, fmt: 'text' },
+        { header: 'Presentada (fecha)', key: 'presentada_en', width: 16, fmt: 'date' }
+      ],
+      filas,
+      totales: { label: 'TOTALES', labelKey: 'estim', sumKeys: ['subtotal', 'neto'] }
+    }],
+    notas: ['Incluye las estimaciones rechazadas para trazabilidad. Una estimación rechazada no se borra: se vuelve a integrar y a presentar como una versión nueva vinculada (HU-16).']
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -306,72 +328,84 @@ const TIPO_OBS_LBL = { aclaracion: 'Aclaración', correccion: 'Corrección', rec
 function observacionesExcel(d, contrato, periodo) {
   const lista = d.observaciones?.observaciones || [];
   const win = ventanaPeriodo(lista.map((o) => o.created_at), periodo);
+  // SIN columna de severidad (el profe la eliminó): toda observación equivale a un rechazo.
   const filas = lista
     .filter((o) => enVentana(o.created_at, win))
     .map((o) => ({
-      Estimacion: `EST-${String(o.estimacion_numero).padStart(3, '0')}`,
-      Seccion: SECCION_OBS_LBL[o.seccion] || o.seccion,
-      Tipo: TIPO_OBS_LBL[o.tipo] || o.tipo,
-      Estado: o.estado,
-      'Turnado a': o.turnado_a || '',
-      Autor: o.autor_nombre || '',
-      Fecha: dISO(o.created_at),
-      'Solventada en': dISO(o.solventada_en),
-      Descripcion: o.descripcion || ''
+      estim: `EST-${String(o.estimacion_numero).padStart(3, '0')}`,
+      seccion: SECCION_OBS_LBL[o.seccion] || o.seccion,
+      tipo: TIPO_OBS_LBL[o.tipo] || o.tipo,
+      turnado_a: o.turnado_a || '',
+      autor: o.autor_nombre || '',
+      fecha: dISO(o.created_at),
+      descripcion: o.descripcion || ''
     }));
-  return descargarExcelHoja(`${baseName(4, 'observaciones', periodo)}.xlsx`, 'Observaciones', filas);
-}
-
-// ---------------------------------------------------------------------------
-// 5) Bitácora completa (PDF cronológico) — notas reales del contrato.
-// ---------------------------------------------------------------------------
-function bitacoraPDF(d, contrato, periodo) {
-  const todas = (d.notas?.notas || []).slice().sort((a, b) => dISO(a.fecha).localeCompare(dISO(b.fecha)));
-  const win = ventanaPeriodo(todas.map((n) => n.fecha), periodo);
-  const notas = todas.filter((n) => enVentana(n.fecha, win));
-
-  const doc = new jsPDF();
-  let y = encabezadoPDF(doc, 'Reporte 5 — Bitácora completa', contrato, periodo, `${notas.length} notas`);
-  if (notas.length === 0) { doc.setFontSize(10); doc.text('Sin notas de bitácora para el periodo seleccionado.', 14, y); }
-  notas.forEach((n) => {
-    if (y > 270) { doc.addPage(); y = 20; }
-    doc.setFontSize(11);
-    doc.text(`Nota #${n.numero} · ${dISO(n.fecha)} · ${n.tipo_etiqueta || n.tipo}`, 14, y); y += 6;
-    doc.setFontSize(9);
-    doc.text(`Emisor: ${n.emisor_nombre || '—'} · Estado: ${n.aceptacion || n.estado}`, 14, y); y += 5;
-    if (n.asunto) { const a = doc.splitTextToSize(`Asunto: ${n.asunto}`, 180); doc.text(a, 14, y); y += a.length * 4 + 1; }
-    const cont = doc.splitTextToSize(n.contenido || '', 180);
-    if (y + cont.length * 4 > 280) { doc.addPage(); y = 20; }
-    doc.text(cont, 14, y); y += cont.length * 4 + 1;
-    const firmas = (n.firmas || []).map((f) => `${f.nombre} (${f.rol_en_firma})`).join(', ') || '—';
-    doc.text(doc.splitTextToSize(`Firmas: ${firmas}`, 180), 14, y); y += 6;
-    doc.setDrawColor(220); doc.line(14, y, 196, y); y += 4;
+  return descargarExcelReporte(`${baseName(4, 'observaciones', periodo)}.xlsx`, {
+    hojaNombre: 'Observaciones',
+    titulo: 'Reporte 4 · Observaciones de la revisión técnica',
+    generado: stamp(),
+    contrato: { folio: contrato?.folio, contratista: contrato?.contratista, periodo },
+    tablas: [{
+      columnas: [
+        { header: 'Estim.', key: 'estim', width: 12, fmt: 'text' },
+        { header: 'Sección', key: 'seccion', width: 16, fmt: 'text' },
+        { header: 'Tipo', key: 'tipo', width: 16, fmt: 'text' },
+        { header: 'Turnado a', key: 'turnado_a', width: 18, fmt: 'text' },
+        { header: 'Autor', key: 'autor', width: 24, fmt: 'text' },
+        { header: 'Fecha', key: 'fecha', width: 14, fmt: 'date' },
+        { header: 'Descripción', key: 'descripcion', width: 50, fmt: 'text' }
+      ],
+      filas
+    }],
+    notas: ['Sin columna de severidad: toda observación de la revisión técnica equivale a un rechazo de la estimación (HU-15).']
   });
-  doc.save(`${baseName(5, 'bitacora', periodo)}.pdf`);
 }
+
+// ---------------------------------------------------------------------------
+// 5) Bitácora completa — el PDF se generó antes con jsPDF crudo; REDISEÑO 24-jun: ahora es un DOCUMENTO
+//    imprimible (components/reportes/DocumentoBitacora.jsx, patrón window.print), por eso
+//    HANDLERS[5].PDF = 'modal' (la página abre el documento con las notas reales del contrato).
+// ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
 // 6) Histórico de modificatorios (Excel) — convenios reales (art. 59 / 59 Bis LOPSRM).
 // ---------------------------------------------------------------------------
 function modificatoriosExcel(d, contrato, periodo) {
   const filas = (d.convenios?.convenios || []).map((v) => ({
-    Numero: v.numero,
-    Folio: v.folio || '',
-    Tipo: v.tipo,
-    Fundamento: v.fundamento,
-    Fecha: dISO(v.fecha),
-    'Monto anterior': v.monto_anterior == null ? '' : Number(v.monto_anterior),
-    'Monto nuevo': v.monto_nuevo == null ? '' : Number(v.monto_nuevo),
-    'Δ Monto %': v.delta_monto_pct == null ? '' : Number(v.delta_monto_pct),
-    'Plazo anterior (d)': v.plazo_anterior_dias ?? '',
-    'Plazo nuevo (d)': v.plazo_nuevo_dias ?? '',
-    'Δ Plazo %': v.delta_plazo_pct == null ? '' : Number(v.delta_plazo_pct),
-    'Revisión SFP (art.102)': v.requiere_revision_sfp ? 'Sí' : 'No',
-    'Ajuste costos (art.59 Bis)': v.requiere_ajuste_costos ? 'Sí' : 'No',
-    Motivo: v.motivo || '',
-    'Autorizado por': v.autorizado_por_nombre || ''
+    numero: v.numero,
+    tipo: v.tipo,
+    fecha: dISO(v.fecha),
+    monto_ant: v.monto_anterior == null ? null : Number(v.monto_anterior),
+    monto_nuevo: v.monto_nuevo == null ? null : Number(v.monto_nuevo),
+    delta_pct: v.delta_monto_pct == null ? null : Number(v.delta_monto_pct),
+    plazo_ant: v.plazo_anterior_dias ?? null,
+    plazo_nuevo: v.plazo_nuevo_dias ?? null,
+    rev_sfp: v.requiere_revision_sfp ? 'Sí' : 'No'
   }));
-  return descargarExcelHoja(`${baseName(6, 'modificatorios', periodo)}.xlsx`, 'Modificatorios', filas);
+  return descargarExcelReporte(`${baseName(6, 'modificatorios', periodo)}.xlsx`, {
+    hojaNombre: 'Modificatorios',
+    titulo: 'Reporte 6 · Histórico de modificatorios',
+    generado: stamp(),
+    contrato: { folio: contrato?.folio, contratista: contrato?.contratista, periodo },
+    tablas: [{
+      columnas: [
+        { header: 'N.º', key: 'numero', width: 8, fmt: 'int' },
+        { header: 'Tipo', key: 'tipo', width: 18, fmt: 'text' },
+        { header: 'Fecha', key: 'fecha', width: 14, fmt: 'date' },
+        { header: 'Monto ant.', key: 'monto_ant', width: 16, fmt: 'money' },
+        { header: 'Monto nuevo', key: 'monto_nuevo', width: 16, fmt: 'money' },
+        { header: 'Δ Monto %', key: 'delta_pct', width: 12, fmt: 'pct' },
+        { header: 'Plazo ant. (d)', key: 'plazo_ant', width: 13, fmt: 'int' },
+        { header: 'Plazo nuevo (d)', key: 'plazo_nuevo', width: 13, fmt: 'int' },
+        { header: 'Rev. SFP (art. 102)', key: 'rev_sfp', width: 16, fmt: 'text' }
+      ],
+      filas
+    }],
+    notas: [
+      'Los conceptos ORIGINALES del contrato quedan congelados; los conceptos ADICIONALES de un convenio se administran por separado (art. 101 RLOPSRM).',
+      'Rev. SFP = "Sí" cuando la variación supera el 25% (art. 102 RLOPSRM).'
+    ]
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -386,15 +420,32 @@ function modificatoriosExcel(d, contrato, periodo) {
 function penalizacionesExcel(d, contrato, periodo) {
   const penaPct = d.prep?.contrato?.pena_convencional_pct;
   const filas = (d.historial || []).map((e) => ({
-    Estimacion: `EST-${String(e.numero).padStart(3, '0')}`,
-    Periodo: rangoPeriodo(e.periodo_inicio, e.periodo_fin),
-    Estado: labelEstadoEstimacion(e.estado),
-    'Retencion por atraso (art. 46 Bis LOPSRM + 86-88 RLOPSRM)': penaAtrasoDerivada(e),
-    'Retencion 5 al millar (art.191 LFD)': Number(e.retencion) || 0,
-    Deductivas: Number(e.deductivas) || 0,
-    'Pena convencional % (contrato)': penaPct == null ? 'No pactada' : penaPct
+    estim: `EST-${String(e.numero).padStart(3, '0')}`,
+    periodo: rangoPeriodo(e.periodo_inicio, e.periodo_fin),
+    ret_atraso: penaAtrasoDerivada(e),
+    cinco_millar: Number(e.retencion) || 0,
+    deductivas: Number(e.deductivas) || 0,
+    pena_conv: penaPct == null ? 'No pactada' : Number(penaPct)
   }));
-  return descargarExcelHoja(`${baseName(7, 'penalizaciones', periodo)}.xlsx`, 'Penalizaciones', filas);
+  return descargarExcelReporte(`${baseName(7, 'penalizaciones', periodo)}.xlsx`, {
+    hojaNombre: 'Penalizaciones',
+    titulo: 'Reporte 7 · Penalizaciones y deductivas',
+    generado: stamp(),
+    contrato: { folio: contrato?.folio, contratista: contrato?.contratista, periodo },
+    tablas: [{
+      columnas: [
+        { header: 'Estim.', key: 'estim', width: 12, fmt: 'text' },
+        { header: 'Periodo', key: 'periodo', width: 26, fmt: 'text' },
+        { header: 'Ret. por atraso (art. 46 Bis LOPSRM)', key: 'ret_atraso', width: 20, fmt: 'money' },
+        { header: '5 al millar (art. 191 LFD)', key: 'cinco_millar', width: 18, fmt: 'money' },
+        { header: 'Deductivas', key: 'deductivas', width: 14, fmt: 'money' },
+        { header: 'Pena conv. % (contrato)', key: 'pena_conv', width: 16, fmt: 'pct' }
+      ],
+      filas,
+      totales: { label: 'TOTALES', labelKey: 'estim', sumKeys: ['ret_atraso', 'cinco_millar', 'deductivas'] }
+    }],
+    notas: ['Pena por atraso DERIVADA de la carátula (art. 46 Bis LOPSRM + arts. 86-88 RLOPSRM, tope art. 90 RLOPSRM). El 5 al millar (art. 191 LFD) es retención fiscal, no una pena. La pena convencional % es la pactada en el contrato (igual para todas las estimaciones).']
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -414,12 +465,14 @@ export const CATALOGO_REPORTES = [
 
 export const PERIODOS_REPORTE = ['Mensual', 'Trimestral', 'Acumulado'];
 
+// PDF de R1 y R5 = 'modal': la página (ExportacionReportes) abre un DOCUMENTO imprimible (patrón window.print
+// de la carátula), no un jsPDF crudo. Los Excel siguen siendo funciones generadoras.
 export const HANDLERS = {
-  1: { PDF: avanceFisicoPDF, Excel: avanceFisicoExcel },
+  1: { PDF: 'modal', Excel: avanceFisicoExcel },
   2: { Excel: avanceFinancieroExcel },
   3: { Excel: estimacionesExcel },
   4: { Excel: observacionesExcel },
-  5: { PDF: bitacoraPDF },
+  5: { PDF: 'modal' },
   6: { Excel: modificatoriosExcel },
   7: { Excel: penalizacionesExcel }
 };

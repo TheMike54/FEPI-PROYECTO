@@ -16,6 +16,8 @@ test.skip(!!process.env.CI, 'O4: login real requiere backend+BD; se corre en loc
 const API = 'http://localhost:4000/api';
 const PASS = 'Sigecop2026!';
 const loginApi = async (request, email) => (await request.post(`${API}/auth/login`, { data: { email, password: PASS } })).json();
+// A1 (criterio del equipo): el registro de avance exige una foto de evidencia. PNG 1x1 válido para el input.
+const PNG_1x1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 
 // Contrato con C-001 contratado 1000 (programa P1=400, P2=600) y, opcionalmente, C-002 contratado
 // 500 programado SOLO en P2 (P1=0) para el caso "no programado en el periodo 1".
@@ -179,6 +181,8 @@ test.describe('O4 — avance por periodo + nota + validación vs programa vigent
     // Toggle "ejecuté todo lo programado del periodo" → autollena 400.
     await page.getByTestId('toggle-todo-periodo').check();
     await expect(page.getByTestId('cap-cantidad')).toHaveValue('400');
+    // A1: adjunta la foto de evidencia requerida (criterio del equipo) antes de registrar.
+    await page.getByTestId('cap-foto-evidencia').setInputFiles({ name: 'evidencia.png', mimeType: 'image/png', buffer: PNG_1x1 });
     // Registrar → éxito; el avance aparece con su periodo y una nota (en vivo).
     await page.getByTestId('btn-registrar-avance').click();
     await expect(page.getByTestId('tabla-avances')).toContainText('Periodo 1');

@@ -1,5 +1,18 @@
 # PLAN DE PREENTREGA — JUEVES (revisión profe 22-jun)
 
+> ## ✅ ESTADO 24-jun — este plan está MAYORMENTE EJECUTADO (banner de cierre)
+> Lo de abajo es el plan original del 22-jun. Estado real al 24-jun:
+> - **Quick wins:** hechos (portafolio→expediente, fix −22 días, KPI atraso positivo, HU-16 desconectado, copy convenios).
+> - **4 piezas XL:** **Empresas** (re-seed + fusionar/validar, `479a857`), **Estimación-ciclo** (10 bugs `8956e5d` + gates art.64 `2c56665`), **Carátula GACM** (exportable `ad92f19` + **rediseño PDF** local 24-jun), **Convenios** (curva versionada → **etapas Propuesta B** + **B4 ampliar concepto** local 24-jun). ✅ cubiertas.
+> - **7 brechas (G1-G7)** + HU-16 + severidad: `ad92f19`. **Galería fotos HU-06:** `d941024`. **8 reportes con formato, A2/A3/B4/B5:** working tree local.
+> - **Pendientes ahora** (ya no son "las 4 XL", son bugs): **#1 backfill PDF firmado en 28 demos** y **#2 gate de pago en contrato cerrado** (ambos tache-seguro) + resto del reporte `REPORTE_PRUEBAS_EXHAUSTIVAS_24jun.md`.
+> - **Para el equipo humano:** `PLAN_PRUEBAS_POSITIVAS_24jun.md` + `PLAN_PRUEBAS_NEGATIVAS_24jun.md` (215 casos).
+> - **Despliegue:** TODO sigue en LOCAL; Render en `cb10b27` (21-jun). Integración/deploy = decisión de Maiki.
+>
+> *(El plan original abajo se conserva como referencia histórica del análisis del 22-jun.)*
+>
+> ---
+
 > **Autor:** Code (análisis) · **Para:** Maiki · **Fecha:** 22-jun-2026
 > **Hitos:** Preentrega **jueves** (revisión ~3 h) · Entrega final **viernes**.
 > **Naturaleza de este doc:** SOLO análisis + plan ordenado por dependencias. **No se implementó nada.**

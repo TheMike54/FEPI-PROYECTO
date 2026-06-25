@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>B4 — Más cantidad de un concepto existente (mockup SIGECOP)</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: { extend: { colors: {
+      guinda: '#691C32', 'guinda-soft': '#F3E9EC', dorado: '#BC955C',
+      'sigecop-blue': '#0D2F5A', 'sigecop-blue-light': '#E8EEF6',
+      borde: '#D8D2CB', pagina: '#FAF8F5', tinta: '#1f2937', 'tinta-sec': '#475569', 'tinta-ter': '#64748b',
+    }}}
+  }
+</script>
+<style>
+  body { background: #f1f5f9; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .sg-input { width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px 10px; font-size: 14px; }
+  .sg-input:disabled { background: #f1f5f9; color: #64748b; cursor: not-allowed; }
+  .sg-btn-primary { background: #691C32; color: #fff; font-weight: 600; border-radius: 6px; padding: 8px 16px; font-size: 14px; }
+  .sg-btn-secondary { background: #fff; color: #0D2F5A; border: 1px solid #0D2F5A33; font-weight: 600; border-radius: 6px; padding: 8px 16px; font-size: 14px; }
+  .chip-cong { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; background: #e2e8f0; color: #475569; border: 1px solid #cbd5e1; border-radius: 4px; padding: 1px 6px; }
+  .chip-add { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; background: #fef3c7; color: #92400e; border: 1px solid #fde68a; border-radius: 4px; padding: 1px 6px; }
+  .chip-pu { font-size: 10px; font-weight: 700; background: #E8EEF6; color: #0D2F5A; border: 1px solid #0D2F5A22; border-radius: 4px; padding: 1px 6px; }
+  .lock { color:#94a3b8; }
+</style>
+</head>
+<body class="text-tinta">
+
+<div class="max-w-5xl mx-auto px-6 py-8">
+
+  <!-- Encabezado de la página (estilo HeaderVista) -->
+  <div class="mb-6">
+    <div class="text-[11px] uppercase tracking-widest text-guinda font-bold">HU-03 · Convenios modificatorios</div>
+    <h1 class="text-2xl font-bold text-tinta">Convenio modificatorio — catálogo de conceptos</h1>
+    <p class="text-sm text-tinta-ter">Mockup de diseño para revisión (no es el sistema real). Colores SIGECOP guinda #691C32 / dorado #BC955C.</p>
+  </div>
+
+  <div class="bg-amber-50 border-l-4 border-dorado px-4 py-3 rounded-r-md mb-8 text-sm text-amber-900">
+    <strong>Qué resuelve B4:</strong> el profe pidió poder <strong>agregar más cantidad de un concepto que ya existe</strong>
+    (mismo concepto, más volumen). Anclajes: el original queda <strong>congelado y visible</strong>; el <strong>P.U. de la cantidad
+    extra se HEREDA del original</strong> (art. 59 LOPSRM, nunca se teclea); y se muestra el <strong>total actualizado</strong> del concepto.
+    Abajo van <strong>2 variantes</strong> del mismo diseño — elige una.
+  </div>
+
+  <!-- ============================================================= -->
+  <!-- VARIANTE A — "Ampliar concepto" en línea: fila hija bajo el original -->
+  <!-- ============================================================= -->
+  <section class="mb-12">
+    <div class="flex items-center gap-3 mb-1">
+      <span class="w-7 h-7 rounded-full bg-guinda text-white text-sm font-bold flex items-center justify-center">A</span>
+      <h2 class="text-lg font-bold text-guinda">Variante A · "Ampliar concepto" en la misma tabla (fila hija)</h2>
+    </div>
+    <p class="text-sm text-tinta-ter mb-4 ml-10">El original se queda congelado; debajo aparece una <strong>fila hija de ampliación</strong> donde solo se teclea la
+      <strong>cantidad extra</strong>. El P.U. viene heredado (candado). El renglón muestra el <strong>nuevo total</strong> del concepto.</p>
+
+    <div class="bg-white border border-borde rounded-lg overflow-hidden ml-10">
+      <div class="px-5 py-3 border-b border-borde bg-pagina">
+        <h3 class="text-sm font-bold uppercase tracking-wider text-sigecop-blue">Catálogo de conceptos (convenio)</h3>
+        <p class="text-xs text-tinta-ter mt-0.5">Los conceptos originales se <strong>congelan</strong>. Puedes <strong>ampliar la cantidad</strong> de un original (mismo P.U.) o <strong>agregar conceptos adicionales</strong> nuevos.</p>
+      </div>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+          <thead class="bg-sigecop-blue-light text-sigecop-blue">
+            <tr>
+              <th class="text-left px-3 py-2 w-28">Clave</th>
+              <th class="text-left px-3 py-2">Concepto</th>
+              <th class="text-left px-3 py-2 w-20">Unidad</th>
+              <th class="text-right px-3 py-2 w-28">Cantidad</th>
+              <th class="text-right px-3 py-2 w-32">P.U.</th>
+              <th class="text-right px-3 py-2 w-36">Importe</th>
+              <th class="w-24 px-2 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- CONC-01 original (congelado) -->
+            <tr class="border-t border-borde">
+              <td class="px-3 py-2 font-mono text-xs">CONC-01</td>
+              <td class="px-3 py-2">Limpieza, trazo y nivelación <span class="chip-cong ml-1">Original · congelado</span></td>
+              <td class="px-3 py-2 text-tinta-ter">m²</td>
+              <td class="px-3 py-2 text-right font-mono">12,000.000</td>
+              <td class="px-3 py-2 text-right font-mono">$20.0000</td>
+              <td class="px-3 py-2 text-right font-mono">$240,000.00</td>
+              <td class="px-2 py-2 text-right">
+                <button class="text-xs font-semibold text-guinda hover:underline whitespace-nowrap">+ Ampliar cantidad</button>
+              </td>
+            </tr>
+            <!-- Fila HIJA de ampliación de CONC-01 -->
+            <tr class="bg-guinda-soft border-t border-dashed border-guinda/40">
+              <td class="px-3 py-2"></td>
+              <td class="px-3 py-2">
+                <div class="flex items-center gap-2 text-guinda font-semibold text-[13px]">↳ Ampliación de cantidad <span class="chip-add">Adicional</span></div>
+                <div class="text-[11px] text-tinta-ter">Más volumen del mismo concepto (art. 59 LOPSRM: al P.U. pactado).</div>
+              </td>
+              <td class="px-3 py-2 text-tinta-ter">m²</td>
+              <td class="px-3 py-2">
+                <input class="sg-input text-right font-mono" value="3,000" />
+                <div class="text-[10px] text-tinta-ter mt-0.5 text-right">cantidad extra</div>
+              </td>
+              <td class="px-3 py-2 text-right">
+                <div class="flex items-center justify-end gap-1">
+                  <span class="lock">🔒</span><span class="font-mono">$20.0000</span>
+                </div>
+                <div class="text-right"><span class="chip-pu">P.U. heredado</span></div>
+              </td>
+              <td class="px-3 py-2 text-right font-mono font-semibold text-guinda">+$60,000.00</td>
+              <td class="px-2 py-2 text-right"><button class="text-red-500 hover:text-red-700" title="Quitar ampliación">✕</button></td>
+            </tr>
+            <!-- Total actualizado de CONC-01 -->
+            <tr class="bg-white border-t border-borde">
+              <td class="px-3 py-1.5"></td>
+              <td class="px-3 py-1.5 text-[12px] text-tinta-sec font-semibold" colspan="3">Total CONC-01 (original + ampliación) → <span class="font-mono">15,000.000 m²</span></td>
+              <td class="px-3 py-1.5"></td>
+              <td class="px-3 py-1.5 text-right font-mono font-bold text-sigecop-blue">$300,000.00</td>
+              <td></td>
+            </tr>
+
+            <!-- CONC-02 original (congelado, sin ampliación) -->
+            <tr class="border-t border-borde">
+              <td class="px-3 py-2 font-mono text-xs">CONC-02</td>
+              <td class="px-3 py-2">Base hidráulica compactada <span class="chip-cong ml-1">Original · congelado</span></td>
+              <td class="px-3 py-2 text-tinta-ter">m³</td>
+              <td class="px-3 py-2 text-right font-mono">1,600.000</td>
+              <td class="px-3 py-2 text-right font-mono">$600.0000</td>
+              <td class="px-3 py-2 text-right font-mono">$960,000.00</td>
+              <td class="px-2 py-2 text-right"><button class="text-xs font-semibold text-guinda hover:underline whitespace-nowrap">+ Ampliar cantidad</button></td>
+            </tr>
+
+            <!-- Concepto ADICIONAL nuevo (lo que ya existe hoy) -->
+            <tr class="border-t border-borde">
+              <td class="px-2 py-2"><input class="sg-input font-mono text-xs" value="AD-01" /></td>
+              <td class="px-2 py-2"><input class="sg-input" value="Señalamiento horizontal y vertical" /> <span class="chip-add mt-1 inline-block">Adicional nuevo</span></td>
+              <td class="px-2 py-2"><input class="sg-input" value="m²" /></td>
+              <td class="px-2 py-2"><input class="sg-input text-right font-mono" value="5,000" /></td>
+              <td class="px-2 py-2"><input class="sg-input text-right font-mono" value="40.00" /></td>
+              <td class="px-3 py-2 text-right font-mono">$200,000.00</td>
+              <td class="px-2 py-2 text-right"><button class="text-red-500 hover:text-red-700">✕</button></td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr class="border-t-2 border-borde bg-pagina">
+              <td colspan="5" class="px-3 py-2 text-right font-semibold text-tinta-sec">Monto nuevo (Σ importes)</td>
+              <td class="px-3 py-2 text-right font-bold text-sigecop-blue">$1,460,000.00</td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <div class="px-5 py-3 border-t border-borde">
+        <button class="text-sm text-sigecop-blue font-semibold hover:underline">+ Agregar concepto adicional (nuevo)</button>
+      </div>
+    </div>
+    <div class="ml-10 mt-3 text-[13px] text-tinta-sec bg-white border border-borde rounded-md px-4 py-3">
+      <strong class="text-guinda">Por qué A:</strong> todo en una tabla; la ampliación cuelga visualmente del original (jerarquía clara: padre congelado → hija de ampliación). El total del concepto se ve en el acto. Distingue "ampliar lo mismo" de "agregar concepto nuevo".
+    </div>
+  </section>
+
+  <!-- ============================================================= -->
+  <!-- VARIANTE B — Modal "Ampliar concepto" con resumen antes/después -->
+  <!-- ============================================================= -->
+  <section class="mb-12">
+    <div class="flex items-center gap-3 mb-1">
+      <span class="w-7 h-7 rounded-full bg-guinda text-white text-sm font-bold flex items-center justify-center">B</span>
+      <h2 class="text-lg font-bold text-guinda">Variante B · Botón "Ampliar" → panel/modal con antes → después</h2>
+    </div>
+    <p class="text-sm text-tinta-ter mb-4 ml-10">La tabla del catálogo queda intacta (solo lectura del original). Al pulsar <strong>"Ampliar"</strong> se abre un panel que
+      muestra el <strong>antes/después</strong> del concepto y solo pide la cantidad extra (P.U. heredado, bloqueado).</p>
+
+    <div class="ml-10 grid md:grid-cols-2 gap-5">
+      <!-- Tabla con botón Ampliar -->
+      <div class="bg-white border border-borde rounded-lg overflow-hidden">
+        <div class="px-4 py-2.5 border-b border-borde bg-pagina"><h3 class="text-xs font-bold uppercase tracking-wider text-sigecop-blue">Conceptos originales (congelados)</h3></div>
+        <table class="w-full text-sm">
+          <thead class="bg-sigecop-blue-light text-sigecop-blue text-xs">
+            <tr><th class="text-left px-3 py-2">Clave / concepto</th><th class="text-right px-3 py-2">Cantidad</th><th class="px-2 py-2"></th></tr>
+          </thead>
+          <tbody>
+            <tr class="border-t border-borde">
+              <td class="px-3 py-2"><span class="font-mono text-xs">CONC-01</span> · Limpieza, trazo y nivelación</td>
+              <td class="px-3 py-2 text-right font-mono">12,000.000</td>
+              <td class="px-2 py-2 text-right"><button class="text-xs font-semibold text-white bg-guinda rounded px-2 py-1">Ampliar</button></td>
+            </tr>
+            <tr class="border-t border-borde bg-guinda-soft/40">
+              <td class="px-3 py-2"><span class="font-mono text-xs">CONC-02</span> · Base hidráulica compactada<div class="text-[11px] text-guinda mt-0.5">↳ ampliado +500 m³ (este convenio)</div></td>
+              <td class="px-3 py-2 text-right font-mono">1,600.000 <span class="text-guinda font-semibold">→ 2,100.000</span></td>
+              <td class="px-2 py-2 text-right"><button class="text-xs font-semibold text-guinda hover:underline">Editar</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Panel de ampliación -->
+      <div class="bg-white border-2 border-guinda rounded-lg overflow-hidden shadow-sm">
+        <div class="px-4 py-2.5 bg-guinda text-white"><h3 class="text-sm font-bold">Ampliar cantidad · CONC-01</h3></div>
+        <div class="p-4 space-y-3 text-sm">
+          <div class="grid grid-cols-3 gap-2 text-center">
+            <div class="bg-pagina border border-borde rounded-md py-2"><div class="text-[10px] uppercase text-tinta-ter">Original</div><div class="font-mono font-bold">12,000.000</div></div>
+            <div class="bg-guinda-soft border border-guinda/30 rounded-md py-2"><div class="text-[10px] uppercase text-guinda">+ Extra</div><div class="font-mono font-bold text-guinda">3,000.000</div></div>
+            <div class="bg-sigecop-blue-light border border-sigecop-blue/30 rounded-md py-2"><div class="text-[10px] uppercase text-sigecop-blue">Total nuevo</div><div class="font-mono font-bold text-sigecop-blue">15,000.000</div></div>
+          </div>
+          <div>
+            <label class="text-xs font-semibold text-tinta-sec">Cantidad adicional (m²)</label>
+            <input class="sg-input text-right font-mono" value="3,000" />
+          </div>
+          <div>
+            <label class="text-xs font-semibold text-tinta-sec">Precio unitario</label>
+            <div class="flex items-center gap-2 sg-input bg-slate-100 cursor-not-allowed">
+              <span class="lock">🔒</span><span class="font-mono">$20.0000</span>
+              <span class="chip-pu ml-auto">Heredado del original (art. 59 LOPSRM)</span>
+            </div>
+          </div>
+          <div class="flex items-center justify-between bg-guinda-soft border border-guinda/30 rounded-md px-3 py-2">
+            <span class="font-semibold text-guinda">Importe de la ampliación</span>
+            <span class="font-mono font-bold text-guinda">+$60,000.00</span>
+          </div>
+          <div class="flex justify-end gap-2 pt-1">
+            <button class="sg-btn-secondary">Cancelar</button>
+            <button class="sg-btn-primary">Agregar ampliación</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="ml-10 mt-3 text-[13px] text-tinta-sec bg-white border border-borde rounded-md px-4 py-3">
+      <strong class="text-guinda">Por qué B:</strong> el "antes → después" es explícito (tres cajas: original / extra / total), imposible confundir el P.U. (candado + chip de ley). La tabla principal no se ensucia. Cuesta un clic más (abrir el panel).
+    </div>
+  </section>
+
+  <div class="text-center text-xs text-tinta-ter border-t border-borde pt-4">
+    Mockup de diseño SIGECOP · B4 "más cantidad de un concepto existente" · para aprobación de Maiki.
+    Ambas variantes respetan: original congelado y visible · P.U. heredado/bloqueado · total actualizado del concepto.
+  </div>
+
+</div>
+</body>
+</html>

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import BannerContexto from '../components/vista/BannerContexto.jsx';
@@ -10,6 +10,8 @@ import { api } from '../services/api.js';
 import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
 import PestanasCiclo from '../components/PestanasCiclo.jsx';
 import { CATALOGO_REPORTES, PERIODOS_REPORTE, HANDLERS } from '../services/reportesContrato.js';
+import DocumentoAvanceFisico from '../components/reportes/DocumentoAvanceFisico.jsx';
+import DocumentoBitacora from '../components/reportes/DocumentoBitacora.jsx';
 
 // HU-19 — Exportación de los 7 reportes definidos del contrato. Cableado a datos REALES
 // (sin dummy). La generación (PDF/Excel) vive en services/reportesContrato.js y corre en el
@@ -38,11 +40,18 @@ export default function ExportacionReportes() {
 
   const [contratos, setContratos] = useState([]);
   const [contratoId, setContratoId] = useState('');
-  const [contrato, setContrato] = useState(null);
+  // FIX 24-jun: `contrato` DERIVADO (reactivo) de la lista + id activo. Antes era useState imperativo y, al
+  // heredar el contrato activo en el montaje (antes de que cargara la lista), quedaba null para siempre →
+  // hayContrato=false → TODOS los botones de exportar deshabilitados. Espeja el patrón `selected` de CurvaAvance.
+  const contrato = useMemo(
+    () => contratos.find((c) => String(c.id) === String(contratoId)) || null,
+    [contratos, contratoId]
+  );
   const [periodo, setPeriodo] = useState(PERIODOS_REPORTE[0]);
   const [datos, setDatos] = useState(null); // { programa, trabajos, pagos, historial, prep, notas, convenios }
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState(null);
+  const [docPdf, setDocPdf] = useState(null); // 1 (avance físico) | 5 (bitácora) | null — documento imprimible abierto
 
   useEffect(() => {
     if (sinSesion) return;
@@ -50,10 +59,8 @@ export default function ExportacionReportes() {
   }, [sinSesion]);
 
   const seleccionarContrato = useCallback(async (id) => {
-    setContratoId(id);
+    setContratoId(id);   // `contrato` se deriva del memo (arriba) cuando la lista de contratos esté disponible.
     setDatos(null); setError(null);
-    const sel = contratos.find((c) => String(c.id) === String(id)) || null;
-    setContrato(sel);
     if (!id) return;
     setCargando(true);
     try {
@@ -79,7 +86,7 @@ export default function ExportacionReportes() {
     } finally {
       setCargando(false);
     }
-  }, [contratos, showToast]);
+  }, [showToast]);
 
   // B6b/A-3A: preselecciona el contrato del ?contrato=ID (consistencia entre pantallas).
   const [searchParams] = useSearchParams();
@@ -90,8 +97,14 @@ export default function ExportacionReportes() {
   }, [sinSesion, contratoQuery, contratoId, contratos, seleccionarContrato]);
 
   const exportar = useCallback((reporteId, formato) => {
+    if (!contrato || !datos) return;
+    // PDF de R1/R5 = documento imprimible (patrón window.print de la carátula): se abre un modal, no jsPDF.
+    if (formato === 'PDF' && (reporteId === 1 || reporteId === 5)) {
+      setDocPdf(reporteId);
+      return;
+    }
     const handler = HANDLERS[reporteId]?.[formato];
-    if (!handler || !contrato || !datos) return;
+    if (typeof handler !== 'function') return;
     try {
       handler(datos, contrato, periodo);
     } catch (e) {
@@ -247,6 +260,14 @@ export default function ExportacionReportes() {
           { numero: 2, texto: 'El usuario puede seleccionar el periodo (mensual, trimestral, acumulado) sin alterar el contenido predefinido del reporte.' }
         ]}
       />
+
+      {/* Documentos imprimibles (PDF) de R1 y R5 — patrón window.print de la carátula. */}
+      {docPdf === 1 && hayContrato && (
+        <DocumentoAvanceFisico datos={datos} contrato={contrato} periodo={periodo} onCerrar={() => setDocPdf(null)} />
+      )}
+      {docPdf === 5 && hayContrato && (
+        <DocumentoBitacora datos={datos} contrato={contrato} periodo={periodo} onCerrar={() => setDocPdf(null)} />
+      )}
     </div>
   );
 }

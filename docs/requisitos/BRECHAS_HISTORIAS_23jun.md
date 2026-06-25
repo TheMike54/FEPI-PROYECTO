@@ -1,5 +1,30 @@
 # Brechas de las historias vs el sistema real — 23-jun-2026
 
+> ## 🟢 ACTUALIZACIÓN DE CIERRE 24-jun — estado de las brechas (qué se cerró)
+>
+> Tras los commits `ad92f19`/`d941024` (23-jun) y el trabajo local del 24-jun (working tree, sin commit):
+>
+> | Brecha (sección B) | Estado al 24-jun | Por dónde |
+> |---|---|---|
+> | **1. HU-16 reingreso flujo aparte** | ✅ **Cerrada** (desconectado del catálogo, `ad92f19`). ⚠️ Residuo: `ReingresoEstimacion.jsx` aún pinta columna **Severidad** (bug #23) y `severidad` sigue en schema con DEFAULT. | `ad92f19` |
+> | **2. HU-03 adicionales `es_adicional` no se lee** | 🟡 **Parcial:** ya se **muestra** el badge "Adicional" en expediente/estimación **+ programa y curva** (B5) y se puede **ampliar** un concepto (B4). Estimar/pagar 100% aparte (art. 101) sigue pendiente. | `ad92f19` + B4/B5 local |
+> | **3. HU-03 curva NO versionada** | ✅ **Cerrada:** **curva por etapas (Propuesta B)** — % original congelado + etapa vigente, con desplegable del programa por versión. Resuelve el "26% hoy/13% mañana". | A3/Propuesta B local |
+> | **4. HU-19 reportes sin formato/branding** | ✅ **Cerrada:** **8 reportes rediseñados** (carátula PDF + R1/R5 imprimibles + R2/R3/R4/R6/R7 Excel con diseño). ⚠️ Residuos menores: bugs #6 (totales suman rechazadas), #27 (R1 Excel vacío sin programa), #29 (descripción R4). | Rediseño reportes local |
+> | **5. HU-21 finanzas re-captura / instrucción no cierra** | 🟡 **Parcial:** cierre de instrucción de pago (G6, `ad92f19`). El "finanzas solo revisa" sigue como decisión. | `ad92f19` |
+> | **6. HU-20 falta orden de pago + notificación** | ✅ **Cerrada:** notificación de cobro al autorizar (G3, `ad92f19`). | `ad92f19` |
+> | **7. HU-12 carátula GACM no exportable** | ✅ **Cerrada:** documento imprimible (G1, `ad92f19`) + **rediseño** GACM con CONTRATISTA(empresa) vs SUPERINTENDENTE(persona) separados. | `ad92f19` + rediseño local |
+> | **8. HU-18 sin reporte de riesgos** | ✅ **Cerrada:** riesgos en portafolio (G5 pago-sin-avance, `ad92f19`). | `ad92f19` |
+> | **9. HU-14/HU-17 sin sellos de fecha** | ✅ **Cerrada:** fechas en historial (G7, `ad92f19`). | `ad92f19` |
+> | **14. HU-06 foto opcional + UX** | 🟡 **Parcial:** foto ahora **obligatoria en UI** (A1) + galería listar/ver/eliminar (`d941024`). ⚠️ El backend NO valida la foto (bug #22); periodo pasado sigue permitido. | `d941024` + A1 local |
+> | **15. HU-02 menores (gate cerrado en garantías)** | 🔴 **ABIERTA:** `editarGarantia`/`subirPdfGarantia` siguen sin gate art. 64 (confirmado hoy, **bugs #4/#5/#17**). | — |
+> | **10–13, 16–17 (otras)** | 🔴 **Abiertas** (decisiones de Maiki / menores). Algunas ahora tienen bug numerado en el reporte 24-jun. | — |
+>
+> **Nota:** varios "cierres" tienen residuos que el reporte de pruebas exhaustivas (24-jun) capturó como bugs
+> numerados. Ver `docs/pruebas/REPORTE_PRUEBAS_EXHAUSTIVAS_24jun.md` para el detalle y la severidad. Nada de
+> esto está desplegado en Render (todo LOCAL).
+>
+> ---
+
 > **Qué es esto:** auditoría de `docs/Historias_Usuario_SIGECOP.md` contra el CÓDIGO REAL (vía
 > `docs/requisitos/INSUMOS_HISTORIAS_22jun.md` + lectura directa). Aquí van **las brechas**: lo que una historia
 > describía y el sistema NO hace al 100% todavía. **No están dentro de las historias que verá el profe** — las

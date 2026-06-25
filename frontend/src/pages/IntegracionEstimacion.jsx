@@ -1048,8 +1048,38 @@ export default function IntegracionEstimacion() {
               {wrapTab(
                 <TabNotasVinculadas vinculadas={notasVinculadas} onAbrir={() => setModalAbierto(true)} onQuitar={quitarNota} onVerDocumento={verDocumentoNota} soloLectura={soloLectura} />
               )}
-              <div className="bg-sigecop-blue-light border-l-4 border-sigecop-blue px-4 py-3 text-sm text-slate-700 rounded-r-md" data-testid="soportes-fotos-alcance">
-                El <strong>registro fotográfico</strong> es parte de los documentos de la estimación (<strong>art. 132 fr. IV RLOPSRM</strong>). Las fotos del avance se <strong>cargan y consultan por estimación en el Expediente</strong> (HU-04), una vez integrada.
+              {/* A2 — Checklist de los documentos de la estimación (art. 132 RLOPSRM). Lista ENUNCIATIVA
+                  ("entre otros… los determinará cada dependencia"): se muestran las 7 fracciones, dónde vive
+                  cada una en el sistema y su estado. Presentación pura. */}
+              <div className="bg-white border border-borde rounded-lg p-4" data-testid="checklist-art132">
+                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-1">Documentos de la estimación (art. 132 RLOPSRM)</h3>
+                <p className="text-[11px] text-slate-500 mb-3">La lista del art. 132 es <strong>enunciativa</strong> («los documentos… serán determinados por cada dependencia o entidad… entre otros»). Cobertura en el sistema:</p>
+                <ul className="space-y-1.5 text-sm">
+                  {[
+                    { fr: 'I', t: 'Números generadores', donde: 'Capturados en el paso 2 (Generadores).', estado: 'incluido' },
+                    { fr: 'II', t: 'Notas de bitácora', donde: notasVinculadas.length ? `${notasVinculadas.length} nota(s) firmada(s) vinculada(s) en este paso.` : 'Vincula aquí las notas de bitácora firmadas.', estado: notasVinculadas.length ? 'incluido' : 'pendiente' },
+                    { fr: 'III', t: 'Croquis', donde: 'Se adjunta en el Expediente del contrato (HU-04), si la obra lo amerita.', estado: 'dependencia' },
+                    { fr: 'IV', t: 'Controles de calidad, pruebas de laboratorio y fotografías', donde: 'Fotografías por generador en el Expediente, una vez integrada la estimación; controles/pruebas como soporte documental.', estado: 'dependencia' },
+                    { fr: 'V', t: 'Análisis, cálculo e integración de los importes', donde: 'Es la carátula de la estimación (paso 3).', estado: 'incluido' },
+                    { fr: 'VI', t: 'Avances de obra (contratos a precio alzado)', donde: /alzado/i.test(selected?.tipo || '') ? 'Aplica: contrato a precio alzado.' : 'No aplica: contrato a base de precios unitarios.', estado: /alzado/i.test(selected?.tipo || '') ? 'dependencia' : 'na' },
+                    { fr: 'VII', t: 'Informe de cumplimiento de operación y mantenimiento', donde: 'Según lo establezca el contrato.', estado: 'dependencia' },
+                  ].map((r) => (
+                    <li key={r.fr} className="flex items-start gap-2" data-testid={`art132-fr-${r.fr}`}>
+                      <span className="font-mono text-[11px] text-slate-400 w-6 shrink-0">{r.fr}.</span>
+                      <span className="flex-1">
+                        <span className="font-medium text-tinta">{r.t}</span>
+                        <span className="block text-[11px] text-slate-500">{r.donde}</span>
+                      </span>
+                      <span className={`text-[10px] font-semibold uppercase tracking-wide rounded px-1.5 py-0.5 border shrink-0 ${
+                        r.estado === 'incluido' ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : r.estado === 'pendiente' ? 'bg-amber-50 text-amber-700 border-amber-200'
+                          : r.estado === 'na' ? 'bg-slate-50 text-slate-500 border-slate-200'
+                            : 'bg-sky-50 text-sky-700 border-sky-200'}`}>
+                        {r.estado === 'incluido' ? '✓ En el sistema' : r.estado === 'pendiente' ? 'Pendiente' : r.estado === 'na' ? 'No aplica' : 'Lo determina la dependencia'}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             </div>
           )}

@@ -183,7 +183,7 @@ test.describe('HU-19 — modo aplicacion (Residente: ejecuta)', () => {
     });
   });
 
-  test('residente puede exportar el reporte 1 en PDF (tras elegir contrato)', async ({ page, request }) => {
+  test('residente abre el reporte 1 (avance físico) como documento imprimible (tras elegir contrato)', async ({ page, request }) => {
     const folio = await crearContratoConConceptos(request); // residente = creador → lo ve
     await goToViaSidebar(page, VIEW_PATH);
     // Sin contrato seleccionado, los botones están deshabilitados (no hay datos que exportar).
@@ -191,10 +191,11 @@ test.describe('HU-19 — modo aplicacion (Residente: ejecuta)', () => {
     await seleccionarContratoPorFolio(page, folio);
     await expect(page.getByTestId('btn-exportar-1-pdf')).toBeEnabled();
 
-    const dl = page.waitForEvent('download');
+    // REDISEÑO 24-jun: el PDF de R1 es un DOCUMENTO imprimible (patrón window.print de la carátula),
+    // no una descarga jsPDF → al pulsar se abre el modal con su botón de imprimir.
     await page.getByTestId('btn-exportar-1-pdf').click();
-    const file = await dl;
-    expect(file.suggestedFilename()).toMatch(/reporte_1_avance-fisico_.*\.pdf$/);
+    await expect(page.getByTestId('documento-avance-fisico')).toBeVisible();
+    await expect(page.getByTestId('btn-imprimir-avance-fisico')).toBeVisible();
   });
 
   // FIX 2.2 — antes R4 estaba deshabilitado por falta de fuente; ahora hay GET /observaciones/contrato.
@@ -215,14 +216,12 @@ test.describe('HU-19 — modo aplicacion (Residente: ejecuta)', () => {
     await goToViaSidebar(page, VIEW_PATH);
     await seleccionarContratoPorFolio(page, folio);
 
-    // R5 (bitácora) requiere apertura: el seed la creó → debe quedar habilitado.
+    // EXCEL (exceljs) — siguen siendo descargas de archivo. R5 (bitácora) requiere apertura: el seed la creó.
     const descargables = [
-      { testid: 'btn-exportar-1-pdf',   re: /reporte_1_avance-fisico_.*\.pdf$/ },
       { testid: 'btn-exportar-1-excel', re: /reporte_1_avance-fisico_.*\.xlsx$/ },
       { testid: 'btn-exportar-2-excel', re: /reporte_2_avance-financiero_.*\.xlsx$/ },
       { testid: 'btn-exportar-3-excel', re: /reporte_3_estimaciones_.*\.xlsx$/ },
       { testid: 'btn-exportar-4-excel', re: /reporte_4_observaciones_.*\.xlsx$/ }, // FIX 2.2
-      { testid: 'btn-exportar-5-pdf',   re: /reporte_5_bitacora_.*\.pdf$/ },
       { testid: 'btn-exportar-6-excel', re: /reporte_6_modificatorios_.*\.xlsx$/ },
       { testid: 'btn-exportar-7-excel', re: /reporte_7_penalizaciones_.*\.xlsx$/ }
     ];
@@ -233,11 +232,21 @@ test.describe('HU-19 — modo aplicacion (Residente: ejecuta)', () => {
       expect((await dl).suggestedFilename(), d.testid).toMatch(d.re);
     }
 
-    // CA-2: cambiar el periodo solo cambia la ETIQUETA del archivo, no el contenido predefinido.
-    await page.getByTestId('select-periodo-reporte').selectOption('Trimestral');
-    const dl = page.waitForEvent('download');
+    // PDF de R1 y R5 (REDISEÑO 24-jun) = DOCUMENTOS imprimibles (window.print), no descargas → abren modal.
+    await expect(page.getByTestId('btn-exportar-1-pdf')).toBeEnabled();
     await page.getByTestId('btn-exportar-1-pdf').click();
-    expect((await dl).suggestedFilename()).toMatch(/reporte_1_avance-fisico_trimestral_.*\.pdf$/);
+    await expect(page.getByTestId('documento-avance-fisico')).toBeVisible();
+    await page.getByTestId('documento-avance-fisico').getByRole('button', { name: 'Cerrar' }).click();
+
+    await expect(page.getByTestId('btn-exportar-5-pdf')).toBeEnabled();
+    await page.getByTestId('btn-exportar-5-pdf').click();
+    await expect(page.getByTestId('documento-bitacora')).toBeVisible();
+    await page.getByTestId('documento-bitacora').getByRole('button', { name: 'Cerrar' }).click();
+
+    // CA-2: cambiar el periodo no altera el contenido; en el documento se muestra el periodo elegido.
+    await page.getByTestId('select-periodo-reporte').selectOption('Trimestral');
+    await page.getByTestId('btn-exportar-1-pdf').click();
+    await expect(page.getByTestId('documento-avance-fisico')).toContainText('Trimestral');
   });
 });
 

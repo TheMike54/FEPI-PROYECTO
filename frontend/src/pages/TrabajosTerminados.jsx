@@ -140,6 +140,8 @@ export default function TrabajosTerminados() {
 
   const [form, setForm] = useState(FORM_VACIO);
   const [guardando, setGuardando] = useState(false);
+  // A1 (CRITERIO DEL EQUIPO, no es ley): el registro de avance EXIGE al menos una foto de evidencia.
+  const [fotoEvidencia, setFotoEvidencia] = useState(null);
 
   // Edición inline de una entrada: { id, cantidad, observaciones } o null.
   const [edicion, setEdicion] = useState(null);
@@ -264,7 +266,7 @@ export default function TrabajosTerminados() {
   // O-PROFE: SOLO el art. 118 (acumulado sobre lo contratado) BLOQUEA el registro. noProgramado y
   // excedePeriodo son AVISOS (no bloquean): adelantar avance a precios pactados no requiere convenio.
   const puedeGuardar = !soloLectura && !guardando && !!conceptoSel && !!periodoSel && cantNueva > 0
-    && !validacion.excede118;
+    && !validacion.excede118 && !!fotoEvidencia; // A1: sin foto de evidencia no se puede registrar (criterio del equipo)
 
   // Toggle "Ejecuté todo lo programado del periodo" → autollena la cantidad con lo disponible.
   const autollenarTodo = () => {
@@ -276,19 +278,28 @@ export default function TrabajosTerminados() {
     if (!puedeGuardar) return;
     setGuardando(true);
     try {
+      // A1 (criterio del equipo): se redimensiona la foto ANTES de crear el avance. El endpoint de fotos
+      // necesita el id del avance ya creado, así que se sube inmediatamente DESPUÉS del POST del avance.
+      const fotoLiviana = await redimensionarImagen(fotoEvidencia);
       const r = await api.registrarAvance({
         contrato_concepto_id: Number(form.conceptoId),
         periodo_numero: Number(form.periodoNumero),
         cantidad: cantNueva,
         observaciones: form.observaciones || null
       });
+      let fotoOk = false;
+      try {
+        if (r?.avance?.id) { await api.subirFotoAvance(r.avance.id, fotoLiviana, ''); fotoOk = true; }
+      } catch (_) { /* se avisa abajo; el avance ya quedó registrado */ }
       const baseMsg = r?.nota_diferida ? 'Avance registrado. La nota de bitácora se asentará al abrir la bitácora.' : 'Avance registrado y nota de bitácora asentada.';
       // O-PROFE: el backend puede devolver un aviso (no bloqueante) si el avance excede lo programado.
       {
         const avisos = [r?.aviso_periodo, r?.aviso_programa].filter(Boolean);
-        showToast(avisos.length ? `${baseMsg} ⚠ ${avisos.join(' · ')}` : baseMsg);
+        const fotoMsg = fotoOk ? '' : ' ⚠ La foto no se pudo subir; agrégala desde la galería del avance.';
+        showToast((avisos.length ? `${baseMsg} ⚠ ${avisos.join(' · ')}` : baseMsg) + fotoMsg);
       }
       setForm(FORM_VACIO);
+      setFotoEvidencia(null);
       await recargar(contratoId);
     } catch (e) {
       // 409 art.118 / programa por periodo; 400 forma; 403 no parte — mensaje del backend tal cual.
@@ -509,6 +520,24 @@ export default function TrabajosTerminados() {
                       data-testid="cap-observaciones"
                     />
                   </div>
+                </div>
+
+                {/* A1 — Foto de evidencia REQUERIDA (criterio del equipo, NO es requisito de ley). */}
+                <div className="mt-4">
+                  <label className="sg-label">
+                    Foto de evidencia <span className="text-red-600">*</span>
+                    <span className="text-xs font-normal text-slate-500"> (requerida — criterio del equipo)</span>
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png"
+                    className="sg-input"
+                    onChange={(e) => setFotoEvidencia(e.target.files && e.target.files[0] ? e.target.files[0] : null)}
+                    data-testid="cap-foto-evidencia"
+                  />
+                  {fotoEvidencia
+                    ? <p className="text-xs text-emerald-700 mt-1" data-testid="foto-evidencia-ok">📷 {fotoEvidencia.name} — se adjuntará como evidencia del avance.</p>
+                    : <p className="text-xs text-amber-700 mt-1" data-testid="foto-evidencia-falta">No se puede registrar el avance sin al menos una foto de evidencia (criterio del equipo).</p>}
                 </div>
 
                 {validacion.excede118 && (

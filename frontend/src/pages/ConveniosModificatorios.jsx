@@ -120,6 +120,11 @@ export default function ConveniosModificatorios() {
   const [cargandoEditor, setCargandoEditor] = useState(false);
   const [editorError, setEditorError] = useState(null);
   const ridSeq = useRef(0);        // contador para rid únicos de conceptos nuevos
+
+  // B4 (Variante B) — panel «Ampliar»: agregar más cantidad de un concepto existente (rid del original).
+  const [ampliarRid, setAmpliarRid] = useState(null);
+  const [ampliarExtra, setAmpliarExtra] = useState('');
+  const [ampliarPeriodo, setAmpliarPeriodo] = useState('');
   const precargaToken = useRef(0);  // invalida precargas en vuelo (anti race al cambiar contrato/tipo)
 
   const selected = useMemo(() => contratos.find((c) => String(c.id) === String(contratoId)) || null, [contratos, contratoId]);
@@ -251,6 +256,33 @@ export default function ConveniosModificatorios() {
     setCmCeldas((prev) => ({ ...prev, [`${rid}:${numero}`]: value }));
   }, []);
 
+  // B4 — abrir/confirmar el panel «Ampliar». Genera una fila ADICIONAL (Opción 1) con clave derivada que
+  // HEREDA el P.U. del original (art. 59 LOPSRM) y coloca el volumen extra en un periodo (cuadre 100%).
+  const abrirAmpliar = useCallback((rid) => {
+    setAmpliarRid(rid); setAmpliarExtra('');
+    setAmpliarPeriodo(cmPeriodos.length ? String(cmPeriodos[cmPeriodos.length - 1].numero) : '');
+  }, [cmPeriodos]);
+  const cancelarAmpliar = useCallback(() => { setAmpliarRid(null); setAmpliarExtra(''); setAmpliarPeriodo(''); }, []);
+  const confirmarAmpliar = useCallback(() => {
+    const orig = cmConceptos.find((c) => c.rid === ampliarRid);
+    const extra = Number(ampliarExtra);
+    const per = Number(ampliarPeriodo);
+    if (!orig || !(extra > 0) || !per) return;
+    // Clave derivada: <claveOriginal>-A/-B/… (primera letra libre, sin colisionar con claves ya en uso).
+    const usadas = new Set(cmConceptos.map((c) => String(c.clave).trim()));
+    let claveDeriv = '';
+    for (let k = 0; k < 26; k++) { const cand = `${orig.clave}-${String.fromCharCode(65 + k)}`; if (!usadas.has(cand)) { claveDeriv = cand; break; } }
+    if (!claveDeriv) claveDeriv = `${orig.clave}-${ridSeq.current}`;
+    const rid = `n${ridSeq.current++}`;
+    setCmConceptos((prev) => [...prev, {
+      rid, existente: false, amplia_a: orig.clave,
+      clave: claveDeriv, concepto: `${orig.concepto} (ampliación)`, unidad: orig.unidad,
+      cantidad: String(extra), pu: orig.pu, // P.U. HEREDADO del original (no se teclea)
+    }]);
+    setCmCeldas((prev) => ({ ...prev, [`${rid}:${per}`]: String(extra) }));
+    cancelarAmpliar();
+  }, [cmConceptos, ampliarRid, ampliarExtra, ampliarPeriodo, cancelarAmpliar]);
+
   // Preview EN VIVO del delta de plazo (espejo del cálculo server-side, solo informativo).
   const plazoNuevoNum = Number(plazoNuevo) || 0;
   const deltaPlazoPct = (plazoVigente && plazoVigente > 0 && plazoNuevoNum > 0)
@@ -315,6 +347,8 @@ export default function ConveniosModificatorios() {
         payload.conceptos = cmConceptos.map((c) => ({
           clave: String(c.clave).trim(), concepto: c.concepto || '', unidad: c.unidad || '',
           cantidad: Number(c.cantidad) || 0, pu: Number(c.pu) || 0,
+          // B4: marca de ampliación (Opción 1) → el backend valida que el P.U. se herede del original (art. 59 LOPSRM).
+          ...(c.amplia_a ? { amplia_a: String(c.amplia_a).trim() } : {}),
         }));
         // Programa NUEVO completo (solo celdas > 0; el backend revalida cuadre 100%).
         const celdas = [];
@@ -546,6 +580,7 @@ export default function ConveniosModificatorios() {
                             onAddConcepto={addCmConcepto}
                             onRemoveConcepto={removeCmConcepto}
                             onCelda={setCmCelda}
+                            onAmpliar={abrirAmpliar}
                             resumen={cmResumen}
                             montoNuevo={cmMontoNuevo}
                             cuadra={cmCuadra}
@@ -861,6 +896,61 @@ export default function ConveniosModificatorios() {
       <p className="mt-4 text-xs text-slate-500 italic text-center">
         Fundamento: art. 59 y 59 Bis LOPSRM · arts. 99, 100, 102 RLOPSRM.
       </p>
+
+      {/* B4 (Variante B) — Panel «Ampliar»: más cantidad del mismo concepto, P.U. HEREDADO (art. 59 LOPSRM). */}
+      {ampliarRid != null && (() => {
+        const orig = cmConceptos.find((c) => c.rid === ampliarRid);
+        if (!orig) return null;
+        const cantOrig = Number(orig.cantidad) || 0;
+        const extra = Number(ampliarExtra) || 0;
+        const total = round3(cantOrig + extra);
+        const pu = Number(orig.pu) || 0;
+        const importeExtra = round2(extra * pu);
+        const puedeAgregar = extra > 0 && !!ampliarPeriodo;
+        return (
+          <div className="fixed inset-0 z-[60] flex items-start justify-center bg-black bg-opacity-40 p-4 overflow-auto" data-testid="cm-ampliar-panel">
+            <div className="bg-white rounded-md shadow-lg max-w-lg w-full my-10 overflow-hidden border-2 border-guinda">
+              <div className="px-4 py-2.5 bg-guinda text-white flex items-center justify-between">
+                <h3 className="text-sm font-bold">Ampliar cantidad · {orig.clave}</h3>
+                <button type="button" onClick={cancelarAmpliar} className="text-white/80 hover:text-white text-xl leading-none" aria-label="Cerrar">×</button>
+              </div>
+              <div className="p-4 space-y-3 text-sm">
+                <p className="text-xs text-slate-600">{orig.concepto} · más volumen del <strong>mismo</strong> concepto. El P.U. se <strong>hereda</strong> del original (art. 59 LOPSRM: las cantidades adicionales se pagan al precio unitario pactado).</p>
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="bg-pagina border border-borde rounded-md py-2"><div className="text-[10px] uppercase text-tinta-ter">Original</div><div className="font-mono font-bold" data-testid="cm-ampliar-original">{cantOrig}</div></div>
+                  <div className="bg-guinda-soft border border-guinda/30 rounded-md py-2"><div className="text-[10px] uppercase text-guinda">+ Extra</div><div className="font-mono font-bold text-guinda" data-testid="cm-ampliar-extra-box">{extra || '—'}</div></div>
+                  <div className="bg-sigecop-blue-light border border-sigecop-blue/30 rounded-md py-2"><div className="text-[10px] uppercase text-sigecop-blue">Total nuevo</div><div className="font-mono font-bold text-sigecop-blue" data-testid="cm-ampliar-total">{total}</div></div>
+                </div>
+                <div>
+                  <label className="sg-label">Cantidad adicional ({orig.unidad || '—'}) *</label>
+                  <input type="number" min="0" step="0.001" className="sg-input text-right font-mono" value={ampliarExtra} onChange={(e) => setAmpliarExtra(e.target.value)} placeholder="0" data-testid="cm-ampliar-extra" />
+                </div>
+                <div>
+                  <label className="sg-label">Precio unitario</label>
+                  <div className="flex items-center gap-2 sg-input bg-slate-100 cursor-not-allowed">
+                    <span className="text-slate-400">🔒</span><span className="font-mono">{moneda(pu)}</span>
+                    <span className="ml-auto text-[10px] font-bold bg-sigecop-blue-light text-sigecop-blue border border-sigecop-blue/20 rounded px-1.5 py-0.5">Heredado · art. 59 LOPSRM</span>
+                  </div>
+                </div>
+                <div>
+                  <label className="sg-label">Periodo del programa donde se ejecuta *</label>
+                  <select className="sg-input" value={ampliarPeriodo} onChange={(e) => setAmpliarPeriodo(e.target.value)} data-testid="cm-ampliar-periodo">
+                    {cmPeriodos.map((p) => <option key={p.numero} value={p.numero}>Periodo {p.numero} ({fechaMX(p.inicio)} – {fechaMX(p.fin)})</option>)}
+                  </select>
+                </div>
+                <div className="flex items-center justify-between bg-guinda-soft border border-guinda/30 rounded-md px-3 py-2">
+                  <span className="font-semibold text-guinda">Importe de la ampliación</span>
+                  <span className="font-mono font-bold text-guinda" data-testid="cm-ampliar-importe">+{moneda(importeExtra)}</span>
+                </div>
+                <div className="flex justify-end gap-2 pt-1">
+                  <button type="button" className="sg-btn-secondary" onClick={cancelarAmpliar}>Cancelar</button>
+                  <button type="button" className="sg-btn-primary disabled:opacity-40 disabled:cursor-not-allowed" disabled={!puedeAgregar} onClick={confirmarAmpliar} data-testid="cm-ampliar-confirmar">Agregar ampliación</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

@@ -1,5 +1,9 @@
 # 🧭 PUNTO DE RETOMA — para que Claude continúe (SIGECOP, sesión autónoma 18-jun-2026)
 
+> ⚠️ **SUPERADO (18-jun).** Este handoff es histórico. El estado vigente y el punto de retoma actual están en
+> **`docs/estado/ESTADO_ACTUAL.md`** (bloque 24-jun). Lee ese primero; este se conserva solo como referencia.
+
+
 > **Qué es esto.** El documento de **handoff**: dice EXACTAMENTE dónde me quedé, qué estamos haciendo y cómo
 > seguir hasta terminar el plan, para que **otra instancia de Claude (o esta en otra sesión) continúe sin
 > contexto previo**. Léelo COMPLETO antes de tocar nada.

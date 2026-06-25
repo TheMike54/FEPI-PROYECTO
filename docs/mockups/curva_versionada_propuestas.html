@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Avance por etapas + programa por versión — mockup SIGECOP</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = { theme: { extend: { colors: {
+    guinda: '#691C32', 'guinda-soft': '#F3E9EC', dorado: '#BC955C',
+    'sigecop-blue': '#0D2F5A', 'sigecop-blue-light': '#E8EEF6',
+    borde: '#D8D2CB', pagina: '#FAF8F5', tinta: '#1f2937', 'tinta-sec': '#475569', 'tinta-ter': '#64748b',
+  }}}}
+</script>
+<style>
+  body { background:#f1f5f9; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  .card { background:#fff; border:1px solid #D8D2CB; border-radius:12px; }
+  .chip { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; border-radius:4px; padding:1px 7px; }
+  .chip-cong { background:#e2e8f0; color:#475569; border:1px solid #cbd5e1; }
+  .chip-vig { background:#F3E9EC; color:#691C32; border:1px solid #691C3233; }
+  .chip-add { background:#fef3c7; color:#92400e; border:1px solid #fde68a; }
+  .kpi { border:1px solid #D8D2CB; border-radius:8px; padding:10px 12px; }
+  summary { cursor:pointer; list-style:none; }
+  summary::-webkit-details-marker { display:none; }
+  .prog th, .prog td { padding:5px 8px; }
+</style>
+</head>
+<body class="text-tinta">
+<div class="max-w-5xl mx-auto px-6 py-8">
+
+  <div class="mb-2 text-[11px] uppercase tracking-widest text-guinda font-bold">HU-05 · Avance por etapas · ligar programa por versión</div>
+  <h1 class="text-2xl font-bold">Programa de obra por etapa (versión del programa)</h1>
+  <p class="text-sm text-tinta-ter mb-4">Mockup (no es el sistema). Datos reales de <strong>SOP-2026-001</strong>: v1 original (Σ 25 600, $2 400 000)
+    → Convenio CM-001 (AD-01 balizamiento +5 000 m²) → v2 vigente (Σ 30 600, $2 600 000).</p>
+
+  <div class="bg-guinda-soft border-l-4 border-guinda px-4 py-3 rounded-r-md mb-3 text-sm text-guinda">
+    <strong>Propuesta B ya elegida</strong> (dos etapas: original congelado + vigente). <strong>Novedad de este mockup:</strong>
+    desde cada etapa se puede <strong>«Ver programa de obra»</strong> ligado a <strong>SU versión</strong> — v1 muestra el plan
+    original (sus fechas, conceptos, cantidades); v2 el plan modificado (con el adicional). Así se compara "así era el plan
+    original" vs "así quedó con el convenio". Abajo van <strong>2 variantes</strong> del desplegable — elige una.
+  </div>
+  <div class="bg-sky-50 border-l-4 border-sigecop-blue px-4 py-2 rounded-r-md mb-8 text-xs text-sigecop-blue">
+    Nota honesta de datos: este convenio fue de <strong>monto</strong> (no de plazo), por eso v2 conserva las <strong>mismas fechas</strong>
+    de v1 y solo añade el concepto AD-01. La infraestructura guarda <strong>fechas por versión</strong> (programa_version_celda), así que un
+    convenio de <strong>plazo</strong> mostraría fechas distintas en v2 automáticamente.
+  </div>
+
+  <!-- ===================== VARIANTE 1 — ACORDEÓN INLINE ===================== -->
+  <section class="mb-12">
+    <div class="flex items-center gap-3 mb-1">
+      <span class="w-7 h-7 rounded-full bg-guinda text-white text-sm font-bold flex items-center justify-center">1</span>
+      <h2 class="text-lg font-bold text-guinda">Variante 1 · Desplegable inline (acordeón en la propia tarjeta)</h2>
+    </div>
+    <p class="text-sm text-tinta-ter mb-4 ml-10">Cada etapa tiene un <strong>«Ver programa de obra ▾»</strong> que despliega, dentro de la tarjeta, el
+      programa de ESA versión (periodos con fechas + matriz concepto × periodo + total). Compacto, todo en contexto.</p>
+
+    <div class="ml-10 grid md:grid-cols-2 gap-5">
+      <!-- ETAPA ORIGINAL (v1) -->
+      <div class="card overflow-hidden">
+        <div class="px-4 py-2.5 bg-slate-100 border-b border-borde flex items-center justify-between">
+          <h3 class="text-sm font-bold text-slate-700">Etapa original · plan inicial</h3><span class="chip chip-cong">Histórico · congelado</span>
+        </div>
+        <div class="p-4">
+          <svg id="c1" viewBox="0 0 360 180" class="w-full h-auto"></svg>
+          <div class="grid grid-cols-2 gap-2 mt-3">
+            <div class="kpi"><div class="text-[10px] uppercase text-tinta-ter">Programado al corte</div><div class="text-lg font-bold">100.0 %</div></div>
+            <div class="kpi"><div class="text-[10px] uppercase text-tinta-ter">Ejecutado (congelado)</div><div class="text-lg font-bold text-sigecop-blue">46.9 %</div></div>
+          </div>
+          <details open class="mt-3 border border-borde rounded-md">
+            <summary class="px-3 py-2 bg-pagina text-[13px] font-semibold text-sigecop-blue flex items-center justify-between rounded-md">
+              <span>📋 Ver programa de obra · versión 1 (original)</span><span class="text-tinta-ter">▾</span>
+            </summary>
+            <div class="p-3 border-t border-borde">
+              <div class="text-[11px] text-tinta-ter mb-2">Plazo: <strong>90 días</strong> · 3 periodos mensuales · monto del plan <strong>$2 400 000</strong></div>
+              <div class="flex flex-wrap gap-1.5 mb-3 text-[10px]">
+                <span class="px-2 py-0.5 rounded bg-sigecop-blue-light text-sigecop-blue">P1 · 01–30 abr 2026</span>
+                <span class="px-2 py-0.5 rounded bg-sigecop-blue-light text-sigecop-blue">P2 · 01–31 may 2026</span>
+                <span class="px-2 py-0.5 rounded bg-sigecop-blue-light text-sigecop-blue">P3 · 01–30 jun 2026</span>
+              </div>
+              <div class="overflow-x-auto border border-borde rounded">
+                <table class="w-full text-[11px] prog">
+                  <thead class="bg-sigecop-blue-light text-sigecop-blue"><tr>
+                    <th class="text-left">Clave / concepto</th><th class="text-right">P1</th><th class="text-right">P2</th><th class="text-right">P3</th><th class="text-right">Cant.</th><th class="text-right">Importe</th>
+                  </tr></thead>
+                  <tbody>
+                    <tr class="border-t border-borde"><td>CONC-01 · Limpieza, trazo y niv. <span class="text-tinta-ter">(m²)</span></td><td class="text-right font-mono">12,000</td><td class="text-right text-slate-300">·</td><td class="text-right text-slate-300">·</td><td class="text-right font-mono">12,000</td><td class="text-right font-mono">$240,000</td></tr>
+                    <tr class="border-t border-borde"><td>CONC-02 · Base hidráulica <span class="text-tinta-ter">(m³)</span></td><td class="text-right text-slate-300">·</td><td class="text-right font-mono">1,600</td><td class="text-right text-slate-300">·</td><td class="text-right font-mono">1,600</td><td class="text-right font-mono">$960,000</td></tr>
+                    <tr class="border-t border-borde"><td>CONC-03 · Carpeta asfáltica <span class="text-tinta-ter">(m²)</span></td><td class="text-right text-slate-300">·</td><td class="text-right text-slate-300">·</td><td class="text-right font-mono">12,000</td><td class="text-right font-mono">12,000</td><td class="text-right font-mono">$1,200,000</td></tr>
+                    <tr class="border-t-2 border-borde bg-pagina font-bold"><td>Total v1 · Σ 25 600</td><td></td><td></td><td></td><td></td><td class="text-right font-mono text-sigecop-blue">$2,400,000</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </details>
+        </div>
+      </div>
+
+      <!-- ETAPA VIGENTE (v2) -->
+      <div class="card overflow-hidden border-guinda/40">
+        <div class="px-4 py-2.5 bg-guinda-soft border-b border-guinda/20 flex items-center justify-between">
+          <h3 class="text-sm font-bold text-guinda">Etapa vigente · desde el convenio modificatorio</h3><span class="chip chip-vig">Vigente</span>
+        </div>
+        <div class="p-4">
+          <svg id="c2" viewBox="0 0 360 180" class="w-full h-auto"></svg>
+          <div class="grid grid-cols-2 gap-2 mt-3">
+            <div class="kpi"><div class="text-[10px] uppercase text-tinta-ter">Programado a hoy</div><div class="text-lg font-bold">100.0 %</div></div>
+            <div class="kpi"><div class="text-[10px] uppercase text-tinta-ter">Ejecutado (nuevo)</div><div class="text-lg font-bold text-sigecop-blue">0.0 %</div></div>
+          </div>
+          <details open class="mt-3 border border-guinda/30 rounded-md">
+            <summary class="px-3 py-2 bg-guinda-soft text-[13px] font-semibold text-guinda flex items-center justify-between rounded-md">
+              <span>📋 Ver programa de obra · versión 2 (modificada)</span><span class="text-guinda">▾</span>
+            </summary>
+            <div class="p-3 border-t border-guinda/20">
+              <div class="text-[11px] text-tinta-ter mb-2">Plazo: <strong>90 días</strong> (sin cambio) · 3 periodos · monto del plan <strong>$2 600 000</strong></div>
+              <div class="flex flex-wrap gap-1.5 mb-3 text-[10px]">
+                <span class="px-2 py-0.5 rounded bg-sigecop-blue-light text-sigecop-blue">P1 · 01–30 abr 2026</span>
+                <span class="px-2 py-0.5 rounded bg-sigecop-blue-light text-sigecop-blue">P2 · 01–31 may 2026</span>
+                <span class="px-2 py-0.5 rounded bg-sigecop-blue-light text-sigecop-blue">P3 · 01–30 jun 2026</span>
+              </div>
+              <div class="overflow-x-auto border border-borde rounded">
+                <table class="w-full text-[11px] prog">
+                  <thead class="bg-sigecop-blue-light text-sigecop-blue"><tr>
+                    <th class="text-left">Clave / concepto</th><th class="text-right">P1</th><th class="text-right">P2</th><th class="text-right">P3</th><th class="text-right">Cant.</th><th class="text-right">Importe</th>
+                  </tr></thead>
+                  <tbody>
+                    <tr class="border-t border-borde"><td>CONC-01 · Limpieza, trazo y niv. <span class="text-tinta-ter">(m²)</span></td><td class="text-right font-mono">12,000</td><td class="text-right text-slate-300">·</td><td class="text-right text-slate-300">·</td><td class="text-right font-mono">12,000</td><td class="text-right font-mono">$240,000</td></tr>
+                    <tr class="border-t border-borde"><td>CONC-02 · Base hidráulica <span class="text-tinta-ter">(m³)</span></td><td class="text-right text-slate-300">·</td><td class="text-right font-mono">1,600</td><td class="text-right text-slate-300">·</td><td class="text-right font-mono">1,600</td><td class="text-right font-mono">$960,000</td></tr>
+                    <tr class="border-t border-borde"><td>CONC-03 · Carpeta asfáltica <span class="text-tinta-ter">(m²)</span></td><td class="text-right text-slate-300">·</td><td class="text-right text-slate-300">·</td><td class="text-right font-mono">12,000</td><td class="text-right font-mono">12,000</td><td class="text-right font-mono">$1,200,000</td></tr>
+                    <tr class="border-t border-borde bg-amber-50/60"><td>AD-01 · Señalamiento horiz./vert. <span class="text-tinta-ter">(m²)</span> <span class="chip chip-add">Adicional</span></td><td class="text-right text-slate-300">·</td><td class="text-right text-slate-300">·</td><td class="text-right font-mono">5,000</td><td class="text-right font-mono">5,000</td><td class="text-right font-mono">$200,000</td></tr>
+                    <tr class="border-t-2 border-borde bg-pagina font-bold"><td>Total v2 · Σ 30 600</td><td></td><td></td><td></td><td></td><td class="text-right font-mono text-sigecop-blue">$2,600,000</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <p class="text-[10px] text-tinta-ter mt-2">Δ vs v1: <strong>+$200,000</strong> (+8.3 %) · +1 concepto adicional (art. 101 RLOPSRM, se administra aparte).</p>
+            </div>
+          </details>
+        </div>
+      </div>
+    </div>
+    <div class="ml-10 mt-3 text-[13px] text-tinta-sec card px-4 py-3"><strong class="text-guinda">Por qué 1:</strong> todo en contexto, comparas las dos sin salir de la pantalla (las dos tarjetas lado a lado, cada programa abajo). Si el catálogo es largo, la tarjeta crece bastante (scroll).</div>
+  </section>
+
+  <!-- ===================== VARIANTE 2 — MODAL ===================== -->
+  <section class="mb-12">
+    <div class="flex items-center gap-3 mb-1">
+      <span class="w-7 h-7 rounded-full bg-guinda text-white text-sm font-bold flex items-center justify-center">2</span>
+      <h2 class="text-lg font-bold text-guinda">Variante 2 · Botón → modal con el programa de la versión</h2>
+    </div>
+    <p class="text-sm text-tinta-ter mb-4 ml-10">La tarjeta queda compacta (solo KPIs + botón <strong>«Ver programa de obra»</strong>); al pulsar se abre un
+      modal amplio con la matriz completa concepto × periodo de esa versión. Mejor para catálogos largos.</p>
+
+    <div class="ml-10 grid md:grid-cols-2 gap-5 mb-5">
+      <div class="card overflow-hidden">
+        <div class="px-4 py-2.5 bg-slate-100 border-b border-borde flex items-center justify-between"><h3 class="text-sm font-bold text-slate-700">Etapa original · plan inicial</h3><span class="chip chip-cong">Histórico · congelado</span></div>
+        <div class="p-4">
+          <div class="grid grid-cols-2 gap-2"><div class="kpi"><div class="text-[10px] uppercase text-tinta-ter">Programado</div><div class="text-lg font-bold">100.0 %</div></div><div class="kpi"><div class="text-[10px] uppercase text-tinta-ter">Ejecutado (congelado)</div><div class="text-lg font-bold text-sigecop-blue">46.9 %</div></div></div>
+          <button class="mt-3 w-full text-sm font-semibold text-sigecop-blue border border-sigecop-blue/30 rounded-md py-2 hover:bg-sigecop-blue-light">📋 Ver programa de obra · v1</button>
+        </div>
+      </div>
+      <div class="card overflow-hidden border-guinda/40">
+        <div class="px-4 py-2.5 bg-guinda-soft border-b border-guinda/20 flex items-center justify-between"><h3 class="text-sm font-bold text-guinda">Etapa vigente · desde el convenio</h3><span class="chip chip-vig">Vigente</span></div>
+        <div class="p-4">
+          <div class="grid grid-cols-2 gap-2"><div class="kpi"><div class="text-[10px] uppercase text-tinta-ter">Programado</div><div class="text-lg font-bold">100.0 %</div></div><div class="kpi"><div class="text-[10px] uppercase text-tinta-ter">Ejecutado (nuevo)</div><div class="text-lg font-bold text-sigecop-blue">0.0 %</div></div></div>
+          <button class="mt-3 w-full text-sm font-semibold text-white bg-guinda rounded-md py-2">📋 Ver programa de obra · v2</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal abierto (preview) mostrando v2 -->
+    <div class="ml-10 relative">
+      <div class="card border-guinda/40 overflow-hidden shadow-lg max-w-3xl mx-auto">
+        <div class="px-4 py-2.5 bg-guinda text-white flex items-center justify-between">
+          <h3 class="text-sm font-bold">Programa de obra · versión 2 (modificada) · Convenio CM-001</h3>
+          <span class="text-white/80 text-xl leading-none">×</span>
+        </div>
+        <div class="p-5">
+          <div class="flex flex-wrap gap-3 text-xs text-tinta-sec mb-3">
+            <span><strong>Plazo:</strong> 90 días</span><span><strong>Periodos:</strong> 3 (abr–jun 2026)</span>
+            <span><strong>Monto:</strong> $2 600 000</span><span><strong>Σ cantidades:</strong> 30 600</span>
+            <span class="text-guinda"><strong>Δ vs original:</strong> +$200 000 (+8.3 %)</span>
+          </div>
+          <div class="overflow-x-auto border border-borde rounded">
+            <table class="w-full text-xs prog">
+              <thead class="bg-sigecop-blue-light text-sigecop-blue"><tr>
+                <th class="text-left">Clave</th><th class="text-left">Concepto</th><th class="text-left">Unidad</th>
+                <th class="text-right">P1 abr</th><th class="text-right">P2 may</th><th class="text-right">P3 jun</th>
+                <th class="text-right">Cantidad</th><th class="text-right">P.U.</th><th class="text-right">Importe</th>
+              </tr></thead>
+              <tbody>
+                <tr class="border-t border-borde"><td class="font-mono">CONC-01</td><td>Limpieza, trazo y nivelación</td><td>m²</td><td class="text-right font-mono">12,000</td><td class="text-right text-slate-300">·</td><td class="text-right text-slate-300">·</td><td class="text-right font-mono">12,000</td><td class="text-right font-mono">$20.00</td><td class="text-right font-mono">$240,000</td></tr>
+                <tr class="border-t border-borde"><td class="font-mono">CONC-02</td><td>Base hidráulica compactada</td><td>m³</td><td class="text-right text-slate-300">·</td><td class="text-right font-mono">1,600</td><td class="text-right text-slate-300">·</td><td class="text-right font-mono">1,600</td><td class="text-right font-mono">$600.00</td><td class="text-right font-mono">$960,000</td></tr>
+                <tr class="border-t border-borde"><td class="font-mono">CONC-03</td><td>Carpeta asfáltica en caliente</td><td>m²</td><td class="text-right text-slate-300">·</td><td class="text-right text-slate-300">·</td><td class="text-right font-mono">12,000</td><td class="text-right font-mono">12,000</td><td class="text-right font-mono">$100.00</td><td class="text-right font-mono">$1,200,000</td></tr>
+                <tr class="border-t border-borde bg-amber-50/60"><td class="font-mono">AD-01</td><td>Señalamiento horizontal y vertical (balizamiento) <span class="chip chip-add">Adicional</span></td><td>m²</td><td class="text-right text-slate-300">·</td><td class="text-right text-slate-300">·</td><td class="text-right font-mono">5,000</td><td class="text-right font-mono">5,000</td><td class="text-right font-mono">$40.00</td><td class="text-right font-mono">$200,000</td></tr>
+                <tr class="border-t-2 border-borde bg-pagina font-bold"><td colspan="6" class="text-right">Total v2 · Σ 30 600</td><td class="text-right font-mono">30,600</td><td></td><td class="text-right font-mono text-sigecop-blue">$2,600,000</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="text-[11px] text-tinta-ter mt-3">El adicional (AD-01) se administra por separado de los originales (art. 101 RLOPSRM). Comparar con v1: botón "Ver programa · v1".</p>
+        </div>
+      </div>
+    </div>
+    <div class="ml-10 mt-3 text-[13px] text-tinta-sec card px-4 py-3"><strong class="text-guinda">Por qué 2:</strong> la matriz completa (con P.U. e importes) cabe holgada; las tarjetas quedan limpias. Cuesta un clic y tapa la pantalla un momento; comparar v1↔v2 implica abrir/cerrar dos modales.</div>
+  </section>
+
+  <div class="card px-4 py-3 mb-6 text-[13px] text-tinta-sec">
+    <strong class="text-sigecop-blue">Datos: todo disponible sin tocar backend/schema.</strong> El programa de cada versión sale de
+    <code>api.versionPrograma(versionId)</code> → <code>conceptos</code> (clave, concepto, unidad, cantidad, P.U.) +
+    <code>celdas</code> (concepto × periodo con <code>periodo_inicio/fin</code> = las fechas por versión). Ya se usan en la
+    sección de etapas; el desplegable solo los pinta. <strong>Cero endpoints nuevos, cero DDL.</strong>
+  </div>
+
+  <div class="text-center text-xs text-tinta-ter border-t border-borde pt-4">
+    Mockup SIGECOP · programa de obra ligado por etapa/versión · datos reales SOP-2026-001 · elige Variante 1 (acordeón) o 2 (modal).
+  </div>
+</div>
+
+<script>
+function curva(id, series, xmax) {
+  const svg=document.getElementById(id); if(!svg) return;
+  const w=svg.viewBox.baseVal.width,h=svg.viewBox.baseVal.height,padL=34,padR=12,padT=12,padB=24,iw=w-padL-padR,ih=h-padT-padB;
+  const X=i=>padL+(xmax<=0?iw/2:iw*i/xmax),Y=v=>padT+ih-ih*Math.max(0,Math.min(100,v))/100;
+  let s='';[0,50,100].forEach(t=>{s+=`<line x1="${padL}" x2="${w-padR}" y1="${Y(t)}" y2="${Y(t)}" stroke="#e2e8f0"/><text x="${padL-5}" y="${Y(t)+4}" font-size="9" fill="#94a3b8" text-anchor="end">${t}%</text>`;});
+  for(let i=0;i<=xmax;i++) s+=`<text x="${X(i)}" y="${h-7}" font-size="9" fill="#94a3b8" text-anchor="middle">${i===0?'Ini':'P'+i}</text>`;
+  series.forEach(se=>{let d='';se.points.forEach((p,k)=>{d+=`${k===0?'M':'L'} ${X(p[0])} ${Y(p[1])} `;});s+=`<path d="${d}" fill="none" stroke="${se.color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>`;se.points.forEach(p=>{s+=`<circle cx="${X(p[0])}" cy="${Y(p[1])}" r="3" fill="${se.color}"/>`;});});
+  svg.innerHTML=s;
+}
+// Etapa original v1 (Σ25600): programado 46.9/53.1/100; ejecutado congelado 46.9.
+curva('c1',[{color:'#691C32',points:[[0,0],[1,46.9],[2,53.1],[3,100]]},{color:'#0D2F5A',points:[[0,0],[1,46.9],[2,46.9],[3,46.9]]}],3);
+// Etapa vigente v2 (Σ30600): programado 39.2/44.4/100; ejecutado 0 (nada post-convenio).
+curva('c2',[{color:'#BC955C',points:[[0,0],[1,39.2],[2,44.4],[3,100]]},{color:'#0D2F5A',points:[[0,0]]}],3);
+</script>
+</body>
+</html>

@@ -1,5 +1,73 @@
 # SIGECOP — Estado actual del sistema (documento canónico)
 
+> **🔄 Actualización 2026-06-24 (cierre de jornada, antes de reinicio de PC).**
+> **Git: `main` local = `d941024`** — DOS commits por delante de Render. **Render sigue en `cb10b27` (deploy del
+> 21-jun): NADA de 22/23/24-jun está desplegado.** Working tree con **trabajo local sin commit** (≈16 archivos no
+> congelados + docs nuevos). **TODO en LOCAL; nada se subió a Render esta semana.** Build `vite build` verde.
+>
+> **A) Ya COMMITEADO en `main` local (ahead de Render):**
+> - **`ad92f19` (23-jun) — 7 brechas + HU-16 desconectado + severidad limpia:** G1 carátula GACM **exportable**
+>   (documento imprimible), G2 conceptos **adicionales** etiquetados, G3 **notificación de cobro** al autorizar,
+>   G4 **curva versionada** (denominador financiero congela por versión del programa), G5 **riesgos** en
+>   portafolio (pago-sin-avance), G6 **cierre de instrucción** de pago, G7 **fechas** en historial. **HU-16
+>   reingreso DESCONECTADO** del catálogo (el rechazo se reintegra por HU-12) y **`severidad` limpiada** de la
+>   lógica (queda residuo en schema con DEFAULT, ver bugs).
+> - **`d941024` — galería de fotos de avance HU-06 (fix A1 base):** `TrabajosTerminados.jsx` ahora **lista, ve y
+>   elimina** las fotos del avance (antes solo subía y no se veían); con redimensionado en cliente.
+>
+> **B) Trabajo de HOY en working tree (LOCAL, SIN commit — pendiente que Maiki revise diffs e integre):**
+> - **A1 — foto OBLIGATORIA al registrar avance (CRITERIO DEL EQUIPO, no ley):** el botón "Registrar avance"
+>   se deshabilita sin foto; la foto se sube en el mismo flujo (POST avance → sube foto a su id). *La ley NO lo
+>   exige (art. 132 fr. IV es discrecional); marcado como criterio. El backend aún NO la valida → **bug #22**.*
+> - **A2 — checklist art. 132** en el paso 4 de integración (las 7 fracciones, dónde vive cada una y su estado).
+> - **A3 + Propuesta B — CURVA POR ETAPAS (versión del programa):** al entrar un convenio, el % del **plan
+>   original se CONGELA** como histórico (no se re-escala) y arranca una etapa **vigente** sobre el plan
+>   modificado; el ejecutado se parte por la **fecha del convenio**. Cada tarjeta de etapa tiene un **desplegable
+>   «Ver programa de obra»** (Variante 1) ligado a SU versión (v1/v2): periodos con fechas + matriz
+>   concepto×periodo + total. Resuelve el "26% hoy, 13% mañana". Solo frontend (`utils/etapasAvance.js` nuevo +
+>   `CurvaAvance.jsx`), reusa `api.versionPrograma`/`MatrizProgramaLectura`. **Cierra la brecha de curva no-versionada.**
+> - **B4 — ampliar cantidad de un concepto existente en convenio:** panel «Ampliar» (Variante B) con cajas
+>   original/+extra/total; el **P.U. se HEREDA del original (art. 59 LOPSRM)**, nunca se teclea. Modelo: fila
+>   adicional con clave derivada `CONC-01-A`. **Enforce server-side aplicado** en `convenios.controller.js`
+>   (autorizado por Maiki, +6 líneas aditivas): rechaza 400 si la ampliación no hereda el P.U.
+> - **B5 — etiqueta "Adicional"** ahora también en la matriz del programa y la curva (`programa.controller.js`
+>   expone `es_adicional` — 1 línea al SELECT, autorizada).
+> - **8 reportes REDISEÑADOS con formato/branding (cierra brecha HU-19/HU-12):** **Carátula de estimación** como
+>   documento PDF (banda guinda, bloques importes/amortización/neto, resumen de conceptos GACM, firmas
+>   Elaboró/Revisó/Autorizó/Vo.Bo.); **R1 avance físico** y **R5 bitácora** como documentos imprimibles
+>   (`window.print`, patrón carátula, curva S y semáforo reusados); **R2/R3/R4/R6/R7** Excel con diseño
+>   (helper `descargarExcelReporte`: título y encabezado guinda #691C32, moneda, TOTALES en negrita, métricas
+>   en dorado #BC955C, anchos). Quitó `jspdf` (−380 KB). Datos reales verificados; e2e `hu-19` actualizado.
+>
+> **C) Datos y documentos de QA generados HOY:**
+> - **10 contratos `SOP-2026-001..010`** sembrados en la **BD local** (obras reales de Guerrero, cuadre exacto
+>   al centavo, alta completa + bitácora con acta de inicio firmada). El SQL vive en
+>   `scratchpad/seed_10_contratos.sql` (**no** en `backend/scripts/` aún — moverlo si se quiere reusable).
+>   `SOP-2026-001` tiene además convenio v1/v2 + 1 avance (demo de la curva por etapas).
+> - **`docs/pruebas/CATALOGO_CAMPOS_SISTEMA.md`** — 40 pantallas, **247 campos** (tipo, obligatoriedad,
+>   validaciones front+back, citas de ley). Reutilizable: la próxima sesión solo verifica cambios.
+> - **`docs/pruebas/REPORTE_PRUEBAS_EXHAUSTIVAS_24jun.md`** — **30 bugs confirmados** (verificación adversarial),
+>   2 falsos positivos descartados. Repartidos: **2 tache-seguro, 10 alto, 12 medio, 4 bajo, 2 cosmético**.
+> - **`docs/pruebas/PLAN_PRUEBAS_POSITIVAS_24jun.md`** (98 casos) y **`PLAN_PRUEBAS_NEGATIVAS_24jun.md`**
+>   (117 casos) — **215 casos** para el equipo humano, columnas listas para palomear; el negativo marca
+>   `[BUG CONOCIDO #N]` donde un gate falla.
+>
+> **D) 🔴 PENDIENTES (lo más urgente, al 24-jun):**
+> 1. **Bug #1 (tache seguro) — backfill del PDF firmado en 28 contratos demo:** integrar estimación falla con
+>    "El contrato no tiene su PDF firmado ligado" en TODOS los SOP/PRUEBA-HU salvo PRUEBA-HU-12. El gate es
+>    correcto; el seed no liga el PDF. Hay que sembrar `contrato_documentos` tipo='contrato' para los demos
+>    **antes de cualquier demo del flujo de estimación**.
+> 2. **Bug #2 (tache seguro) — gate de pago en contrato cerrado:** Finanzas puede pagar una estimación de un
+>    contrato YA finiquitado (doble liquidación, art. 64). Falta el gate de cierre en `pagos.controller`.
+> 3. **Resto del reporte:** gates art. 64 faltantes en garantías/bitácora (bugs #5/#9/#10/#19), validaciones de
+>    registro (#14/#16/#25), foto de avance no validada en backend (#22), etc. Todo priorizado en el reporte.
+> 4. **Integración por Maiki:** revisar los diffs del working tree, commitear lo aprobado, y decidir el
+>    **despliegue a Render** (que va 2+ commits y todo el trabajo de 22-24 atrás).
+>
+> **NO se tocó código ni schema en esta actualización de docs (24-jun, cierre).** Reportes de detalle:
+> `docs/reportes/IMPLEMENTACION_etapas_avance_24jun.md`, `IMPLEMENTACION_HALLAZGOS_24jun.md`,
+> `B4_implementacion_24jun.md`.
+
 > **🔄 Actualización 2026-06-23 (sesión autónoma, LOCAL sin push) — 2 auditorías + 2 follow-on:**
 > - **Auditorías (solo lectura):** `docs/requisitos/INSUMOS_HISTORIAS_22jun.md` (insumos de las 27 unidades para
 >   reescribir las historias en el formato del profe: qué hace + criterio de éxito + ¿cambió? + brechas, con

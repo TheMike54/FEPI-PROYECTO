@@ -234,6 +234,14 @@ async function crearConvenio(req, res) {
             }
             // Sin cambios → NO-OP: el original queda congelado (no se reescribe ni cantidad/pu ni texto).
           } else {
+            // B4 (Opción 1): si es una AMPLIACIÓN (amplia_a), el P.U. se HEREDA del original (art. 59 LOPSRM:
+            // las cantidades adicionales se pagan al precio unitario pactado). Se valida SERVER-SIDE que el
+            // P.U. coincida con el del concepto original; no se teclea libre.
+            if (c.amplia_a != null) {
+              const base = datosPorClave.get(String(c.amplia_a));
+              if (!base) { await client.query('ROLLBACK'); return res.status(400).json({ error: `La ampliación "${c.clave}" referencia un concepto original inexistente ("${c.amplia_a}")` }); }
+              if (Math.abs(Number(c.pu) - base.pu) > 1e-4) { await client.query('ROLLBACK'); return res.status(400).json({ error: `La ampliación de "${c.amplia_a}" debe heredar su P.U. (${base.pu}): las cantidades adicionales se pagan al precio unitario pactado (art. 59 LOPSRM).` }); }
+            }
             // Concepto NUEVO = ADICIONAL: se INSERTA etiquetado es_adicional=true (se estima/paga aparte).
             maxOrden += 1;
             const ins = await client.query('INSERT INTO contrato_conceptos (contrato_id, orden, concepto, unidad, cantidad, pu, clave, es_adicional) VALUES ($1,$2,$3,$4,$5::numeric(14,3),$6::numeric(16,4),$7,true) RETURNING id',

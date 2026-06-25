@@ -25,7 +25,7 @@ async function leerPrograma(req, res) {
 
     const [periodos, conceptos, celdas, recon] = await Promise.all([
       pool.query('SELECT id, numero, inicio, fin FROM contrato_periodos WHERE contrato_id = $1 ORDER BY numero', [id]),
-      pool.query('SELECT id, clave, concepto, unidad, cantidad FROM contrato_conceptos WHERE contrato_id = $1 ORDER BY orden', [id]),
+      pool.query('SELECT id, clave, concepto, unidad, cantidad, es_adicional FROM contrato_conceptos WHERE contrato_id = $1 ORDER BY orden', [id]),
       pool.query(
         `SELECT po.contrato_concepto_id, po.contrato_periodo_id, po.cantidad
            FROM programa_obra po

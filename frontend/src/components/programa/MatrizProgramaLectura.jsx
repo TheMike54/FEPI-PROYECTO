@@ -87,7 +87,10 @@ export default function MatrizProgramaLectura({ programa, periodoResaltadoNumero
               return (
                 <tr key={c.id ?? i} className="border-t border-slate-200">
                   <td className="px-3 py-1 font-mono text-xs sticky left-0 bg-white">{c.clave || '—'}</td>
-                  <td className="px-3 py-1 truncate max-w-[14rem]" title={c.concepto}>{c.concepto || '—'}</td>
+                  <td className="px-3 py-1 truncate max-w-[14rem]" title={c.concepto}>
+                    {c.concepto || '—'}
+                    {c.es_adicional && <span className="ml-2 inline-block text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-800 border border-amber-200 rounded px-1.5 py-0.5 align-middle" title="Concepto ADICIONAL de convenio modificatorio (art. 101 RLOPSRM): se administra por separado de los originales.">Adicional</span>}
+                  </td>
                   {periodos.map((p) => {
                     const v = Number(celdaMap.get(`${c.id}:${p.id}`)) || 0;
                     const hot = p.numero === periodoResaltadoNumero;

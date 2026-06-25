@@ -10,6 +10,8 @@ import LinkHU from '../components/LinkHU.jsx';
 import { useSesion } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
+import { derivarEtapas } from '../utils/etapasAvance.js';
+import MatrizProgramaLectura from '../components/programa/MatrizProgramaLectura.jsx';
 
 // HU-05 Fase única — cableado al backend real (SOLO frontend; compone en cliente).
 // Fuentes (endpoints existentes, sin tocar backend):
@@ -35,6 +37,8 @@ function hoyISO() {
   const z = (x) => String(x).padStart(2, '0');
   return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`;
 }
+const fechaMXCorta = (s) => { const p = String(s || '').slice(0, 10).split('-'); return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : '—'; };
+const moneda = (n) => (n == null ? '—' : new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 2 }).format(Number(n) || 0));
 
 // Colores de celda Gantt (paleta SIGECOP): ejecutado (verde), atraso (rojo: programado
 // vencido sin ejecutar), pendiente (ámbar: programado por venir), vacío (sin programa).
@@ -50,7 +54,7 @@ const COLOR_CELDA = {
 // O1-P16b (revisión profe, 09-jun): tooltip interactivo — "el graficador te debe dar el valor
 // cuando pongas el mouse". Círculo de hit invisible (r=10) por punto; el tooltip se dibuja
 // DENTRO del SVG (escala con el viewBox, sin matemática de DOM) + <title> nativo de respaldo.
-function CurvaSVG({ datos, hoyIndex, contratoQ = '' }) {
+export function CurvaSVG({ datos, hoyIndex, contratoQ = '' }) {
   const w = 720, h = 320, padL = 44, padR = 16, padT = 16, padB = 36;
   const innerW = w - padL - padR;
   const innerH = h - padT - padB;
@@ -183,6 +187,7 @@ export default function CurvaAvance() {
   const [trabajos, setTrabajos] = useState(null);   // { conceptos, avances, periodos }
   const [pagos, setPagos] = useState([]); // { fecha_pago, importe } del contrato (para la curva financiero)
   const [versiones, setVersiones] = useState([]); // G1: versiones del programa (convenios) → monto por versión, para congelar el % financiero histórico
+  const [snapshotsVer, setSnapshotsVer] = useState({}); // B: {versionId → {conceptos,celdas}} para derivar las ETAPAS (Propuesta B)
   const [cargando, setCargando] = useState(false);
   const [error, setError] = useState(null);
 
@@ -202,7 +207,7 @@ export default function CurvaAvance() {
 
   const seleccionarContrato = useCallback(async (id) => {
     setContratoId(id);
-    setPrograma(null); setTrabajos(null); setPagos([]); setVersiones([]); setError(null);
+    setPrograma(null); setTrabajos(null); setPagos([]); setVersiones([]); setSnapshotsVer({}); setError(null);
     setConceptoFiltro('Todos'); setRango('todo');
     if (!id) return;
     setCargando(true);
@@ -228,9 +233,21 @@ export default function CurvaAvance() {
       // Si el contrato no tiene convenios, el endpoint devuelve versiones=[] y el financiero usa el monto vigente.
       try {
         const conv = await api.convenios(id);
-        setVersiones(Array.isArray(conv?.versiones) ? conv.versiones : []);
+        const vers = Array.isArray(conv?.versiones) ? conv.versiones : [];
+        setVersiones(vers);
+        // B (Propuesta B): si hay convenio (≥ 2 versiones), carga los snapshots de cada versión para derivar
+        // las ETAPAS (original congelado + vigente). Sin convenio → no se cargan (la vista normal aplica).
+        if (vers.length >= 2) {
+          const snaps = {};
+          await Promise.all(vers.map(async (v) => {
+            try { const d = await api.versionPrograma(v.id); snaps[v.id] = { conceptos: d.conceptos || [], celdas: d.celdas || [] }; } catch (_) { /* omite esa versión */ }
+          }));
+          setSnapshotsVer(snaps);
+        } else {
+          setSnapshotsVer({});
+        }
       } catch (_) {
-        setVersiones([]);
+        setVersiones([]); setSnapshotsVer({});
       }
     } catch (e) {
       const msg = e.status === 403 ? 'No tienes acceso al programa de este contrato' : (e.payload?.error || 'No se pudieron cargar los datos del contrato');
@@ -261,6 +278,7 @@ export default function CurvaAvance() {
     const ejecById = new Map((trabajos?.conceptos || []).map((c) => [c.contrato_concepto_id, Number(c.acumulado_ejecutado) || 0]));
     return (programa?.conceptos || []).map((c) => ({
       id: c.id, clave: c.clave, concepto: c.concepto, unidad: c.unidad,
+      es_adicional: !!c.es_adicional, // B5: distinguir adicionales de convenio (art. 101 RLOPSRM) también en la curva
       contratado: Number(c.cantidad) || 0,
       ejecutado: ejecById.get(c.id) || 0
     }));
@@ -390,6 +408,12 @@ export default function CurvaAvance() {
     }
     return puntos;
   }, [periodosVisibles, periodosAll, conceptosFiltrados, planeadoMap, ejecCeldaMap, denom, periodoActualNum, financieroMap, hoy, selected]);
+
+  // B (Propuesta B) — ETAPAS por versión del programa. Vacío si el contrato NO tiene convenio (sin regresión).
+  const etapas = useMemo(
+    () => derivarEtapas({ versiones, snapshots: snapshotsVer, avances: trabajos?.avances, hoy }),
+    [versiones, snapshotsVer, trabajos, hoy]
+  );
 
   // El índice de "hoy" se busca sobre datosCurva (que puede traer el punto de origen antepuesto).
   const hoyIndex = useMemo(() => {
@@ -528,7 +552,10 @@ export default function CurvaAvance() {
                     return (
                       <tr key={c.id} className={`border-t border-slate-100 ${resaltado ? 'bg-sigecop-blue-light' : ''}`}>
                         <td className="px-3 py-2 font-mono text-xs text-slate-500">{c.clave || '—'}</td>
-                        <td className="px-3 py-2 font-semibold text-slate-700">{c.concepto}</td>
+                        <td className="px-3 py-2 font-semibold text-slate-700">
+                          {c.concepto}
+                          {c.es_adicional && <span className="ml-2 inline-block text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-800 border border-amber-200 rounded px-1.5 py-0.5 align-middle" title="Concepto ADICIONAL de convenio modificatorio (art. 101 RLOPSRM): se administra por separado de los originales.">Adicional</span>}
+                        </td>
                         <td className="px-3 py-2 text-slate-600">{c.unidad}</td>
                         <td className="px-3 py-2 text-right text-slate-700">{num(c.contratado)}</td>
                         <td className="px-3 py-2 text-right text-slate-700">{num(c.ejecutado)}</td>
@@ -557,11 +584,81 @@ export default function CurvaAvance() {
             />
           </div>
 
+          {/* B (Propuesta B) — AVANCE POR ETAPAS (versión del programa). Solo si hay convenio (≥ 2 versiones):
+              el % del plan ORIGINAL queda CONGELADO (histórico, no se re-escala) y la etapa VIGENTE arranca un %
+              nuevo sobre el plan modificado. El ejecutado se parte por la fecha del convenio (art. 59/101). */}
+          {etapas.length >= 2 && (
+            <div className="bg-white border border-borde rounded-lg p-5 mb-6" data-testid="avance-etapas">
+              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-1">
+                Avance por etapas (versión del programa)
+              </h2>
+              <p className="text-xs text-slate-500 mb-4">
+                Al entrar un convenio modificatorio, el avance del <strong>plan original</strong> se congela como
+                histórico (no se re-escala) y arranca una etapa <strong>vigente</strong> sobre el plan modificado
+                (art. 59 LOPSRM; los adicionales se administran aparte, art. 101 RLOPSRM).
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                {etapas.map((et) => (
+                  <div key={et.versionId} className={`border rounded-lg overflow-hidden ${et.vigente ? 'border-guinda/40' : 'border-borde'}`} data-testid={`etapa-${et.vigente ? 'vigente' : 'historico'}-${et.numero}`}>
+                    <div className={`px-4 py-2.5 border-b flex items-center justify-between ${et.vigente ? 'bg-guinda-soft border-guinda/20' : 'bg-slate-100 border-borde'}`}>
+                      <h3 className={`text-sm font-bold ${et.vigente ? 'text-guinda' : 'text-slate-700'}`}>
+                        {et.vigente ? 'Etapa vigente · desde el convenio modificatorio' : (et.numero === 1 ? 'Etapa original · plan inicial' : `Etapa ${et.numero} · histórico`)}
+                      </h3>
+                      <span className={`text-[10px] font-bold uppercase tracking-wide rounded px-2 py-0.5 border ${et.vigente ? 'bg-guinda-soft text-guinda border-guinda/30' : 'bg-slate-200 text-slate-600 border-slate-300'}`}>
+                        {et.vigente ? 'Vigente' : 'Histórico · congelado'}
+                      </span>
+                    </div>
+                    <div className="p-4">
+                      <CurvaSVG datos={et.curva} hoyIndex={null} contratoQ={contratoQ} />
+                      <div className="grid grid-cols-2 gap-2 mt-3">
+                        <div className="border border-borde rounded-md px-3 py-2">
+                          <div className="text-[10px] uppercase tracking-wider text-slate-500">{et.vigente ? 'Programado a hoy' : 'Programado al corte'}</div>
+                          <div className="text-lg font-bold text-slate-700" data-testid={`etapa-prog-${et.numero}`}>{fmtPct(et.kpiProgramado)}</div>
+                        </div>
+                        <div className="border border-borde rounded-md px-3 py-2">
+                          <div className="text-[10px] uppercase tracking-wider text-slate-500">{et.vigente ? 'Ejecutado (nuevo)' : 'Ejecutado (congelado)'}</div>
+                          <div className="text-lg font-bold text-sigecop-blue" data-testid={`etapa-ejec-${et.numero}`}>{fmtPct(et.kpiEjecutado)}</div>
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-2">
+                        Plan Σ {num(et.denom)} · {et.nPeriodos} periodo(s) · {et.vigente ? `vigente (corte a hoy ${fechaMXCorta(et.fechaCorte)})` : `histórico hasta ${fechaMXCorta(et.fechaCorte)}`}.
+                      </p>
+
+                      {/* B-Variante 1 (aprobada) — desplegable INLINE del programa de obra de ESTA versión (v1 original /
+                          v2 modificada): periodos con fechas + matriz concepto×periodo. Datos de api.versionPrograma. */}
+                      {et.programa && et.programa.periodos.length > 0 && (
+                        <details className={`mt-3 border rounded-md ${et.vigente ? 'border-guinda/30' : 'border-borde'}`} data-testid={`etapa-programa-${et.numero}`}>
+                          <summary className={`px-3 py-2 text-[13px] font-semibold flex items-center justify-between cursor-pointer rounded-md ${et.vigente ? 'bg-guinda-soft text-guinda' : 'bg-pagina text-sigecop-blue'}`}>
+                            <span>📋 Ver programa de obra · {et.vigente ? 'versión modificada' : 'versión original'}</span>
+                            <span className="text-tinta-ter">▾</span>
+                          </summary>
+                          <div className="p-3 border-t border-borde">
+                            <p className="text-[11px] text-slate-500 mb-2">
+                              {et.programa.plazoDias != null ? <>Plazo <strong>{et.programa.plazoDias} días</strong> · </> : null}
+                              {et.programa.periodos.length} periodo(s){et.programa.monto != null ? <> · monto del plan <strong>{moneda(et.programa.monto)}</strong></> : null}.
+                            </p>
+                            <MatrizProgramaLectura programa={et.programa} mostrarRestante={false} />
+                          </div>
+                        </details>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Curva S (criterio 2). */}
           <div className="bg-white border border-borde rounded-lg p-5 mb-6">
             <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
-              Curva S — programado · ejecutado · financiero
+              Curva S — programado · ejecutado · financiero{etapas.length >= 2 ? ' (consolidado sobre el plan vigente)' : ''}
             </h2>
+            {etapas.length >= 2 && (
+              <p className="text-xs text-amber-800 bg-amber-50 border-l-4 border-sigecop-amber-attention px-4 py-2 mb-3 rounded-r-md" data-testid="curva-consolidado-aviso">
+                Esta curva es el <strong>consolidado sobre el plan vigente</strong> (denominador actual). El avance del
+                plan original <strong>sin re-escalar</strong> se ve arriba, en <strong>«Avance por etapas»</strong>.
+              </p>
+            )}
             <CurvaSVG datos={datosCurva} hoyIndex={hoyIndex} contratoQ={contratoQ} />
             <p className="text-xs text-slate-500 mt-3 text-center">
               Las curvas inician en <strong>0%</strong> al inicio del contrato y cada periodo grafica a su{' '}
@@ -613,6 +710,7 @@ export default function CurvaAvance() {
                         <tr key={c.id} className="border-t border-slate-100">
                           <td className="px-2 py-2 font-semibold text-slate-700 whitespace-nowrap">
                             {(c.clave ? `${c.clave} · ` : '')}{c.concepto}
+                            {c.es_adicional && <span className="ml-2 inline-block text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-800 border border-amber-200 rounded px-1.5 py-0.5 align-middle" title="Concepto ADICIONAL de convenio modificatorio (art. 101 RLOPSRM).">Adicional</span>}
                           </td>
                           {periodosVisibles.map((p) => {
                             const estado = colorCelda(c.id, p);
