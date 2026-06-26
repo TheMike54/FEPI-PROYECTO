@@ -665,6 +665,15 @@ export default function IntegracionEstimacion() {
     return m;
   }, [prep]);
   const tienePlan = !!(prep && prep.tiene_programa);
+  // Clave + es_adicional por concepto para el documento de estimación (detalleEstimacion no las trae;
+  // las leemos del prep, que sí lista el catálogo). Se pasa a DocumentoCaratula sin tocar el backend.
+  const metaPorConcepto = useMemo(() => {
+    const o = {};
+    if (prep && Array.isArray(prep.conceptos)) {
+      prep.conceptos.forEach((p) => { o[p.contrato_concepto_id] = { clave: p.clave, es_adicional: p.es_adicional }; });
+    }
+    return o;
+  }, [prep]);
   // Pase 1: periodo a resaltar en el panel del programa = el periodo cuya fecha-fin coincide con el
   // periodo-fin capturado; si no, el que contiene esa fecha (o la de hoy como referencia).
   const periodoResaltadoEstim = useMemo(() => {
@@ -1201,7 +1210,7 @@ export default function IntegracionEstimacion() {
       )}
       {detalle && <ModalDetalle estimacion={detalle} onCerrar={() => setDetalle(null)} onVerDocumento={verDocumentoNota} onVerCaratula={setCaratulaDoc} />}
       {notaDoc && <DocumentoNota nota={notaDoc} contrato={selected} onCerrar={() => setNotaDoc(null)} />}
-      {caratulaDoc && <DocumentoCaratula estimacion={caratulaDoc} contrato={selected} onCerrar={() => setCaratulaDoc(null)} />}
+      {caratulaDoc && <DocumentoCaratula estimacion={caratulaDoc} contrato={selected} clavesPorConcepto={metaPorConcepto} onCerrar={() => setCaratulaDoc(null)} />}
     </div>
   );
 }

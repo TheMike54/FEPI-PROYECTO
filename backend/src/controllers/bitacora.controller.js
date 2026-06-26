@@ -169,7 +169,15 @@ async function abrirBitacora(req, res) {
       const ubicacionTxt = contrato.ubicacion ? `, ubicada en ${contrato.ubicacion}` : '';
       const anticipoTxt = (contrato.anticipo_pct != null && Number(contrato.anticipo_pct) > 0)
         ? `con un anticipo del ${Number(contrato.anticipo_pct)}%` : 'sin anticipo';
+      // P1-7 (26-jun, profe "es la ley"): la nota de apertura debe llevar el FORMATO exacto — No. de
+      // bitácora, fecha y hora, e IDENTIFICACIÓN DEL PRESENTANTE (emisor que la asienta) — además de
+      // dependencia/contratista/contrato/objeto. La identificación del presentante la pedía el art. 123
+      // fr. III RLOPSRM (datos del que asienta la nota) y se había quitado; se re-añade.
+      const fechaHoraTxt = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City', dateStyle: 'long', timeStyle: 'short' });
+      const presentante = (req.user && req.user.nombre) ? req.user.nombre : 'el residente de obra';
+      const presentanteRol = (req.user && req.user.rol) ? req.user.rol : 'residente';
       const resumenApertura =
+        `BITÁCORA No. ${bitacora.id} — NOTA No. 1 (APERTURA). Fecha y hora de registro: ${fechaHoraTxt}. ` +
         `Se levanta la presente acta de apertura de la bitácora del contrato ${contrato.folio}, ` +
         `cuyo objeto es: ${contrato.objeto}${ubicacionTxt}. ` +
         `El contrato se celebra entre ${contrato.dependencia} (dependencia contratante) y ` +
@@ -177,6 +185,8 @@ async function abrirBitacora(req, res) {
         `${anticipoTxt}, con un plazo de ejecución de ${contrato.plazo_dias} días naturales, ` +
         `del ${isoDate(contrato.fecha_inicio)} al ${isoDate(contrato.fecha_termino)}; ` +
         `la entrega del sitio se realiza el ${isoDate(fechaEntregaSitio)}. ` +
+        `Presenta y asienta esta nota de apertura: ${presentante}, en su carácter de ${presentanteRol} ` +
+        `(identificación del presentante, art. 123 fr. III RLOPSRM). ` +
         `Se asientan los datos mínimos del art. 123 fr. III RLOPSRM (domicilios y teléfonos de las partes, ` +
         `descripción de los trabajos y características del sitio), que constan en el acta. Esta es la primera ` +
         `nota de la bitácora (art. 123 fr. III RLOPSRM) y vincula a las partes (art. 46 LOPSRM).`;

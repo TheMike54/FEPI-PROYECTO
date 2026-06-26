@@ -229,12 +229,13 @@ async function registrarAvance(req, res) {
   }
   const observaciones = typeof body.observaciones === 'string' ? body.observaciones.trim() || null : null;
 
-  // H2-B2-1 (25-jun) — la foto de evidencia es OBLIGATORIA y se sube EN LA MISMA petición (multipart). El avance
-  // NO se registra sin al menos una foto (cierra #22; antes la foto iba en un POST aparte y era salteable por API).
-  // art. 132 fr. IV RLOPSRM / criterio del equipo A1. Descripción por foto (descripciones[] paralelo).
+  // D1 (26-jun, decisión del profe): la foto de evidencia es OPCIONAL. El profe en el audio del 25-jun:
+  // "foto obligatoria no va ahí, bórralo / ¿por qué estamos hablando de fotos?". El art. 132 fr. IV RLOPSRM
+  // (registro fotográfico) es DISCRECIONAL, no una obligación legal — antes la habíamos puesto obligatoria
+  // por criterio del equipo (H2-B2-1, 25-jun) y se revierte. Si se suben fotos en la misma petición
+  // (multipart) se validan y guardan; si no se sube ninguna, el avance se registra igual.
   const fotos = Array.isArray(req.files) ? req.files : [];
   const esImgValida = (b) => b && b.length >= 4 && ((b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) || (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47));
-  if (fotos.length === 0) return res.status(400).json({ error: 'Debes adjuntar al menos una foto de evidencia para registrar el avance (art. 132 fr. IV RLOPSRM / criterio del equipo).' });
   for (const f of fotos) { if (!esImgValida(f.buffer)) return res.status(400).json({ error: 'Una de las imágenes no es un JPEG/PNG válido.' }); }
   let descripcionesFoto = [];
   try { const dj = JSON.parse(body.descripciones || '[]'); if (Array.isArray(dj)) descripcionesFoto = dj; } catch (_) { /* sin descripciones */ }

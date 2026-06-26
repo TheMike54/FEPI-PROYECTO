@@ -168,8 +168,13 @@ async function guardarMatriz(client, contratoId, celdas, opts = {}) {
   );
 
   // Inserta solo celdas con cantidad > 0 (una celda vacía = concepto no asignado a ese periodo).
+  // P1-6 (26-jun): RECHAZA cantidades negativas (antes solo las saltaba). Defensa en la lib además del
+  // gate de los callers (crearContrato y PUT /programa ya rechazan <0). Una celda vacía o == 0 = concepto
+  // no asignado a ese periodo (se salta, no es error). Fundamento: art. 45 ap. A fr. X RLOPSRM (cantidades
+  // cuantificadas por periodo; una cantidad negativa no es un valor válido del programa).
   let insertadas = 0;
   for (const c of celdas) {
+    if (Number(c.cantidad) < 0) throw errProgramaAjeno(`La cantidad de la celda (concepto ${c.contrato_concepto_id}, periodo ${c.contrato_periodo_id}) no puede ser negativa.`);
     if (!(Number(c.cantidad) > 0)) continue;
     await client.query(
       'INSERT INTO programa_obra (contrato_concepto_id, contrato_periodo_id, cantidad) VALUES ($1, $2, $3)',

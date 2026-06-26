@@ -65,10 +65,20 @@ export default function PorFirmar() {
     } finally { setFirmandoNota(null); }
   };
 
+  // P1-8 (26-jun): si la cola llega ACOTADA a un contrato (?contrato=), se muestran SOLO los pendientes de
+  // ese contrato (el profe: "ya solo trabajas con ese contrato"). Sin parámetro = vista global (legado).
+  const pendientesVis = contratoQuery ? pendientes.filter((p) => String(p.contrato_id) === contratoQuery) : pendientes;
+  const notasVis = contratoQuery ? notas.filter((n) => String(n.contrato_id) === contratoQuery) : notas;
+
   return (
     <div>
       <Breadcrumb items={[{ label: 'Inicio', href: '/' }, { label: 'Bitácora' }, { label: 'Por firmar' }]} />
       <h1 className="text-2xl font-bold text-sigecop-blue mb-2">Por firmar — aperturas y notas de bitácora</h1>
+      {contratoQuery && (
+        <p className="text-xs text-slate-500 mb-2" data-testid="por-firmar-acotado">
+          Mostrando solo el contrato activo. <a href="/bitacora/por-firmar" className="text-sigecop-accent hover:underline">Ver todos</a>
+        </p>
+      )}
 
       {sinSesion ? (
         <div className="bg-slate-50 border border-slate-200 rounded-md px-4 py-6 text-center text-sm text-slate-600">
@@ -85,13 +95,13 @@ export default function PorFirmar() {
 
           {cargando && <p className="text-sm text-slate-500">Cargando…</p>}
 
-          {!cargando && pendientes.length === 0 && notas.length === 0 && (
+          {!cargando && pendientesVis.length === 0 && notasVis.length === 0 && (
             <div data-testid="por-firmar-vacio" className="rounded-md border border-slate-200 bg-white px-4 py-8 text-center text-sm text-slate-500">
               No tienes firmas pendientes.
             </div>
           )}
 
-          {!cargando && pendientes.length > 0 && (
+          {!cargando && pendientesVis.length > 0 && (
             <div className="bg-white border border-slate-200 rounded-md overflow-hidden" data-testid="por-firmar-panel">
               <table className="w-full text-sm">
                 <thead className="bg-slate-50 text-slate-600 text-xs uppercase tracking-wider">
@@ -104,7 +114,7 @@ export default function PorFirmar() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {pendientes.map((p) => (
+                  {pendientesVis.map((p) => (
                     <tr key={p.apertura_id} data-testid="fila-por-firmar" data-folio={p.folio} data-contrato={p.contrato_id}
                       className={String(p.contrato_id) === contratoQuery ? 'bg-sigecop-blue-light' : undefined}>
                       <td className="px-4 py-3 font-mono text-xs">{p.folio}</td>
@@ -125,7 +135,7 @@ export default function PorFirmar() {
           )}
 
           {/* H1 (25-jun) — NOTAS de bitácora pendientes de firma (no solo aperturas). */}
-          {!cargando && notas.length > 0 && (
+          {!cargando && notasVis.length > 0 && (
             <div className="bg-white border border-slate-200 rounded-md overflow-hidden mt-6" data-testid="por-firmar-notas-panel">
               <div className="px-4 py-2 bg-slate-50 text-xs uppercase tracking-wider text-slate-600 font-semibold">Notas de bitácora pendientes de firma</div>
               <table className="w-full text-sm">
@@ -139,7 +149,7 @@ export default function PorFirmar() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {notas.map((n) => (
+                  {notasVis.map((n) => (
                     <tr key={`nt-${n.id}`} data-testid="fila-nota-por-firmar" data-folio={n.contrato_folio} data-contrato={n.contrato_id}
                       className={String(n.contrato_id) === contratoQuery ? 'bg-sigecop-blue-light' : undefined}>
                       <td className="px-4 py-3 font-mono text-xs">{n.contrato_folio}</td>
