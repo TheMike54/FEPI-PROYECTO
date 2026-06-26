@@ -492,7 +492,9 @@ async function detalleEstimacion(req, res) {
     );
 
     const n = await pool.query(
-      `SELECT en.nota_id, bn.numero, bn.tipo, bn.asunto, bn.estado, bn.fecha
+      // P1-2 (26-jun): se expone en.contrato_concepto_id para poder mostrar la nota de entrega por CADA
+      // generador (NULL = nota general de la estimación). Solo se AÑADE la columna; el resto no cambia.
+      `SELECT en.nota_id, en.contrato_concepto_id, bn.numero, bn.tipo, bn.asunto, bn.estado, bn.fecha
          FROM estimacion_notas en
          JOIN bitacora_notas bn ON bn.id = en.nota_id
         WHERE en.estimacion_id = $1

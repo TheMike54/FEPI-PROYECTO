@@ -226,6 +226,8 @@ export const api = {
   preparacionEstimacion: (contratoId, periodoFin) => request(`/estimacion-prep/contrato/${contratoId}${periodoFin ? `?periodo_fin=${encodeURIComponent(periodoFin)}` : ''}`),
   detalleEstimacion: (id) => request(`/estimaciones/${id}`),
   integrarEstimacion: (payload) => request('/estimaciones', { method: 'POST', body: JSON.stringify(payload) }),
+  // P1-2 (26-jun): asigna una nota de bitácora vinculada a un GENERADOR (concepto) o la deja general (null).
+  asignarNotaGenerador: (estimacionId, notaId, contratoConceptoId) => request(`/estimacion-notas/${estimacionId}/${notaId}`, { method: 'PATCH', body: JSON.stringify({ contrato_concepto_id: contratoConceptoId }) }),
   // Pasada F: roster del contrato (sustitución de personas, art. 125 fr. I g RLOPSRM). Lectura por
   // participación; sustituir = dependencia o residente asignado (lo valida el backend).
   rosterContrato: (contratoId) => request(`/roster/contrato/${contratoId}`),

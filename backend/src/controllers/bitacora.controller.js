@@ -932,6 +932,28 @@ async function firmarNota(req, res) {
       );
       if (plz.rows[0] && plz.rows[0].vencido) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'El plazo de firma de la nota venció; ya se considera aceptada tácitamente (art. 123 fr. III RLOPSRM).' }); }
 
+      // P1-9c (26-jun): REGLA TEMPORAL DE FIRMAS — el firmante solo puede firmar notas cuya fecha caiga
+      // dentro de su VIGENCIA en el roster: el SALIENTE no firma después de su baja, el ENTRANTE no firma
+      // antes de su alta. Si la persona NO tiene historial en el roster (cuenta legada sin filas) no se
+      // bloquea (fail-open, como el acotamiento de lib/acceso.js). Decisión Nivel 2 / alcance interpretativo
+      // [validar]: art. 125 RLOPSRM (la sustitución cambia a la persona vigente; el saliente deja de poder
+      // firmar a partir de su baja) + art. 53/123 (la nota la asienta/firma quien ejerce el cargo en esa fecha).
+      const vig = await client.query(
+        `SELECT COUNT(*)::int AS total,
+                COUNT(*) FILTER (
+                  WHERE cr.vigencia_desde <= n.fecha::date
+                    AND (cr.vigencia_hasta IS NULL OR cr.vigencia_hasta >= n.fecha::date)
+                )::int AS cubre
+           FROM contrato_roster cr
+           JOIN bitacora_notas n ON n.id = $3
+          WHERE cr.contrato_id = $1 AND cr.usuario_id = $2`,
+        [apertura.contrato_id, req.user.id, notaId]
+      );
+      if (vig.rows[0] && vig.rows[0].total > 0 && vig.rows[0].cubre === 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'No puedes firmar esta nota: su fecha está fuera de tu periodo de vigencia en el contrato (el saliente no firma después de su baja; el entrante no firma antes de su alta — art. 125 RLOPSRM).' });
+      }
+
       const ins = await client.query(
         `INSERT INTO bitacora_nota_firmas (nota_id, usuario_id, rol_en_firma)
          VALUES ($1, $2, $3) ON CONFLICT (nota_id, usuario_id) DO NOTHING

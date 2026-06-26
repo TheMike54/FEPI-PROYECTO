@@ -62,6 +62,15 @@ async function crearContrato(req, res) {
     return res.status(400).json({ error: 'plazoDias debe ser un entero mayor a 0' });
   }
 
+  // P1-4-back (26-jun): coherencia de la fecha de inicio en el SERVIDOR (el gate del cliente es saltable
+  // por API directo, el profe insistió en esto). Rechaza fechas no-ISO o con año fuera de rango razonable
+  // (2000–2100). El término se deriva del plazo (días naturales, art. 31 fr. V LOPSRM).
+  const fiSrv = String(body.fechaInicio).slice(0, 10);
+  const anioSrv = Number(fiSrv.slice(0, 4));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fiSrv) || Number.isNaN(Date.parse(fiSrv)) || anioSrv < 2000 || anioSrv > 2100) {
+    return res.status(400).json({ error: 'La fecha de inicio no es coherente (revisa el día/mes/año).' });
+  }
+
   // Regla 3: la fecha de término se DERIVA del inicio + plazo (no se confía en el cliente).
   const fechaTerminoDerivada = derivarTermino(body.fechaInicio, plazoDias);
 

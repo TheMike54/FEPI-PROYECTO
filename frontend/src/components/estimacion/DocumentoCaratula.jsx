@@ -31,11 +31,24 @@ const pctTxt = (v) => (v == null ? '—' : `${Number(v).toFixed(1)}%`);
 const r4 = (n) => Math.round((Number(n || 0) + Number.EPSILON) * 1e4) / 1e4;
 const r2 = (n) => Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100;
 
-export default function DocumentoCaratula({ estimacion, contrato, clavesPorConcepto = {}, onCerrar }) {
+export default function DocumentoCaratula({ estimacion, contrato, clavesPorConcepto = {}, soloLectura = false, onCerrar }) {
   const e = estimacion || {};
   const c = contrato || {};
   const generadores = Array.isArray(e.generadores) ? e.generadores : [];
-  const notas = Array.isArray(e.notas) ? e.notas : [];
+  // P1-2: las notas se mantienen en estado para poder re-asignarlas a un generador sin recargar el documento.
+  const [notas, setNotas] = useState(Array.isArray(e.notas) ? e.notas : []);
+  const [asignando, setAsignando] = useState(null);
+  useEffect(() => { setNotas(Array.isArray(estimacion?.notas) ? estimacion.notas : []); }, [estimacion?.id]);
+  const asignarNota = async (notaId, conceptoIdRaw) => {
+    if (!e.id) return;
+    const conceptoId = conceptoIdRaw === '' ? null : Number(conceptoIdRaw);
+    setAsignando(notaId);
+    try {
+      await api.asignarNotaGenerador(e.id, notaId, conceptoId);
+      setNotas((prev) => prev.map((n) => (n.nota_id === notaId ? { ...n, contrato_concepto_id: conceptoId } : n)));
+    } catch { /* 403/400: sin permiso o concepto inválido — no rompe el documento */ }
+    finally { setAsignando(null); }
+  };
   const sinIva = e.acumulados?.sin_iva || null;
   const anticipo = e.acumulados?.anticipo || null;
   const meta = clavesPorConcepto || {};
@@ -386,35 +399,58 @@ export default function DocumentoCaratula({ estimacion, contrato, clavesPorConce
               </table>
             </div>
 
-            {/* 4b · Notas de bitácora de entrega vinculadas a la estimación (art. 132 fr. II / 125 RLOPSRM) */}
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600 mb-1">Notas de bitácora de entrega vinculadas</div>
-            <div className="border border-borde rounded-md overflow-hidden">
-              <table className="w-full text-[11px]" data-testid="caratula-doc-soportes-notas">
-                <thead className="bg-pagina text-slate-700"><tr>
-                  <th className="text-left p-2 font-semibold">Nota N.º</th>
-                  <th className="text-left p-2 font-semibold">Tipo</th>
-                  <th className="text-left p-2 font-semibold">Asunto</th>
-                  <th className="text-left p-2 font-semibold">Fecha</th>
-                  <th className="text-left p-2 font-semibold">Estado</th>
-                </tr></thead>
-                <tbody>
-                  {notas.length === 0 ? (
-                    <tr><td colSpan={5} className="p-3 text-center text-slate-400 italic">Sin notas de bitácora vinculadas a esta estimación.</td></tr>
-                  ) : notas.map((nt) => (
-                    <tr key={nt.nota_id} className="border-t border-borde">
-                      <td className="p-2 font-mono">{nt.numero ?? '—'}</td>
-                      <td className="p-2">{nt.tipo || '—'}</td>
-                      <td className="p-2">{nt.asunto || '—'}</td>
-                      <td className="p-2">{fechaMX(nt.fecha)}</td>
-                      <td className="p-2">{nt.estado || '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            {/* 4b · Notas de bitácora de entrega AGRUPADAS POR GENERADOR (P1-2, art. 132 fr. II / 125 RLOPSRM).
+                Cada nota puede asignarse a un generador (su nota de entrega) o quedar como nota general. */}
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-600 mb-1">Notas de bitácora de entrega (por generador)</div>
+            {notas.length === 0 ? (
+              <div className="border border-borde rounded-md p-3 text-center text-slate-400 italic text-[11px]" data-testid="caratula-doc-soportes-notas">Sin notas de bitácora vinculadas a esta estimación.</div>
+            ) : (
+              <div className="space-y-3" data-testid="caratula-doc-soportes-notas">
+                {[...generadores.map((g) => ({ key: String(g.contrato_concepto_id), titulo: `${claveDe(g)} · ${g.concepto}`, cid: g.contrato_concepto_id })), { key: 'generales', titulo: 'Generales de la estimación (sin generador asignado)', cid: null }]
+                  .map((grp) => {
+                    const items = notas.filter((n) => (grp.cid == null ? n.contrato_concepto_id == null : String(n.contrato_concepto_id) === grp.key));
+                    if (items.length === 0) return null;
+                    return (
+                      <div key={grp.key} className="border border-borde rounded-md overflow-hidden">
+                        <div className="bg-pagina px-2 py-1 text-[10px] font-semibold text-slate-600">{grp.titulo}</div>
+                        <table className="w-full text-[11px]">
+                          <thead className="bg-pagina text-slate-700"><tr>
+                            <th className="text-left p-2 font-semibold">Nota N.º</th>
+                            <th className="text-left p-2 font-semibold">Tipo</th>
+                            <th className="text-left p-2 font-semibold">Asunto</th>
+                            <th className="text-left p-2 font-semibold">Fecha</th>
+                            <th className="text-left p-2 font-semibold" data-print-ocultar>Asignar a generador</th>
+                          </tr></thead>
+                          <tbody>
+                            {items.map((nt) => (
+                              <tr key={nt.nota_id} className="border-t border-borde">
+                                <td className="p-2 font-mono">{nt.numero ?? '—'}</td>
+                                <td className="p-2">{nt.tipo || '—'}</td>
+                                <td className="p-2">{nt.asunto || '—'}</td>
+                                <td className="p-2">{fechaMX(nt.fecha)}</td>
+                                <td className="p-2" data-print-ocultar>
+                                  {soloLectura ? <span className="text-slate-400">—</span> : (
+                                    <select className="text-[11px] border border-borde rounded px-1 py-0.5" disabled={asignando === nt.nota_id}
+                                      value={nt.contrato_concepto_id == null ? '' : String(nt.contrato_concepto_id)}
+                                      onChange={(ev) => asignarNota(nt.nota_id, ev.target.value)} data-testid={`asignar-nota-${nt.nota_id}`}>
+                                      <option value="">General</option>
+                                      {generadores.map((g) => <option key={g.contrato_concepto_id} value={g.contrato_concepto_id}>{claveDe(g)} · {g.concepto}</option>)}
+                                    </select>
+                                  )}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
             <p className="text-[11px] text-slate-500 mt-1">
-              El reporte fotográfico se liga a cada generador por concepto (art. 132 fr. IV RLOPSRM). Las notas de
-              bitácora respaldan la entrega de los trabajos de la estimación (art. 132 fr. II / art. 125 RLOPSRM).
+              El reporte fotográfico y la nota de bitácora de entrega se ligan a CADA generador por concepto
+              (art. 132 fr. IV / fr. II y art. 125 RLOPSRM). Las notas sin generador quedan como soporte general
+              de la estimación.
             </p>
           </div>
 
