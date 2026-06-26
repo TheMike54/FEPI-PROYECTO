@@ -27,6 +27,12 @@ const VIEW_PATH = '/seguimiento/alertas';
 const TITULO = 'Atraso por concepto';
 const loginApi = async (request, email) => (await request.post(`${API}/auth/login`, { data: { email, password: PASS } })).json();
 const auth = (t) => ({ Authorization: `Bearer ${t}` });
+// FOTO OBLIGATORIA (decisión de Maiki): el registro de avance exige ≥1 foto (server-side). PNG 1x1 válido como evidencia.
+const PNG_1x1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+const seedAvance = (request, token, d) => request.post(`${API}/trabajos`, {
+  headers: auth(token),
+  multipart: { contrato_concepto_id: String(d.contrato_concepto_id), periodo_numero: String(d.periodo_numero), cantidad: String(d.cantidad), fotos: { name: 'evidencia.png', mimeType: 'image/png', buffer: PNG_1x1 } },
+});
 
 // Crea un contrato con C-001 (programa P1 = `cantidad`) y registra `avance` ejecutado en P1 (HU-06 real).
 // Déficit al periodo 1 = cantidad − avance. `conSupervision` controla si la supervisión es parte (para
@@ -54,7 +60,7 @@ async function crearContratoConDeficit(request, { avance = 10, conSupervision = 
   const t = await (await request.get(`${API}/trabajos/contrato/${id}`, { headers: auth(S.token) })).json();
   const ccid = t.conceptos.find((c) => c.clave === 'C-001').contrato_concepto_id;
   if (avance > 0) {
-    const reg = await request.post(`${API}/trabajos`, { headers: auth(S.token), data: { contrato_concepto_id: ccid, periodo_numero: 1, cantidad: avance } });
+    const reg = await seedAvance(request, S.token, { contrato_concepto_id: ccid, periodo_numero: 1, cantidad: avance });
     expect(reg.status(), 'registrar avance seed').toBe(201);
   }
   return { id, folio, ccid, R, S, V, D };
@@ -87,7 +93,7 @@ test.describe('HU-07 v2 — API del atraso por concepto', () => {
     expect(panel.atrasos[0].ejecutado_acumulado).toBe(10);
 
     // Completar el avance (90 más en P1 → ejecutado total 100 = programado) → SIN déficit → SIN fila.
-    expect((await request.post(`${API}/trabajos`, { headers: auth(S.token), data: { contrato_concepto_id: ccid, periodo_numero: 1, cantidad: 90 } })).status()).toBe(201);
+    expect((await seedAvance(request, S.token, { contrato_concepto_id: ccid, periodo_numero: 1, cantidad: 90 })).status()).toBe(201);
     panel = await panelAtraso(request, R.token, id);
     expect(panel.atrasos.length).toBe(0);
     expect(panel.total_conceptos).toBe(1);

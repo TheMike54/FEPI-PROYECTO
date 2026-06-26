@@ -11,6 +11,8 @@ const API = 'http://localhost:4000/api';
 const PASS = 'Sigecop2026!';
 const loginApi = async (request, email) => (await request.post(`${API}/auth/login`, { data: { email, password: PASS } })).json();
 const auth = (t) => ({ Authorization: `Bearer ${t}` });
+// FOTO OBLIGATORIA (decisión de Maiki): el registro de avance exige ≥1 foto (server-side). PNG 1x1 válido como evidencia.
+const PNG_1x1 = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
 
 async function sembrarContratoConAvance(request) {
   const [R, S, V, D] = await Promise.all([
@@ -39,8 +41,11 @@ async function sembrarContratoConAvance(request) {
   });
   const t = await (await request.get(`${API}/trabajos/contrato/${id}`, { headers: auth(S.token) })).json();
   const ccid = t.conceptos.find((c) => c.clave === 'C1').contrato_concepto_id;
-  // Registrar avance inicial 10.
-  const reg = await request.post(`${API}/trabajos`, { headers: auth(S.token), data: { contrato_concepto_id: ccid, periodo_numero: 1, cantidad: 10 } });
+  // Registrar avance inicial 10 (multipart con la foto de evidencia obligatoria).
+  const reg = await request.post(`${API}/trabajos`, {
+    headers: auth(S.token),
+    multipart: { contrato_concepto_id: String(ccid), periodo_numero: '1', cantidad: '10', fotos: { name: 'evidencia.png', mimeType: 'image/png', buffer: PNG_1x1 } },
+  });
   expect(reg.status(), 'registrar avance').toBe(201);
   return { id, ccid, S };
 }

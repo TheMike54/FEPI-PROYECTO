@@ -4,7 +4,7 @@
 const express = require('express');
 const multer = require('multer');
 const { authMiddleware } = require('../middlewares/auth.middleware');
-const { listarFotos, subirFoto, descargarFoto, eliminarFoto } = require('../controllers/avance-fotos.controller');
+const { listarFotos, subirFoto, descargarFoto, editarFoto, eliminarFoto } = require('../controllers/avance-fotos.controller');
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -30,6 +30,8 @@ function subirImagen(req, res, next) {
 router.get('/avance/:avanceId', listarFotos);
 router.post('/avance/:avanceId', subirImagen, subirFoto);
 router.get('/archivo/:fotoId', descargarFoto);
+// PATCH: editar la observación (descripcion) de una foto ya subida (JSON, sin multer). Acceso por participación.
+router.patch('/:fotoId', editarFoto);
 router.delete('/:fotoId', eliminarFoto);
 
 module.exports = router;

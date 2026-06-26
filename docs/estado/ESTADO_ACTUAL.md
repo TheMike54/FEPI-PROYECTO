@@ -1,5 +1,12 @@
 # SIGECOP — Estado actual del sistema (documento canónico)
 
+> **🔄 Actualización 2026-06-26 (HU-06 avance).** Sobre el estado del 24-jun: **la foto de evidencia del avance
+> volvió a ser OBLIGATORIA** (decisión consciente del equipo/Maiki, no ley; el art. 132 fr. IV es discrecional) y ahora
+> el **backend la valida** (`trabajos.controller:registrarAvance` → 400 sin foto), no solo el frontend → **bug #22
+> CERRADO**. Además, las **observaciones de las fotos de avance se pueden anotar/editar después de subirlas** (nuevo
+> `PATCH /api/avance-fotos/:id` → `avance-fotos.controller:editarFoto`; `FotosDeAvance` con campo y ✎ inline). Detalle:
+> `docs/reportes/HU06_FOTO_OBLIGATORIA_Y_OBSERVACIONES_26jun.md`. **LOCAL, sin push; pendiente desplegar `main`.**
+>
 > **🔄 Actualización 2026-06-24 (cierre de jornada, antes de reinicio de PC).**
 > **Git: `main` local = `d941024`** — DOS commits por delante de Render. **Render sigue en `cb10b27` (deploy del
 > 21-jun): NADA de 22/23/24-jun está desplegado.** Working tree con **trabajo local sin commit** (≈16 archivos no

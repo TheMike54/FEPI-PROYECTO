@@ -37,11 +37,15 @@ const FORM_VACIO = { conceptoId: '', periodoNumero: '', cantidad: '', observacio
 // Flujo completo: subir (con redimensionarImagen → no choca con el tope de 5 MB de multer) → ver de inmediato
 // (recarga tras el POST) → eliminar (con recarga). Los blob URLs se revocan al recargar y al desmontar (sin fugas).
 function FotosDeAvance({ avanceId, soloLectura = false }) {
-  const [fotos, setFotos] = useState([]);      // metadatos de las fotos de ESTE avance
+  const [fotos, setFotos] = useState([]);      // metadatos de las fotos de ESTE avance (incluye `descripcion`)
   const [urls, setUrls] = useState({});         // fotoId -> blobURL (descargado con Authorization)
   const [cargando, setCargando] = useState(false);
   const [subiendo, setSubiendo] = useState(false);
   const [error, setError] = useState('');
+  const [nuevaDesc, setNuevaDesc] = useState('');      // observación para la PRÓXIMA foto que se suba
+  const [editId, setEditId] = useState(null);           // foto cuya observación se está editando
+  const [editTexto, setEditTexto] = useState('');
+  const [guardandoEdit, setGuardandoEdit] = useState(false);
   const urlsRef = useRef({});                   // espejo de `urls` para revocar al desmontar sin capturar estado viejo
 
   const setUrlsSafe = useCallback((updater) => {
@@ -66,17 +70,18 @@ function FotosDeAvance({ avanceId, soloLectura = false }) {
   // Libera los blob URLs al desmontar (usa el ref para no fugar la última tanda cargada).
   useEffect(() => () => { Object.values(urlsRef.current).forEach((u) => { try { URL.revokeObjectURL(u); } catch { /* noop */ } }); }, []);
 
-  // Sube una foto y RECARGA la galería: la recién subida aparece sola (resuelve el "no sé si se guardó").
+  // Sube una foto CON su observación (la del campo) y RECARGA la galería: la recién subida aparece sola.
   const subir = useCallback(async (file) => {
     if (!file) return;
     setSubiendo(true); setError('');
     try {
       const liviana = await redimensionarImagen(file);   // baja una foto de celular (>5 MB) por debajo del tope de multer
-      await api.subirFotoAvance(avanceId, liviana, '');
+      await api.subirFotoAvance(avanceId, liviana, nuevaDesc.trim());
+      setNuevaDesc('');
       await cargar();
     } catch (err) { setError(err.message || 'No se pudo subir la foto'); }
     finally { setSubiendo(false); }
-  }, [avanceId, cargar]);
+  }, [avanceId, cargar, nuevaDesc]);
 
   const onEliminar = async (fotoId) => {
     setError('');
@@ -84,36 +89,86 @@ function FotosDeAvance({ avanceId, soloLectura = false }) {
     catch (err) { setError(err.message || 'No se pudo eliminar'); }
   };
 
+  // FIX (26-jun): anotar/editar la OBSERVACIÓN de una foto YA subida. Las fotos agregadas DESPUÉS del registro
+  // se subían con observación vacía y no había forma de anotarlas; ahora se editan inline (PATCH /avance-fotos/:id).
+  const abrirEdicion = (f) => { setEditId(f.id); setEditTexto(f.descripcion || ''); };
+  const guardarEdicion = async () => {
+    if (editId == null) return;
+    setGuardandoEdit(true); setError('');
+    try { await api.editarFotoAvance(editId, editTexto.trim()); setEditId(null); setEditTexto(''); await cargar(); }
+    catch (err) { setError(err.message || 'No se pudo guardar la observación'); }
+    finally { setGuardandoEdit(false); }
+  };
+
   return (
     <div data-testid={`fotos-avance-${avanceId}`}>
-      <div className="flex items-center gap-2 mb-2">
+      <div className="flex flex-wrap items-center gap-2 mb-2">
         <span className="text-[11px] font-semibold uppercase tracking-wide text-tinta-ter">📷 Evidencia fotográfica del avance (art. 132 fr. IV RLOPSRM)</span>
         {!soloLectura && (
-          <label className="text-[11px] font-semibold text-sigecop-blue hover:underline cursor-pointer whitespace-nowrap" data-testid={`foto-avance-subir-${avanceId}`}>
-            {subiendo ? 'Subiendo…' : '+ Agregar foto'}
-            <input type="file" accept="image/jpeg,image/png" className="hidden"
-              onChange={(e) => { const f = e.target.files && e.target.files[0]; e.target.value = ''; subir(f); }}
-              disabled={subiendo} />
-          </label>
+          <>
+            <input
+              type="text"
+              className="sg-input py-1 text-xs w-56"
+              placeholder="Observación de la foto (opcional)"
+              value={nuevaDesc}
+              maxLength={300}
+              onChange={(e) => setNuevaDesc(e.target.value)}
+              disabled={subiendo}
+              data-testid={`foto-avance-desc-nueva-${avanceId}`}
+            />
+            <label className="text-[11px] font-semibold text-sigecop-blue hover:underline cursor-pointer whitespace-nowrap" data-testid={`foto-avance-subir-${avanceId}`}>
+              {subiendo ? 'Subiendo…' : '+ Agregar foto'}
+              <input type="file" accept="image/jpeg,image/png" className="hidden"
+                onChange={(e) => { const f = e.target.files && e.target.files[0]; e.target.value = ''; subir(f); }}
+                disabled={subiendo} />
+            </label>
+          </>
         )}
       </div>
       {error && <p className="text-[11px] text-red-600 mb-1">{error}</p>}
       {cargando ? (
         <p className="text-[11px] text-tinta-ter">Cargando…</p>
       ) : fotos.length === 0 ? (
-        <p className="text-[11px] text-tinta-ter">Sin fotos de este avance.{soloLectura ? '' : ' Sube JPEG/PNG (se redimensionan automáticamente).'}</p>
+        <p className="text-[11px] text-tinta-ter">Sin fotos de este avance.{soloLectura ? '' : ' Sube JPEG/PNG (se redimensionan automáticamente) y anótales una observación.'}</p>
       ) : (
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-3">
           {fotos.map((f) => (
-            <div key={f.id} className="relative group">
+            <div key={f.id} className="relative group w-32">
               <a href={urls[f.id] || '#'} target="_blank" rel="noopener noreferrer" title={f.nombre || 'foto'}>
                 {urls[f.id]
-                  ? <img src={urls[f.id]} alt={f.nombre || 'foto de avance'} className="w-20 h-20 object-cover rounded border border-borde" />
-                  : <div className="w-20 h-20 rounded border border-borde bg-pagina flex items-center justify-center text-base">📷</div>}
+                  ? <img src={urls[f.id]} alt={f.nombre || 'foto de avance'} className="w-32 h-24 object-cover rounded border border-borde" />
+                  : <div className="w-32 h-24 rounded border border-borde bg-pagina flex items-center justify-center text-base">📷</div>}
               </a>
               {!soloLectura && (
                 <button type="button" onClick={() => onEliminar(f.id)} title="Eliminar foto"
                   className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-600 text-white text-[11px] leading-none flex items-center justify-center opacity-0 group-hover:opacity-100 transition" data-testid={`foto-avance-eliminar-${f.id}`}>×</button>
+              )}
+              {/* Observación de la foto: se ve siempre; si no es solo lectura se puede anotar/editar (también las agregadas después). */}
+              {editId === f.id ? (
+                <div className="mt-1">
+                  <input
+                    type="text"
+                    className="sg-input py-1 text-[11px] w-full"
+                    value={editTexto}
+                    maxLength={300}
+                    placeholder="Observación de la foto"
+                    onChange={(e) => setEditTexto(e.target.value)}
+                    data-testid={`foto-avance-desc-edit-${f.id}`}
+                  />
+                  <div className="flex gap-2 mt-1">
+                    <button type="button" className="text-[11px] text-sigecop-green-validation hover:underline disabled:text-slate-300" disabled={guardandoEdit} onClick={guardarEdicion} data-testid={`foto-avance-desc-guardar-${f.id}`}>Guardar</button>
+                    <button type="button" className="text-[11px] text-slate-500 hover:underline" onClick={() => { setEditId(null); setEditTexto(''); }}>Cancelar</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-1 flex items-start gap-1">
+                  <p className="text-[11px] text-tinta-sec flex-1 break-words" data-testid={`foto-avance-desc-${f.id}`}>
+                    {f.descripcion || <span className="text-slate-400 italic">Sin observación</span>}
+                  </p>
+                  {!soloLectura && (
+                    <button type="button" className="text-[11px] text-sigecop-blue hover:underline shrink-0" title="Anotar observación" onClick={() => abrirEdicion(f)} data-testid={`foto-avance-desc-editar-${f.id}`}>✎</button>
+                  )}
+                </div>
               )}
             </div>
           ))}
@@ -267,7 +322,7 @@ export default function TrabajosTerminados() {
   // O-PROFE: SOLO el art. 118 (acumulado sobre lo contratado) BLOQUEA el registro. noProgramado y
   // excedePeriodo son AVISOS (no bloquean): adelantar avance a precios pactados no requiere convenio.
   const puedeGuardar = !soloLectura && !guardando && !!conceptoSel && !!periodoSel && cantNueva > 0
-    && !validacion.excede118; // D1 (26-jun): la foto de evidencia es OPCIONAL (art. 132 fr. IV RLOPSRM es discrecional)
+    && !validacion.excede118 && fotos.length > 0; // FOTO OBLIGATORIA (decisión de Maiki): evidencia del avance (art. 132 fr. IV RLOPSRM)
 
   // Toggle "Ejecuté todo lo programado del periodo" → autollena la cantidad con lo disponible.
   const autollenarTodo = () => {
@@ -521,11 +576,12 @@ export default function TrabajosTerminados() {
                   </div>
                 </div>
 
-                {/* Fotos de evidencia OPCIONALES (art. 132 fr. IV RLOPSRM, discrecional; decisión profe 25-jun). Con descripción por foto. Se adjuntan AL registrar. */}
+                {/* FOTO OBLIGATORIA (decisión consciente de Maiki): evidencia del avance (art. 132 fr. IV RLOPSRM).
+                    Revierte el D1 (26-jun) que la dejó opcional. Con descripción por foto. Se adjuntan AL registrar. */}
                 <div className="mt-4">
                   <label className="sg-label">
-                    Fotos de evidencia
-                    <span className="text-xs font-normal text-slate-500"> (opcional — art. 132 fr. IV RLOPSRM, discrecional; se adjuntan al registrar y puedes agregar varias)</span>
+                    Fotos de evidencia <span className="text-red-600">*</span>
+                    <span className="text-xs font-normal text-slate-500"> (obligatoria — evidencia del avance, art. 132 fr. IV RLOPSRM; se adjuntan al registrar y puedes agregar varias)</span>
                   </label>
                   <input
                     type="file"
@@ -540,7 +596,7 @@ export default function TrabajosTerminados() {
                     data-testid="cap-foto-evidencia"
                   />
                   {fotos.length === 0
-                    ? <p className="text-xs text-tinta-ter mt-1" data-testid="foto-evidencia-falta">Opcional: puedes adjuntar fotos de evidencia (art. 132 fr. IV RLOPSRM, discrecional).</p>
+                    ? <p className="text-xs text-red-600 mt-1" data-testid="foto-evidencia-falta">Requerida: adjunta al menos una foto de evidencia del avance para poder registrar.</p>
                     : (
                       <ul className="mt-2 space-y-2" data-testid="foto-evidencia-ok">
                         {fotos.map((f, i) => (

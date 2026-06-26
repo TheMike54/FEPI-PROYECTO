@@ -31,8 +31,10 @@
   trabajo interno (corrección de citas legales y fundación del backend), no revisión. Si hubo junta, agregar su fecha.
 - **Corrección que se invirtió:** la cita de la amortización del anticipo se cambió 143→138 el 10-jun y se **revirtió a
   art. 143 fr. I** el 15-jun (el art. 138 es el *importe* del anticipo, no su amortización).
-- **Punto abierto:** la **foto de evidencia del avance** se implementó como obligatoria (24-jun) y luego el profe pidió
-  dejarla **opcional** (25-jun); el sistema quedó en opcional. Conviene confirmar la versión final del criterio.
+- **Foto de avance:** revertida a **OBLIGATORIA** por decisión del equipo (evidencia del avance, art. 132) — diverge de
+  la petición del profe del 25-jun de dejarla opcional. Es **decisión consciente de Maiki** (líder), asumiendo el riesgo;
+  el gate va en **frontend y backend** (no se evade por API). Trazabilidad del criterio: obligatoria (24-jun) → opcional
+  por el profe (25-jun) → **obligatoria de nuevo** por decisión del equipo.
 
 > Changelog reconstruido del historial del proyecto y los reportes de sesión. Mantenerlo al día tras cada revisión
 > (una fila nueva: qué pidió → qué se ajustó).

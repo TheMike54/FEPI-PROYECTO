@@ -205,6 +205,9 @@ export const api = {
     if (!res.ok) { let m = `HTTP ${res.status}`; try { m = JSON.parse(await res.text())?.error || m; } catch (_) { /* binario */ } const e = new Error(m); e.status = res.status; throw e; }
     return URL.createObjectURL(await res.blob());
   },
+  // FIX (26-jun): editar la observación (descripcion) de una foto de avance ya subida (incluidas las
+  // agregadas DESPUÉS del registro, que antes quedaban sin forma de anotarse). PATCH /avance-fotos/:id.
+  editarFotoAvance: (fotoId, descripcion) => request(`/avance-fotos/${fotoId}`, { method: 'PATCH', body: JSON.stringify({ descripcion }) }),
   eliminarFotoAvance: (fotoId) => request(`/avance-fotos/${fotoId}`, { method: 'DELETE' }),
   subirPdfMinuta: (minutaId, file) => {
     const fd = new FormData(); fd.append('documento', file);

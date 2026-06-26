@@ -95,6 +95,26 @@ async function descargarFoto(req, res) {
   } catch (err) { console.error('[avance descargarFoto]', err); return res.status(500).json({ error: 'Error interno' }); }
 }
 
+// PATCH /api/avance-fotos/:fotoId — edita la OBSERVACIÓN (descripcion) de una foto ya subida (por
+// participación). FIX (26-jun): las fotos AGREGADAS DESPUÉS del registro se subían con descripción vacía y
+// no había forma de anotarlas; este endpoint permite poner/editar su observación. No toca el binario.
+async function editarFoto(req, res) {
+  try {
+    const fotoId = Number(req.params.fotoId);
+    if (!Number.isInteger(fotoId) || fotoId <= 0) return res.status(400).json({ error: 'foto inválida' });
+    const f = await getFotoConContrato(pool, fotoId);
+    if (!f) return res.status(404).json({ error: 'Foto no encontrada' });
+    if (!esParteOSupervision(req.user, f)) return res.status(403).json({ error: 'No participas en este contrato' });
+    const descripcion = (req.body && typeof req.body.descripcion === 'string') ? (req.body.descripcion.slice(0, 300) || null) : null;
+    const r = await pool.query(
+      `UPDATE avance_fotos SET descripcion = $2 WHERE id = $1
+       RETURNING id, nombre, descripcion, mime, tamano, subido_por, created_at`,
+      [fotoId, descripcion]
+    );
+    return res.status(200).json({ ...r.rows[0], tiene_foto: true });
+  } catch (err) { console.error('[avance editarFoto]', err); return res.status(500).json({ error: 'Error interno' }); }
+}
+
 // DELETE /api/avance-fotos/:fotoId — elimina una foto (por participación).
 async function eliminarFoto(req, res) {
   try {
@@ -108,4 +128,4 @@ async function eliminarFoto(req, res) {
   } catch (err) { console.error('[avance eliminarFoto]', err); return res.status(500).json({ error: 'Error interno' }); }
 }
 
-module.exports = { listarFotos, subirFoto, descargarFoto, eliminarFoto };
+module.exports = { listarFotos, subirFoto, descargarFoto, editarFoto, eliminarFoto };

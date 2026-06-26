@@ -51,7 +51,17 @@ async function crearContrato(request, { conSegundo = false } = {}) {
 }
 
 const trabajos = async (request, token, id) => (await request.get(`${API}/trabajos/contrato/${id}`, { headers: { Authorization: `Bearer ${token}` } })).json();
-const registrar = (request, token, data) => request.post(`${API}/trabajos`, { headers: { Authorization: `Bearer ${token}` }, data });
+// FOTO OBLIGATORIA (decisión de Maiki): el registro de avance exige ≥1 foto (server-side) → se envía multipart con la evidencia.
+const registrar = (request, token, data) => request.post(`${API}/trabajos`, {
+  headers: { Authorization: `Bearer ${token}` },
+  multipart: {
+    contrato_concepto_id: String(data.contrato_concepto_id),
+    periodo_numero: String(data.periodo_numero),
+    cantidad: String(data.cantidad),
+    ...(data.observaciones != null ? { observaciones: String(data.observaciones) } : {}),
+    fotos: { name: 'evidencia.png', mimeType: 'image/png', buffer: PNG_1x1 },
+  },
+});
 const abrirBitacora = (request, token, contratoId) => request.post(`${API}/bitacora/apertura`, {
   headers: { Authorization: `Bearer ${token}` },
   data: {
