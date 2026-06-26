@@ -938,10 +938,18 @@ async function firmarNota(req, res) {
       // bloquea (fail-open, como el acotamiento de lib/acceso.js). Decisión Nivel 2 / alcance interpretativo
       // [validar]: art. 125 RLOPSRM (la sustitución cambia a la persona vigente; el saliente deja de poder
       // firmar a partir de su baja) + art. 53/123 (la nota la asienta/firma quien ejerce el cargo en esa fecha).
+      // BUGFIX (hallazgo Render, contrato OBRAAAAAAAA-2026-Q): el titular ORIGINAL de un rol (la fila con
+      // `sustituye_a IS NULL`, creada en el alta) cubre DESDE EL INICIO del contrato. El alta registra su
+      // `vigencia_desde = fecha_inicio` (contratos.controller.js:432-434), que puede ser POSTERIOR a una nota
+      // emitida antes de esa fecha (p. ej. fecha_inicio futura, o nota emitida el día de creación) → sin este
+      // arreglo el residente original quedaba "fuera de vigencia" pese a no haber sustitución. Por eso la cota
+      // INFERIOR (`vigencia_desde <= fecha`) NO se aplica al original; SÍ se aplica al ENTRANTE
+      // (`sustituye_a IS NOT NULL`: no firma notas previas a su alta). La cota SUPERIOR (`vigencia_hasta`) se
+      // aplica siempre (el saliente no firma tras su baja). Distingue "original sin sustitución" de "entrante".
       const vig = await client.query(
         `SELECT COUNT(*)::int AS total,
                 COUNT(*) FILTER (
-                  WHERE cr.vigencia_desde <= n.fecha::date
+                  WHERE (cr.sustituye_a IS NULL OR cr.vigencia_desde <= n.fecha::date)
                     AND (cr.vigencia_hasta IS NULL OR cr.vigencia_hasta >= n.fecha::date)
                 )::int AS cubre
            FROM contrato_roster cr
