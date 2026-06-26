@@ -6,6 +6,9 @@
 // monto y su AJUSTE/ampliación por modificación de monto o plazo = el ENDOSO; el propio art. 91 remite a la
 // fr. II y último párrafo del art. 98 RLOPSRM para el ajuste de la fianza — misma base que cita la cabecera
 // de la tabla garantia_endosos en schema.sql, no son fundamentos distintos).
+// VIGENCIA / caducidad de la fianza: art. 98 fr. I inc. c RLOPSRM ("la póliza de la fianza... permanecerá
+// vigente durante el cumplimiento de la obligación que garantice...") — es la base de que la vigencia no
+// pueda estar vencida (NO el art. 48, que es la obligación/plazo de presentación, ni el art. 91, que es el ajuste).
 const { pool } = require('../db/pool');
 const { esParteOSupervision } = require('../lib/acceso');
 const { contratoCerrado, msgCerrado } = require('../lib/gateCierre');
@@ -34,7 +37,7 @@ function validarGarantia({ tipo, monto, vigencia }, montoContrato) {
   const gm = numOrNull(monto);
   if (gm === null || gm <= 0) return 'El monto afianzado debe ser mayor a 0';
   if (montoContrato != null && gm > Number(montoContrato)) return `El monto (${gm}) no puede exceder el monto del contrato (${montoContrato})`;
-  if (vigencia && vigenciaVencida(vigencia)) return 'La vigencia de la póliza no puede estar vencida (art. 48 LOPSRM)';
+  if (vigencia && vigenciaVencida(vigencia)) return 'La vigencia de la póliza no puede estar vencida (art. 98 fr. I inc. c RLOPSRM)';
   return null;
 }
 

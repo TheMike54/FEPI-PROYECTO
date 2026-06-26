@@ -114,6 +114,13 @@ Como la fecha de inicio ya no puede ser pasada, un contrato dado de alta **hoy**
 > En el "desde cero", recuerda la NOTA DE TIEMPO: la cadena estimación→finiquito necesita periodo vencido.
 > En el "pre-llenado", cada `PRUEBA-HU-XX` YA está en su etapa (ver `docs/reportes/REPORTE_SESION_AUTONOMA_2_26jun.md`,
 > tabla de etapas, y `docs/planes/RUNBOOK_SEED_PRUEBA_HU_RENDER_26jun.md`).
+>
+> **Contratos especiales sembrados** (casos que NO se pueden armar por el alta por la regla "fecha no-pasada"):
+> los de **ATRASO** (`PRUEBA-ATRASO-*`) y los de **TIEMPO RECORRIDO** (`PRUEBA-TR-*`: nota tácita, fianza caducada,
+> convenio listo, amortización multi-periodo, firma fuera de vigencia, plazo de revisión vencido **[por revisar]**,
+> curva con histórico congelado) viven como **Anexos del plan pre-llenado** (`PLAN_PRUEBAS_POSITIVAS_FINAL_26jun.md`),
+> con sus seeds `seed_demo_atraso.sql` / `seed_demo_tr.sql` (idempotentes) y su runbook §B/§C para Render. Esta guía
+> solo **remite**: el inventario operativo vive con su seed, no aquí.
 
 ---
 

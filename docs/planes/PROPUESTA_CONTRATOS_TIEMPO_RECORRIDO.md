@@ -1,5 +1,13 @@
 # PROPUESTA — Contratos de prueba de "TIEMPO RECORRIDO" (FASE 1, 26-jun-2026)
 
+> ✅ **RESUELTO EN FASE 2 (26-jun).** Decisiones tomadas con tu OK: (a) acomodo = **Opción B híbrida** (Anexo en el
+> plan pre-llenado + puntero en la guía + remisión por PASO); (b) folios con prefijo **`PRUEBA-TR-`**; (c) entran
+> **los 7** (C1–C5 firmes + C6 **POR REVISAR** + C7 como **contrato propio**, no variante de C3 — un convenio de
+> *plazo* no crea `programa_version`); (d) **C3 listo sin el convenio**; (e) cita de C2 = **art. 98 fr. I inc. c
+> RLOPSRM** (no art. 48 ni 91 — ver reporte). Entregables: seed `backend/scripts/seed_demo_tr.sql` (probado en local,
+> idempotente), runbook §C, Anexo + remisiones en el plan pre-llenado, cita alineada en `garantias.controller.js`.
+> **Detalle y math final → `docs/reportes/REPORTE_CONTRATOS_TIEMPO_RECORRIDO_26jun.md`.**
+
 > **Esto es SOLO la propuesta (FASE 1).** No construí el seed ni edité los planes. Pido tu OK sobre el **acomodo
 > de la documentación** y los **nombres de folio** antes de la FASE 2.
 > Contexto: contratos con fechas pasadas (sembrados por SQL directo, como los `PRUEBA-ATRASO`), **uno por caso**,

@@ -94,6 +94,7 @@ Esperado** · **▢**. Login: `#login-usuario`, `#login-password`, botón «Inic
 > 🟢 **Esperado:** contrato creado; **redirige a abrir la bitácora** (`/bitacora/apertura?contrato=ID`); monto derivado al centavo (art. 45 fr. IX RLOPSRM); fecha inicio ≥ hoy aceptada.
 
 ### ▢ PASO 3 — POS-HU02-01 · Fianzas y garantías (HU-02)
+> 🔁 **Tiempo recorrido:** fianza con vigencia caducada → `PRUEBA-TR-FIANZA-VENCIDA` (ver Anexo, art. 98 fr. I inc. c RLOPSRM).
 - **Cuenta:** `dependencia@` (o residente que creó) · **Pantalla:** «Fianzas / garantías» (`/contratos/fianzas`) → modal → **PRUEBA-HU-02**.
 
 | Acción (testid) | Valor |
@@ -122,6 +123,7 @@ Esperado** · **▢**. Login: `#login-usuario`, `#login-password`, botón «Inic
 > antes de la fecha de inicio (art. 52 Ter LOPSRM); datos mínimos art. 123 fr. III RLOPSRM. *(testid del botón: [verificar])*
 
 ### ▢ PASO 5 — POS-HU09-01 · Emisión y firma de notas (HU-09)
+> 🔁 **Tiempo recorrido:** aceptación tácita de nota (plazo de firma vencido) → `PRUEBA-TR-NOTA-VENCIDA` (ver Anexo, art. 123 fr. III RLOPSRM).
 - **Cuenta:** `residente@` · **Pantalla:** «Bitácora» → **PRUEBA-HU-09** (bitácora abierta) → Emitir nota (`EmisionNotas`).
 
 | Campo (testid) | Valor |
@@ -181,6 +183,7 @@ Esperado** · **▢**. Login: `#login-usuario`, `#login-password`, botón «Inic
 > CONC-01); la alerta deriva del programa vs avance (no de una fecha falseada). *(testids del listado: [verificar])*
 
 ### ▢ PASO 10 — POS-HU05-01 · Programa y curva de avance (HU-05)
+> 🔁 **Tiempo recorrido:** curva con histórico congelado (2 versiones de programa) → `PRUEBA-TR-CURVA-HISTORICA` (ver Anexo).
 - **Cuenta:** `residente@` · **Pantalla:** «Avance» → pestaña Curva (`/seguimiento/curva-avance`) → **PRUEBA-HU-05** (al corriente, 100%).
 
 > 🟢 **Esperado:** curva S con programado vs ejecutado; PRUEBA-HU-05 al corriente (3 conceptos 100%). Si el contrato
@@ -191,6 +194,7 @@ Esperado** · **▢**. Login: `#login-usuario`, `#login-password`, botón «Inic
 ## CICLO 5 · Estimación
 
 ### ▢ PASO 11 — POS-HU12-01 · Integración de la estimación (HU-12) ⭐ — incluye Delta 5
+> 🔁 **Tiempo recorrido:** amortización del anticipo a lo largo de 3 estimaciones → `PRUEBA-TR-AMORT-MULTI` (ver Anexo, art. 143 fr. I RLOPSRM).
 - **Cuenta:** `contratista@` · **Pantalla:** «Ciclo de estimación» (`/estimaciones/integracion`) → modal → **PRUEBA-HU-12**.
 
 | Wizard (paso → testid) | Valor |
@@ -224,6 +228,7 @@ Esperado** · **▢**. Login: `#login-usuario`, `#login-password`, botón «Inic
 > LOPSRM, 15 días). El contratista presenta a la residencia.
 
 ### ▢ PASO 14 — POS-HU15-01 · Revisión y autorización (HU-15)
+> 🟥 **Tiempo recorrido — ⚠ POR REVISAR:** plazo de revisión vencido (art. 54 LOPSRM) → `PRUEBA-TR-REVISION-VENCIDA` (ver Anexo). El semáforo rojo "Vencido" SÍ se ve; la "afirmativa ficta" **falta confirmar en pantalla** — no ejecutar como caso firme aún.
 - **Cuenta:** `supervision@` (observa/turna) y `residente@` (autoriza) · **Pantalla:** «Estimación» → pestaña Revisión (`/estimaciones/revision`) → **PRUEBA-HU-15** (estimación #1 enviada).
 
 | Acción (testid) | Valor |
@@ -286,6 +291,7 @@ Esperado** · **▢**. Login: `#login-usuario`, `#login-password`, botón «Inic
 ## CICLO 7 · Convenios, expediente, portafolio, reportes, finiquito
 
 ### ▢ PASO 19 — POS-HU03-01 · Convenio modificatorio (HU-03)
+> 🔁 **Tiempo recorrido:** contrato listo para registrar→autorizar un convenio de plazo → `PRUEBA-TR-CONVENIO-PLAZO` (ver Anexo, art. 59 LOPSRM).
 - **Cuenta:** `dependencia@` · **Pantalla:** «Convenios» (`/contratos/modificatorios`) → **PRUEBA-HU-03** (bitácora abierta).
 
 | Campo (testid) | Valor |
@@ -317,6 +323,7 @@ Esperado** · **▢**. Login: `#login-usuario`, `#login-password`, botón «Inic
 > moneda/TOTALES). *(testids de cada reporte: [verificar])*
 
 ### ▢ PASO 23 — POS-HU22-01 · Sustitución de personas del roster (HU-22) — Delta 6
+> 🔁 **Tiempo recorrido:** regla temporal de firmas (entrante no firma notas previas a su alta) → `PRUEBA-TR-FIRMA-VIGENCIA` (ver Anexo, art. 125 RLOPSRM).
 - **Cuenta:** `dependencia@`/`residente@` · **Pantalla:** «Roster / sustitución» (`/contratos/roster`) → **PRUEBA-HU-22**.
 
 | Campo (testid) | Valor |
@@ -386,8 +393,38 @@ Esperado** · **▢**. Login: `#login-usuario`, `#login-password`, botón «Inic
 
 ---
 
+## Anexo · Contratos especiales de **tiempo recorrido** (`PRUEBA-TR-*`)
+
+> Casos que **no se pueden armar por el alta** (la regla "fecha de inicio no-pasada" lo impide): plazos/vigencias ya
+> vencidos, amortización a lo largo de varias estimaciones, sustitución de personas con histórico, versiones de programa.
+> Se siembran por SQL directo (`backend/scripts/seed_demo_tr.sql`, idempotente — resetea solo `PRUEBA-TR-%`; no toca
+> `OP-2026`, `SOP-2026`, `PRUEBA-HU` ni `PRUEBA-ATRASO`). **Uso interno de Maiki** (no es el set "limpio" para el profe).
+> **⚠ Re-sembrar antes de demostrar** (varios dependen de fechas relativas "hace N días").
+
+> 🟥 **C6 (`PRUEBA-TR-REVISION-VENCIDA`) — POR REVISAR · NO ejecutar como caso firme todavía.**
+> El **plazo de revisión vencido SÍ es observable** (semáforo ROJO "Día N de 15 — Vencido" + título "Plazo de revisión
+> (art. 54 LOPSRM)"). **PERO falta confirmar en pantalla** que la consecuencia legal **"afirmativa ficta"** se rotule:
+> hoy el frontend **no la nombra** y el estado de la estimación **no se voltea** (sigue "Presentada"). El dato está
+> sembrado; la observabilidad de la *afirmativa ficta* queda **pendiente de confirmación visual** antes de prometerla.
+
+### Catálogo — qué probar → qué contrato → cómo verificar
+| Folio | Caso | Cuenta | Pantalla | Cómo verificar | Fundamento |
+|---|---|---|---|---|---|
+| **PRUEBA-TR-NOTA-VENCIDA** | C1 · Aceptación **tácita** de nota | `residente@` (contraparte ≠ emisor) | Bitácora → consulta de notas del contrato | La nota #2 (aviso, emitida **hace 5 días**, plazo de firma **2 días**) se muestra como **"Aceptada (tácita)"**; no ofrece botón de firma; no aparece en «Por firmar»; firmarla por API → **409** "el plazo… venció; ya se considera aceptada tácitamente". *(testid del badge: [verificar])* | art. 123 fr. III RLOPSRM |
+| **PRUEBA-TR-FIANZA-VENCIDA** | C2 · Fianza con **vigencia caducada** | `dependencia@` / `residente@` | Fianzas y garantías del contrato | La fianza de **cumplimiento** aparece **vencida** (vigencia **2026-01-15**) con badge rojo "Vencida hace N d"; capturar/editar una vigencia vencida se **rechaza**. *(testid de la fila: [verificar])* | art. 98 fr. I inc. c RLOPSRM (la fianza debe permanecer vigente) |
+| **PRUEBA-TR-CONVENIO-PLAZO** | C3 · Convenio de plazo **listo** (registrar→autorizar en vivo) | `dependencia@` autoriza · `contratista@` propone | Convenios modificatorios | Contrato con bitácora abierta y **sin** convenio: **registrar** un convenio de plazo y luego **autorizarlo** (acto separado, rol dependencia, exige oficio). *(testids: [verificar])* | art. 59 LOPSRM + 99/102 RLOPSRM; bitácora art. 122 |
+| **PRUEBA-TR-AMORT-MULTI** | C4 · **Amortización** del anticipo multi-periodo | `contratista@` / `residente@` | Ciclo de estimación → documento (carátula, bloque 2) | Abrir las **3 estimaciones autorizadas** (P1/P2/P3) en orden: en `caratula-doc-amortizacion` el **amortizado acumulado** crece **$90,000 → $180,000 → $300,000** y el **saldo por amortizar** baja **$210,000 → $120,000 → $0** (anticipo $300,000). | art. 143 fr. I RLOPSRM; 5 al millar art. 191 LFD; sin IVA art. 2 fr. XIX RLOPSRM |
+| **PRUEBA-TR-FIRMA-VIGENCIA** | C5 · Firma **fuera del periodo de vigencia** (sustitución) | **`residente2.demo@`** (entrante) | Bitácora → «Por firmar» / consulta de notas | Como el **entrante**, firmar la nota **#2** (fechada **hace 12 días**, ANTES de su alta hace 7) → **409** "fuera de tu periodo de vigencia (art. 125)". Contraprueba 🟢: firmar la nota **#3** (hace 3 días, dentro de su vigencia) → **201**. ⚠ La rama "el **saliente** no firma tras su baja" **no es observable**: el caché `residente_id` ya apunta al entrante → el saliente recibe **403 "no eres parte"** ANTES de la regla temporal. | art. 125 RLOPSRM (+ 53 / 123 fr. III). Nivel 2 **[validar alcance]** |
+| 🟥 **PRUEBA-TR-REVISION-VENCIDA** | **C6 · Plazo de revisión vencido — ⚠ POR REVISAR** | `residente@` / `supervision@` | Revisión de estimación (y Envío de estimación) | Estimación **presentada hace 16 días**: el panel **"Plazo de revisión (art. 54 LOPSRM)"** muestra semáforo **ROJO** "Día N de 15 — **Vencido**" (Revisión) / "Plazo de revisión: día N de 15 · **plazo vencido**" (Envío). **⚠ PENDIENTE DE CONFIRMAR EN PANTALLA:** la **"afirmativa ficta"** NO está rotulada y el estado **no cambia** (sigue "Presentada"). El semáforo **no expone data-testid**; se identifica por ese texto visible. **No ejecutar como caso firme hasta confirmarlo.** | art. 54 LOPSRM (15 días naturales) |
+| **PRUEBA-TR-CURVA-HISTORICA** | C7 · Curva con **histórico congelado** | `residente@` (parte del contrato) | Programa y curva de avance (HU-05) → "Avance por etapas" | La curva muestra **2 etapas**: `etapa-historico-N` con badge **"Histórico · congelado"** (v1, $1,000,000) + `etapa-vigente-N` **"Vigente"** (v2, $1,200,000 con concepto adicional) + nota `curva-consolidado-aviso`. La bisagra es el **convenio de monto autorizado** (2026-04-15). | art. 59 LOPSRM (convenio) / versionado del programa |
+
+> **Re-sembrar antes de la demo:** `docker exec -i sigecop_db psql -U sigecop -d sigecop_db -v ON_ERROR_STOP=1 < backend/scripts/seed_demo_tr.sql` (LOCAL) / runbook §C (Render). Idempotente: resetea solo `PRUEBA-TR-%`.
+
+---
+
 ## Resumen
 - **24 PASOS positivos**, uno por HU (orden de ciclo), usando los contratos `PRUEBA-HU-XX` pre-llenados.
 - **3 PASOS de ATRASO** (A1/A2/A3) sobre `PRUEBA-ATRASO-01/02/03` (seed `seed_demo_atraso.sql`): alerta de atraso (HU-07), retención por atraso en la carátula (art. 46 Bis), y finiquito con la pena aplicada.
+- **7 contratos de TIEMPO RECORRIDO** (`PRUEBA-TR-*`, seed `seed_demo_tr.sql`) en el **Anexo**: C1 nota tácita, C2 fianza caducada, C3 convenio de plazo listo, C4 amortización multi-periodo, C5 firma fuera de vigencia, **C6 plazo de revisión vencido (⚠ POR REVISAR — afirmativa ficta pendiente de confirmar en pantalla)**, C7 curva con histórico congelado. Cada PASO afectado (3, 5, 10, 11, 14, 19, 23) remite al Anexo con una línea 🔁.
 - Casos que ejercen los **deltas**: PASO 2 (fecha no-pasado + empresa→persona + persona-no-correo), PASO 4 (presentante en apertura), PASO 8 (foto opcional), PASO 11-12 (estimación integra + 4 bloques + IVA Sección 3 + nota↔generador), PASO 15 (export con formato), PASO 23 (supervisión otra empresa).
 - **[verificar]:** testids exactos de varias pantallas no listados en el catálogo base (padrón, endoso, emisión/consulta de notas, minutas, avance botón, alertas, tablero, tránsito/pago, convenio, expediente, reportes, roster, finiquito) — confirmar contra el código al ejecutar.

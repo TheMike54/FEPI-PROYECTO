@@ -20,6 +20,12 @@ periodos **a futuro** (el primero vence en ~30 días). La **integración de esti
   documentados igual** para que sirvan en ambos casos. *(Decisión Nivel 2: la regla no-pasado es criterio del profe;
   el plazo del primer periodo es lo único que condiciona el "mismo día".)*
 
+> **Casos de TIEMPO RECORRIDO (no se arman desde cero hoy):** la aceptación tácita de nota, la fianza caducada, el
+> convenio, la amortización multi-periodo, la firma fuera de vigencia, el plazo de revisión vencido **[por revisar]** y
+> la curva con histórico congelado requieren fechas ya transcurridas → se demuestran sobre contratos **sembrados**
+> (`PRUEBA-TR-*`). Ver el **Anexo «Contratos especiales de tiempo recorrido»** del plan pre-llenado
+> (`PLAN_PRUEBAS_POSITIVAS_FINAL_26jun.md`) y su seed `seed_demo_tr.sql`.
+
 ### §Deltas reflejados (sesiones #1/#2)
 1. **Fecha de inicio NO pasada** (front+back). En el alta usa **HOY** (formato AAAA-MM-DD).
 2. **Selector de EMPRESA contraparte (`select-empresa-contratista`) debajo de "Dependencia"**; filtra al

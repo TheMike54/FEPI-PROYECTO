@@ -160,3 +160,61 @@ docker exec -i sigecop_db psql "$RENDER_DB" -c "SELECT CASE WHEN folio LIKE 'OP-
 
 > Validado en LOCAL (2 pasadas exit=0, salida idéntica). Render = idéntico por construcción (mismo script determinista);
 > el paso 4 debe reproducir la columna "Local". **No ejecuté contra Render.**
+
+---
+
+## §C — Contratos de TIEMPO RECORRIDO en Render (`PRUEBA-TR-*`)
+
+> Mismo principio: el script `backend/scripts/seed_demo_tr.sql` borra/recrea **solo** `folio LIKE 'PRUEBA-TR-%'`.
+> **NO toca OP-2026-%, SOP-2026-%, PRUEBA-HU-% ni PRUEBA-ATRASO-%.** Conviven con todo. Idempotente.
+> **Para uso interno de Maiki** (no es el set "limpio" del profe).
+> ⚠ **Requisitos en Render:** (1) la cuenta **`residente2.demo@sigecop.test`** debe existir (es el *entrante* de C5);
+> si no está, créala antes (mismo método que las demás demo). (2) Varios casos usan **fechas relativas** ("hace N días"):
+> re-sembrar **el mismo día** de la demo para que el plazo de revisión (C6), la nota tácita (C1) y la vigencia de
+> firmas (C5) queden en la ventana correcta.
+
+```powershell
+$RENDER_DB = 'postgresql://USUARIO:PASSWORD@HOST.oregon-postgres.render.com/DBNAME?sslmode=require'
+$REPO      = "C:\Users\migue\Downloads\Proyectofepy\sigecop"
+
+# 1) BACKUP FRESCO (no continúes si pesa 0)
+& "$REPO\backend\scripts\backup_render.ps1" -Etiqueta "pre_seed_tr_26jun"
+
+# 1b) Confirmar que existe la cuenta entrante de C5 (debe devolver 1 fila)
+docker exec -i sigecop_db psql "$RENDER_DB" -c "SELECT id,email FROM usuarios WHERE email='residente2.demo@sigecop.test';"
+
+# 2) ANTES — conteo de familias (para verificar que NO se tocan las otras)
+docker exec -i sigecop_db psql "$RENDER_DB" -c "SELECT CASE WHEN folio LIKE 'OP-2026-%' THEN 'OP-2026' WHEN folio LIKE 'SOP-2026-%' THEN 'SOP-2026' WHEN folio LIKE 'PRUEBA-ATRASO-%' THEN 'PRUEBA-ATRASO' WHEN folio LIKE 'PRUEBA-TR-%' THEN 'PRUEBA-TR' WHEN folio LIKE 'PRUEBA-HU-%' THEN 'PRUEBA-HU' END AS familia, count(*) FROM contratos WHERE folio LIKE 'OP-2026-%' OR folio LIKE 'SOP-2026-%' OR folio LIKE 'PRUEBA-HU-%' OR folio LIKE 'PRUEBA-ATRASO-%' OR folio LIKE 'PRUEBA-TR-%' GROUP BY 1 ORDER BY 1;"
+
+# 3) SEMBRAR los 7 contratos de tiempo recorrido (idempotente; NO toca OP/SOP/PRUEBA-HU/PRUEBA-ATRASO)
+docker cp "$REPO\backend\scripts\seed_demo_tr.sql" sigecop_db:/tmp/seed_tr.sql
+docker exec -i sigecop_db psql "$RENDER_DB" -v ON_ERROR_STOP=1 -f /tmp/seed_tr.sql
+docker exec sigecop_db rm -f /tmp/seed_tr.sql
+
+# 4) DESPUÉS — verificación (debe COINCIDIR con LOCAL): versiones C7=2, roster C5=2, fianza C2 vencida, est C6=enviada
+docker exec -i sigecop_db psql "$RENDER_DB" -c "
+SELECT c.folio, c.monto,
+       (SELECT count(*) FROM bitacora_aperturas b WHERE b.contrato_id=c.id) AS bita,
+       COALESCE((SELECT string_agg(e.estado,',' ORDER BY e.numero) FROM estimaciones e WHERE e.contrato_id=c.id),'-') AS estados,
+       (SELECT count(*) FROM programa_version pv WHERE pv.contrato_id=c.id) AS versiones,
+       (SELECT count(*) FROM contrato_roster cr WHERE cr.contrato_id=c.id AND cr.rol='residente') AS res_roster,
+       (SELECT count(*) FROM convenios_modificatorios cm WHERE cm.contrato_id=c.id) AS convenios
+  FROM contratos c WHERE c.folio LIKE 'PRUEBA-TR-%' ORDER BY c.folio;"
+
+# 5) CONFIRMAR que OP/SOP/PRUEBA-HU/PRUEBA-ATRASO siguen con el mismo conteo del paso 2 (solo cambió PRUEBA-TR)
+docker exec -i sigecop_db psql "$RENDER_DB" -c "SELECT CASE WHEN folio LIKE 'OP-2026-%' THEN 'OP-2026' WHEN folio LIKE 'SOP-2026-%' THEN 'SOP-2026' WHEN folio LIKE 'PRUEBA-ATRASO-%' THEN 'PRUEBA-ATRASO' WHEN folio LIKE 'PRUEBA-TR-%' THEN 'PRUEBA-TR' WHEN folio LIKE 'PRUEBA-HU-%' THEN 'PRUEBA-HU' END AS familia, count(*) FROM contratos WHERE folio LIKE 'OP-2026-%' OR folio LIKE 'SOP-2026-%' OR folio LIKE 'PRUEBA-HU-%' OR folio LIKE 'PRUEBA-ATRASO-%' OR folio LIKE 'PRUEBA-TR-%' GROUP BY 1 ORDER BY 1;"
+```
+
+### §C tabla — verificación cruzada local ↔ Render (tiempo recorrido)
+| Folio | Caso | Local (monto / bita / est:estados / versiones / roster-res / convenios) | Render | ¿Coincide? |
+|---|---|---|---|---|
+| PRUEBA-TR-NOTA-VENCIDA | C1 nota tácita | 1000000 / 1 / 0:- / 0 / 1 / 0 (nota #2 plazo_vencido=t) | = local | ✅ por construcción |
+| PRUEBA-TR-FIANZA-VENCIDA | C2 fianza caducada | 1000000 / 0 / 0:- / 0 / 1 / 0 (cumplimiento vig. 2026-01-15) | = local | ✅ |
+| PRUEBA-TR-CONVENIO-PLAZO | C3 convenio listo | 1000000 / 1 / 0:- / 0 / 1 / 0 | = local | ✅ |
+| PRUEBA-TR-AMORT-MULTI | C4 amortización multi | 1000000 / 1 / 3:autorizada,autorizada,autorizada / 0 / 1 / 0 | = local | ✅ |
+| PRUEBA-TR-FIRMA-VIGENCIA | C5 firma fuera de vigencia | 1000000 / 1 / 0:- / 0 / **2** / 0 (saliente+entrante) | = local | ✅ |
+| 🟥 PRUEBA-TR-REVISION-VENCIDA | **C6 — ⚠ POR REVISAR** | 1000000 / 1 / 1:enviada / 0 / 1 / 0 (enviada hace 16 días) | = local | ✅ dato; *observabilidad de afirmativa ficta pendiente* |
+| PRUEBA-TR-CURVA-HISTORICA | C7 curva histórico | 1200000 / 1 / 0:- / **2** / 1 / **1** | = local | ✅ |
+
+> Validado en LOCAL (2 pasadas exit=0, salida idéntica, sin duplicados). Render = idéntico por construcción
+> (mismo script determinista), salvo las fechas relativas que dependen del día de ejecución. **No ejecuté contra Render.**
