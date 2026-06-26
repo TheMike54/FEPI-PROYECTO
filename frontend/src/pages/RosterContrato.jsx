@@ -165,7 +165,7 @@ export default function RosterContrato() {
                           <tbody>
                             {hist.map((h) => (
                               <tr key={h.id} className={`border-t border-slate-50 ${h.vigencia_hasta ? 'text-slate-500' : 'text-slate-800 font-medium'}`}>
-                                <td className="py-1">{h.usuario_nombre || `#${h.usuario_id}`}</td>
+                                <td className="py-1" data-testid={`roster-persona-${h.id}`}>{h.usuario_nombre || `#${h.usuario_id}`}{h.usuario_empresa ? <span className="text-slate-400"> — {h.usuario_empresa}</span> : ''}</td>
                                 <td>{fmtFecha(h.vigencia_desde)}</td>
                                 <td>{h.vigencia_hasta ? fmtFecha(h.vigencia_hasta) : <span className="text-exito font-semibold">vigente</span>}</td>
                                 <td data-testid={`roster-evento-${h.id}`}>{eventoDe(h)}</td>
