@@ -618,3 +618,52 @@
 | Selector de contrato — componente BannerContratoActivo (Bloque 1). AmbienteExpediente.jsx:99 | select (contrato activo global) | sí | FRONT: al seleccionar carga api.detalleContrato + api.historialEstimaciones (informativo). BACK: detalleContrato acotado por participación; 403 'No tienes acceso a este contrato' vía toast (:58). historialEstimaciones es informativo: si falla se omite (:65). |
 | Abrir el expediente (HU-04) — testid='link-expediente'. AmbienteExpediente.jsx:118 | link (navega a /contratos/expediente?contrato=ID) | no | FRONT-only. Deshabilitado (pointer-events-none opacity-50) hasta que haya detalle cargado (:118). |
 | Exportar reportes (HU-19) — testid='link-reportes'. AmbienteExpediente.jsx:129 | link (navega a /reportes?contrato=ID) | no | FRONT-only. Deshabilitado hasta que haya detalle (:129). |
+
+---
+
+## Delta — sesiones autónomas #1 y #2 (26-jun-2026)
+
+> Cambios al sistema posteriores al catálogo base (24-jun). Aquí solo lo NUEVO/CAMBIADO; el resto del catálogo sigue vigente.
+
+### Alta de contrato (AltaContrato.jsx — Datos generales / Equipo)
+| Campo | Tipo | Oblig. | Validaciones |
+|---|---|---|---|
+| Fecha de inicio | date | sí | FRONT+BACK (T1a, 26-jun): además de coherencia (ISO, año 2000–2100) **NO puede ser anterior a HOY** (front `fiISO < hoyISOAlta()`; back `crearContrato` con margen UTC-1día). Los seeds insertan por SQL directo (no pasan por crearContrato). Nivel 2 (apoyo art. 31 fr. V LOPSRM). |
+| Contratista · empresa (contraparte) | select empresa | sí | NUEVO (P1-3, 26-jun): selector de EMPRESA ubicado **justo debajo de "Dependencia (cuenta contratante)"**. Filtra el selector de persona (superintendente) a esa empresa (testid `select-empresa-contratista`). Persiste `contratista_empresa_id`. |
+| Contratista · superintendente (persona) | select persona | sí | Filtrado por la empresa contraparte. Muestra **solo el nombre** de la persona (ya NO `nombre · correo`). testid `select-superintendente`. |
+| Supervisión · empresa / persona | select | no | Supervisión PUEDE ser de otra empresa (tercero independiente; roster.controller exime `rol='supervision'` de misma-empresa). Persona muestra solo nombre. |
+| Dependencia (cuenta contratante) | select | sí | Muestra solo nombre (sin correo). NO se ata a una empresa privada (es la entidad pública contratante; confirmado en audio). |
+| Fianza de anticipo · vigencia | date | sí (si anticipo>0) | Debe cubrir el inicio del contrato (no anterior a la fecha de inicio). art. 48 fr. I LOPSRM. |
+
+### Bitácora
+| Campo | Cambio |
+|---|---|
+| Nota de apertura (resumenApertura) | Incluye **No. de bitácora + fecha/hora + identificación del presentante** (emisor del JWT). art. 123 fr. III RLOPSRM (P1-7). |
+| Firmantes (AperturaBitacora) / sustitución (RosterContrato) | Muestran **solo el nombre** de la persona (sin correo). |
+| Firma de nota (firmarNota) | Regla temporal (P1-9c): el firmante solo firma notas dentro de su vigencia en `contrato_roster` (saliente no tras baja; entrante no antes de alta). art. 125 RLOPSRM [validar]. |
+
+### Avance (TrabajosTerminados.jsx)
+| Campo | Cambio |
+|---|---|
+| Foto de evidencia | **OPCIONAL** (D1, 26-jun). Antes obligatoria (cliente+servidor). art. 132 fr. IV RLOPSRM es discrecional. |
+
+### Estimación — documento (DocumentoCaratula.jsx)
+| Bloque | Cambio |
+|---|---|
+| Carátula | 4 bloques: 1 Importes sin IVA · 2 Del anticipo · 3 **Del neto a recibir CON IVA (16%)** · firmas (presenta/revisó/autorizó/Vo.Bo.). |
+| Bloque 4 Soportes | Notas de bitácora **agrupadas por generador** + selector de asignación nota↔generador (oculto en impresión). Endpoint `PATCH /api/estimacion-notas/:est/:nota`. Reporte fotográfico por generador. |
+
+### Historial de estimaciones (HU-14)
+| Acción | Cambio |
+|---|---|
+| Exportar historial | Ahora exporta con **plantilla con formato** (`descargarExcelReporte`: banda guinda, meta, moneda, TOTALES) — igual que los reportes HU-19 (T1b). |
+
+### Sesión / acceso
+| Campo | Cambio |
+|---|---|
+| Login | `token_version`: un login nuevo invalida la sesión anterior (last-login-wins). auth.controller emite `tv`; auth.middleware lo valida (401 si no coincide). |
+| Campana "Por firmar" | Acotada al contrato activo (`?contrato=`); PorFirmar filtra por ese contrato. |
+
+### Esquema (aditivo idempotente)
+- `estimacion_notas.contrato_concepto_id` (nullable, FK) — vínculo nota↔generador (P1-2).
+- (ya existían: `contratos.contratista_empresa_id`/`supervision_empresa_id`, `usuarios.token_version`).
