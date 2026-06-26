@@ -637,6 +637,11 @@ ALTER TABLE estimacion_fotos ADD COLUMN IF NOT EXISTS contrato_concepto_id INTEG
 -- 3) Observación de revisión ANCLADA a un generador/elemento (no solo a la sección).
 ALTER TABLE estimacion_observaciones ADD COLUMN IF NOT EXISTS estimacion_generador_id INTEGER REFERENCES estimacion_generadores(id) ON DELETE SET NULL;
 
+-- 3b) P1-2 (26-jun): NOTA de bitácora de entrega ANCLADA a un generador/concepto. NULL = nota general de
+--     la estimación (comportamiento legado, retrocompat). Permite mostrar la nota de entrega por CADA
+--     generador (el profe: "dame la nota donde entregaron eso"). Aditivo, idempotente, nullable.
+ALTER TABLE estimacion_notas ADD COLUMN IF NOT EXISTS contrato_concepto_id INTEGER REFERENCES contrato_conceptos(id) ON DELETE SET NULL;
+
 -- 4) Convenios: distinguir conceptos ORIGINALES (congelados) de ADICIONALES (etiquetados aparte).
 ALTER TABLE contrato_conceptos ADD COLUMN IF NOT EXISTS es_adicional BOOLEAN NOT NULL DEFAULT false;
 -- ── fin del plegado 21-jun (estimacion_fotos) ────────────────────────────────────────────────────────

@@ -169,7 +169,15 @@ async function abrirBitacora(req, res) {
       const ubicacionTxt = contrato.ubicacion ? `, ubicada en ${contrato.ubicacion}` : '';
       const anticipoTxt = (contrato.anticipo_pct != null && Number(contrato.anticipo_pct) > 0)
         ? `con un anticipo del ${Number(contrato.anticipo_pct)}%` : 'sin anticipo';
+      // P1-7 (26-jun, profe "es la ley"): la nota de apertura debe llevar el FORMATO exacto — No. de
+      // bitácora, fecha y hora, e IDENTIFICACIÓN DEL PRESENTANTE (emisor que la asienta) — además de
+      // dependencia/contratista/contrato/objeto. La identificación del presentante la pedía el art. 123
+      // fr. III RLOPSRM (datos del que asienta la nota) y se había quitado; se re-añade.
+      const fechaHoraTxt = new Date().toLocaleString('es-MX', { timeZone: 'America/Mexico_City', dateStyle: 'long', timeStyle: 'short' });
+      const presentante = (req.user && req.user.nombre) ? req.user.nombre : 'el residente de obra';
+      const presentanteRol = (req.user && req.user.rol) ? req.user.rol : 'residente';
       const resumenApertura =
+        `BITÁCORA No. ${bitacora.id} — NOTA No. 1 (APERTURA). Fecha y hora de registro: ${fechaHoraTxt}. ` +
         `Se levanta la presente acta de apertura de la bitácora del contrato ${contrato.folio}, ` +
         `cuyo objeto es: ${contrato.objeto}${ubicacionTxt}. ` +
         `El contrato se celebra entre ${contrato.dependencia} (dependencia contratante) y ` +
@@ -177,6 +185,8 @@ async function abrirBitacora(req, res) {
         `${anticipoTxt}, con un plazo de ejecución de ${contrato.plazo_dias} días naturales, ` +
         `del ${isoDate(contrato.fecha_inicio)} al ${isoDate(contrato.fecha_termino)}; ` +
         `la entrega del sitio se realiza el ${isoDate(fechaEntregaSitio)}. ` +
+        `Presenta y asienta esta nota de apertura: ${presentante}, en su carácter de ${presentanteRol} ` +
+        `(identificación del presentante, art. 123 fr. III RLOPSRM). ` +
         `Se asientan los datos mínimos del art. 123 fr. III RLOPSRM (domicilios y teléfonos de las partes, ` +
         `descripción de los trabajos y características del sitio), que constan en el acta. Esta es la primera ` +
         `nota de la bitácora (art. 123 fr. III RLOPSRM) y vincula a las partes (art. 46 LOPSRM).`;
@@ -921,6 +931,28 @@ async function firmarNota(req, res) {
         [notaId]
       );
       if (plz.rows[0] && plz.rows[0].vencido) { await client.query('ROLLBACK'); return res.status(409).json({ error: 'El plazo de firma de la nota venció; ya se considera aceptada tácitamente (art. 123 fr. III RLOPSRM).' }); }
+
+      // P1-9c (26-jun): REGLA TEMPORAL DE FIRMAS — el firmante solo puede firmar notas cuya fecha caiga
+      // dentro de su VIGENCIA en el roster: el SALIENTE no firma después de su baja, el ENTRANTE no firma
+      // antes de su alta. Si la persona NO tiene historial en el roster (cuenta legada sin filas) no se
+      // bloquea (fail-open, como el acotamiento de lib/acceso.js). Decisión Nivel 2 / alcance interpretativo
+      // [validar]: art. 125 RLOPSRM (la sustitución cambia a la persona vigente; el saliente deja de poder
+      // firmar a partir de su baja) + art. 53/123 (la nota la asienta/firma quien ejerce el cargo en esa fecha).
+      const vig = await client.query(
+        `SELECT COUNT(*)::int AS total,
+                COUNT(*) FILTER (
+                  WHERE cr.vigencia_desde <= n.fecha::date
+                    AND (cr.vigencia_hasta IS NULL OR cr.vigencia_hasta >= n.fecha::date)
+                )::int AS cubre
+           FROM contrato_roster cr
+           JOIN bitacora_notas n ON n.id = $3
+          WHERE cr.contrato_id = $1 AND cr.usuario_id = $2`,
+        [apertura.contrato_id, req.user.id, notaId]
+      );
+      if (vig.rows[0] && vig.rows[0].total > 0 && vig.rows[0].cubre === 0) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'No puedes firmar esta nota: su fecha está fuera de tu periodo de vigencia en el contrato (el saliente no firma después de su baja; el entrante no firma antes de su alta — art. 125 RLOPSRM).' });
+      }
 
       const ins = await client.query(
         `INSERT INTO bitacora_nota_firmas (nota_id, usuario_id, rol_en_firma)

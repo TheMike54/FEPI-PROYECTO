@@ -267,7 +267,7 @@ export default function TrabajosTerminados() {
   // O-PROFE: SOLO el art. 118 (acumulado sobre lo contratado) BLOQUEA el registro. noProgramado y
   // excedePeriodo son AVISOS (no bloquean): adelantar avance a precios pactados no requiere convenio.
   const puedeGuardar = !soloLectura && !guardando && !!conceptoSel && !!periodoSel && cantNueva > 0
-    && !validacion.excede118 && fotos.length > 0; // H2/A1: ≥1 foto de evidencia obligatoria para registrar
+    && !validacion.excede118; // D1 (26-jun): la foto de evidencia es OPCIONAL (art. 132 fr. IV RLOPSRM es discrecional)
 
   // Toggle "Ejecuté todo lo programado del periodo" → autollena la cantidad con lo disponible.
   const autollenarTodo = () => {
@@ -540,7 +540,7 @@ export default function TrabajosTerminados() {
                     data-testid="cap-foto-evidencia"
                   />
                   {fotos.length === 0
-                    ? <p className="text-xs text-amber-700 mt-1" data-testid="foto-evidencia-falta">No se puede registrar el avance sin al menos una foto de evidencia.</p>
+                    ? <p className="text-xs text-tinta-ter mt-1" data-testid="foto-evidencia-falta">Opcional: puedes adjuntar fotos de evidencia (art. 132 fr. IV RLOPSRM, discrecional).</p>
                     : (
                       <ul className="mt-2 space-y-2" data-testid="foto-evidencia-ok">
                         {fotos.map((f, i) => (

@@ -195,12 +195,17 @@ async function sustituirPersona(req, res) {
       // el art. 125 fr. I g RLOPSRM solo obliga a REGISTRAR la sustitución en bitácora — "no cambiar la
       // empresa" no es literal de ley. Retrocompat: si la persona saliente no tiene empresa registrada
       // (cuenta legada, empresa_id NULL), no se bloquea (fail-open, como el acotamiento de lib/acceso.js).
-      if (anteriorUsuarioId != null) {
+      //
+      // P3-1 (26-jun, decisión del profe): la SUPERVISIÓN externa es un tercero independiente; el profe
+      // resolvió que SÍ puede ligarse a OTRA empresa (a diferencia de contratista/superintendente, que son
+      // la contraparte del contrato). Por eso la regla de misma-empresa se exime para rol === 'supervision'.
+      // Decisión Nivel 2 (la ley no lo dice literal): la supervisión se contrata aparte (criterio del profe).
+      if (anteriorUsuarioId != null && rol !== 'supervision') {
         const ant = await client.query('SELECT empresa_id FROM usuarios WHERE id = $1', [anteriorUsuarioId]);
         const empAnterior = ant.rows[0] ? ant.rows[0].empresa_id : null;
         if (empAnterior != null && nuevo.empresa_id !== empAnterior) {
           await client.query('ROLLBACK');
-          return res.status(409).json({ error: 'El sustituto debe pertenecer a la MISMA empresa que la persona saliente: la sustitución cambia a la persona, no la empresa del contrato (art. 125 RLOPSRM; el contrato se liga a la empresa).' });
+          return res.status(409).json({ error: 'El sustituto debe pertenecer a la MISMA empresa que la persona saliente: la sustitución cambia a la persona, no la empresa del contrato (art. 125 RLOPSRM; el contrato se liga a la empresa). [La supervisión externa sí puede ser de otra empresa.]' });
         }
       }
 

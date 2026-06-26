@@ -424,7 +424,9 @@ export default function AppShell({ children }) {
                 )}
                 <button type="button" onClick={() => { setDrop(null); setCentro(true); }} className="block w-full text-left px-4 py-2.5 border-t border-borde text-sm font-semibold text-guinda hover:bg-guinda-soft" data-testid="drop-ver-todas">Ver todas las notificaciones →</button>
                 {puedeFirmar && (
-                  <Link to="/bitacora/por-firmar" onClick={() => setDrop(null)} className="block px-4 py-2.5 border-t border-borde text-sm font-semibold text-guinda hover:bg-guinda-soft" data-testid="drop-firmar-ir">Ir a «Por firmar» →</Link>
+                  // P1-8 (26-jun): la cola "Por firmar" se ACOTA al contrato activo (el profe: "quedamos que
+                  // ya solo trabajas con ese contrato"). Sin contrato activo cae a la vista global.
+                  <Link to={scopeId ? `/bitacora/por-firmar?contrato=${scopeId}` : '/bitacora/por-firmar'} onClick={() => setDrop(null)} className="block px-4 py-2.5 border-t border-borde text-sm font-semibold text-guinda hover:bg-guinda-soft" data-testid="drop-firmar-ir">Ir a «Por firmar» →</Link>
                 )}
                 {!sinAccesoAtraso && (
                   <Link to="/seguimiento/alertas" onClick={() => setDrop(null)} className="block px-4 py-2.5 border-t border-borde text-sm font-semibold text-guinda hover:bg-guinda-soft" data-testid="drop-campana-ir">Ver alertas de atraso →</Link>

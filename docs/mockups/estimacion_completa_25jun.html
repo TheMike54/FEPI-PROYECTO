@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<!--
+  ============================================================================
+  MOCKUP — DOCUMENTO DE ESTIMACIÓN COMPLETO (SIGECOP) · 25-jun-2026
+  Archivo ESTÁTICO para aprobación de Maiki. NO toca React ni componentes reales.
+
+  REFERENCIA LITERAL  : fotos en docs/Referencias-estimaciones/ (formato GACM real).
+  SPEC DE CAMPOS      : docs/PENDIENTES_MAESTRO_25jun.md → Anexo A.
+  AUDIOS DEL PROFE    : docs/audios/Combinado_2026-06-25_2145.md.
+  ============================================================================
+
+  DIFERENCIAS FOTOS vs ANEXO A  (regla del encargo: cuando difieren, MANDA LA FOTO)
+
+  1) ESTRUCTURA DE LA CARÁTULA. La foto NO tiene un bloque plano de 8 importes:
+     tiene 3 SECCIONES y el profe las nombró textualmente en el audio
+     ("eran tres secciones: importe sin incluir IVA, anticipo y neto recibir"):
+        (1) IMPORTES SIN INCLUIR I.V.A.   (5 renglones)
+        (2) DEL ANTICIPO                  (5 renglones)
+        (3) DEL NETO A RECIBIR            (recap fiscal)
+     Los 8 importes del Anexo A son un subconjunto APLANADO de esas secciones:
+        Anexo A 1-5  → Sección 1   |  Anexo A 6-7 → Sección 2   |  Anexo A 8 → Sección 3.
+     Mandé la foto (las 3 secciones), que ya contiene todo lo del Anexo A.
+
+  2) IVA. El Anexo A y la REGLA dicen "sin IVA en toda la carátula" (RLOPSRM 2-XIX).
+     La FOTO sí calcula IVA, pero SOLO en la Sección 3 (Neto a recibir): IVA estimación
+     al 16% e IVA de la amortización. Las Secciones 1 y 2 (importes de OBRA) van sin
+     IVA, que es justo lo que cubre el art. 2-XIX ("monto total ejercido sin IVA").
+     La Sección 3 es el flujo de caja real (lo que de verdad se cobra), por eso lleva
+     IVA en el formato oficial.
+     >>> DECISIÓN PARA MAIKI: ¿conservamos la Sección 3 con IVA (como el GACM real) o
+         forzamos todo sin IVA por art. 2-XIX? Está marcada en el documento (banda ámbar).
+
+  3) ARTEFACTOS DE LA FOTO FUERA DE ALCANCE (existen en el formato GACM, pero el
+     encargo pide 4 bloques, no los incluí como bloques propios; solo se mencionan):
+        - "RESUMEN POR PARTIDA"  (foto 3.24.12) = resumen agrupado por partida + recap.
+        - "HOJA DE RUTA DE ESTIMACIONES PARA PAGO" (foto 3.26.33) = hoja de firmas de
+          trámite (contratista→supervisión→residencia→mesa de control).
+
+  4) DATOS. Demo coherente del contrato SOP-2026-003 (obra pública, Guerrero).
+     Cuadre EXACTO al centavo. Amortización proporcional (RLOPSRM 143):
+     ratio anticipo = 2,550,000 / 8,500,000 = 30% → amortiza 30% de cada estimación.
+     Citas legales marcadas; [validar] = lo confirma el profe, no Code.
+  ============================================================================
+-->
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Estimación completa — Mockup SIGECOP (SOP-2026-003)</title>
+<style>
+  :root{
+    --tinta:#111827; --linea:#1f2937; --banda:#1f2937; --banda-txt:#ffffff;
+    --gris:#e5e7eb; --gris2:#f3f4f6; --azul:#0d2f5a; --ambar:#92400e; --ambar-bg:#fef3c7;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;background:#6b7280;color:var(--tinta);
+    font-family:Arial,Helvetica,"Segoe UI",sans-serif;font-size:12px;line-height:1.35;}
+  .num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap;}
+  .center{text-align:center;} .b{font-weight:700;} .up{text-transform:uppercase;}
+  .small{font-size:10px;} .xs{font-size:9px;}
+
+  /* ---- Banner demo (no imprime) ---- */
+  .demo-banner{background:var(--azul);color:#fff;padding:14px 22px;font-size:13px;}
+  .demo-banner h1{margin:0 0 4px;font-size:16px;}
+  .demo-banner code{background:rgba(255,255,255,.18);padding:1px 5px;border-radius:3px;}
+  .iva-flag{background:var(--ambar-bg);color:var(--ambar);border:1px solid #d97706;
+    border-radius:6px;padding:8px 12px;margin:10px 0;font-size:11px;}
+  .iva-flag b{text-transform:uppercase;}
+
+  /* ---- Página tamaño carta ---- */
+  .doc-page{background:#fff;width:8.5in;min-height:11in;margin:18px auto;padding:0.5in 0.55in;
+    box-shadow:0 4px 18px rgba(0,0,0,.35);position:relative;}
+  .sello-doc{position:absolute;top:0.5in;right:0.55in;font-size:9px;color:#9ca3af;text-align:right;}
+
+  /* ---- Encabezado institucional ---- */
+  .head{border:2px solid var(--linea);}
+  .head .marca{display:flex;align-items:stretch;border-bottom:1px solid var(--linea);}
+  .head .logo{width:108px;border-right:1px solid var(--linea);display:flex;align-items:center;
+    justify-content:center;font-weight:800;font-size:18px;color:var(--azul);letter-spacing:.5px;text-align:center;padding:6px;}
+  .head .inst{flex:1;text-align:center;padding:6px 8px;}
+  .head .inst .l1{font-weight:800;font-size:13px;}
+  .head .inst .l2{font-size:10px;} .head .inst .l3{font-size:10px;}
+  .head .inst .titulo{font-weight:800;font-size:13px;margin-top:3px;letter-spacing:.5px;}
+  .head .hoja{width:120px;border-left:1px solid var(--linea);font-size:9px;}
+  .head .hoja div{border-bottom:1px solid var(--linea);padding:3px 5px;}
+  .head .hoja div:last-child{border-bottom:0;}
+  .head .obra{border-top:1px solid var(--linea);padding:4px 8px;font-size:10px;}
+  .head .obra .lab{color:#6b7280;font-size:9px;text-transform:uppercase;}
+
+  /* ---- Rejilla de datos (encabezado de campos) ---- */
+  table.grid{width:100%;border-collapse:collapse;}
+  table.grid td,table.grid th{border:1px solid var(--linea);padding:3px 6px;vertical-align:top;}
+  .lab{color:#374151;font-size:9px;text-transform:uppercase;letter-spacing:.3px;display:block;}
+  .val{font-size:11px;font-weight:600;}
+
+  /* ---- Banda de sección ---- */
+  .secband{background:var(--banda);color:var(--banda-txt);font-weight:700;
+    text-transform:uppercase;letter-spacing:.5px;padding:5px 8px;font-size:11px;margin-top:14px;}
+  .secband.alt{background:#374151;}
+
+  /* ---- Tablas de importes ---- */
+  table.imp{width:100%;border-collapse:collapse;margin-top:0;}
+  table.imp th,table.imp td{border:1px solid var(--linea);padding:4px 8px;}
+  table.imp thead th{background:var(--gris);text-transform:uppercase;font-size:9px;letter-spacing:.3px;}
+  table.imp td.rot{font-size:10px;}
+  table.imp .tot td{background:var(--gris2);font-weight:700;}
+
+  /* ---- Tabla de generadores (resumen) ---- */
+  table.gen{width:100%;border-collapse:collapse;font-size:10px;}
+  table.gen th,table.gen td{border:1px solid var(--linea);padding:3px 5px;vertical-align:top;}
+  table.gen thead th{background:var(--gris);text-transform:uppercase;font-size:8.5px;text-align:center;line-height:1.2;}
+  table.gen td.desc{font-size:9.5px;}
+  table.gen .tot td{background:var(--gris2);font-weight:700;}
+
+  /* ---- Firmas ---- */
+  .firmas{display:flex;gap:14px;margin-top:26px;}
+  .firma{flex:1;text-align:center;font-size:10px;}
+  .firma .rol{font-size:9px;text-transform:uppercase;color:#6b7280;margin-bottom:34px;letter-spacing:.4px;}
+  .firma .linea{border-top:1px solid var(--linea);padding-top:3px;}
+  .firma .nom{font-weight:700;} .firma .cargo{font-size:9px;} .firma .emp{font-size:9px;color:#374151;font-style:italic;}
+  .firma .ley{font-size:8px;color:#9ca3af;margin-top:2px;}
+
+  /* ---- Bloque generador por concepto ---- */
+  .concepto-box{border:1px solid var(--linea);margin-top:8px;}
+  .concepto-box .cab{display:flex;border-bottom:1px solid var(--linea);}
+  .concepto-box .cab .c{padding:4px 7px;border-right:1px solid var(--linea);}
+  .concepto-box .cab .c:last-child{border-right:0;flex:1;}
+  .concepto-box .texto{padding:5px 7px;font-size:10px;border-bottom:1px solid var(--linea);text-align:justify;}
+  .mini{width:100%;border-collapse:collapse;font-size:9.5px;}
+  .mini th,.mini td{border:1px solid var(--linea);padding:3px 5px;}
+  .mini thead th{background:var(--gris);text-transform:uppercase;font-size:8.5px;text-align:center;}
+
+  /* ---- Reporte fotográfico (placeholder) ---- */
+  .foto-wrap{display:flex;gap:8px;margin-top:6px;}
+  .foto{flex:1;border:1px solid var(--linea);height:150px;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;
+    background:repeating-linear-gradient(45deg,#f3f4f6,#f3f4f6 8px,#eaecef 8px,#eaecef 16px);
+    color:#6b7280;font-size:9px;text-align:center;padding:6px;}
+  .foto .ic{font-size:26px;opacity:.5;}
+  .foto-cap{font-size:8.5px;color:#374151;text-align:center;border:1px solid var(--linea);border-top:0;padding:2px 4px;}
+
+  /* ---- Soportes ---- */
+  .sop-grupo{border:1px solid var(--linea);margin-top:10px;}
+  .sop-grupo .gh{background:var(--gris2);padding:4px 8px;font-weight:700;font-size:10px;
+    border-bottom:1px solid var(--linea);display:flex;justify-content:space-between;}
+  table.sop{width:100%;border-collapse:collapse;font-size:10px;}
+  table.sop th,table.sop td{border:1px solid var(--linea);padding:3px 6px;vertical-align:top;}
+  table.sop thead th{background:var(--gris);text-transform:uppercase;font-size:8.5px;text-align:left;}
+  .chip{display:inline-block;font-size:8.5px;padding:1px 6px;border-radius:10px;border:1px solid #9ca3af;}
+  .chip.ok{background:#dcfce7;border-color:#16a34a;color:#166534;}
+  .chip.pend{background:#fef9c3;border-color:#ca8a04;color:#854d0e;}
+  .nota-ref{font-size:9px;color:var(--azul);font-weight:600;}
+
+  .leyenda-legal{font-size:9px;color:#4b5563;border-top:1px solid var(--linea);margin-top:14px;padding-top:6px;}
+  .leyenda-legal .art{color:var(--azul);font-weight:600;}
+  .vbadge{display:inline-block;background:#fee2e2;color:#991b1b;border:1px solid #ef4444;
+    border-radius:3px;font-size:8px;padding:0 4px;font-weight:700;}
+
+  /* ---- Impresión carta ---- */
+  @media print{
+    @page{size:Letter;margin:0.5in;}
+    html,body{background:#fff;}
+    .demo-banner{display:none !important;}
+    .doc-page{box-shadow:none;margin:0;width:auto;min-height:auto;padding:0;page-break-after:always;}
+    .doc-page:last-child{page-break-after:auto;}
+    .iva-flag{break-inside:avoid;}
+    .concepto-box,.sop-grupo,.firmas{break-inside:avoid;}
+  }
+</style>
+</head>
+<body>
+
+<!-- ===================== BANNER DEMO (no imprime) ===================== -->
+<div class="demo-banner">
+  <h1>Mockup · Documento de estimación completo &nbsp;—&nbsp; SIGECOP</h1>
+  <div>Reproduce el <b>formato de ley</b> (referencia: fotos GACM en <code>docs/Referencias-estimaciones/</code>).
+  Datos demo del contrato <code>SOP-2026-003</code>. 4 bloques: <b>Carátula · Resumen de generadores · Generador por concepto · Soportes</b>.</div>
+  <div class="iva-flag">
+    <b>Decisión pendiente para Maiki (IVA):</b> la foto calcula IVA solo en la Sección 3 (Neto a recibir);
+    las Secciones 1 y 2 van sin IVA (RLOPSRM art. 2-XIX). ¿Se conserva la Sección 3 con IVA como el GACM real,
+    o se fuerza todo sin IVA? Ver banda ámbar dentro de la carátula.
+  </div>
+  <div class="small">Estático, imprimible en carta (Ctrl/Cmd + P). No toca React ni los componentes reales.</div>
+</div>
+
+
+<!-- ============================================================================
+     BLOQUE 1 · CARÁTULA DE ESTIMACIÓN
+     ============================================================================ -->
+<section class="doc-page" id="caratula">
+  <div class="sello-doc">SIGECOP · Mockup 25-jun-2026<br>Bloque 1 de 4 — Carátula</div>
+
+  <!-- Encabezado institucional -->
+  <div class="head">
+    <div class="marca">
+      <div class="logo">SOP<br>GRO</div>
+      <div class="inst">
+        <div class="l1">SECRETARÍA DE OBRAS PÚBLICAS DEL ESTADO DE GUERRERO</div>
+        <div class="l2">DIRECCIÓN GENERAL DE CONSTRUCCIÓN DE OBRA</div>
+        <div class="l3">RESIDENCIA DE OBRA · SUPERVISIÓN</div>
+        <div class="titulo">CARÁTULA DE ESTIMACIÓN</div>
+      </div>
+      <div class="hoja">
+        <div><span class="lab">Hoja</span> 1 de 1</div>
+        <div><span class="lab">Fecha</span> 02-abr-2026</div>
+        <div><span class="lab">Folio</span> EST-SOP003-03</div>
+      </div>
+    </div>
+    <div class="obra">
+      <span class="lab">Descripción de la obra o servicio</span>
+      Rehabilitación y pavimentación con concreto asfáltico del camino rural Tlapa de Comonfort – Metlatónoc,
+      tramo del km 0+000 al km 12+500, en el municipio de Metlatónoc, Guerrero.
+    </div>
+  </div>
+
+  <!-- Datos de contrato / contratista / estimación -->
+  <table class="grid" style="margin-top:8px;">
+    <tr>
+      <td style="width:50%"><span class="lab">No. de contrato</span><span class="val">SOP-2026-003</span></td>
+      <td style="width:25%"><span class="lab">Fecha del contrato</span><span class="val">15 de enero de 2026</span></td>
+      <td style="width:25%"><span class="lab">No. de estimación</span><span class="val">3 (TRES) — ordinaria</span></td>
+    </tr>
+    <tr>
+      <td><span class="lab">Dependencia</span><span class="val">Secretaría de Obras Públicas del Estado de Guerrero</span></td>
+      <td><span class="lab">Periodo de la estimación</span><span class="val">01 al 31 de marzo de 2026</span></td>
+      <td><span class="lab">% que representa esta estimación</span><span class="val">12.39 % del contrato</span></td>
+    </tr>
+    <tr>
+      <td><span class="lab">Contratista (empresa)</span><span class="val">Constructora Pavimentos del Sur, S.A. de C.V.</span>
+          <span class="xs">RFC: CPS210418QK3</span></td>
+      <td colspan="2"><span class="lab">Representante / Superintendente de construcción</span>
+          <span class="val">Ing. Iván Reséndiz Aguilar</span></td>
+    </tr>
+  </table>
+
+  <!-- ====== SECCIÓN 1 ====== -->
+  <div class="secband">1. Importes sin incluir I.V.A.</div>
+  <table class="imp">
+    <thead><tr><th style="text-align:left;width:64%">Concepto</th><th style="width:24%">Importe (MXN)</th><th style="width:12%">%</th></tr></thead>
+    <tbody>
+      <tr><td class="rot">Importe del contrato</td><td class="num">$ 8,500,000.00</td><td class="num">100.00 %</td></tr>
+      <tr><td class="rot">Importe estimado acumulado anterior</td><td class="num">$ 2,640,000.00</td><td class="num">31.06 %</td></tr>
+      <tr><td class="rot">Importe de la estimación actual (esta estimación)</td><td class="num">$ 1,053,200.00</td><td class="num">12.39 %</td></tr>
+      <tr><td class="rot">Importe estimado acumulado actual (anterior + actual)</td><td class="num">$ 3,693,200.00</td><td class="num">43.45 %</td></tr>
+      <tr class="tot"><td class="rot">Saldo por estimar (contrato − acumulado actual)</td><td class="num">$ 4,806,800.00</td><td class="num">56.55 %</td></tr>
+    </tbody>
+  </table>
+
+  <!-- ====== SECCIÓN 2 ====== -->
+  <div class="secband">2. Del anticipo</div>
+  <table class="imp">
+    <thead><tr><th style="text-align:left;width:64%">Concepto</th><th style="width:24%">Importe (MXN)</th><th style="width:12%">%</th></tr></thead>
+    <tbody>
+      <tr><td class="rot">Importe del anticipo <span class="xs">(30% del contrato)</span></td><td class="num">$ 2,550,000.00</td><td class="num">100.00 %</td></tr>
+      <tr><td class="rot">Importe amortizado acumulado anterior</td><td class="num">$ 792,000.00</td><td class="num">31.06 %</td></tr>
+      <tr><td class="rot">Importe de la amortización de esta estimación</td><td class="num">$ 315,960.00</td><td class="num">12.39 %</td></tr>
+      <tr><td class="rot">Importe amortizado acumulado actual</td><td class="num">$ 1,107,960.00</td><td class="num">43.45 %</td></tr>
+      <tr class="tot"><td class="rot">Saldo por amortizar</td><td class="num">$ 1,442,040.00</td><td class="num">56.55 %</td></tr>
+    </tbody>
+  </table>
+  <div class="small" style="margin-top:3px;color:#4b5563;">
+    Amortización <b>proporcional al porcentaje de anticipo otorgado</b>: ratio = anticipo / contrato =
+    $2,550,000 / $8,500,000 = <b>30.00%</b>; se amortiza el 30% de cada estimación
+    (<span class="nota-ref">RLOPSRM art. 143 fr. I</span>).
+  </div>
+
+  <!-- ====== SECCIÓN 3 ====== -->
+  <div class="iva-flag">
+    <b>Sección 3 — con IVA (decisión para Maiki).</b> Este recap reproduce la foto GACM (Neto a recibir),
+    que sí incluye IVA. Las Secciones 1 y 2 van sin IVA (art. 2-XIX). Si el profe pide la carátula
+    100% sin IVA, esta sección se reduce a: estimación − amortización − 5 al millar = <b>$ 731,974.00</b>.
+  </div>
+  <div class="secband alt">3. Del neto a recibir</div>
+  <table class="imp">
+    <thead><tr><th style="text-align:left;width:76%">Concepto</th><th style="width:24%">Importe (MXN)</th></tr></thead>
+    <tbody>
+      <tr><td class="rot">Importe estimación</td><td class="num">$ 1,053,200.00</td></tr>
+      <tr><td class="rot">I.V.A. estimación (16%)</td><td class="num">$ 168,512.00</td></tr>
+      <tr><td class="rot b">Total de estimación</td><td class="num b">$ 1,221,712.00</td></tr>
+      <tr><td class="rot">(−) Amortización de anticipo (30.00%)</td><td class="num">$ 315,960.00</td></tr>
+      <tr><td class="rot">(−) I.V.A. amortización de anticipo (16%)</td><td class="num">$ 50,553.60</td></tr>
+      <tr><td class="rot b">(−) Total amortización</td><td class="num b">$ 366,513.60</td></tr>
+      <tr><td class="rot">(−) Retenciones</td><td class="num">$ 0.00</td></tr>
+      <tr><td class="rot">(−) Trabajos no ejecutados</td><td class="num">$ 0.00</td></tr>
+      <tr><td class="rot">(−) 5 al millar S.F.P. (0.5%) <span class="vbadge">validar</span></td><td class="num">$ 5,266.00</td></tr>
+      <tr class="tot"><td class="rot up">Total neto a pagar</td><td class="num">$ 849,932.40</td></tr>
+    </tbody>
+  </table>
+  <div class="small center b" style="margin-top:4px;">
+    (Ochocientos cuarenta y nueve mil novecientos treinta y dos pesos 40/100 M.N.)
+  </div>
+
+  <!-- Firmas -->
+  <div class="firmas">
+    <div class="firma">
+      <div class="rol">Presenta (contratista)</div>
+      <div class="linea">
+        <div class="nom">Ing. Iván Reséndiz Aguilar</div>
+        <div class="cargo">Superintendente de construcción</div>
+        <div class="emp">Constructora Pavimentos del Sur, S.A. de C.V.</div>
+      </div>
+    </div>
+    <div class="firma">
+      <div class="rol">Revisó (supervisión)</div>
+      <div class="linea">
+        <div class="nom">Arq. María Elena Castro Núñez</div>
+        <div class="cargo">Líder de supervisión externa</div>
+        <div class="emp">Supervisión Integral GRO, S.C.</div>
+      </div>
+    </div>
+    <div class="firma">
+      <div class="rol">Autorizó (residencia)</div>
+      <div class="linea">
+        <div class="nom">Ing. José Alfonso Hernández Bautista</div>
+        <div class="cargo">Residente de obra</div>
+        <div class="emp">Secretaría de Obras Públicas del Estado de Guerrero</div>
+      </div>
+    </div>
+    <div class="firma">
+      <div class="rol">Vo. Bo.</div>
+      <div class="linea">
+        <div class="nom">Arq. Laura Patricia Vázquez Román</div>
+        <div class="cargo">Subdirección de Construcción de Obra</div>
+        <div class="emp">Secretaría de Obras Públicas del Estado de Guerrero</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="leyenda-legal">
+    <b>Fundamento:</b> Estimación: el contratista <b>presenta</b> y la residencia <b>autoriza</b>
+    (<span class="art">LOPSRM art. 54</span>, plazo de revisión 15 días naturales; acompañada de la documentación
+    que acredite la procedencia del pago).
+    Importes de obra <b>sin IVA</b> (<span class="art">RLOPSRM art. 2-XIX</span>).
+    Amortización proporcional al porcentaje de anticipo otorgado (<span class="art">RLOPSRM art. 143 fr. I</span>).
+    5 al millar S.F.P. (<span class="art">LFD art. 191</span> <span class="vbadge">validar</span>).
+  </div>
+</section>
+
+
+<!-- ============================================================================
+     BLOQUE 2 · RESUMEN DE GENERADORES (Estimación de servicios ejecutados)
+     "Este es el resumen de todo lo que estás estimando." — el profe
+     ============================================================================ -->
+<section class="doc-page" id="resumen">
+  <div class="sello-doc">SIGECOP · Mockup 25-jun-2026<br>Bloque 2 de 4 — Resumen de generadores</div>
+
+  <div class="head">
+    <div class="marca">
+      <div class="logo">SOP<br>GRO</div>
+      <div class="inst">
+        <div class="l1">SECRETARÍA DE OBRAS PÚBLICAS DEL ESTADO DE GUERRERO</div>
+        <div class="l2">DIRECCIÓN GENERAL DE CONSTRUCCIÓN DE OBRA</div>
+        <div class="titulo">ESTIMACIÓN DE TRABAJOS EJECUTADOS — RESUMEN DE GENERADORES</div>
+      </div>
+      <div class="hoja">
+        <div><span class="lab">Hoja</span> 1 de 1</div>
+        <div><span class="lab">Fecha</span> 02-abr-2026</div>
+        <div><span class="lab">Estimación</span> 3 (TRES)</div>
+      </div>
+    </div>
+    <div class="obra">
+      <span class="lab">Descripción de la obra o servicio</span>
+      Rehabilitación y pavimentación con concreto asfáltico del camino rural Tlapa de Comonfort – Metlatónoc,
+      tramo del km 0+000 al km 12+500, en el municipio de Metlatónoc, Guerrero.
+    </div>
+  </div>
+
+  <!-- Datos resumidos -->
+  <table class="grid" style="margin-top:8px;">
+    <tr>
+      <td><span class="lab">Contratista</span><span class="val">Constructora Pavimentos del Sur, S.A. de C.V.</span></td>
+      <td><span class="lab">No. de contrato</span><span class="val">SOP-2026-003</span></td>
+      <td><span class="lab">Periodo de la presente estimación</span><span class="val">01 al 31 de marzo de 2026</span></td>
+    </tr>
+    <tr>
+      <td><span class="lab">Monto del contrato (sin IVA)</span><span class="val">$ 8,500,000.00</span></td>
+      <td><span class="lab">Modificado en su caso (convenios)</span><span class="val">$ 0.00 — sin convenio</span></td>
+      <td><span class="lab">Estimado anterior</span><span class="val">$ 2,640,000.00</span></td>
+    </tr>
+    <tr>
+      <td><span class="lab">Monto de esta estimación</span><span class="val">$ 1,053,200.00</span></td>
+      <td><span class="lab">Total estimado a la fecha</span><span class="val">$ 3,693,200.00</span></td>
+      <td><span class="lab">Saldo del contrato</span><span class="val">$ 4,806,800.00</span></td>
+    </tr>
+    <tr>
+      <td colspan="2"><span class="lab">Fianzas</span><span class="val">Cumplimiento 4521-0023 · Anticipo 4521-0024</span></td>
+      <td><span class="lab">Periodo de ejecución autorizado</span><span class="val">20 ene – 19 jul 2026</span></td>
+    </tr>
+  </table>
+
+  <!-- Cuadro global por concepto -->
+  <div class="secband">Cuadro global por concepto — cantidades de obra</div>
+  <table class="gen">
+    <thead>
+      <tr>
+        <th rowspan="2" style="width:4%">No.</th>
+        <th rowspan="2" style="width:9%">Clave / especificación</th>
+        <th rowspan="2" style="width:27%">Concepto de obra</th>
+        <th rowspan="2" style="width:5%">Unidad</th>
+        <th colspan="5">Cantidades de obra</th>
+        <th rowspan="2" style="width:9%">Precio unitario</th>
+        <th rowspan="2" style="width:10%">Importe de esta estimación</th>
+      </tr>
+      <tr>
+        <th style="width:7%">Según proyecto / catálogo</th>
+        <th style="width:7%">Hasta estimación anterior</th>
+        <th style="width:7%">De esta estimación</th>
+        <th style="width:7%">Total estimado</th>
+        <th style="width:7%">Por ejecutar</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="center">1</td>
+        <td class="b">TER-001</td>
+        <td class="desc">Formación y compactación de terraplén con material de banco, compactado al 95% proctor; incluye acarreos, agua, equipo y mano de obra.</td>
+        <td class="center">m³</td>
+        <td class="num">12,000.00</td><td class="num">4,200.00</td><td class="num">1,800.00</td><td class="num">6,000.00</td><td class="num">6,000.00</td>
+        <td class="num">$ 185.50</td><td class="num">$ 333,900.00</td>
+      </tr>
+      <tr>
+        <td class="center">2</td>
+        <td class="b">BAS-014</td>
+        <td class="desc">Base hidráulica de 20 cm de espesor compactada al 100% proctor con material triturado de banco; incluye tendido, afine y compactación.</td>
+        <td class="center">m²</td>
+        <td class="num">31,250.00</td><td class="num">9,000.00</td><td class="num">4,500.00</td><td class="num">13,500.00</td><td class="num">17,750.00</td>
+        <td class="num">$ 96.40</td><td class="num">$ 433,800.00</td>
+      </tr>
+      <tr>
+        <td class="center">3</td>
+        <td class="b">CAR-022</td>
+        <td class="desc">Carpeta de concreto asfáltico de 5 cm de espesor compactado; incluye riego de impregnación, riego de liga, mezcla asfáltica en caliente y compactación.</td>
+        <td class="center">m²</td>
+        <td class="num">31,250.00</td><td class="num">0.00</td><td class="num">2,000.00</td><td class="num">2,000.00</td><td class="num">29,250.00</td>
+        <td class="num">$ 142.75</td><td class="num">$ 285,500.00</td>
+      </tr>
+      <tr class="tot">
+        <td colspan="10" class="b" style="text-align:right">Total de hoja (importe de esta estimación, sin IVA)</td>
+        <td class="num">$ 1,053,200.00</td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="small" style="margin-top:4px;color:#4b5563;">
+    Esta hoja resume los conceptos <b>con ejecución en el periodo</b> (lo que se está estimando). El contrato puede
+    incluir conceptos adicionales concluidos en estimaciones anteriores; cada concepto se detalla en su
+    <b>generador</b> (Bloque 3) y se respalda en sus <b>soportes</b> (Bloque 4). El total de hoja
+    ($1,053,200.00) coincide al centavo con "importe de la estimación actual" de la carátula.
+  </div>
+
+  <div class="leyenda-legal">
+    Monto derivado como Σ ROUND(cantidad × precio unitario, 2) — <b>cuadre exacto al centavo</b>.
+    Clave de concepto capturada por el usuario; el catálogo de conceptos (descripción, unidad, cantidades,
+    precios e importes) se sustenta en <span class="art">RLOPSRM art. 45 ap. A fr. IX</span>
+    <span class="vbadge">validar</span> (el campo "clave" como tal es decisión de diseño).
+  </div>
+</section>
+
+
+<!-- ============================================================================
+     BLOQUE 3 · GENERADOR POR CONCEPTO (uno por concepto estimado)
+     ============================================================================ -->
+<section class="doc-page" id="generadores">
+  <div class="sello-doc">SIGECOP · Mockup 25-jun-2026<br>Bloque 3 de 4 — Generador por concepto</div>
+
+  <div class="head">
+    <div class="marca">
+      <div class="logo">SOP<br>GRO</div>
+      <div class="inst">
+        <div class="l1">SECRETARÍA DE OBRAS PÚBLICAS DEL ESTADO DE GUERRERO</div>
+        <div class="l2">NÚMEROS GENERADORES DE OBRA</div>
+        <div class="titulo">GENERADOR POR CONCEPTO</div>
+      </div>
+      <div class="hoja">
+        <div><span class="lab">Estimación</span> 3 (TRES)</div>
+        <div><span class="lab">Periodo</span> 01–31 mar 2026</div>
+        <div><span class="lab">Contrato</span> SOP-2026-003</div>
+      </div>
+    </div>
+    <div class="obra">
+      <span class="lab">Obra</span> Camino rural Tlapa de Comonfort – Metlatónoc (km 0+000 al 12+500), Metlatónoc, Gro.
+      &nbsp;·&nbsp; <span class="lab" style="display:inline">Ubicación</span> Municipio de Metlatónoc, Guerrero
+      &nbsp;·&nbsp; <span class="lab" style="display:inline">Frente</span> Frente 1 — tramo km 1+200 al km 2+500
+      &nbsp;·&nbsp; <span class="lab" style="display:inline">Croquis ref.</span> CR-EST3.
+    </div>
+  </div>
+
+  <!-- ===== Generador 1 ===== -->
+  <div class="secband" style="margin-top:10px;">Generador 1 de 3 — Clave TER-001</div>
+  <div class="concepto-box">
+    <div class="cab">
+      <div class="c"><span class="lab">Clave</span><span class="val">TER-001</span></div>
+      <div class="c"><span class="lab">Partida</span><span class="val">Terracerías</span></div>
+      <div class="c"><span class="lab">Unidad</span><span class="val">m³</span></div>
+      <div class="c"><span class="lab">Concepto</span><span class="val">Formación y compactación de terraplén con material de banco</span></div>
+    </div>
+    <div class="texto">
+      Formación y compactación de terraplén con material de banco compactado al 95% de su masa volumétrica seca máxima
+      (prueba Proctor). Incluye: extracción, carga y acarreo de material de banco autorizado, tendido en capas no
+      mayores a 30 cm, incorporación de agua, compactación, afine, equipo, herramienta y mano de obra.
+    </div>
+    <table class="mini">
+      <thead>
+        <tr><th style="width:6%">No.</th><th>Tramo / eje</th><th style="width:14%">Croquis ref.</th>
+            <th style="width:14%">Dimensiones</th><th style="width:14%">Cantidad (m³)</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="center">1</td><td>Cuerpo de terraplén, km 1+200 al km 1+900</td><td class="center">CR-TER-01</td><td class="center">700 × 7.00 × 0.20 m</td><td class="num">980.00</td></tr>
+        <tr><td class="center">2</td><td>Cuerpo de terraplén, km 1+900 al km 2+500</td><td class="center">CR-TER-02</td><td class="center">586 × 7.00 × 0.20 m</td><td class="num">820.00</td></tr>
+        <tr class="tot"><td colspan="4" style="text-align:right" class="b">Ejecutado del periodo (de esta estimación)</td><td class="num">1,800.00</td></tr>
+      </tbody>
+    </table>
+    <table class="mini" style="margin-top:6px;">
+      <thead><tr><th>Según proyecto / catálogo</th><th>Acumulado hoja anterior</th><th>Ejecutado del periodo</th><th>Total ejecutado</th><th>Por ejecutar</th></tr></thead>
+      <tbody><tr>
+        <td class="num">12,000.00 m³</td><td class="num">4,200.00 m³</td><td class="num b">1,800.00 m³</td><td class="num">6,000.00 m³</td><td class="num">6,000.00 m³</td>
+      </tr></tbody>
+    </table>
+    <div style="padding:5px 7px;">
+      <span class="lab">Reporte fotográfico del periodo</span>
+      <div class="foto-wrap">
+        <div><div class="foto"><div class="ic">📷</div>Fotografía 1 — Tendido y compactación, km 1+450</div><div class="foto-cap">Avance terracería · 18-mar-2026</div></div>
+        <div><div class="foto"><div class="ic">📷</div>Fotografía 2 — Verificación de niveles, km 2+100</div><div class="foto-cap">Avance terracería · 26-mar-2026</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Generador 2 ===== -->
+  <div class="secband" style="margin-top:14px;">Generador 2 de 3 — Clave BAS-014</div>
+  <div class="concepto-box">
+    <div class="cab">
+      <div class="c"><span class="lab">Clave</span><span class="val">BAS-014</span></div>
+      <div class="c"><span class="lab">Partida</span><span class="val">Pavimentos</span></div>
+      <div class="c"><span class="lab">Unidad</span><span class="val">m²</span></div>
+      <div class="c"><span class="lab">Concepto</span><span class="val">Base hidráulica de 20 cm compactada al 100% proctor</span></div>
+    </div>
+    <div class="texto">
+      Suministro y colocación de base hidráulica de 20 cm de espesor compactada al 100% Proctor con material triturado
+      de banco que cumpla granulometría y VRS de proyecto. Incluye: acarreos, tendido, incorporación de agua, afine,
+      compactación, equipo, herramienta y mano de obra.
+    </div>
+    <table class="mini">
+      <thead>
+        <tr><th style="width:6%">No.</th><th>Tramo / eje</th><th style="width:14%">Croquis ref.</th>
+            <th style="width:14%">Dimensiones</th><th style="width:14%">Cantidad (m²)</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="center">1</td><td>Calzada, km 1+200 al km 1+550</td><td class="center">CR-BAS-01</td><td class="center">350 × 7.00 m</td><td class="num">2,450.00</td></tr>
+        <tr><td class="center">2</td><td>Calzada, km 1+550 al km 1+843</td><td class="center">CR-BAS-02</td><td class="center">293 × 7.00 m</td><td class="num">2,050.00</td></tr>
+        <tr class="tot"><td colspan="4" style="text-align:right" class="b">Ejecutado del periodo (de esta estimación)</td><td class="num">4,500.00</td></tr>
+      </tbody>
+    </table>
+    <table class="mini" style="margin-top:6px;">
+      <thead><tr><th>Según proyecto / catálogo</th><th>Acumulado hoja anterior</th><th>Ejecutado del periodo</th><th>Total ejecutado</th><th>Por ejecutar</th></tr></thead>
+      <tbody><tr>
+        <td class="num">31,250.00 m²</td><td class="num">9,000.00 m²</td><td class="num b">4,500.00 m²</td><td class="num">13,500.00 m²</td><td class="num">17,750.00 m²</td>
+      </tr></tbody>
+    </table>
+    <div style="padding:5px 7px;">
+      <span class="lab">Reporte fotográfico del periodo</span>
+      <div class="foto-wrap">
+        <div><div class="foto"><div class="ic">📷</div>Fotografía 1 — Tendido de base, km 1+380</div><div class="foto-cap">Avance base hidráulica · 20-mar-2026</div></div>
+        <div><div class="foto"><div class="ic">📷</div>Fotografía 2 — Prueba de compactación in situ</div><div class="foto-cap">Avance base hidráulica · 28-mar-2026</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== Generador 3 ===== -->
+  <div class="secband" style="margin-top:14px;">Generador 3 de 3 — Clave CAR-022</div>
+  <div class="concepto-box">
+    <div class="cab">
+      <div class="c"><span class="lab">Clave</span><span class="val">CAR-022</span></div>
+      <div class="c"><span class="lab">Partida</span><span class="val">Pavimentos</span></div>
+      <div class="c"><span class="lab">Unidad</span><span class="val">m²</span></div>
+      <div class="c"><span class="lab">Concepto</span><span class="val">Carpeta de concreto asfáltico de 5 cm</span></div>
+    </div>
+    <div class="texto">
+      Suministro y colocación de carpeta de concreto asfáltico de 5 cm de espesor compactado. Incluye: riego de
+      impregnación, riego de liga, elaboración y tendido de mezcla asfáltica en caliente a temperatura de proyecto,
+      compactación al grado especificado, equipo, herramienta y mano de obra.
+    </div>
+    <table class="mini">
+      <thead>
+        <tr><th style="width:6%">No.</th><th>Tramo / eje</th><th style="width:14%">Croquis ref.</th>
+            <th style="width:14%">Dimensiones</th><th style="width:14%">Cantidad (m²)</th></tr>
+      </thead>
+      <tbody>
+        <tr><td class="center">1</td><td>Calzada, km 1+200 al km 1+486</td><td class="center">CR-CAR-01</td><td class="center">286 × 7.00 m</td><td class="num">2,000.00</td></tr>
+        <tr class="tot"><td colspan="4" style="text-align:right" class="b">Ejecutado del periodo (de esta estimación)</td><td class="num">2,000.00</td></tr>
+      </tbody>
+    </table>
+    <table class="mini" style="margin-top:6px;">
+      <thead><tr><th>Según proyecto / catálogo</th><th>Acumulado hoja anterior</th><th>Ejecutado del periodo</th><th>Total ejecutado</th><th>Por ejecutar</th></tr></thead>
+      <tbody><tr>
+        <td class="num">31,250.00 m²</td><td class="num">0.00 m²</td><td class="num b">2,000.00 m²</td><td class="num">2,000.00 m²</td><td class="num">29,250.00 m²</td>
+      </tr></tbody>
+    </table>
+    <div style="padding:5px 7px;">
+      <span class="lab">Reporte fotográfico del periodo</span>
+      <div class="foto-wrap">
+        <div><div class="foto"><div class="ic">📷</div>Fotografía 1 — Tendido de carpeta, km 1+320</div><div class="foto-cap">Avance carpeta asfáltica · 30-mar-2026</div></div>
+        <div><div class="foto"><div class="ic">📷</div>Fotografía 2 — Compactación con rodillo</div><div class="foto-cap">Avance carpeta asfáltica · 31-mar-2026</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Firmas del generador -->
+  <div class="firmas">
+    <div class="firma">
+      <div class="rol">Elaboró / presenta</div>
+      <div class="linea"><div class="nom">Ing. Iván Reséndiz Aguilar</div><div class="cargo">Superintendente</div>
+        <div class="emp">Constructora Pavimentos del Sur, S.A. de C.V.</div></div>
+    </div>
+    <div class="firma">
+      <div class="rol">Revisó</div>
+      <div class="linea"><div class="nom">Arq. María Elena Castro Núñez</div><div class="cargo">Supervisión externa</div>
+        <div class="emp">Supervisión Integral GRO, S.C.</div></div>
+    </div>
+    <div class="firma">
+      <div class="rol">Autorizó</div>
+      <div class="linea"><div class="nom">Ing. José Alfonso Hernández Bautista</div><div class="cargo">Residente de obra</div>
+        <div class="emp">SOP Guerrero</div></div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ============================================================================
+     BLOQUE 4 · SOPORTES (vinculados a CADA generador, con su nota de entrega)
+     "Dame la nota donde entregaron eso." — el profe
+     ============================================================================ -->
+<section class="doc-page" id="soportes">
+  <div class="sello-doc">SIGECOP · Mockup 25-jun-2026<br>Bloque 4 de 4 — Soportes</div>
+
+  <div class="head">
+    <div class="marca">
+      <div class="logo">SOP<br>GRO</div>
+      <div class="inst">
+        <div class="l1">SECRETARÍA DE OBRAS PÚBLICAS DEL ESTADO DE GUERRERO</div>
+        <div class="l2">SOPORTES DOCUMENTALES DE LA ESTIMACIÓN</div>
+        <div class="titulo">SOPORTES POR GENERADOR</div>
+      </div>
+      <div class="hoja">
+        <div><span class="lab">Estimación</span> 3 (TRES)</div>
+        <div><span class="lab">Periodo</span> 01–31 mar 2026</div>
+        <div><span class="lab">Contrato</span> SOP-2026-003</div>
+      </div>
+    </div>
+    <div class="obra">
+      <span class="lab">Nota</span> Cada soporte está vinculado a <b>un generador específico</b> (no genérico) e indica la
+      <b>nota de bitácora de entrega</b> donde se registró la recepción de los trabajos.
+    </div>
+  </div>
+
+  <!-- Soportes TER-001 -->
+  <div class="sop-grupo">
+    <div class="gh"><span>Generador TER-001 — Terraplén (1,800.00 m³)</span><span class="nota-ref">Importe: $ 333,900.00</span></div>
+    <table class="sop">
+      <thead><tr><th style="width:22%">Tipo de soporte</th><th style="width:24%">Identificador / archivo</th><th style="width:14%">Fecha</th><th style="width:26%">Nota de entrega (bitácora)</th><th style="width:14%">Estado</th></tr></thead>
+      <tbody>
+        <tr><td>Número generador firmado</td><td>GEN-EST3-TER001.pdf</td><td>31-mar-2026</td><td class="nota-ref">Nota de bitácora No. 0041</td><td><span class="chip ok">Firmado</span></td></tr>
+        <tr><td>Reporte fotográfico</td><td>RF-EST3-TER001.pdf</td><td>31-mar-2026</td><td class="nota-ref">Nota de bitácora No. 0041</td><td><span class="chip ok">Adjunto</span></td></tr>
+        <tr><td>Prueba de laboratorio (compactación)</td><td>CL-0312 · 95% Proctor</td><td>27-mar-2026</td><td class="nota-ref">Nota de bitácora No. 0039</td><td><span class="chip ok">Aprobada</span></td></tr>
+      </tbody>
+    </table>
+    <div class="small" style="padding:4px 8px;color:#4b5563;">
+      <b>Nota 0041</b> (31-mar-2026): entrega-recepción de volúmenes de terracería, tramo km 1+200 al 2+500.
+      Firmada por residente y superintendente.
+    </div>
+  </div>
+
+  <!-- Soportes BAS-014 -->
+  <div class="sop-grupo">
+    <div class="gh"><span>Generador BAS-014 — Base hidráulica (4,500.00 m²)</span><span class="nota-ref">Importe: $ 433,800.00</span></div>
+    <table class="sop">
+      <thead><tr><th style="width:22%">Tipo de soporte</th><th style="width:24%">Identificador / archivo</th><th style="width:14%">Fecha</th><th style="width:26%">Nota de entrega (bitácora)</th><th style="width:14%">Estado</th></tr></thead>
+      <tbody>
+        <tr><td>Número generador firmado</td><td>GEN-EST3-BAS014.pdf</td><td>31-mar-2026</td><td class="nota-ref">Nota de bitácora No. 0042</td><td><span class="chip ok">Firmado</span></td></tr>
+        <tr><td>Reporte fotográfico</td><td>RF-EST3-BAS014.pdf</td><td>31-mar-2026</td><td class="nota-ref">Nota de bitácora No. 0042</td><td><span class="chip ok">Adjunto</span></td></tr>
+        <tr><td>Prueba de laboratorio (granulometría/VRS)</td><td>CL-0318 · cumple proyecto</td><td>29-mar-2026</td><td class="nota-ref">Nota de bitácora No. 0040</td><td><span class="chip ok">Aprobada</span></td></tr>
+      </tbody>
+    </table>
+    <div class="small" style="padding:4px 8px;color:#4b5563;">
+      <b>Nota 0042</b> (31-mar-2026): entrega-recepción de base hidráulica, tramo km 1+200 al 1+843.
+      Firmada por residente y superintendente.
+    </div>
+  </div>
+
+  <!-- Soportes CAR-022 -->
+  <div class="sop-grupo">
+    <div class="gh"><span>Generador CAR-022 — Carpeta asfáltica (2,000.00 m²)</span><span class="nota-ref">Importe: $ 285,500.00</span></div>
+    <table class="sop">
+      <thead><tr><th style="width:22%">Tipo de soporte</th><th style="width:24%">Identificador / archivo</th><th style="width:14%">Fecha</th><th style="width:26%">Nota de entrega (bitácora)</th><th style="width:14%">Estado</th></tr></thead>
+      <tbody>
+        <tr><td>Número generador firmado</td><td>GEN-EST3-CAR022.pdf</td><td>31-mar-2026</td><td class="nota-ref">Nota de bitácora No. 0043</td><td><span class="chip ok">Firmado</span></td></tr>
+        <tr><td>Reporte fotográfico</td><td>RF-EST3-CAR022.pdf</td><td>31-mar-2026</td><td class="nota-ref">Nota de bitácora No. 0043</td><td><span class="chip ok">Adjunto</span></td></tr>
+        <tr><td>Prueba de laboratorio (extracción/temp.)</td><td>CL-0325 · dentro de norma</td><td>31-mar-2026</td><td class="nota-ref">Nota de bitácora No. 0043</td><td><span class="chip pend">En revisión</span></td></tr>
+      </tbody>
+    </table>
+    <div class="small" style="padding:4px 8px;color:#4b5563;">
+      <b>Nota 0043</b> (31-mar-2026): entrega-recepción de carpeta asfáltica, tramo km 1+200 al 1+486.
+      Firmada por residente y superintendente.
+    </div>
+  </div>
+
+  <div class="leyenda-legal">
+    Cada soporte se liga a su generador y a la <b>nota de bitácora de entrega</b>: registro de eventos mediante nota
+    (<span class="art">RLOPSRM art. 125</span>) sobre bitácora de uso obligatorio (<span class="art">RLOPSRM art. 122</span>).
+    La residencia autoriza la estimación verificando que cuente con los números generadores que la respalden
+    (<span class="art">RLOPSRM art. 113 fr. IX</span>). Registros formales <b>append-only</b>: corregir = registro
+    nuevo vinculado, no editar. La estimación no procede a pago sin sus generadores y soportes completos
+    (<span class="art">LOPSRM art. 54</span>).
+  </div>
+</section>
+
+</body>
+</html>

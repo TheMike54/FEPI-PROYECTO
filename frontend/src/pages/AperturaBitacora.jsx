@@ -101,7 +101,7 @@ function BitacoraReadOnly({ bitacora }) {
               <div key={f.usuario_id || f.rol_en_firma} className={`border rounded-md p-3 ${f.firmado ? 'border-sigecop-green-validation bg-sigecop-green-bg/40' : 'border-slate-200 bg-white'}`} data-testid={`firmante-${f.rol_en_firma}`}>
                 <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{ROL_LABEL[f.rol_en_firma] || f.rol_en_firma}</div>
                 <div className="text-sm font-semibold text-slate-800 mt-1">{f.nombre || '—'}</div>
-                {f.email && <div className="text-xs text-slate-600">{f.email}</div>}
+                {/* T2 (profe 25-jun): mostrar la PERSONA, no la cuenta/correo. */}
                 {f.firmado ? (
                   <div className="text-xs text-sigecop-green-validation font-semibold mt-1">✓ Firmado{f.firmado_en ? ' · ' + fechaHora(f.firmado_en) : ''}</div>
                 ) : (

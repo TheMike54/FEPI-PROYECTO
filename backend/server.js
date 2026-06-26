@@ -27,6 +27,7 @@ const observacionesRoutes = require('./src/routes/observaciones.routes');  // OL
 const notasPendientesRoutes = require('./src/routes/notas-pendientes.routes');  // OLEADA 2 (FIX 2.5): notas por firmar para la campana unificada
 const estimacionFotosRoutes = require('./src/routes/estimacion-fotos.routes');  // EVIDENCIA FOTOGRÁFICA (art. 132 fr. IV RLOPSRM) — montaje aditivo, diff para Maiki
 const avanceFotosRoutes = require('./src/routes/avance-fotos.routes');  // FIX 22-jun: evidencia fotográfica del AVANCE (HU-06) — montaje aditivo
+const estimacionNotasRoutes = require('./src/routes/estimacion-notas.routes');  // P1-2 (26-jun): vínculo nota↔generador — montaje aditivo
 const { initDb } = require('./src/db/init');
 
 const app = express();
@@ -81,6 +82,7 @@ app.use('/api/notas-pendientes', notasPendientesRoutes);  // OLEADA 2 (FIX 2.5 �
 // backend/scripts/migracion_estimacion_fotos.sql (4 columnas en estimacion_fotos).
 app.use('/api/estimacion-fotos', estimacionFotosRoutes);
 app.use('/api/avance-fotos', avanceFotosRoutes);  // FIX 22-jun: evidencia fotográfica del avance (HU-06)
+app.use('/api/estimacion-notas', estimacionNotasRoutes);  // P1-2 (26-jun): vínculo nota↔generador de la estimación
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Ruta no encontrada' });

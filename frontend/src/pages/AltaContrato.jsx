@@ -210,6 +210,21 @@ function TabDatosGenerales({ datos, set, err, equipo, montoDerivado }) {
   const eq = equipo || {};
   const montoNum = Number(montoDerivado) || 0;
   const terminoDerivado = derivarTermino(datos.fechaInicio, Number(datos.plazoDias));
+  // P1-3 (26-jun, profe): selector EMPRESA → PERSONA. Se elige primero la empresa (contraparte) y el
+  // selector de persona se FILTRA a esa empresa (nombre real, no cuenta del sistema). Las empresas salen
+  // del catálogo que ya traen los asignables (empresa_id + empresa). Sin empresa = todas (retrocompat).
+  const [empContratista, setEmpContratista] = useState('');
+  const [empSupervision, setEmpSupervision] = useState('');
+  const empresasDe = (lista) => {
+    const m = new Map();
+    (lista || []).forEach((u) => { if (u.empresa_id != null) m.set(String(u.empresa_id), u.empresa || `Empresa #${u.empresa_id}`); });
+    return [...m.entries()].map(([id, nombre]) => ({ id, nombre }));
+  };
+  const filtraPorEmpresa = (lista, empId) => (empId ? (lista || []).filter((u) => String(u.empresa_id) === String(empId)) : (lista || []));
+  const empresasContratista = empresasDe(eq.asignablesContratista);
+  const empresasSupervision = empresasDe(eq.asignablesSupervision);
+  const personasContratista = filtraPorEmpresa(eq.asignablesContratista, empContratista);
+  const personasSupervision = filtraPorEmpresa(eq.asignablesSupervision, empSupervision);
   return (
     <div>
       <h3 className="text-lg font-bold text-sigecop-blue mb-4">Datos generales del contrato</h3>
@@ -242,11 +257,21 @@ function TabDatosGenerales({ datos, set, err, equipo, montoDerivado }) {
         <Field label="Dependencia (cuenta contratante)" required hint="Cuenta registrada con rol dependencia.">
           <select className={inputCls(eq.errDependencia)} value={eq.dependenciaId || ''} onChange={(ev) => eq.setDependenciaId(ev.target.value)} data-testid="dg-dependencia">
             <option value="">— Selecciona —</option>
-            {(eq.asignablesDependencia || []).map((u) => <option key={u.id} value={u.id}>{u.nombre} · {u.email}</option>)}
+            {(eq.asignablesDependencia || []).map((u) => <option key={u.id} value={u.id}>{u.nombre}</option>)}
           </select>
           {(eq.asignablesDependencia || []).length === 0 && (
             <p className="text-xs text-amber-700 mt-1" data-testid="sin-dependencias">No hay cuentas de dependencia aprobadas; debe registrarse y aprobarse al menos una cuenta con rol dependencia.</p>
           )}
+        </Field>
+        {/* T2 (profe 25-jun): la CONTRAPARTE (empresa contratista) va JUNTO a la dependencia
+            ("dependencia y contraparte o contratista"). El selector de empresa filtra a la persona
+            (superintendente) más abajo en "Equipo del contrato". */}
+        <Field label="Contratista · empresa (contraparte)" required hint="Empresa con la que se firma el contrato; abajo eliges la persona de esa empresa.">
+          <select className="sg-input" value={empContratista} data-testid="select-empresa-contratista"
+            onChange={(ev) => { const v = ev.target.value; setEmpContratista(v); const sel = (eq.asignablesContratista || []).find((u) => String(u.id) === String(eq.superintendenteId)); if (v && sel && String(sel.empresa_id) !== v) eq.setSuperintendenteId(''); }}>
+            <option value="">— Todas las empresas —</option>
+            {empresasContratista.map((emp) => <option key={emp.id} value={emp.id}>{emp.nombre}</option>)}
+          </select>
         </Field>
         <Field label="Monto del contrato (derivado del catálogo)" hint="Σ de los importes del catálogo (sin IVA). No se captura; se deriva al centavo.">
           <input className="sg-input bg-slate-100 text-slate-700" value={montoNum ? formatoMXN.format(montoNum) : '—'} readOnly data-testid="monto-derivado" />
@@ -285,15 +310,13 @@ function TabDatosGenerales({ datos, set, err, equipo, montoDerivado }) {
           <Field label="Residente (tú)">
             <input className="sg-input bg-slate-100 text-slate-700" value={eq.usuarioNombre || '—'} readOnly data-testid="equipo-residente" />
           </Field>
-          {/* Corrección profe (04-jun): esta cuenta ES el contratista (su superintendente de obra),
-              seleccionado de cuentas registradas. Firma la bitácora y queda en el contrato_roster. */}
-          <Field label="Contratista · superintendente de obra" required hint="Cuenta de contratista aprobada; firma la bitácora.">
+          {/* T2 (profe 25-jun): la PERSONA (superintendente) se filtra por la empresa contraparte elegida
+              arriba (junto a la dependencia). Se muestra el NOMBRE de la persona, no la cuenta/correo. */}
+          <Field label="Contratista · superintendente (persona)" required hint="Persona de la empresa elegida; firma la bitácora.">
             <select className={inputCls(eq.errSuperintendente)} value={eq.superintendenteId || ''} onChange={(ev) => eq.setSuperintendenteId(ev.target.value)} data-testid="select-superintendente">
-              <option value="">— Selecciona —</option>
-              {(eq.asignablesContratista || []).map((u) => <option key={u.id} value={u.id}>{u.nombre} · {u.email}</option>)}
+              <option value="">— Selecciona persona —</option>
+              {personasContratista.map((u) => <option key={u.id} value={u.id}>{u.nombre}</option>)}
             </select>
-            {/* FASE 1 (profe 09-jun: "falta la empresa"): la empresa de la contraparte queda EXPLÍCITA
-                en el alta, derivada del catálogo de la cuenta elegida (no se recaptura). */}
             {(() => {
               const u = (eq.asignablesContratista || []).find((x) => String(x.id) === String(eq.superintendenteId));
               return u && u.empresa
@@ -301,10 +324,18 @@ function TabDatosGenerales({ datos, set, err, equipo, montoDerivado }) {
                 : null;
             })()}
           </Field>
-          <Field label="Supervisión (opcional)" hint="Cuenta de supervisión aprobada.">
+          {/* P1-3 + P3-1: la supervisión es un tercero independiente; su empresa PUEDE ser distinta. */}
+          <Field label="Supervisión · empresa (opcional)" hint="Tercero independiente; puede ser de otra empresa.">
+            <select className="sg-input" value={empSupervision} data-testid="select-empresa-supervision"
+              onChange={(ev) => { const v = ev.target.value; setEmpSupervision(v); const sel = (eq.asignablesSupervision || []).find((u) => String(u.id) === String(eq.supervisionId)); if (v && sel && String(sel.empresa_id) !== v) eq.setSupervisionId(''); }}>
+              <option value="">— Todas las empresas —</option>
+              {empresasSupervision.map((emp) => <option key={emp.id} value={emp.id}>{emp.nombre}</option>)}
+            </select>
+          </Field>
+          <Field label="Supervisión · persona (opcional)" hint="Cuenta de supervisión aprobada.">
             <select className="sg-input" value={eq.supervisionId || ''} onChange={(ev) => eq.setSupervisionId(ev.target.value)} data-testid="select-supervision">
               <option value="">— Sin supervisión —</option>
-              {(eq.asignablesSupervision || []).map((u) => <option key={u.id} value={u.id}>{u.nombre} · {u.email}</option>)}
+              {personasSupervision.map((u) => <option key={u.id} value={u.id}>{u.nombre}</option>)}
             </select>
             {(() => {
               const u = (eq.asignablesSupervision || []).find((x) => String(x.id) === String(eq.supervisionId));
@@ -1524,6 +1555,20 @@ export default function AltaContrato() {
         return { ok: false, msg: `Faltan campos: ${faltan.join(', ')}`, errores: { ...ERR0, campos } };
       }
       if (!(Number.isInteger(Number(datosGenerales.plazoDias)) && Number(datosGenerales.plazoDias) > 0)) return { ok: false, msg: 'El plazo debe ser un entero mayor a 0', errores: { ...ERR0, campos: { plazoDias: true } } };
+      // P1-4 (26-jun, profe): coherencia de la fecha de inicio — el profe demostró que dejaba meter fechas
+      // inválidas. El término se DERIVA del inicio + plazo (días naturales, art. 31 fr. V LOPSRM), así que
+      // basta validar que el inicio sea una fecha real y dentro de un rango razonable (año 2000–2100).
+      const fiISO = String(datosGenerales.fechaInicio).slice(0, 10);
+      const anioIni = Number(fiISO.slice(0, 4));
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(fiISO) || Number.isNaN(Date.parse(fiISO)) || anioIni < 2000 || anioIni > 2100) {
+        return { ok: false, msg: 'La fecha de inicio no es coherente (revisa el día/mes/año).', errores: { ...ERR0, campos: { fechaInicio: true } } };
+      }
+      // T1a (26-jun, profe): la fecha de inicio NO puede ser anterior a HOY. Mismo patrón que la vigencia de
+      // garantía (línea ~1659 usa hoyISOAlta()). Un contrato se formaliza hacia adelante, no en el pasado.
+      // [validar profe] si admite leve retroactividad de formalización; hoy = no-pasado estricto (criterio).
+      if (fiISO < hoyISOAlta()) {
+        return { ok: false, msg: 'La fecha de inicio no puede ser anterior a hoy.', errores: { ...ERR0, campos: { fechaInicio: true } } };
+      }
       if (!superintendenteId) return { ok: false, msg: 'Asigna el contratista (superintendente de obra) del contrato', errores: { ...ERR0, campos: { superintendente: true } } };
       // Corrección profe (04-jun): la dependencia es una cuenta seleccionada (parte contratante).
       if (!dependenciaId) return { ok: false, msg: 'Selecciona la dependencia (cuenta contratante registrada)', errores: { ...ERR0, campos: { dependencia: true } } };
@@ -1621,6 +1666,14 @@ export default function AltaContrato() {
         // formalizar — se RECHAZA al capturar (vigencia >= hoy). El backend la revalida.
         if (String(g.vigencia).slice(0, 10) < hoyISOAlta()) {
           return { ok: false, msg: `Garantía #${i + 1} (${g.tipo}): la vigencia (${fmtFechaES(g.vigencia)}) ya está vencida; captura una vigencia de hoy o posterior.`, errores: { ...ERR0, garantiaIdx: i } };
+        }
+        // P1-4 (26-jun, profe): la fianza de ANTICIPO debe cubrir el arranque del contrato — su vigencia no
+        // puede ser anterior a la fecha de inicio (el anticipo se entrega al inicio; art. 48 fr. I LOPSRM).
+        {
+          const fiGar = String(datosGenerales.fechaInicio).slice(0, 10);
+          if (g.tipo === TIPO_ANTICIPO && fiGar && String(g.vigencia).slice(0, 10) < fiGar) {
+            return { ok: false, msg: `Garantía #${i + 1} (anticipo): la vigencia (${fmtFechaES(g.vigencia)}) es anterior a la fecha de inicio del contrato (${fmtFechaES(fiGar)}); la fianza de anticipo debe cubrir el inicio.`, errores: { ...ERR0, garantiaIdx: i } };
+          }
         }
         // alta-v2 (1.4): una garantía no puede exceder el monto del contrato (la vista la marca
         // EN VIVO; aquí se bloquea el avance; el backend la revalida).
