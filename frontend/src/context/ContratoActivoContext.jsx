@@ -16,6 +16,13 @@ const LS_USER = 'sigecop.contratoActivoUser';
 // <WithLayout> por ruta; este cache evita re-pedir la lista de contratos en cada salto.
 let _cacheContratos = null;
 
+// FIX (hallazgo Leo, alta no aparece sin F5): invalida el cache de la lista de contratos para que el PRÓXIMO
+// montaje del provider la vuelva a pedir. Lo llama el alta tras CREAR un contrato: el provider se re-monta por
+// ruta (ver arriba) y, con el cache en null, vuelve a pedir /contratos → el contrato recién creado aparece en el
+// banner "Contrato activo" y en el selector global SIN tener que refrescar la página. (Antes solo se invalidaba
+// al cerrar sesión / cambiar de cuenta, por eso el contrato nuevo no figuraba hasta un F5 que recargaba el módulo.)
+export function invalidarCacheContratos() { _cacheContratos = null; }
+
 export function ContratoActivoProvider({ children }) {
   const { token, usuario } = useSesion();
   const uid = usuario?.id != null ? String(usuario.id) : (usuario?.email || null); // BUG 1 — cuenta dueña

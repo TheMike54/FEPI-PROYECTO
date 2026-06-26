@@ -11,6 +11,7 @@ import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { api } from '../services/api.js';
 import MatrizProgramaLectura, { periodoQueContiene } from '../components/programa/MatrizProgramaLectura.jsx';
 import { Link, useNavigate } from 'react-router-dom'; // Pase 4: acceso directo a la lista de alertas del contrato
+import { invalidarCacheContratos } from '../context/ContratoActivoContext.jsx'; // FIX hallazgo Leo: refrescar lista global tras crear
 import { round2 } from '../utils/formato.js';
 // alta-v2 (4.2): el alta arranca VACÍA (sin datos dummy). Ya no se importa conceptosDummy
 // ni polizasGarantiaDummy.
@@ -1589,6 +1590,11 @@ export default function AltaContrato() {
         if (!String(c.concepto).trim() || !String(c.unidad).trim() || c.cantidad === '' || c.pu === '' || !(cant > 0) || !(pu > 0)) {
           return { ok: false, msg: `Concepto #${i + 1}: concepto, unidad y cantidad/P.U. mayores a 0`, errores: { ...ERR0, conceptoIdx: i } };
         }
+        // FIX (hallazgo Leo): la unidad no puede ser un número (validación floja del campo "Otro" de unidad).
+        // Las unidades del catálogo (m³, ml, pza, %…) nunca son puramente numéricas, así que no hay falsos positivos.
+        if (/^[\d\s.,]+$/.test(String(c.unidad).trim())) {
+          return { ok: false, msg: `Concepto #${i + 1}: la unidad no puede ser un número; usa una unidad de medida (m³, ml, pza, lote…).`, errores: { ...ERR0, conceptoIdx: i } };
+        }
         // 4.2: topes de las columnas NUMERIC (evita el 22003 crudo al guardar; di DÓNDE).
         if (cant >= MAX_CANTIDAD) return { ok: false, msg: `Concepto #${i + 1}: la cantidad es demasiado grande (máx. ${MAX_CANTIDAD.toLocaleString('es-MX')}).`, errores: { ...ERR0, conceptoIdx: i } };
         if (pu >= MAX_PU) return { ok: false, msg: `Concepto #${i + 1}: el precio unitario es demasiado grande (máx. ${MAX_PU.toLocaleString('es-MX')}).`, errores: { ...ERR0, conceptoIdx: i } };
@@ -1869,6 +1875,10 @@ export default function AltaContrato() {
       const creado = await api.crearContrato(payload);
       const nuevoId = creado && creado.id ? creado.id : null;
       setDirty(false); // ya guardado, no avisar al salir (los PDFs se suben con nuevoId, abajo)
+      // FIX (hallazgo Leo): el contrato recién creado debe aparecer SIN refrescar. Se invalida el cache de la
+      // lista global de contratos; al navegar a la apertura el provider se re-monta y vuelve a pedir /contratos,
+      // así el contrato sale en el banner "Contrato activo" y en el selector global de inmediato (antes hacía falta F5).
+      invalidarCacheContratos();
       // alta-v2 (1.5/1.6): sube los PDFs que el usuario adjuntó DURANTE la captura. El contrato
       // ya existe → ahora se ligan (BYTEA + FK). Si alguno falla, el contrato igual quedó guardado.
       if (nuevoId && pdfFirmadoFile) {

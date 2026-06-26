@@ -90,3 +90,48 @@ Qué hace **hoy** la pantalla con una estimación presentada hace >15 días:
 > impone los candados que el tester creía faltantes. Lo único accionable son tres **endurecimientos de defensa en
 > profundidad** (no observables por UI) que requieren tocar la zona congelada y, por tanto, el OK de Maiki. **No se
 > modificó nada en esta sesión.**
+
+---
+
+# Anexo — Hallazgos de Leo (alta de contrato / flujo desde cero, 26-jun)
+
+> Verificación contra el código real + BD local. A diferencia del bloque anterior, aquí **sí se arreglaron** los dos
+> hallazgos seguros y aislados (frontend, no congelado); el de UX se deja como propuesta. Build de frontend **verde**.
+
+## Tabla de dictámenes
+
+| # | Hallazgo | Veredicto | Dónde se verificó | Acción |
+|---|---|---|---|---|
+| L1 | **CRÍTICO** — al dar de alta, el contrato NO aparece; se arregla con F5 (lo vio el profe) | ✅ **CIERTO** | `context/ContratoActivoContext.jsx:17,59-69` (cache de módulo `_cacheContratos`) + `AltaContrato.jsx:handleGuardar` (no invalidaba) | **ARREGLADO** (seguro) |
+| L2 | En garantías solo aparece "vicios ocultos", no "cumplimiento" en el selector | ❌ **FALSO** | `AltaContrato.jsx:90` (`TIPOS_GARANTIA`) y `:704` (el `<select>` mapea los 4 sin filtro); filas arrancan vacías (`:725`) | Sin cambio (no es bug) |
+| L3 | El campo "unidad" deja avanzar con un número (validación floja) | ✅ **CIERTO** | `AltaContrato.jsx:1590` (validarPaso exigía no-vacío pero no rechazaba números) + `:410` (campo "Otro" texto libre) | **ARREGLADO** (seguro) |
+| L4 | No queda claro a qué empresa pertenece una persona | ⚠ **DEPENDE / UX** | En el alta SÍ se muestra (`AltaContrato.jsx:322-343`, `empresa-contratista`/`empresa-supervision`); falta en otras pantallas | **PROPUESTA** (no bug) |
+
+## Detalle
+
+### L1 · Alta no aparece sin refrescar — ✅ CIERTO → ARREGLADO (lo más importante)
+**Qué encontré (causa raíz exacta):** el contrato **sí se crea** en la BD; el problema es de **estado en el cliente**.
+- Tras crear, `AltaContrato.jsx:handleGuardar` hace `api.crearContrato(payload)` y redirige a `navigate('/bitacora/apertura?contrato=ID')` (`:1889`). La pantalla de apertura pide su propia lista fresca, así que ahí el contrato sí carga.
+- **Pero** el **selector/banner global** de contrato vive en `context/ContratoActivoContext.jsx`, que tiene un **cache a nivel de módulo `_cacheContratos`** (`:17`): la lista de contratos se pide **una sola vez** y se reutiliza en cada navegación (el provider se re-monta por ruta pero lee el cache, `:59-69`). Ese cache **solo se invalidaba** al cerrar sesión o cambiar de cuenta — **nunca al crear un contrato**.
+- Resultado: el contrato nuevo queda **activo por id** (`?contrato=ID` → `setContratoActivo`), pero **no está en la lista cacheada**, así que `contrato = contratos.find(id===contratoId)` da `null` → el banner "Contrato activo" muestra **"—"** (`BannerContratoActivo.jsx:21`) y el contrato no aparece en el selector global. **Un F5 recarga el módulo JS → `_cacheContratos = null` → se vuelve a pedir la lista → aparece.** Por eso "se arregla refrescando" (síntoma exacto que reportó Leo y que vio el profe).
+
+**Qué hice (fix seguro, frontend, no congelado):**
+1. `context/ContratoActivoContext.jsx`: exporté `invalidarCacheContratos()` que pone `_cacheContratos = null` (mismo lever que ya usa el logout). Cambio **aditivo**, no altera ningún flujo existente.
+2. `AltaContrato.jsx`: tras crear con éxito (después de obtener `nuevoId`) llamo `invalidarCacheContratos()`. Al navegar a la apertura, el provider se re-monta, encuentra el cache en `null` y **re-pide `/contratos`** → el contrato nuevo aparece en el banner y en el selector **sin refrescar**.
+
+Verificado: `npm run build` del frontend **verde**. No toqué zona congelada (`App.jsx`/`permisos.js`/`SesionContext.jsx` intactos), ni backend, ni schema, ni BD.
+
+### L2 · Garantías "solo vicios ocultos" — ❌ FALSO
+`TIPOS_GARANTIA = ['Cumplimiento', 'Anticipo', 'Vicios ocultos', 'Otra']` (`AltaContrato.jsx:90`), y el `<select>` los mapea **todos sin filtro** (`:704`). Las filas de garantía **arrancan vacías** ("Sin pólizas", `:725`), no hay prefijado a "vicios". Por tanto el selector **sí incluye "Cumplimiento"**. Posible origen del reporte: una fila ya puesta en "Vicios ocultos", o una build anterior. No es bug; no se modificó.
+
+### L3 · Unidad acepta números — ✅ CIERTO → ARREGLADO
+La unidad es un `<select>` del catálogo + opción "Otro…" que abre un texto libre (`:403-410`). La validación de paso (`validarPaso`, `:1590`) exigía unidad **no vacía** pero **no** rechazaba números, así que en "Otro" se podía teclear `123` y avanzar. **Fix (frontend, en `validarPaso`):** se rechaza una unidad **puramente numérica** (`/^[\d\s.,]+$/`) con mensaje claro; como las unidades del catálogo (m³, ml, pza, %…) nunca son numéricas, no hay falsos positivos. Ahora **no deja avanzar** con una unidad numérica.
+
+### L4 · Empresa de la persona — ⚠ UX → PROPUESTA (no bug)
+En el **alta**, al elegir la persona **sí se muestra** su empresa: "Empresa (contratista): **<nombre>**" (`AltaContrato.jsx:322-343`, testids `empresa-contratista`/`empresa-supervision`). Donde **no** se ve es en otras pantallas que listan personas por nombre (firmas de bitácora, roster, notas, expediente). **Propuesta de mejora** (no la apliqué porque tocaría varias pantallas y conviene un criterio uniforme): mostrar la empresa junto al nombre de la persona en esos listados (badge "· <empresa>"). Riesgo bajo pero disperso → mejor con tu visto bueno.
+
+## Resumen de la sesión (Leo)
+- **Arreglado (seguro, frontend, build verde):** L1 (cache global invalidado tras crear → el contrato aparece sin F5) y L3 (unidad numérica bloqueada en el alta). Archivos: `context/ContratoActivoContext.jsx`, `pages/AltaContrato.jsx`.
+- **No es bug:** L2 (el selector sí tiene "cumplimiento").
+- **Propuesta (no aplicada):** L4 (mostrar la empresa de la persona en las demás pantallas).
+- **Sin tocar** zona congelada, backend, schema ni BD. Sin push.
