@@ -17,15 +17,25 @@ BEGIN
 END $$;
 
 -- (1) Asegura las empresas (3 demo + 3 nuevas). Idempotente por forma normalizada.
+-- FIX idempotencia (26-jun): no re-crear la empresa demo si YA existe su nombre REAL (renombrado en un run
+-- previo). Evita strays en re-runs (antes re-insertaba 'Dependencia Demo' etc. tras el rename).
 INSERT INTO empresas (nombre)
 SELECT v.nombre FROM (VALUES
-  ('Dependencia Demo'), ('Constructora Demo'), ('Supervisión Externa Demo'),
-  ('Dependencia Sur Demo'), ('Constructora Patito SA de CV'), ('Supervisión Técnica Sur Demo')
-) AS v(nombre)
+  ('Dependencia Demo','Secretaría de Obras Públicas del Estado de Guerrero'),
+  ('Constructora Demo','Constructora del Bajío, S.A. de C.V.'),
+  ('Supervisión Externa Demo','Supervisión Técnica Integral, S.C.'),
+  ('Dependencia Sur Demo','H. Ayuntamiento de Chilpancingo de los Bravo'),
+  ('Constructora Patito SA de CV','Edificaciones del Norte, S.A. de C.V.'),
+  ('Supervisión Técnica Sur Demo','Consultoría y Supervisión de Obra, S.C.')
+) AS v(nombre, real)
 WHERE NOT EXISTS (
   SELECT 1 FROM empresas e
   WHERE lower(btrim(regexp_replace(e.nombre, '\s+', ' ', 'g')))
       = lower(btrim(regexp_replace(v.nombre, '\s+', ' ', 'g')))
+) AND NOT EXISTS (
+  SELECT 1 FROM empresas e
+  WHERE lower(btrim(regexp_replace(e.nombre, '\s+', ' ', 'g')))
+      = lower(btrim(regexp_replace(v.real, '\s+', ' ', 'g')))
 );
 
 -- Tipos y estado de las empresas (las nuevas y el backfill de las demo).
@@ -80,12 +90,18 @@ UPDATE usuarios SET empresa_id = (SELECT id FROM empresas WHERE lower(btrim(rege
 -- (4.1) Tres empresas nuevas (1 dependencia, 1 contratista, 1 supervisión).
 INSERT INTO empresas (nombre)
 SELECT v.nombre FROM (VALUES
-  ('Dependencia Norte Demo'), ('Constructora del Pacífico SA de CV'), ('Supervisión Integral del Norte')
-) AS v(nombre)
+  ('Dependencia Norte Demo','Universidad Autónoma de Guerrero'),
+  ('Constructora del Pacífico SA de CV','Grupo Constructor Pacífico, S.A. de C.V.'),
+  ('Supervisión Integral del Norte','Ingeniería y Control de Calidad del Sur, S.C.')
+) AS v(nombre, real)
 WHERE NOT EXISTS (
   SELECT 1 FROM empresas e
   WHERE lower(btrim(regexp_replace(e.nombre, '\s+', ' ', 'g')))
       = lower(btrim(regexp_replace(v.nombre, '\s+', ' ', 'g')))
+) AND NOT EXISTS (
+  SELECT 1 FROM empresas e
+  WHERE lower(btrim(regexp_replace(e.nombre, '\s+', ' ', 'g')))
+      = lower(btrim(regexp_replace(v.real, '\s+', ' ', 'g')))
 );
 
 -- (4.2) Tipo y estado de las empresas nuevas.
@@ -131,15 +147,35 @@ UPDATE usuarios SET empresa_id = (SELECT id FROM empresas WHERE lower(btrim(rege
 -- el empresa_id de cada cuenta. IDEMPOTENTE: si ya están renombradas, los WHERE por nombre demo no matchean.
 -- 3 dependencias / 3 contratistas / 3 supervisiones. (schema.sql siembra 3 base con nombre demo → aquí se renombran.)
 -- ============================================================================
-UPDATE empresas SET nombre='Secretaría de Obras Públicas del Estado de Guerrero' WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g')))='dependencia demo';
-UPDATE empresas SET nombre='H. Ayuntamiento de Chilpancingo de los Bravo'        WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g')))='dependencia sur demo';
-UPDATE empresas SET nombre='Universidad Autónoma de Guerrero'                     WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g')))='dependencia norte demo';
-UPDATE empresas SET nombre='Constructora del Bajío, S.A. de C.V.'                 WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g')))='constructora demo';
-UPDATE empresas SET nombre='Edificaciones del Norte, S.A. de C.V.'               WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g')))='constructora patito sa de cv';
-UPDATE empresas SET nombre='Grupo Constructor Pacífico, S.A. de C.V.'            WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g')))='constructora del pacífico sa de cv';
-UPDATE empresas SET nombre='Supervisión Técnica Integral, S.C.'                  WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g')))='supervisión externa demo';
-UPDATE empresas SET nombre='Consultoría y Supervisión de Obra, S.C.'             WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g')))='supervisión técnica sur demo';
-UPDATE empresas SET nombre='Ingeniería y Control de Calidad del Sur, S.C.'       WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g')))='supervisión integral del norte';
+-- FIX idempotencia (26-jun): cada rename corre SOLO si el nombre destino aún NO existe. Antes, en un
+-- re-run el bloque INSERT de arriba re-creaba 'Dependencia Demo' (porque ya había sido renombrada) y este
+-- UPDATE chocaba con el índice único uq_empresas_nombre_norm de la 'Secretaría…' ya existente (500/abortaba
+-- la transacción). El guard NOT EXISTS(destino) lo vuelve seguro de re-ejecutar.
+DO $$
+DECLARE
+  pares TEXT[] := ARRAY[
+    'dependencia demo','Secretaría de Obras Públicas del Estado de Guerrero',
+    'dependencia sur demo','H. Ayuntamiento de Chilpancingo de los Bravo',
+    'dependencia norte demo','Universidad Autónoma de Guerrero',
+    'constructora demo','Constructora del Bajío, S.A. de C.V.',
+    'constructora patito sa de cv','Edificaciones del Norte, S.A. de C.V.',
+    'constructora del pacífico sa de cv','Grupo Constructor Pacífico, S.A. de C.V.',
+    'supervisión externa demo','Supervisión Técnica Integral, S.C.',
+    'supervisión técnica sur demo','Consultoría y Supervisión de Obra, S.C.',
+    'supervisión integral del norte','Ingeniería y Control de Calidad del Sur, S.C.'
+  ];
+  i INT;
+  norm_demo TEXT; real_name TEXT;
+BEGIN
+  FOR i IN 1 .. array_length(pares,1)/2 LOOP
+    norm_demo := pares[i*2-1];
+    real_name := pares[i*2];
+    UPDATE empresas SET nombre = real_name
+      WHERE lower(btrim(regexp_replace(nombre,'\s+',' ','g'))) = norm_demo
+        AND NOT EXISTS (SELECT 1 FROM empresas e2
+          WHERE lower(btrim(regexp_replace(e2.nombre,'\s+',' ','g'))) = lower(btrim(regexp_replace(real_name,'\s+',' ','g'))));
+  END LOOP;
+END $$;
 
 -- Verificación rápida (informativa): cuántas cuentas por empresa.
 -- SELECT e.nombre, e.tipo, count(u.id) FROM empresas e LEFT JOIN usuarios u ON u.empresa_id=e.id GROUP BY e.id ORDER BY e.nombre;
