@@ -172,6 +172,13 @@ export default function AperturaBitacora() {
     if (contratos.some((c) => String(c.id) === String(contratoQuery))) seleccionar(String(contratoQuery));
   }, [sinSesion, contratoQuery, contratoId, contratos, seleccionar]);
 
+  // Bug 2 (hallazgo Maiki): la fecha de apertura NO se captura — se fija a la fecha de INICIO del contrato.
+  // El backend ya guarda fecha_apertura = contrato.fecha_inicio (abrirBitacora); aquí mantenemos el campo
+  // sincronizado y de SOLO LECTURA para que no se pueda capturar una fecha anterior a la creación del contrato.
+  useEffect(() => {
+    setFechaEntregaSitio(contratoSel?.fecha_inicio ? soloFecha(contratoSel.fecha_inicio) : '');
+  }, [contratoSel]);
+
   const puedeAperturar = !soloLectura && soyResidenteDelContrato && tieneSuperintendente && !bitacora && !cargando && !!fechaEntregaSitio && minDataCompleta && !aperturando;
 
   const handleAperturar = async () => {
@@ -266,8 +273,9 @@ export default function AperturaBitacora() {
                     <div className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-2">Datos de la apertura</div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-xl">
                       <div>
-                        <label className="sg-label">Entrega del sitio <span className="text-red-600">*</span></label>
-                        <input type="date" className="sg-input" value={fechaEntregaSitio} onChange={(e) => setFechaEntregaSitio(e.target.value)} disabled={soloLectura} required data-testid="input-fecha-apertura" />
+                        <label className="sg-label">Fecha de apertura (= inicio del contrato)</label>
+                        <input type="date" className="sg-input bg-slate-50 cursor-not-allowed" value={fechaEntregaSitio} readOnly data-testid="input-fecha-apertura" />
+                        <p className="text-[11px] text-slate-500 mt-1">Se fija a la fecha de inicio del contrato; no se captura. La bitácora se abre el día en que arranca el contrato (evita fechas anteriores a la creación).</p>
                       </div>
                       <div>
                         <label className="sg-label">Plazo de firma de notas (días naturales)</label>
