@@ -13,6 +13,9 @@ Sistema de Gestión Técnico-Administrativa de Contratos de Obra Pública (LOPSR
    (sus criterios = comportamiento real del sistema).
 3. `docs/contexto/CATALOGO_CAMPOS_SISTEMA.md` — catálogo de TODOS los campos/validaciones por pantalla.
    Consúltalo al tocar campos/pantallas (referencia para NO re-auditar el sistema desde cero).
+4. `docs/contexto/GUIA_PLANES_DE_PRUEBA.md` — **al escribir/actualizar planes de prueba:** convenciones del
+   formato oro (estructura, testids, cuadre al centavo, deltas vigentes, pre-llenado vs desde-cero). Léela +
+   el catálogo y NO re-audites el sistema.
 
 **DESPUÉS de cualquier cambio que altere comportamiento o agregue funcionalidad:**
 1. **Actualiza `ESTADO_ACTUAL.md`** (incluida su cabecera de fecha/commit) para que siga reflejando la
