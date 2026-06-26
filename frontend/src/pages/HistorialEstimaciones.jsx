@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { descargarExcelHoja } from '../services/excelExport.js';
+import { descargarExcelReporte } from '../services/excelExport.js';
 import LinkHU from '../components/LinkHU.jsx';
 import HeaderVista from '../components/vista/HeaderVista.jsx';
 import PestanasCiclo from '../components/PestanasCiclo.jsx';
@@ -123,19 +123,43 @@ function PanelDetalle({ estimacion, onCerrar }) {
   );
 }
 
-// Exporta las filas filtradas a un .xlsx real usando exceljs.
-function exportarHistorialExcel(filas, folioContrato) {
-  const datos = filas.map((f) => ({
-    Estimación: f.estimacion,
-    Versión: f.version,
-    Periodo: f.periodo,
-    Estado: labelEstadoEstimacion(f.estado),
-    Importe: f.importe,
-    'Fecha presentación': f.fechaPresentacion ?? '',
-    'Fecha revisión':     f.fechaRevision     ?? '',
-    'Fecha pago':         f.fechaPago         ?? ''
-  }));
-  descargarExcelHoja(`historial_${folioContrato}.xlsx`, 'Historial', datos);
+// T1b (26-jun): exporta el historial con el MISMO formato de plantilla de los reportes HU-19
+// (descargarExcelReporte: banda guinda, meta del contrato, encabezado, moneda, fila TOTALES) en vez del
+// volcado crudo anterior (descargarExcelHoja). Las estimaciones rechazadas se listan (trazabilidad) pero
+// NO suman en TOTALES (_excluirTotal). Importes sin IVA (art. 2 fr. XIX RLOPSRM).
+function exportarHistorialExcel(filas, contrato) {
+  const folio = contrato?.folio || 'contrato';
+  descargarExcelReporte(`historial_${folio}.xlsx`, {
+    hojaNombre: 'Historial',
+    titulo: 'Historial de estimaciones del contrato',
+    generado: new Date().toLocaleString('es-MX'),
+    contrato: { folio, contratista: contrato?.contratista, periodo: 'Todas' },
+    tablas: [{
+      columnas: [
+        { header: 'Estimación', key: 'estimacion', fmt: 'text', width: 14 },
+        { header: 'Versión', key: 'version', fmt: 'text', width: 10 },
+        { header: 'Periodo', key: 'periodo', fmt: 'text', width: 16 },
+        { header: 'Estado', key: 'estado', fmt: 'text', width: 14 },
+        { header: 'Importe (sin IVA)', key: 'netoNum', fmt: 'money', width: 18 },
+        { header: 'Fecha presentación', key: 'fechaPresentacion', fmt: 'text', width: 18 },
+        { header: 'Fecha revisión', key: 'fechaRevision', fmt: 'text', width: 16 },
+        { header: 'Fecha pago', key: 'fechaPago', fmt: 'text', width: 16 },
+      ],
+      filas: filas.map((f) => ({
+        estimacion: f.estimacion,
+        version: f.version,
+        periodo: f.periodo,
+        estado: labelEstadoEstimacion(f.estado),
+        netoNum: f.netoNum,
+        _excluirTotal: f.estado === 'rechazada',
+        fechaPresentacion: f.fechaPresentacion ?? '—',
+        fechaRevision: f.fechaRevision ?? '—',
+        fechaPago: f.fechaPago ?? '—',
+      })),
+      totales: { label: 'TOTALES', labelKey: 'estimacion', sumKeys: ['netoNum'] },
+    }],
+    notas: ['Incluye estimaciones rechazadas para trazabilidad; no suman en TOTALES.'],
+  });
 }
 
 // Convierte una estimación del backend (carátula + transiciones) al modelo de vista que
@@ -154,6 +178,8 @@ function aVistaHistorial(e) {
     periodo: periodoLabel(e.periodo_inicio),
     estado: e.estado,
     importe: moneda(e.neto),
+    netoNum: Number(e.neto) || 0, // T1b: numérico para fmt money + TOTALES del export con plantilla
+
     fechaPresentacion: e.enviada_en ? fechaMX(e.enviada_en) : '—', // HU-14 (22-jun): la "Fecha de presentación" es la del envío real (enviada_en); '—' si aún no se ha presentado
     fechaRevision: revision ? fechaMX(revision.en) : null,
     fechaPago: pago ? fechaMX(pago.en) : null,
@@ -225,7 +251,7 @@ export default function HistorialEstimaciones() {
     });
   }, [historial, periodo, estado]);
 
-  const handleExportar = () => exportarHistorialExcel(filas, selected ? selected.folio : 'contrato');
+  const handleExportar = () => exportarHistorialExcel(filas, selected);
 
   return (
     <div>

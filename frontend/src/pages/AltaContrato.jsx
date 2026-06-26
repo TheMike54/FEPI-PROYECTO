@@ -257,11 +257,21 @@ function TabDatosGenerales({ datos, set, err, equipo, montoDerivado }) {
         <Field label="Dependencia (cuenta contratante)" required hint="Cuenta registrada con rol dependencia.">
           <select className={inputCls(eq.errDependencia)} value={eq.dependenciaId || ''} onChange={(ev) => eq.setDependenciaId(ev.target.value)} data-testid="dg-dependencia">
             <option value="">— Selecciona —</option>
-            {(eq.asignablesDependencia || []).map((u) => <option key={u.id} value={u.id}>{u.nombre} · {u.email}</option>)}
+            {(eq.asignablesDependencia || []).map((u) => <option key={u.id} value={u.id}>{u.nombre}</option>)}
           </select>
           {(eq.asignablesDependencia || []).length === 0 && (
             <p className="text-xs text-amber-700 mt-1" data-testid="sin-dependencias">No hay cuentas de dependencia aprobadas; debe registrarse y aprobarse al menos una cuenta con rol dependencia.</p>
           )}
+        </Field>
+        {/* T2 (profe 25-jun): la CONTRAPARTE (empresa contratista) va JUNTO a la dependencia
+            ("dependencia y contraparte o contratista"). El selector de empresa filtra a la persona
+            (superintendente) más abajo en "Equipo del contrato". */}
+        <Field label="Contratista · empresa (contraparte)" required hint="Empresa con la que se firma el contrato; abajo eliges la persona de esa empresa.">
+          <select className="sg-input" value={empContratista} data-testid="select-empresa-contratista"
+            onChange={(ev) => { const v = ev.target.value; setEmpContratista(v); const sel = (eq.asignablesContratista || []).find((u) => String(u.id) === String(eq.superintendenteId)); if (v && sel && String(sel.empresa_id) !== v) eq.setSuperintendenteId(''); }}>
+            <option value="">— Todas las empresas —</option>
+            {empresasContratista.map((emp) => <option key={emp.id} value={emp.id}>{emp.nombre}</option>)}
+          </select>
         </Field>
         <Field label="Monto del contrato (derivado del catálogo)" hint="Σ de los importes del catálogo (sin IVA). No se captura; se deriva al centavo.">
           <input className="sg-input bg-slate-100 text-slate-700" value={montoNum ? formatoMXN.format(montoNum) : '—'} readOnly data-testid="monto-derivado" />
@@ -300,20 +310,12 @@ function TabDatosGenerales({ datos, set, err, equipo, montoDerivado }) {
           <Field label="Residente (tú)">
             <input className="sg-input bg-slate-100 text-slate-700" value={eq.usuarioNombre || '—'} readOnly data-testid="equipo-residente" />
           </Field>
-          {/* P1-3 (profe 25-jun): EMPRESA contratista PRIMERO; el selector de persona (superintendente)
-              se FILTRA a esa empresa. La empresa de la contraparte queda explícita y se persiste como
-              contratista_empresa_id (derivado de la persona elegida). */}
-          <Field label="Contratista · empresa (contraparte)" required hint="Empresa con la que se firma el contrato.">
-            <select className="sg-input" value={empContratista} data-testid="select-empresa-contratista"
-              onChange={(ev) => { const v = ev.target.value; setEmpContratista(v); const sel = (eq.asignablesContratista || []).find((u) => String(u.id) === String(eq.superintendenteId)); if (v && sel && String(sel.empresa_id) !== v) eq.setSuperintendenteId(''); }}>
-              <option value="">— Todas las empresas —</option>
-              {empresasContratista.map((emp) => <option key={emp.id} value={emp.id}>{emp.nombre}</option>)}
-            </select>
-          </Field>
+          {/* T2 (profe 25-jun): la PERSONA (superintendente) se filtra por la empresa contraparte elegida
+              arriba (junto a la dependencia). Se muestra el NOMBRE de la persona, no la cuenta/correo. */}
           <Field label="Contratista · superintendente (persona)" required hint="Persona de la empresa elegida; firma la bitácora.">
             <select className={inputCls(eq.errSuperintendente)} value={eq.superintendenteId || ''} onChange={(ev) => eq.setSuperintendenteId(ev.target.value)} data-testid="select-superintendente">
               <option value="">— Selecciona persona —</option>
-              {personasContratista.map((u) => <option key={u.id} value={u.id}>{u.nombre} · {u.email}</option>)}
+              {personasContratista.map((u) => <option key={u.id} value={u.id}>{u.nombre}</option>)}
             </select>
             {(() => {
               const u = (eq.asignablesContratista || []).find((x) => String(x.id) === String(eq.superintendenteId));
@@ -333,7 +335,7 @@ function TabDatosGenerales({ datos, set, err, equipo, montoDerivado }) {
           <Field label="Supervisión · persona (opcional)" hint="Cuenta de supervisión aprobada.">
             <select className="sg-input" value={eq.supervisionId || ''} onChange={(ev) => eq.setSupervisionId(ev.target.value)} data-testid="select-supervision">
               <option value="">— Sin supervisión —</option>
-              {personasSupervision.map((u) => <option key={u.id} value={u.id}>{u.nombre} · {u.email}</option>)}
+              {personasSupervision.map((u) => <option key={u.id} value={u.id}>{u.nombre}</option>)}
             </select>
             {(() => {
               const u = (eq.asignablesSupervision || []).find((x) => String(x.id) === String(eq.supervisionId));
@@ -1560,6 +1562,12 @@ export default function AltaContrato() {
       const anioIni = Number(fiISO.slice(0, 4));
       if (!/^\d{4}-\d{2}-\d{2}$/.test(fiISO) || Number.isNaN(Date.parse(fiISO)) || anioIni < 2000 || anioIni > 2100) {
         return { ok: false, msg: 'La fecha de inicio no es coherente (revisa el día/mes/año).', errores: { ...ERR0, campos: { fechaInicio: true } } };
+      }
+      // T1a (26-jun, profe): la fecha de inicio NO puede ser anterior a HOY. Mismo patrón que la vigencia de
+      // garantía (línea ~1659 usa hoyISOAlta()). Un contrato se formaliza hacia adelante, no en el pasado.
+      // [validar profe] si admite leve retroactividad de formalización; hoy = no-pasado estricto (criterio).
+      if (fiISO < hoyISOAlta()) {
+        return { ok: false, msg: 'La fecha de inicio no puede ser anterior a hoy.', errores: { ...ERR0, campos: { fechaInicio: true } } };
       }
       if (!superintendenteId) return { ok: false, msg: 'Asigna el contratista (superintendente de obra) del contrato', errores: { ...ERR0, campos: { superintendente: true } } };
       // Corrección profe (04-jun): la dependencia es una cuenta seleccionada (parte contratante).

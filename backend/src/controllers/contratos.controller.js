@@ -70,6 +70,13 @@ async function crearContrato(req, res) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(fiSrv) || Number.isNaN(Date.parse(fiSrv)) || anioSrv < 2000 || anioSrv > 2100) {
     return res.status(400).json({ error: 'La fecha de inicio no es coherente (revisa el día/mes/año).' });
   }
+  // T1a (26-jun, profe): rechazar fecha de inicio anterior a HOY (mismo margen UTC-1día que la vigencia de
+  // garantía, ~línea 198, para no rechazar por desfase de zona horaria MX UTC-6). Los seeds NO pasan por aquí
+  // (insertan por SQL directo), así que las fechas históricas demo siguen funcionando.
+  const ayerUTC = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  if (fiSrv < ayerUTC) {
+    return res.status(400).json({ error: 'La fecha de inicio no puede ser anterior a hoy.' });
+  }
 
   // Regla 3: la fecha de término se DERIVA del inicio + plazo (no se confía en el cliente).
   const fechaTerminoDerivada = derivarTermino(body.fechaInicio, plazoDias);
