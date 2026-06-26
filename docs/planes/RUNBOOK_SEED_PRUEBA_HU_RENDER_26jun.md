@@ -113,3 +113,50 @@ docker exec -i sigecop_db psql "$RENDER_DB" -c "SELECT left(folio,8) AS familia,
   uno nuevo etiquetado antes de escribir.
 - El seed es **aditivo para todo lo que no es PRUEBA-HU** y **destructivo-recreador solo de PRUEBA-HU** (idempotente).
 - **SOP-2026-001 y los OP-2026-XXXX de tu demo no se tocan.**
+
+---
+
+## §B — Contratos de ATRASO en Render (`PRUEBA-ATRASO-01/02/03`)
+
+> Mismo principio: el script `backend/scripts/seed_demo_atraso.sql` borra/recrea **solo** `folio LIKE
+> 'PRUEBA-ATRASO-%'`. **NO toca OP-2026-%, SOP-2026-% ni PRUEBA-HU-%.** Conviven con todo. Idempotente,
+> determinista. Pena convencional 5% (art. 46 Bis LOPSRM). Re-ejecutar = resetear (estimación/pago append-only).
+
+```powershell
+$RENDER_DB = 'postgresql://USUARIO:PASSWORD@HOST.oregon-postgres.render.com/DBNAME?sslmode=require'
+$REPO      = "C:\Users\migue\Downloads\Proyectofepy\sigecop"
+
+# 1) BACKUP FRESCO (no continúes si pesa 0)
+& "$REPO\backend\scripts\backup_render.ps1" -Etiqueta "pre_seed_atraso_26jun"
+
+# 2) ANTES — confirmar conteo de familias (OP/SOP/PRUEBA-HU/PRUEBA-ATRASO) para verificar que NO se tocan las otras
+docker exec -i sigecop_db psql "$RENDER_DB" -c "SELECT CASE WHEN folio LIKE 'OP-2026-%' THEN 'OP-2026' WHEN folio LIKE 'SOP-2026-%' THEN 'SOP-2026' WHEN folio LIKE 'PRUEBA-ATRASO-%' THEN 'PRUEBA-ATRASO' WHEN folio LIKE 'PRUEBA-HU-%' THEN 'PRUEBA-HU' END AS familia, count(*) FROM contratos WHERE folio LIKE 'OP-2026-%' OR folio LIKE 'SOP-2026-%' OR folio LIKE 'PRUEBA-HU-%' OR folio LIKE 'PRUEBA-ATRASO-%' GROUP BY 1 ORDER BY 1;"
+
+# 3) SEMBRAR los 3 contratos de atraso (idempotente; NO toca OP/SOP/PRUEBA-HU)
+docker cp "$REPO\backend\scripts\seed_demo_atraso.sql" sigecop_db:/tmp/seed_atraso.sql
+docker exec -i sigecop_db psql "$RENDER_DB" -v ON_ERROR_STOP=1 -f /tmp/seed_atraso.sql
+docker exec sigecop_db rm -f /tmp/seed_atraso.sql
+
+# 4) DESPUÉS — verificación (debe COINCIDIR con LOCAL): pena 0.0500; ATRASO-02/03 ret_atraso 9000.00, neto 116100.00
+docker exec -i sigecop_db psql "$RENDER_DB" -c "
+SELECT c.folio, c.pena_convencional_pct AS pena,
+       (SELECT count(*) FROM bitacora_aperturas b WHERE b.contrato_id=c.id) AS bita,
+       COALESCE((SELECT string_agg(e.estado,',' ORDER BY e.numero) FROM estimaciones e WHERE e.contrato_id=c.id),'-') AS estados,
+       COALESCE((SELECT SUM(e.retencion_atraso) FROM estimaciones e WHERE e.contrato_id=c.id),0) AS ret_atraso,
+       COALESCE((SELECT SUM(e.neto) FROM estimaciones e WHERE e.contrato_id=c.id),0) AS neto,
+       (SELECT count(*) FROM pagos p WHERE p.contrato_id=c.id) AS pagos
+  FROM contratos c WHERE c.folio LIKE 'PRUEBA-ATRASO-%' ORDER BY c.folio;"
+
+# 5) CONFIRMAR que OP/SOP/PRUEBA-HU siguen con el mismo conteo del paso 2 (solo cambió PRUEBA-ATRASO)
+docker exec -i sigecop_db psql "$RENDER_DB" -c "SELECT CASE WHEN folio LIKE 'OP-2026-%' THEN 'OP-2026' WHEN folio LIKE 'SOP-2026-%' THEN 'SOP-2026' WHEN folio LIKE 'PRUEBA-ATRASO-%' THEN 'PRUEBA-ATRASO' WHEN folio LIKE 'PRUEBA-HU-%' THEN 'PRUEBA-HU' END AS familia, count(*) FROM contratos WHERE folio LIKE 'OP-2026-%' OR folio LIKE 'SOP-2026-%' OR folio LIKE 'PRUEBA-HU-%' OR folio LIKE 'PRUEBA-ATRASO-%' GROUP BY 1 ORDER BY 1;"
+```
+
+### §B tabla — verificación cruzada local ↔ Render (atraso)
+| Folio | Etapa | Atraso esperado | Local (pena/est:estados/ret_atraso/neto/pagos) | Render | ¿Coincide? |
+|---|---|---|---|---|---|
+| PRUEBA-ATRASO-01 | Avance (HU-07) | déficit 900 en CONC-01 P1 | 0.05 / 0:- / 0 / 0 / 0 (bitácora=1, avance bajo) | = local | ✅ por construcción |
+| PRUEBA-ATRASO-02 | Estimación integrada | retención atraso **$9,000.00** | 0.05 / 1:integrada / **9000.00** / 116100.00 / 0 | = local | ✅ |
+| PRUEBA-ATRASO-03 | Estimación pagada → finiquito | pena aplicada + finiquitable | 0.05 / 1:pagada / **9000.00** / 116100.00 / 1 | = local | ✅ |
+
+> Validado en LOCAL (2 pasadas exit=0, salida idéntica). Render = idéntico por construcción (mismo script determinista);
+> el paso 4 debe reproducir la columna "Local". **No ejecuté contra Render.**

@@ -342,7 +342,52 @@ Esperado** · **▢**. Login: `#login-usuario`, `#login-password`, botón «Inic
 
 ---
 
+## CICLO 8 · Pruebas de ATRASO (contratos `PRUEBA-ATRASO-XX`)
+
+> Contratos sembrados por SQL directo (`backend/scripts/seed_demo_atraso.sql`, idempotente) con fechas históricas
+> (la regla "fecha no-pasada" impide armarlos por el alta). Base idéntica ($1,000,000; CONC-01/02/03 = 300k/300k/400k;
+> 3 periodos vencidos) **+ pena convencional 5%** (art. 46 Bis LOPSRM + 86-88 RLOPSRM, tope art. 90). **⚠ Re-sembrar
+> antes de demostrar** (estimación/pago son append-only). Cuadre de la estimación con atraso (P1/CONC-01, ejecutado 600):
+> subtotal 180,000 − amort 54,000 − 5 al millar 900 − **retención por atraso 9,000** = **neto $116,100.00**.
+
+### ▢ PASO A1 — POS-ATRASO-01 · Atraso por concepto / alerta (HU-07) — `residente@`
+- **Pantalla:** «Avance y seguimiento» → pestaña **Alertas** (`/seguimiento/alertas`) → modal → **PRUEBA-ATRASO-01**.
+
+> 🟢 **Esperado:** `tabla-atrasos` con CONC-01 en atraso: programado del periodo 1 = **1000**, ejecutado = **100**
+> → **déficit 900** (`fila-atraso-${id}` / `deficit-${id}`); CONC-02/CONC-03 con su periodo vencido y 0 ejecutado
+> también en déficit. Botón **`btn-asentar-${contrato_concepto_id}`** para asentar la nota de atraso (art. 53).
+> El contrato NO tiene estimación (el atraso es del seguimiento, derivado de programa vs avance).
+
+### ▢ PASO A2 — POS-ATRASO-02 · Estimación CON retención por atraso (carátula) — `contratista@`
+- **Pantalla:** «Ciclo de estimación» → ver detalle de la **estimación #1 integrada** → documento (`btn-imprimir-caratula`) → modal → **PRUEBA-ATRASO-02**.
+
+> 🟢 **Esperado:** en el **documento de estimación**, Sección 3 / financiera (`caratula-doc-financiera`) muestra el
+> renglón **"(−) Retención por atraso (art. 46 Bis LOPSRM): −$9,000.00"** (= subtotal 180,000 × 5%). Cuadre:
+> subtotal $180,000.00 − amort $54,000.00 − 5 al millar $900.00 − retención atraso $9,000.00 = **neto $116,100.00**
+> (`caratula-doc-neto`). El contrato está atrasado (ejecutado 600 < programado 1000 en P1), por eso aplica la pena.
+
+### ▢ PASO A3 — POS-ATRASO-03 · Finiquito con pena/retención por atraso — `residente@`/`dependencia@`
+- **Pantalla:** «Cierre / finiquito» (`/contratos/finiquito`) → modal → **PRUEBA-ATRASO-03** (estimación #1 **pagada** con su retención por atraso; bitácora abierta).
+
+> 🟢 **Esperado:** `finiquito-desglose` (art. 64): el neto pagado ya viene **neto de la retención por atraso**
+> ($116,100.00, no $125,100.00); el saldo refleja el **anticipo no amortizado** (a favor de la dependencia,
+> art. 171) por la obra inconclusa (atraso). Cerrar: `btn-abrir-cierre` → `finiquito-confirmar` → `btn-confirmar-cierre`
+> → `finiquito-cerrado`; documento art. 170 `btn-ver-documento-finiquito`. La **pena por atraso** quedó evidenciada
+> en la estimación pagada (art. 46 Bis LOPSRM).
+
+### Tabla — contratos de atraso
+| Folio | Etapa | Atraso esperado | Cómo verificar |
+|---|---|---|---|
+| **PRUEBA-ATRASO-01** | Avance/seguimiento (HU-07) | CONC-01 P1: programado 1000 vs ejecutado 100 → **déficit 900** | `residente@` → Alertas (`/seguimiento/alertas`) → `tabla-atrasos` / `fila-atraso-${id}` / `deficit-${id}` |
+| **PRUEBA-ATRASO-02** | Estimación #1 integrada | **Retención por atraso $9,000.00** en la carátula; neto $116,100.00 | `contratista@` → documento de estimación → `caratula-doc-financiera` (renglón "Retención por atraso", art. 46 Bis) + `caratula-doc-neto` |
+| **PRUEBA-ATRASO-03** | Estimación #1 pagada → finiquitable | Finiquito con la pena ya aplicada (neto pagado $116,100.00) + anticipo no amortizado a favor de la dependencia | `residente@`/`dependencia@` → Finiquito → `finiquito-desglose` → cerrar (`btn-confirmar-cierre`) |
+
+> **Re-sembrar antes de la demo:** `docker exec -i sigecop_db psql -U sigecop -d sigecop_db -v ON_ERROR_STOP=1 < backend/scripts/seed_demo_atraso.sql` (LOCAL) / runbook §B (Render). Idempotente: resetea solo `PRUEBA-ATRASO-%`.
+
+---
+
 ## Resumen
 - **24 PASOS positivos**, uno por HU (orden de ciclo), usando los contratos `PRUEBA-HU-XX` pre-llenados.
+- **3 PASOS de ATRASO** (A1/A2/A3) sobre `PRUEBA-ATRASO-01/02/03` (seed `seed_demo_atraso.sql`): alerta de atraso (HU-07), retención por atraso en la carátula (art. 46 Bis), y finiquito con la pena aplicada.
 - Casos que ejercen los **deltas**: PASO 2 (fecha no-pasado + empresa→persona + persona-no-correo), PASO 4 (presentante en apertura), PASO 8 (foto opcional), PASO 11-12 (estimación integra + 4 bloques + IVA Sección 3 + nota↔generador), PASO 15 (export con formato), PASO 23 (supervisión otra empresa).
 - **[verificar]:** testids exactos de varias pantallas no listados en el catálogo base (padrón, endoso, emisión/consulta de notas, minutas, avance botón, alertas, tablero, tránsito/pago, convenio, expediente, reportes, roster, finiquito) — confirmar contra el código al ejecutar.
