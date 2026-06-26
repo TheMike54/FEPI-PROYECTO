@@ -1,6 +1,6 @@
 # Historias de Usuario — SIGECOP
 
-> **Versión:** 23-jun-2026 (auditada contra el código real y **reordenada por flujo del sistema**) · **Formato:** acción + criterio de éxito verificable (sin detalle de implementación).
+> **Versión:** 26-jun-2026 (auditada contra el código real —backend y frontend— y **reordenada por flujo del sistema**) · **Formato:** acción + criterio de éxito verificable (sin detalle de implementación).
 >
 > **Cómo leer cada historia.** Cada una responde tres preguntas: **quién** la usa y qué **hace** el sistema (la acción real, no la pantalla), **cómo se sabe que quedó bien** (el criterio observable: qué registro se generó, qué notificación se mandó, qué cambió de estado, qué no quedó vacío) y **qué impide el sistema** (las reglas que rechazan lo que no procede). El "cómo" técnico (pantallas, pasos, componentes) es decisión de implementación y no se describe aquí.
 >
@@ -99,7 +99,7 @@
 
 **Qué impide el sistema.** Un folio repetido, una clave de concepto repetida, un programa de obra que no reparte el 100% de cada concepto, un plan de amortización que no suma exactamente el anticipo, una garantía vencida o que excede el monto del contrato, o un alta sin contratista y dependencia válidos. Si el anticipo supera el límite, exige adjuntar la autorización del titular.
 
-*Fundamento: art. 45 fr. IX RLOPSRM (monto = catálogo), art. 45 fr. X RLOPSRM + art. 52 LOPSRM (programa por periodos), art. 118 RLOPSRM (no exceder lo contratado), art. 50 LOPSRM (anticipo), art. 138 párr. 3 + art. 143 fr. I RLOPSRM (amortización), art. 122 RLOPSRM (operar dentro de bitácora abierta).*
+*Fundamento: art. 45 fr. IX RLOPSRM (monto = catálogo), art. 45 ap. A fr. X RLOPSRM + art. 52 LOPSRM (programa por periodos), art. 118 RLOPSRM (no exceder lo contratado), art. 50 LOPSRM (anticipo), art. 138 párr. 3 + art. 143 fr. I RLOPSRM (amortización), art. 122 RLOPSRM (operar dentro de bitácora abierta).*
 
 ---
 
@@ -107,9 +107,9 @@
 
 **Quién y qué hace.** La **dependencia** (o el residente que creó el contrato) gestiona las pólizas de garantía del contrato: las registra, les liga el PDF de la póliza, y registra **endosos** (ampliaciones de monto o prórrogas de vigencia) sobre una póliza existente.
 
-**Criterio de éxito.** Cada póliza queda registrada con su afianzadora, número, monto y vigencia, todos llenos, y muestra su estado de vigencia (vigente / por vencer / vencida). Un **endoso genera un registro nuevo ligado a la misma póliza** (no una segunda póliza): al ampliar la vigencia, sube el conteo de endosos de esa garantía, no aparece una póliza duplicada. La póliza con PDF cargado se puede abrir y ver.
+**Criterio de éxito.** Cada póliza queda registrada con su afianzadora, monto y vigencia llenos (el número de póliza es opcional), y muestra su estado de vigencia (vigente / por vencer / vencida). Un **endoso genera un registro nuevo ligado a la misma póliza** (no una segunda póliza): al ampliar la vigencia, sube el conteo de endosos de esa garantía, no aparece una póliza duplicada. La póliza con PDF cargado se puede abrir y ver.
 
-**Qué impide el sistema.** Dos garantías del mismo tipo en un mismo contrato (debe editarse la existente), una garantía con monto cero o que excede el contrato, una vigencia ya vencida al registrar, un endoso que no trae el dato que su motivo exige (un endoso de prórroga sin la nueva vigencia, por ejemplo), o un archivo que no es PDF. Un contrato cerrado por finiquito no admite nuevas garantías ni endosos.
+**Qué impide el sistema.** Dos garantías del mismo tipo en un mismo contrato (debe editarse la existente), una garantía de un tipo fuera del catálogo (debe ser anticipo, cumplimiento o vicios ocultos), una garantía con monto cero o que excede el contrato, una vigencia ya vencida al registrar, un endoso que no trae el dato que su motivo exige (un endoso de prórroga sin la nueva vigencia, por ejemplo), o un archivo que no es PDF. Un contrato cerrado por finiquito queda en solo lectura para sus garantías: no admite registrar ni editar pólizas, subir el PDF de una póliza, ni registrar endosos.
 
 *Fundamento: art. 48 LOPSRM (garantías de anticipo y cumplimiento), art. 66 LOPSRM (vicios ocultos), art. 91 RLOPSRM (endosos por modificación de monto/plazo), art. 64 LOPSRM (contrato cerrado = solo lectura).*
 
@@ -119,9 +119,9 @@
 
 **Quién y qué hace.** La **dependencia** o el **residente asignado** consulta el equipo vigente del contrato (residente, superintendente, supervisión) con su histórico de quién ocupó cada rol y desde cuándo, y **reemplaza** a una persona por otra, indicando el motivo. Son dos cosas distintas: ver el equipo (consulta) y reemplazar (acción).
 
-**Criterio de éxito.** Al reemplazar, se genera un registro nuevo: la persona anterior queda en el histórico con su fecha de salida (no se borra) y la nueva queda vigente, ligada por el motivo del cambio. El sistema **asienta una nota de bitácora** documentando la sustitución (persona anterior, nueva, motivo, fecha). La persona sustituida **pierde el acceso** al contrato y la nueva lo gana; solo una persona puede estar vigente por rol.
+**Criterio de éxito.** Al reemplazar, se genera un registro nuevo: la persona anterior queda en el histórico con su fecha de salida (no se borra) y la nueva queda vigente, ligada por el motivo del cambio. El sistema **asienta una nota de bitácora** documentando la sustitución (persona anterior, nueva, motivo, fecha). La persona sustituida deja de ser **parte vigente** del contrato y la nueva ocupa su lugar; quien originalmente dio de alta el contrato conserva acceso de consulta por figurar como su creador. Solo una persona puede estar vigente por rol.
 
-**Qué impide el sistema.** Sustituir a una persona que **tiene firmas pendientes** dentro de su plazo (primero debe firmarlas o vencer el plazo); reemplazar sin motivo; reemplazar por una persona inexistente, inactiva o del rol equivocado; o sustituir en un contrato sin bitácora abierta o ya cerrado. La dependencia del contrato no se sustituye. El sustituto pertenece a la misma empresa que la persona saliente (la sustitución cambia la persona, no la empresa del contrato).
+**Qué impide el sistema.** Sustituir a una persona que **tiene firmas pendientes** dentro de su plazo (primero debe firmarlas o vencer el plazo); reemplazar sin motivo; reemplazar por una persona inexistente, inactiva o del rol equivocado; o sustituir en un contrato sin bitácora abierta o ya cerrado. La dependencia del contrato no se sustituye. El sustituto del **residente o del superintendente** pertenece a la misma empresa que la persona saliente; la **supervisión**, por ser un tercero independiente, puede pertenecer a otra empresa (la sustitución cambia la persona, no la empresa del contrato).
 
 *Fundamento: art. 125 fr. I inciso g) RLOPSRM (registro de sustituciones), art. 122 RLOPSRM (bitácora obligatoria), art. 64 LOPSRM (contrato cerrado).*
 
@@ -129,7 +129,7 @@
 
 ## HU-08 — Apertura de la bitácora del contrato
 
-**Quién y qué hace.** El **residente asignado** abre la bitácora del contrato. La apertura redacta el acta de inicio con los datos del contrato (partes y sus domicilios, objeto, ubicación, monto, anticipo, plazo, fechas de inicio y término) y define a los firmantes (residente, superintendente y, si hay, supervisión). La bitácora se abre al inicio del contrato y es obligatoria: sin ella el contrato no puede operar.
+**Quién y qué hace.** El **residente asignado** abre la bitácora del contrato. La apertura redacta el acta de inicio con los datos del contrato (partes y sus domicilios, objeto, ubicación, monto, anticipo, plazo, fechas de inicio y término) y define a los firmantes (residente, superintendente y, si hay, supervisión). La bitácora se abre al inicio del contrato y es obligatoria: sin ella el contrato no puede operar. La **fecha de apertura no se captura**: el sistema la fija a la fecha de inicio del contrato (la bitácora se abre el mismo día en que arranca el contrato), de modo que no puede registrarse una fecha anterior.
 
 **Criterio de éxito.** Se genera una bitácora única para el contrato (un segundo intento de abrirla es rechazado) y la **nota número 1 de tipo apertura**, con el acta redactada y sin campos vacíos (domicilios, teléfonos, descripción de los trabajos y características del sitio constan). Quedan registrados los firmantes pendientes, uno por cada parte del equipo. A partir de aquí, intentar registrar avance, estimación, convenio o sustitución sin bitácora abierta es rechazado.
 
@@ -139,25 +139,25 @@
 
 ### Firma de la apertura ("Por firmar")
 
-**Quién y qué hace.** Cada parte del equipo (residente, superintendente, supervisión) firma la apertura de la bitácora desde su propia cuenta. Mientras haya firmas pendientes, la apertura no está completa.
+**Quién y qué hace.** Cada parte del equipo (residente, superintendente, supervisión) firma la apertura de la bitácora desde su propia cuenta. Mientras haya firmas pendientes, la apertura no está completa. La bandeja "Por firmar" (y la campana de notificaciones) reúne todo lo que la persona tiene pendiente de firmar: las **aperturas** de bitácora donde es firmante y aún no firma, y las **notas de bitácora** que le toca firmar como contraparte (notas en las que no es el emisor, que aún no ha firmado y cuyo plazo de firma sigue vigente). Desde la misma bandeja firma cualquiera de las dos, y la campana enlaza a esta pantalla.
 
-**Criterio de éxito.** Al firmar, la firma de esa persona queda sellada con su fecha y hora. Cuando todas las partes firman, la apertura queda completa, y eso es lo que **habilita la emisión de notas** (HU-09). Una firma no se puede repetir ni hacer por otra persona.
+**Criterio de éxito.** Al firmar, la firma de esa persona queda sellada con su fecha y hora. Cuando todas las partes firman, la apertura queda completa, y eso es lo que **habilita la emisión de notas** (HU-09). Una firma no se puede repetir ni hacer por otra persona. Las notas se listan en una sección aparte de las aperturas; una nota cuyo plazo de firma ya venció (aceptada tácitamente) deja de aparecer en la bandeja, porque ya no hay nada que firmar.
 
 **Qué impide el sistema.** Que alguien firme una apertura de la que no es firmante, o que vuelva a firmar lo que ya firmó.
 
-*Fundamento: art. 123 fr. III RLOPSRM (firma de la nota de inicio por el personal autorizado).*
+*Fundamento: art. 123 fr. III RLOPSRM (firma de la nota de inicio por el personal autorizado y plazo de firma / aceptación tácita de las notas).*
 
 ---
 
 ## HU-09 — Emisión y firma de notas de bitácora
 
-**Quién y qué hace.** El **residente, el contratista y la supervisión** emiten notas tipificadas en la bitácora (cada rol emite los tipos que le corresponden). El emisor firma su nota al emitirla; las demás partes la firman (la aceptan) o, si pasa el plazo sin firmar, queda aceptada tácitamente. Una nota no se edita: para corregirla se anula y se emite una nota nueva vinculada que dice "dice / debe decir".
+**Quién y qué hace.** El **residente, el contratista y la supervisión** emiten notas tipificadas en la bitácora (cada rol emite los tipos que le corresponden). El emisor firma su nota al emitirla; las demás partes la firman (la aceptan) o, si pasa el plazo sin firmar, queda aceptada tácitamente. A partir de ese momento, el sistema ya no ofrece firmarla (el botón de firma desaparece) y rechaza cualquier intento de firmarla fuera de plazo; su estado "Aceptada (tácita)" sigue a la vista. Una nota no se edita: para corregirla se anula y se emite una nota nueva vinculada que dice "dice / debe decir".
 
 **Criterio de éxito.** Cada nota se genera con un folio correlativo sin saltos, el emisor identificado por rol y nombre, su firma sellada y contenido no vacío. Al firmar una contraparte, queda registrada su firma; cuando todo el equipo firma, la nota queda firmada. Una corrección deja la nota original como anulada y genera una nota correctiva vinculada al folio anterior. Las notas son inmutables.
 
-**Qué impide el sistema.** Emitir notas antes de que la apertura esté firmada por todas las partes; emitir un tipo de nota que no corresponde al rol; que el emisor "acepte" su propia nota; anular una nota ya respondida; o emitir en un contrato cerrado.
+**Qué impide el sistema.** Emitir notas antes de que la apertura esté firmada por todas las partes; emitir un tipo de nota que no corresponde al rol; emitir a mano las notas de apertura, cierre o finiquito (las genera el sistema); que el emisor "acepte" su propia nota; firmar una nota cuyo plazo de firma ya venció (ya quedó aceptada tácitamente); firmar una nota cuya fecha quede **fuera del periodo de vigencia** de la persona en el contrato (tras una sustitución, la persona saliente no firma notas posteriores a su baja ni la entrante notas anteriores a su alta; el titular original conserva la firma desde el inicio del contrato); anular una nota ya respondida o ya firmada por la contraparte (no se modifica una nota firmada), o anular la nota de finiquito (acta de cierre); y emitir, responder, firmar o anular notas en un contrato cerrado (queda en solo lectura).
 
-*Fundamento: art. 125 RLOPSRM (tipos de nota por rol), art. 123 fr. V (folio correlativo), fr. VI (inmutabilidad), fr. VII (corrección por nota nueva), art. 64 LOPSRM (contrato cerrado).*
+*Fundamento: art. 125 RLOPSRM (tipos de nota por rol y vigencia de quien firma según el roster), art. 123 fr. III (plazo de firma y aceptación tácita), fr. V (folio correlativo), fr. VI (inmutabilidad), fr. VII (corrección por nota nueva), art. 64 LOPSRM (contrato cerrado).*
 
 ---
 
@@ -175,11 +175,11 @@
 
 ## HU-11 — Minutas, visitas y acuerdos
 
-**Quién y qué hace.** El **residente** registra minutas de junta y agenda visitas de obra, y puede **vincularlas a una nota** de la bitácora sin modificar la nota. Los acuerdos capturados en las minutas se consultan en su propia vista.
+**Quién y qué hace.** El **residente** del contrato (o quien lo dio de alta) registra minutas de junta y agenda visitas de obra, y puede **vincularlas a una nota** de la bitácora sin modificar la nota. Los acuerdos capturados en las minutas se consultan en su propia vista.
 
 **Criterio de éxito.** Cada minuta queda registrada con su lugar y participantes (y, si se sube, su PDF); cada visita con su fecha, lugar, responsable y propósito. Al vincular una minuta o visita a una nota, queda la relación y la nota original no cambia. En la consulta de notas, la nota muestra que tiene una minuta o visita asociada.
 
-**Qué impide el sistema.** Registrar una minuta sin lugar o participantes, o una visita sin responsable o propósito; vincular a una nota que no pertenece al contrato; subir un archivo que no es PDF; o registrar en un contrato cerrado.
+**Qué impide el sistema.** Registrar una minuta sin asunto, fecha, lugar o participantes, o una visita sin fecha, lugar, responsable o propósito; vincular a una nota que no pertenece al contrato; subir un archivo que no es PDF; o registrar en un contrato cerrado.
 
 *Fundamento: art. 123 fr. X RLOPSRM (ratificación en bitácora de minutas y oficios), art. 123 fr. VI RLOPSRM (inmutabilidad de la nota vinculada).*
 
@@ -189,9 +189,9 @@
 
 **Quién y qué hace.** El **contratista (superintendente)** registra los trabajos terminados: por cada concepto, la cantidad ejecutada en el periodo en curso, con su evidencia fotográfica. El sistema asienta automáticamente una nota de avance en la bitácora. Un avance ya registrado no se edita: para corregirlo se genera una nota nueva vinculada que dice "dice / debe decir", referenciando el folio anterior.
 
-**Criterio de éxito.** Al registrar un avance válido se genera un registro de avance y una **nota de bitácora de tipo avance** con folio ("se ejecutaron X unidades en el periodo N"), ligada al avance y sin datos vacíos. Al subir la foto, queda guardada como evidencia de ese avance. Al corregir, el avance anterior queda anulado y aparece uno nuevo con su nota correctiva. El periodo en curso viene preseleccionado.
+**Criterio de éxito.** Al registrar un avance válido se genera un registro de avance y una **nota de bitácora de tipo avance** con folio ("se ejecutaron X unidades en el periodo N"), ligada al avance y sin datos vacíos. El avance no se puede registrar sin al menos una foto de evidencia, que se adjunta en la misma operación que crea el avance: esa primera foto no puede diferirse. Pueden adjuntarse varias fotos, cada una con su descripción, y todas quedan ligadas a ese avance. Después del registro, el contratista puede **sumar más fotos** de evidencia, eliminarlas y **anotar o editar la descripción** de cualquiera de ellas. Al corregir el avance, el anterior queda anulado y aparece uno nuevo con su nota correctiva. El periodo en curso viene preseleccionado.
 
-**Qué impide el sistema.** Registrar avance de un **periodo futuro** (trabajo no iniciado); registrar sin bitácora abierta; capturar una cantidad que **excede lo contratado** del concepto; o registrar en un contrato cerrado. No existen avances negativos. Si la cantidad supera lo programado del periodo, el sistema avisa pero no bloquea (adelantar a precios pactados es válido).
+**Qué impide el sistema.** Registrar avance de un **periodo futuro** (trabajo no iniciado); registrar sin bitácora abierta; capturar una cantidad que **excede lo contratado** del concepto; registrar en un contrato cerrado; registrar un avance sin adjuntar al menos una foto de evidencia; o adjuntar un archivo que no sea una imagen JPEG/PNG válida. No existen avances negativos. Si la cantidad supera lo programado del periodo, el sistema avisa pero no bloquea (adelantar a precios pactados es válido).
 
 *Fundamento: art. 118 RLOPSRM (no exceder lo contratado), art. 122 RLOPSRM (bitácora obligatoria), art. 125 fr. II RLOPSRM (nota de avance), art. 123 fr. VI/VII RLOPSRM (corrección por registro vinculado), art. 132 fr. IV RLOPSRM (evidencia fotográfica), art. 64 LOPSRM (contrato cerrado).*
 
@@ -213,11 +213,11 @@
 
 **Quién y qué hace.** El **residente** (y en consulta las demás partes) ve el programa de obra como matriz de concepto por periodo y la **curva de avance** del contrato: lo programado, lo ejecutado y lo financiero (lo pagado), más el porcentaje de avance físico.
 
-**Criterio de éxito.** Con un contrato que tiene programa y al menos un avance reportado, se ve: las tres curvas partiendo de 0% al inicio y subiendo (no en blanco ni planas); el porcentaje de avance físico derivado de lo ejecutado contra lo contratado (con cero avances marca 0%, no un número inventado); la desviación expresada siempre en positivo como **"Atraso de X%"** o "Adelanto de X%" (nunca un porcentaje negativo); y la matriz con celdas en verde donde hubo ejecución, rojo donde un periodo venció sin ejecutar y ámbar donde está por venir.
+**Criterio de éxito.** Con un contrato que tiene programa y al menos un avance reportado, se ve: las tres curvas partiendo de 0% al inicio y subiendo (no en blanco ni planas); el porcentaje de avance físico derivado de lo ejecutado contra lo contratado (con cero avances marca 0%, no un número inventado); la desviación expresada siempre en positivo como **"Atraso de X%"** o "Adelanto de X%" (nunca un porcentaje negativo); y la matriz con celdas en verde donde hubo ejecución, rojo donde un periodo venció sin ejecutar, ámbar donde está por venir y gris donde el concepto no tiene cantidad programada en ese periodo. Cuando el contrato **no** tiene convenio modificatorio, la curva de ejecutado es una sola serie. Cuando **sí** tiene convenio (dos o más versiones del programa), además de la curva consolidada sobre el plan vigente aparece un bloque "Avance por etapas" con una tarjeta por versión del programa: la del plan original queda congelada como histórico y la versión vigente mide sobre el plan modificado. En cada tarjeta de etapa la curva de ejecutado se desdobla en **dos** series: "Nuevo (desde convenio)" (lo ejecutado dentro de la ventana de tiempo de esa versión) y "Acumulado total" (todo lo ejecutado de todas las versiones, medido sobre el denominador de esa versión); y la etapa vigente muestra además un tercer indicador "Acumulado total", junto a "Programado a hoy" y "Ejecutado (nuevo)".
 
 **Qué impide el sistema.** Ver el programa o la curva de un contrato del que no se es parte. (Esta vista no captura datos: solo presenta.)
 
-*Fundamento: art. 52 LOPSRM + art. 45 ap. A fr. X RLOPSRM (programa por periodos), art. 46 Bis LOPSRM (penas por atraso, base de la desviación).*
+*Fundamento: art. 52 LOPSRM + art. 45 ap. A fr. X RLOPSRM (programa por periodos), art. 46 Bis LOPSRM (penas por atraso, base de la desviación), art. 59 LOPSRM (convenio modificatorio que origina la nueva versión del programa) y art. 101 RLOPSRM (conceptos adicionales).*
 
 ---
 
@@ -251,7 +251,7 @@
 
 ## HU-15 — Revisión y autorización o rechazo de la estimación
 
-**Quién y qué hace.** La **supervisión** revisa la estimación presentada por secciones (carátula, números, generadores, notas) y registra **observaciones sobre el documento, sin modificarlo**, asociadas a cada elemento o generador. La supervisión **rechaza directamente** o, si no tiene observaciones, la turna a la **residencia**, que autoriza o rechaza con motivo obligatorio. **Toda observación es un rechazo**: no hay niveles de severidad.
+**Quién y qué hace.** La **supervisión** revisa la estimación presentada por secciones (carátula, números generadores, notas) y registra **observaciones sobre el documento, sin modificarlo**, asociadas a la sección correspondiente. La supervisión turna la estimación a la **residencia** —con o sin observaciones— o la **rechaza directamente**; la residencia autoriza o rechaza con motivo obligatorio. **No hay niveles de severidad**: toda observación cuenta por igual, y **registrar una observación no rechaza por sí sola** la estimación: autorizar o rechazar pese a las observaciones es decisión de la residencia.
 
 **Criterio de éxito.** Cada observación queda registrada con su sección, descripción no vacía y autor, sin alterar el documento revisado. Al autorizar, la estimación pasa de "presentada" a "autorizada" y se asienta una nota de bitácora de autorización. Al rechazar (sea la supervisión directo o la residencia), pasa a "rechazada" y se genera una observación de rechazo dirigida al contratista con su motivo. Una estimación rechazada no desaparece: queda en el historial con su motivo, y el contratista la vuelve a integrar y presentar desde cero (no existe un "reingreso" aparte).
 
@@ -287,11 +287,11 @@
 
 ## HU-20 — Tránsito a pago: promoción de cobro del contratista
 
-**Quién y qué hace.** Una vez autorizada la estimación, el **contratista promueve su cobro**: sube el PDF de su CFDI/factura y del oficio, captura sus datos bancarios (SPEI), y con eso genera una **solicitud de cobro**. Finanzas no inventa ni captura esos datos: solo los recibe. Las solicitudes de todos los contratos llegan a una **cola global de Finanzas**, que las revisa y pasa a cobranza.
+**Quién y qué hace.** Una vez autorizada la estimación, el **contratista promueve su cobro**: captura el folio del **CFDI** y la **factura** (cuya fecha queda como la del momento en que la registra) y **sube los PDF** de su CFDI/factura y del oficio de autorización; con eso genera una **solicitud de cobro**. Finanzas no inventa ni captura el CFDI/factura: solo los **recibe y los hereda** al registrar el pago. Las solicitudes de todos los contratos llegan a una **cola global de Finanzas**, que las revisa y pasa a cobranza.
 
-**Criterio de éxito.** Al promover, se genera una solicitud de cobro única para esa estimación, con su monto (el neto, no tecleado) y su CFDI, notificada a Finanzas. La solicitud aparece en la **cola global de Finanzas** con el contrato al que pertenece, el contratista, el periodo, el neto y el CFDI, y con los **soportes digitales (PDF del CFDI/oficio) descargables**, sin que Finanzas tenga que entrar contrato por contrato. El sistema verifica además que haya suficiencia presupuestal (techo de la partida) antes de dejar pasar.
+**Criterio de éxito.** Al promover, se genera una solicitud de cobro única para esa estimación, con su monto (el neto, no tecleado) y su CFDI, notificada a Finanzas. La solicitud aparece en la **cola global de Finanzas** con el contrato al que pertenece, el contratista, el periodo, el neto y el CFDI, y con los **soportes digitales (PDF del CFDI/oficio) descargables**, sin que Finanzas tenga que entrar contrato por contrato. El sistema verifica además que haya suficiencia presupuestal (techo de la partida) antes de dejar pasar, y muestra un **semáforo del plazo de pago de 20 días naturales** (art. 54 LOPSRM): cuenta los días desde la fecha más tardía entre la autorización de la estimación y la presentación de la factura, y lo marca en verde, ámbar o rojo según los días vencidos; mientras el contratista no presente la factura, el plazo aún no corre.
 
-**Qué impide el sistema.** Que Finanzas (o cualquiera que no sea el contratista) genere la solicitud; promover sobre una estimación que no está autorizada; promover sin los soportes obligatorios (factura, CFDI con folio, fianza vigente); datos bancarios SPEI con letras (deben ser solo números); promover sin techo presupuestal suficiente; o promover en un contrato cerrado.
+**Qué impide el sistema.** Que Finanzas (o cualquiera que no sea el contratista) genere la solicitud; promover sobre una estimación que no está autorizada; promover sin los soportes obligatorios (factura, CFDI con folio, fianza vigente); promover sin techo presupuestal suficiente; o promover en un contrato cerrado.
 
 *Fundamento: art. 54 LOPSRM (pago de lo autorizado), art. 24 LOPSRM (suficiencia presupuestal en la partida), art. 48 fr. II LOPSRM (fianza de cumplimiento), art. 64 LOPSRM (contrato cerrado).*
 
@@ -299,11 +299,11 @@
 
 ## HU-21 — Registro del pago
 
-**Quién y qué hace.** **Finanzas** registra el pago de una estimación autorizada: revisa el folio fiscal, confirma la referencia bancaria y la fecha de factura, y registra el pago.
+**Quién y qué hace.** **Finanzas** registra el pago de una estimación autorizada. El folio **CFDI** y la **factura** (con su fecha) **no** los teclea Finanzas: los **hereda en solo lectura** del tránsito a pago, donde los promovió el contratista (HU-20). Finanzas únicamente **revisa** esos soportes y captura lo suyo: la **referencia SPEI** (clave de rastreo) y la **fecha de pago** (más observaciones opcionales). Al pulsar "Registrar pago", el sistema abre un **pop-up de confirmación "¿El CFDI y la factura coinciden?"**; solo al confirmar se registra. La pantalla de "Registro de pago" es solo el **historial** de pagos del contrato; el registro se hace dentro del tránsito a pago.
 
-**Criterio de éxito.** Se genera un registro de pago ligado a la estimación, con el importe igual al neto (no tecleado), la referencia bancaria, el folio fiscal y la fecha de factura, y queda registrado quién lo hizo, sin campos vacíos. La estimación pasa de "autorizada" a "pagada". No se paga dos veces la misma estimación. El pago es inalterable (registro de auditoría).
+**Criterio de éxito.** Se genera un registro de pago ligado a la estimación, con el importe igual al **neto** (derivado, no tecleado), la **referencia SPEI**, la **fecha de pago**, y el **folio CFDI** y la **fecha de factura heredados** del contratista, y queda registrado quién lo hizo, sin campos vacíos. La estimación pasa de "autorizada" a "pagada" y la solicitud sale de la cola de Finanzas. No se paga dos veces la misma estimación. El pago es inalterable (registro de auditoría).
 
-**Qué impide el sistema.** Pagar una estimación que no está autorizada, o ya pagada o rechazada; pagar **sin que el contrato tenga avance físico reportado**; una referencia bancaria con letras (debe ser numérica); una **fecha de factura futura** (no se emite una factura postfechada); o que alguien que no sea Finanzas registre el pago.
+**Qué impide el sistema.** Pagar una estimación que no está autorizada, o ya pagada o rechazada; pagar **sin que el contratista haya subido el CFDI del cobro** en el tránsito a pago; pagar **sin que el contrato tenga avance físico reportado**; pagar en un **contrato cerrado** (el saldo se liquida por el finiquito); una **referencia SPEI** con letras (debe ser numérica); o que alguien que no sea Finanzas registre el pago.
 
 *Fundamento: art. 54 LOPSRM (pago de lo autorizado y plazo), art. 55 LOPSRM (mora), art. 64 LOPSRM (contrato cerrado).*
 
@@ -313,11 +313,11 @@
 
 **Quién y qué hace.** La **dependencia** promueve un convenio modificatorio del contrato (de monto, plazo, programa o mixto). Primero **registra el oficio de soporte** (de solicitud/autorización): sin esa referencia no procede; el PDF del oficio se adjunta al convenio. Los conceptos originales del contrato **se congelan** (no se cambian); los conceptos nuevos se **agregan y se marcan como adicionales**, separados de los originales.
 
-**Criterio de éxito.** Se genera un convenio con su número, tipo, motivo (no vacío), el monto y plazo anteriores y los nuevos, y se asienta una nota de bitácora del convenio. Si toca el programa, el programa anterior queda como **versión histórica** y arranca una versión nueva vigente; el monto y plazo del contrato quedan sincronizados. Los conceptos adicionales quedan marcados como tales en el catálogo, distintos de los originales (que no se movieron). El monto no se teclea: lo deriva el sistema.
+**Criterio de éxito.** Se genera un convenio con su número, tipo, motivo (no vacío), el monto y plazo anteriores y los nuevos, y se asienta una nota de bitácora del convenio. Si toca el programa, el programa anterior queda como **versión histórica** y arranca una versión nueva vigente; el monto y plazo del contrato quedan sincronizados. El convenio nace **registrado** (pendiente de autorización); el servidor facultado de la dependencia lo **autoriza en un acto separado**, y para autorizarlo debe estar cargado el oficio/soporte de aprobación en **PDF** (de todo convenio, no solo cuando la variación supera el 25%). Los conceptos adicionales quedan marcados como tales en el catálogo —distintos de los originales, que no se movieron— y esa etiqueta "Adicional" se guarda en el **snapshot de cada versión** del programa, de modo que también las versiones históricas (en "Versiones del programa de obra → Ver programa") la muestran, no solo el programa vigente. El monto no se teclea: lo deriva el sistema.
 
-**Qué impide el sistema.** Promover sin el oficio de soporte; **cambiar la cantidad o precio de un concepto original** (se congela; los cambios van como adicionales — no se convierte un concepto de 524 en 1500); **adicionar a un periodo que ya cerró** (solo de hoy en adelante); reducir un concepto por debajo de lo ya estimado; promover sin bitácora abierta; o promover en un contrato cerrado.
+**Qué impide el sistema.** Promover sin el oficio de soporte; **cambiar la cantidad o precio de un concepto original** (se congela; los cambios van como adicionales — no se convierte un concepto de 524 en 1500); **adicionar a un periodo que ya cerró** (solo de hoy en adelante); reducir un concepto por debajo de lo ya estimado; promover sin bitácora abierta; autorizar el convenio sin tener cargado su oficio de aprobación en PDF (se exige para todo convenio, no solo cuando la variación supera el 25%); o promover en un contrato cerrado.
 
-*Fundamento: art. 59 LOPSRM (modificación de contratos), art. 99 RLOPSRM (dictamen y soporte previos), art. 102 RLOPSRM (revisión si la variación supera el 25%), art. 122 RLOPSRM (bitácora), art. 64 LOPSRM (contrato cerrado).*
+*Fundamento: art. 59 LOPSRM (modificación de contratos), art. 99 RLOPSRM (dictamen y soporte previos; oficio de aprobación para autorizar todo convenio), art. 101 RLOPSRM (conceptos adicionales), art. 102 RLOPSRM (revisión si la variación supera el 25%), art. 122 RLOPSRM (bitácora), art. 64 LOPSRM (contrato cerrado).*
 
 ---
 
@@ -325,11 +325,11 @@
 
 **Quién y qué hace.** El **residente** (y en consulta el contratista, la supervisión y la dependencia) consulta, en una sola vista, todo el expediente del contrato: configuración y equipo, catálogo de conceptos, programa de obra, fianzas, plan de amortización, datos jurídicos, sustituciones del equipo, convenios modificatorios y el resumen de estimaciones con su evidencia fotográfica por generador.
 
-**Criterio de éxito.** Al elegir un contrato, se ven todos sus bloques con datos reales: el catálogo muestra la clave de cada concepto, la configuración muestra el equipo vigente (no el del alta si hubo sustituciones), y los convenios muestran el cambio de monto/plazo (anterior→nuevo) y las versiones del programa. Un bloque sin datos lo dice explícitamente ("este contrato no tiene…"), no aparece vacío sin explicación. El expediente se puede exportar como un solo documento.
+**Criterio de éxito.** Al elegir un contrato, se ven todos sus bloques con datos reales: el catálogo muestra la clave de cada concepto, la configuración muestra el equipo vigente (no el del alta si hubo sustituciones), y los convenios muestran el cambio de monto/plazo (anterior→nuevo) y las versiones del programa. Los conceptos adicionales aparecen marcados con su etiqueta "Adicional" en el catálogo y el programa vigente del expediente; el detalle de cada versión histórica del programa —que conserva esa misma etiqueta— se abre desde el enlace "Ver versiones del programa" del bloque de convenios. Un bloque sin datos lo dice explícitamente ("este contrato no tiene…"), no aparece vacío sin explicación. El expediente se puede exportar como un solo documento.
 
 **Qué impide el sistema.** Consultar el expediente de un contrato del que no se es parte.
 
-*Fundamento: art. 45 fr. IX RLOPSRM (clave de concepto), art. 125 RLOPSRM (roster/sustituciones), art. 59 LOPSRM / art. 99 RLOPSRM (convenios), art. 132 fr. IV RLOPSRM (evidencia fotográfica).*
+*Fundamento: art. 45 fr. IX RLOPSRM (clave de concepto), art. 125 RLOPSRM (roster/sustituciones), art. 59 LOPSRM / art. 99 RLOPSRM (convenios), art. 101 RLOPSRM (conceptos adicionales), art. 132 fr. IV RLOPSRM (evidencia fotográfica).*
 
 ---
 
@@ -337,19 +337,19 @@
 
 **Quién y qué hace.** La **dependencia** (y en consulta el residente y la supervisión) ve todos sus contratos con un **semáforo** de estado, para detectar de un vistazo cuáles van bien y cuáles tienen problemas. Al hacer **clic en el semáforo**, va al expediente de ese contrato.
 
-**Criterio de éxito.** Cada contrato muestra un semáforo: verde (buen estado), amarillo (varios atrasos o pendientes) o rojo (grave), calculado a partir de la desviación de avance, los plazos legales vencidos y los pendientes sin atender. Al hacer **clic en el semáforo, lleva al expediente** del contrato correspondiente. Los contadores por color cuadran con la suma de contratos.
+**Criterio de éxito.** Cada contrato muestra un semáforo: verde (buen estado), amarillo (varios atrasos o pendientes) o rojo (grave), calculado a partir de la desviación de avance, los plazos legales vencidos y los pendientes sin atender. Al hacer **clic en el semáforo, lleva al expediente** del contrato correspondiente. Los contadores por color cuadran con la suma de contratos. Un contrato **cerrado** (con finiquito ya elaborado) se conserva en el portafolio, identificado con su estado "cerrado" y un semáforo **verde (neutro)** acompañado de la nota "Contrato cerrado (finiquito elaborado): no se evalúa atraso/avance"; en él no se evalúan la desviación de avance, los plazos vencidos ni los pendientes, de modo que una obra ya extinguida no dispara una falsa alarma de atraso.
 
 **Qué impide el sistema.** Ver contratos en los que no se participa (cada quien ve solo su portafolio; la dependencia ve todos).
 
-*Fundamento: art. 52/54 LOPSRM (plazos de ejecución y revisión), art. 46 Bis LOPSRM (penas por atraso).*
+*Fundamento: art. 52/54 LOPSRM (plazos de ejecución y revisión), art. 46 Bis LOPSRM (penas por atraso), art. 64 LOPSRM (contrato cerrado: extinción de derechos y obligaciones).*
 
 ---
 
 ## HU-19 — Exportación de reportes del contrato
 
-**Quién y qué hace.** El **residente** exporta los reportes definidos del contrato (PDF o Excel): avance físico vs programado, avance financiero, listado de estimaciones, listado de observaciones, bitácora completa, histórico de modificatorios, y penalizaciones y deductivas. Puede acotar por periodo (mensual, trimestral o acumulado).
+**Quién y qué hace.** El **residente** exporta los reportes definidos del contrato. Cada reporte tiene un **formato fijo**: el **avance físico vs programado** y la **bitácora completa** se exportan como **PDF** (documento imprimible); el **avance financiero**, el **listado de estimaciones**, el **listado de observaciones**, el **histórico de modificatorios** y las **penalizaciones y deductivas** se exportan como **Excel**. Puede acotar por periodo (mensual, trimestral o acumulado).
 
-**Criterio de éxito.** Al elegir contrato, periodo y formato, se descarga un archivo real con los datos del contrato (no un volcado vacío ni de relleno). Los PDF llevan un encabezado con el contrato, el periodo y la fecha; si una fuente viene vacía, el archivo sale con sus encabezados y sin filas, nunca con datos ficticios. El reporte de bitácora requiere que la bitácora esté abierta.
+**Criterio de éxito.** Al elegir contrato y periodo, se descarga un archivo real con los datos del contrato, en el formato que corresponde a ese reporte (no un volcado vacío ni de relleno). Los PDF llevan un encabezado con el contrato, el periodo y la fecha; si una fuente viene vacía, el archivo sale con sus encabezados y sin filas, nunca con datos ficticios. El reporte de bitácora requiere que la bitácora esté abierta.
 
 **Qué impide el sistema.** Exportar sin ser el rol que ejecuta la historia (los demás roles ven la lista pero no descargan); exportar la bitácora de un contrato que no la ha abierto.
 
@@ -359,7 +359,7 @@
 
 ## HU-24 — Finiquito y cierre del contrato
 
-**Quién y qué hace.** La **dependencia** o el **residente** elabora el finiquito del contrato: el sistema calcula el saldo (lo aprobado contra lo pagado y el anticipo no amortizado) y dice a favor de quién queda. Al cerrar, asienta el finiquito como nota de bitácora y deja el contrato en solo lectura.
+**Quién y qué hace.** La **dependencia** o el **residente** elabora el finiquito del contrato: el sistema calcula el saldo restando del importe neto autorizado lo pagado, el anticipo no amortizado y, en su caso, los **ajustes finales** que se capturan al cerrar (deductivas, sobrecosto o cinco al millar pendiente, con valor predeterminado de cero), y dice a favor de quién queda. Al cerrar, asienta el finiquito como nota de bitácora y deja el contrato en solo lectura.
 
 **Criterio de éxito.** Se genera un registro de finiquito único, con el saldo y todos sus componentes llenos, y dice **a favor de quién** queda el saldo (el contratista cobra, la dependencia reintegra, o queda en cero). Se asienta una nota de bitácora de finiquito con la relación de importes y la cláusula de extinción. El contrato pasa a **"cerrado"** y queda en solo lectura: después de eso, intentar una nota, avance, estimación, convenio, minuta, garantía o sustitución es rechazado. El finiquito es inalterable.
 
