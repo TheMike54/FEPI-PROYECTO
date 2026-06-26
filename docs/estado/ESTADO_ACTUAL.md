@@ -107,7 +107,7 @@
 >   ENUM viejo sin migrar); al reaplicar `schema.sql` quedó **`tipo = VARCHAR(40)`** + catálogo
 >   `res_estimaciones`/`res_convenios`.
 > - **Render reconstruido desde cero** (backup → DROP SCHEMA → `schema.sql` → migraciones → reseed → 24
->   contratos; runbook en `docs/RUNBOOK_BD_RENDER_21jun.md`). **Confirmado por Maiki: 9 empresas, 24 contratos,
+>   contratos; runbook en `docs/planes/RUNBOOK_BD_RENDER_21jun.md`). **Confirmado por Maiki: 9 empresas, 24 contratos,
 >   columnas de foto OK, curva/convenio/pago funcionando.**
 > - **5 migraciones plegadas a `schema.sql`** (avance append-only, `atraso_asentado`, `estimacion_fotos`, hu20
 >   partida_fk, convenio_autorizacion): el patrón "migración sin plegar en `schema.sql`" (que hacía reventar

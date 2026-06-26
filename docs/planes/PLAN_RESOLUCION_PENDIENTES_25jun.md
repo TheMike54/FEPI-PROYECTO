@@ -2,7 +2,7 @@
 
 > **Qué es esto:** propuesta de ejecución para que **Maiki apruebe**. Una ficha por pendiente (P0–P5 + Anexo A)
 > con enfoque, archivos reales verificados contra el repo, si toca zona congelada, si necesita mockup, riesgo,
-> esfuerzo, dependencias y cita legal. **NADA de esto está implementado.** Insumos: `docs/PENDIENTES_MAESTRO_25jun.md`,
+> esfuerzo, dependencias y cita legal. **NADA de esto está implementado.** Insumos: `docs/pendientes/PENDIENTES_MAESTRO_25jun.md`,
 > `docs/audios/Combinado_2026-06-25_2145.md`, `docs/mockups/estimacion_completa_25jun.html` (APROBADO),
 > `docs/estado/ESTADO_ACTUAL.md`, `CLAUDE.md` (zona congelada).
 >
@@ -67,7 +67,7 @@ Todo vive en páginas/componentes editables. Es lo más barato y lo que más pal
 
 #### P0-1 · Respaldo de la BD de Render (`pg_dump`)
 - **Enfoque:** `pg_dump` de la base pagada **ya**, para no depender del free de nuevo. Guardar el dump fuera del repo.
-- **Archivos:** ninguno de código. Runbook existente `docs/RUNBOOK_BD_RENDER_21jun.md`.
+- **Archivos:** ninguno de código. Runbook existente `docs/planes/RUNBOOK_BD_RENDER_21jun.md`.
 - **Congelada:** N/A (operativo). **Mockup:** no. **Riesgo:** bajo. **Esfuerzo:** S (15 min).
 - **Dependencias:** ninguna. **Cita:** N/A.
 - **Responsable:** **Maiki** (no Code).

@@ -159,7 +159,7 @@ Jornada dedicada a dejar Render consistente y cerrar la deuda de esquema:
   de HU muestra la HU puntual + **indicador de HU global** (chip dorado en la barra superior, todas las pantallas).
 - **Evidencia fotográfica IMPLEMENTADA** (fotos BYTEA en `estimacion_fotos`, `/api/estimacion-fotos`, galería
   en el expediente; art. 132 fr. IV RLOPSRM) — deja de estar "fuera de alcance".
-- **Render reconstruido desde cero** con el runbook `docs/RUNBOOK_BD_RENDER_21jun.md` (backup → DROP SCHEMA →
+- **Render reconstruido desde cero** con el runbook `docs/planes/RUNBOOK_BD_RENDER_21jun.md` (backup → DROP SCHEMA →
   `schema.sql` → migraciones → reseed → **24 contratos `PRUEBA-HU-01..24`** + **9 empresas realistas**).
   Resuelto el **bug 4 "Autorizar = Error interno"** (era `bitacora_notas.tipo` ENUM viejo en Render → ahora
   VARCHAR + catálogo) y diagnosticado/corregido el **500 de la curva de avance (HU-05)** en Render.

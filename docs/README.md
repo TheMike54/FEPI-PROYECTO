@@ -33,6 +33,14 @@ código manda sobre los docs).
 | `REPORTE_REESTRUCTURACION_HISTORIAS_POR_CICLOS.md` | Regla de oro + enfoque por ciclos. |
 | `Historias_Usuario.xlsx` | Las 22 HU en formato del profe (foto previa). |
 
+### `entrega_profe/` — Paquete para revisión del profesor (lectura directa, sin jerga interna)
+| Archivo | Contenido |
+|---|---|
+| `README.md` | Índice del paquete (orden de lectura). |
+| `MEMORIA_TECNICA_SIGECOP_26jun.md` | Memoria técnica consolidada del sistema (arquitectura, datos, módulos por HU, reglas de cálculo, base legal). |
+| `MATRIZ_DE_PERMISOS_26jun.md` | Matriz de permisos por rol × HU + fundamento. |
+| `planes_y_soluciones/` | Expediente cronológico de planes y soluciones (44 docs + `INDICE.md`), redactado como relato del equipo. |
+
 ### `pruebas/` — Cómo probar el sistema
 | Archivo | Contenido |
 |---|---|
@@ -53,6 +61,8 @@ código manda sobre los docs).
 | `PLAN_REDISENO_MATCH_MOCKUP_18jun.md` | Plan del rediseño match-mockup (ejecutado). |
 | `PLAN_ORDENAMIENTO_DOCS_18jun.md` | Plan de esta reorganización de docs. |
 | `PLAN_ENTREGA_24jun.md` | Plan de entrega (24-jun). |
+| `RUNBOOK_BD_RENDER_21jun.md` | Runbook de reconstrucción de la BD en Render (backup → DROP SCHEMA → schema → reseed). |
+| `PLAN_ENTREGABLES_PROFE_26jun.md` | Propuesta de los entregables que aún faltan del profe (deducidos de los audios). |
 
 ### `reportes/` — Reportes y auditorías VIGENTES
 `REPORTE_REDISENO_MATCH_MOCKUP_18jun` · `REPORTE_EJECUCION_PLAN_GRANDE_18jun` · `AUDITORIA_DE_ORDEN_18jun` ·
@@ -71,10 +81,19 @@ Diagramas (`Arquitectura_SIGECOP.svg`, `diagrama_arquitectura.png`), entregables
 (`Estudio_Factibilidad_Tecnica_SIGECOP.docx`, `Plan_Pruebas_Sprints_1-3_SIGECOP.docx`, `Plan_Riesgos.xlsx`),
 `Acordeon_Defensa_SIGECOP.md` (gitignored) y `comandos usuario.txt` (gitignored).
 
+### `pendientes/` — Backlog y feedback de pantalla (lo que falta por resolver)
+| Archivo | Contenido |
+|---|---|
+| `PENDIENTES_MAESTRO_25jun.md` | Backlog maestro de pendientes. |
+| `OBSERVACIONES_PANTALLA_25jun.md` | Observaciones/bugs vistos en pantalla por Maiki (notas para firmar, fotos de avance, ciclo de estimación, pago, convenios, curva, expediente, bitácora, reportes, portafolio, sustitución). |
+| `captura_feedback_campanita_25jun.png` | Captura que acompaña las observaciones. |
+
 ### `historial/` — TODO lo superado (nada se borró)
 `fundacion/` · `oleadas/` · `contexto/` (contextos viejos) · `revisiones-profe/` · `planes/` (planes ejecutados) ·
-`sesiones/` (reportes de sesión consolidados) · `integraciones-equipos/` · `analisis-y-diseno/` (maquetas viejas,
-auditoría de código muerto) · `pruebas/` (planes/guiones de prueba superados) · `_duplicados/`.
+`sesiones/` (reportes de sesión consolidados + briefs) · `integraciones-equipos/` · `analisis-y-diseno/` (maquetas
+viejas, auditoría de código muerto) · `pruebas/` (planes/guiones de prueba superados) · `_duplicados/` ·
+`codex-reorg-por-ciclo-26jun/` (reorganización por ciclo hecha con Codex; **archivo paralelo** que solapa los
+subdirectorios de arriba — vista alternativa, conservada para que Maiki decida si la adopta como canónica).
 
 ---
 

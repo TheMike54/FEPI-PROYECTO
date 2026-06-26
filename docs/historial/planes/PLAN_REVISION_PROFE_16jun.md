@@ -1,6 +1,6 @@
 # SIGECOP — Plan tras la revisión del profe · 16 jun 2026
 
-> **Fuente real:** transcripción `docs/WhatsApp Audio 2026-06-16 at 10.11.12 PM_transcript.txt` (25:39, profe
+> **Fuente real:** transcripción `docs/audios/WhatsApp Audio 2026-06-16 at 10.11.12 PM_transcript.txt` (25:39, profe
 > Carlos Silva = Speaker B) + audio previo `docs/audios/...15-jun...` + `docs/REQUERIMIENTOS_PROFE_CONSOLIDADO.md`
 > + estado real `docs/contexto-claude/ESTADO_ACTUAL.md`.
 >
@@ -131,7 +131,7 @@ o reusar `contrato_documentos` con un `tipo`. **Decisión a Maiki** marcada en e
 Soy Maiki. FASE 0 — quick-wins del EXPEDIENTE (HU-04) y de PRESENTAR estimación por estado, según la revisión
 del profe del 16-jun. LOCAL, sin commit/push. NO toques zona congelada (App.jsx, permisos.js, server.js,
 schema.sql salvo aditivo idempotente, auth, cálculo de carátula). Lee ESTADO_ACTUAL.md y la transcripción
-docs/WhatsApp Audio 2026-06-16*.txt antes de tocar nada.
+docs/audios/WhatsApp Audio 2026-06-16*.txt antes de tocar nada.
 
 (A) EXPEDIENTE — Programa sin ejecución [audio 02:06-02:35]:
 En frontend/src/pages/ConsultaExpediente.jsx -> BloquePrograma (y components/programa/MatrizProgramaLectura.jsx),
