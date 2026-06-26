@@ -48,6 +48,14 @@ const NOMBRE_ROL = {
 const moneda = (n) =>
   `$ ${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+// El reingreso (HU-16) se retiró de la UI: una estimación rechazada se resuelve volviendo a
+// integrar (HU-12) y a presentar (HU-13), no con un "reingreso" aparte. Para las rechazadas se
+// muestra esa acción correcta en "Mis pendientes" en lugar del texto de reingreso heredado.
+const accionPendiente = (p) =>
+  p.estado === 'rechazada'
+    ? 'Volver a integrar la estimación (HU-12) y presentarla de nuevo (HU-13)'
+    : p.accion;
+
 function EstadoBadge({ estado, etiqueta }) {
   return (
     <span className={`inline-block px-2 py-0.5 rounded text-xs font-semibold ${COLOR_ESTADO[estado] || 'bg-slate-200 text-slate-600'}`}>
@@ -339,7 +347,7 @@ export default function TableroEstimaciones() {
                   >
                     <span className="text-sigecop-accent">▸</span>
                     <span>
-                      <strong>{p.folio} · Estimación N.º {p.numero}</strong> — {p.accion}
+                      <strong>{p.folio} · Estimación N.º {p.numero}</strong> — {accionPendiente(p)}
                     </span>
                   </li>
                 ))}

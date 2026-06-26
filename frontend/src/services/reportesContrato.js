@@ -319,7 +319,7 @@ function estimacionesExcel(d, contrato, periodo) {
       filas,
       totales: { label: 'TOTALES', labelKey: 'estim', sumKeys: ['subtotal', 'neto'] }
     }],
-    notas: ['Incluye las estimaciones rechazadas para trazabilidad. Una estimación rechazada no se borra: se vuelve a integrar y a presentar como una versión nueva vinculada (HU-16).']
+    notas: ['Incluye las estimaciones rechazadas para trazabilidad. Una estimación rechazada no se borra: se vuelve a integrar (HU-12) y a presentar (HU-13) como una versión nueva vinculada.']
   });
 }
 
