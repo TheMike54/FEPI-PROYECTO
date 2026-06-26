@@ -320,8 +320,8 @@ export default function TransitoPago() {
           <div data-testid="wstep-pago-suficiencia">
           <SuficienciaPresupuestal suf={suf} />
 
-          {/* Carga de techo (finanzas) cuando falta presupuesto. */}
-          {suf.sin_presupuesto && !soloLectura && (
+          {/* Carga de techo (finanzas) cuando falta presupuesto. Solo Finanzas (el contratista no carga techo: el botón le daba 403). */}
+          {suf.sin_presupuesto && !soloLectura && rol === 'finanzas' && (
             <div className="bg-white border border-borde rounded-md p-5 mb-6">
               <h3 className="text-sm font-bold uppercase tracking-wider text-tinta-sec mb-2">Cargar techo presupuestal (finanzas)</h3>
               {transito.estimacion.dependencia_id == null ? (

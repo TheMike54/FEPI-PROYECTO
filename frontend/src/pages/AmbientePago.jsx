@@ -159,7 +159,7 @@ export default function AmbientePago() {
                       <td className="px-3 py-2">{s.pagada ? <span className="text-emerald-700 text-xs font-semibold">pagada</span> : <span className="text-amber-700 text-xs font-semibold">por cobrar</span>}</td>
                       <td className="px-3 py-2 text-right">
                         {!s.pagada && (
-                          <LinkHU hu="HU-21" to={`/pagos/registro?contrato=${s.contrato_id}&estimacion=${s.estimacion_id}`} className="text-sigecop-accent hover:underline text-xs font-semibold" data-testid={`cola-pagar-${s.instruccion_id}`} actor="Lo registra Finanzas">Registrar pago →</LinkHU>
+                          <LinkHU hu="HU-21" to={`/pagos/transito?contrato=${s.contrato_id}&estimacion=${s.estimacion_id}`} className="text-sigecop-accent hover:underline text-xs font-semibold" data-testid={`cola-pagar-${s.instruccion_id}`} actor="Lo registra Finanzas">Registrar pago →</LinkHU>
                         )}
                       </td>
                     </tr>
@@ -220,7 +220,7 @@ export default function AmbientePago() {
           Finanzas registra el pago de la estimación autorizada: el <strong>importe = neto</strong> (lo
           calcula el sistema, no se teclea), no se paga dos veces ni una no autorizada (candados de HU-21).
         </p>
-        <LinkHU hu="HU-21" to={`/pagos/registro${q}`} className="sg-btn-primary" data-testid="link-registro" actor="Lo registra Finanzas">
+        <LinkHU hu="HU-21" to={`/pagos/transito${q}`} className="sg-btn-primary" data-testid="link-registro" actor="Lo registra Finanzas">
           Registrar el pago (HU-21) →
         </LinkHU>
       </Bloque>

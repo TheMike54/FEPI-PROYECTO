@@ -521,11 +521,11 @@ export default function TrabajosTerminados() {
                   </div>
                 </div>
 
-                {/* H2-B2-1 — Fotos de evidencia REQUERIDAS (≥1), con descripción por foto. Se adjuntan AL registrar. */}
+                {/* Fotos de evidencia OPCIONALES (art. 132 fr. IV RLOPSRM, discrecional; decisión profe 25-jun). Con descripción por foto. Se adjuntan AL registrar. */}
                 <div className="mt-4">
                   <label className="sg-label">
-                    Fotos de evidencia <span className="text-red-600">*</span>
-                    <span className="text-xs font-normal text-slate-500"> (al menos una — se adjuntan al registrar; puedes agregar varias)</span>
+                    Fotos de evidencia
+                    <span className="text-xs font-normal text-slate-500"> (opcional — art. 132 fr. IV RLOPSRM, discrecional; se adjuntan al registrar y puedes agregar varias)</span>
                   </label>
                   <input
                     type="file"
