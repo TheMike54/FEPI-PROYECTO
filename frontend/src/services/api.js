@@ -209,6 +209,10 @@ export const api = {
   // agregadas DESPUÉS del registro, que antes quedaban sin forma de anotarse). PATCH /avance-fotos/:id.
   editarFotoAvance: (fotoId, descripcion) => request(`/avance-fotos/${fotoId}`, { method: 'PATCH', body: JSON.stringify({ descripcion }) }),
   eliminarFotoAvance: (fotoId) => request(`/avance-fotos/${fotoId}`, { method: 'DELETE' }),
+  // Reporte fotográfico del periodo para el wizard de estimación (paso 4 Soportes).
+  // Devuelve todas las fotos del avance vigente del contrato en el periodo indicado.
+  avanceFotosDelPeriodo: (contratoId, inicio, fin) =>
+    request(`/avance-fotos/contrato/${contratoId}/periodo?inicio=${inicio}&fin=${fin}`),
   subirPdfMinuta: (minutaId, file) => {
     const fd = new FormData(); fd.append('documento', file);
     const token = localStorage.getItem('sigecop_token');

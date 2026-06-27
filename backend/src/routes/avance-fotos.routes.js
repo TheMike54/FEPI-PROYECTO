@@ -4,7 +4,7 @@
 const express = require('express');
 const multer = require('multer');
 const { authMiddleware } = require('../middlewares/auth.middleware');
-const { listarFotos, subirFoto, descargarFoto, editarFoto, eliminarFoto } = require('../controllers/avance-fotos.controller');
+const { listarFotos, subirFoto, descargarFoto, editarFoto, eliminarFoto, listarFotosDelPeriodo } = require('../controllers/avance-fotos.controller');
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -27,6 +27,8 @@ function subirImagen(req, res, next) {
   });
 }
 
+// Reporte fotográfico del periodo (wizard estimación paso 4) — ANTES de /:fotoId para evitar conflicto de patrón
+router.get('/contrato/:contratoId/periodo', listarFotosDelPeriodo);
 router.get('/avance/:avanceId', listarFotos);
 router.post('/avance/:avanceId', subirImagen, subirFoto);
 router.get('/archivo/:fotoId', descargarFoto);

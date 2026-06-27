@@ -6,7 +6,6 @@ import HeaderVista from '../components/vista/HeaderVista.jsx';
 import EncabezadoContrato from '../components/ui/EncabezadoContrato.jsx';
 import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import RegionEditable from '../components/vista/RegionEditable.jsx';
-import BuscadorNotas, { useFiltrosNotas } from '../components/notas/BuscadorNotas.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
@@ -20,7 +19,6 @@ import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
 // HU-12 Fase 3 — cableado al backend real. El superintendente del contrato integra
 // la estimación del periodo como expediente (art. 132 RLOPSRM). Toda la verdad del
 // dinero la calcula el backend al integrar; la carátula del cliente es SOLO preview.
-// El buscador de notas REUSA el componente compartido de HU-10 (BuscadorNotas).
 
 // moneda: utilidad compartida (utils/formato.js)
 const num = (n) => (Number(n) || 0).toLocaleString('es-MX', { maximumFractionDigits: 4 });
@@ -65,71 +63,83 @@ const BadgeEstado = ({ estado }) => (
 );
 
 // ---------------------------------------------------------------------------
-// Modal de vinculación de notas — REUSA el BuscadorNotas de HU-10. El padre le
-// pasa las notas REALES del contrato (notasDeContrato), el catálogo de tipos y
-// el Set de ids ya vinculados (excluirIds). Se monta/desmonta por apertura, así
-// que la selección arranca limpia cada vez.
+// Reporte fotográfico del avance del periodo — paso 4 del wizard de estimación.
+// Muestra las fotos del avance (avance_fotos) agrupadas por concepto para el
+// periodo que se está estimando (art. 132 fr. IV RLOPSRM).
 // ---------------------------------------------------------------------------
-function ModalVincularNotas({ onCerrar, onConfirmar, notas, tipos, yaVinculadas }) {
-  const excluir = useMemo(() => new Set(yaVinculadas), [yaVinculadas]);
-  const { filtros, setFiltro, limpiar, resultados, firmantesUnicos, numeroPorId } = useFiltrosNotas(notas, { excluirIds: excluir });
-  const [seleccionadas, setSeleccionadas] = useState(() => new Set());
+function FotosAvancePeriodo({ fotos, cargando }) {
+  const [urls, setUrls] = useState({});
 
-  const toggle = (id) => setSeleccionadas((prev) => {
-    const n = new Set(prev);
-    if (n.has(id)) n.delete(id); else n.add(id);
-    return n;
-  });
-  const toggleTodas = () => setSeleccionadas((prev) => {
-    const todas = resultados.length > 0 && resultados.every((n) => prev.has(n.id));
-    const n = new Set(prev);
-    resultados.forEach((r) => (todas ? n.delete(r.id) : n.add(r.id)));
-    return n;
-  });
+  useEffect(() => {
+    if (!fotos || fotos.length === 0) { setUrls({}); return; }
+    let activo = true;
+    const nuevos = {};
+    Promise.all(fotos.map(async (f) => {
+      try {
+        const url = await api.descargarFotoAvance(f.id);
+        if (activo) nuevos[f.id] = url;
+      } catch { /* skip foto con error */ }
+    })).then(() => {
+      if (activo) setUrls((prev) => {
+        Object.values(prev).forEach((u) => { try { URL.revokeObjectURL(u); } catch { /* noop */ } });
+        return { ...nuevos };
+      });
+    });
+    return () => {
+      activo = false;
+      Object.values(nuevos).forEach((u) => { try { URL.revokeObjectURL(u); } catch { /* noop */ } });
+    };
+  }, [fotos]);
 
-  const confirmar = () => onConfirmar(notas.filter((n) => seleccionadas.has(n.id)));
+  useEffect(() => () => {
+    setUrls((prev) => {
+      Object.values(prev).forEach((u) => { try { URL.revokeObjectURL(u); } catch { /* noop */ } });
+      return {};
+    });
+  }, []);
+
+  if (cargando) return <p className="text-sm text-slate-500 italic py-4">Cargando reporte fotográfico…</p>;
+  if (!fotos || fotos.length === 0) {
+    return (
+      <p className="text-sm text-slate-400 italic py-4" data-testid="fotos-avance-vacias">
+        Sin reporte fotográfico del avance para este periodo.
+      </p>
+    );
+  }
+
+  // Agrupar por contrato_concepto_id preservando el orden de aparición
+  const grupos = [];
+  const idx = {};
+  fotos.forEach((f) => {
+    const k = f.contrato_concepto_id;
+    if (idx[k] == null) { idx[k] = grupos.length; grupos.push({ key: k, clave: f.clave, concepto: f.concepto, unidad: f.unidad, fotos: [] }); }
+    grupos[idx[k]].fotos.push(f);
+  });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-40 p-4" data-testid="modal-vincular-notas">
-      <div className="bg-white rounded-md shadow-lg max-w-5xl w-full max-h-[90vh] flex flex-col">
-        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between">
-          <h3 className="text-lg font-bold text-sigecop-blue">Buscar y vincular notas de bitácora</h3>
-          <button type="button" className="text-slate-400 hover:text-slate-700 text-xl leading-none" onClick={onCerrar} aria-label="Cerrar">×</button>
+    <div className="space-y-5" data-testid="fotos-avance-periodo">
+      {grupos.map((g) => (
+        <div key={g.key}>
+          <p className="text-xs font-semibold text-slate-600 mb-2">
+            <span className="font-mono text-sigecop-blue">{g.clave}</span> — {g.concepto} <span className="text-slate-400">({g.unidad})</span>
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {g.fotos.map((f) => (
+              <div key={f.id} className="border border-slate-200 rounded-md overflow-hidden" data-testid={`foto-avance-${f.id}`}>
+                {urls[f.id]
+                  ? <a href={urls[f.id]} target="_blank" rel="noopener noreferrer">
+                      <img src={urls[f.id]} alt={f.nombre} className="w-full h-36 object-cover" />
+                    </a>
+                  : <div className="w-full h-36 bg-slate-100 flex items-center justify-center text-2xl">📷</div>}
+                <div className="p-2">
+                  <p className="text-xs text-slate-700 leading-snug">{f.descripcion || <span className="italic text-slate-400">Sin descripción</span>}</p>
+                  <p className="text-[10px] text-slate-400 mt-1 truncate">{f.nombre}</p>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
-        <div className="flex-1 overflow-auto px-6 py-4">
-          {notas.length === 0 ? (
-            <p className="p-8 text-center text-slate-400 italic" data-testid="mb-sin-notas">
-              Este contrato no tiene notas <strong>firmadas</strong> para vincular (solo las firmadas soportan la estimación).
-            </p>
-          ) : (
-            <BuscadorNotas
-              filtros={filtros}
-              setFiltro={setFiltro}
-              onLimpiar={limpiar}
-              tipos={tipos}
-              firmantesUnicos={firmantesUnicos}
-              resultados={resultados}
-              numeroPorId={numeroPorId}
-              seleccionadas={seleccionadas}
-              onToggle={toggle}
-              onToggleTodas={toggleTodas}
-              idPrefix="mb-"
-            />
-          )}
-        </div>
-        <div className="px-6 py-3 border-t border-slate-200 flex justify-end gap-3">
-          <button type="button" className="px-4 py-2 text-slate-600 hover:text-slate-900" onClick={onCerrar}>Cancelar</button>
-          <button
-            type="button"
-            className="sg-btn-primary disabled:bg-slate-300 disabled:cursor-not-allowed"
-            disabled={seleccionadas.size === 0}
-            onClick={confirmar}
-            data-testid="mb-btn-confirmar"
-          >
-            Vincular {seleccionadas.size > 0 ? `(${seleccionadas.size})` : ''}
-          </button>
-        </div>
-      </div>
+      ))}
     </div>
   );
 }
@@ -476,64 +486,6 @@ function TabCaratula({ caratula, anticipoPct, deductivas, onDeductivas, acumulad
   );
 }
 
-function TabNotasVinculadas({ vinculadas, onAbrir, onQuitar, onVerDocumento, soloLectura }) {
-  return (
-    <div>
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <h3 className="text-lg font-bold text-sigecop-blue">Notas vinculadas a esta estimación ({vinculadas.length})</h3>
-        {!soloLectura && (
-          <button type="button" className="sg-btn-secondary" onClick={onAbrir} data-testid="btn-abrir-buscador-notas">
-            🔍 Buscar y vincular notas firmadas
-          </button>
-        )}
-      </div>
-      <p className="text-sm text-slate-600 mb-4">
-        Las notas de bitácora <strong>firmadas</strong> que soportan esta estimación forman parte de su expediente
-        (art. 132 fr. II RLOPSRM). Cada una se puede ver como documento imprimible.
-      </p>
-      <div className="overflow-x-auto border border-slate-200 rounded-md">
-        <table className="w-full text-sm" data-testid="tabla-notas-vinculadas">
-          <thead className="bg-slate-50 text-slate-700">
-            <tr>
-              <th className="text-left p-3 font-semibold">Folio</th>
-              <th className="text-left p-3 font-semibold">Tipo</th>
-              <th className="text-left p-3 font-semibold">Fecha</th>
-              <th className="text-left p-3 font-semibold">Firmante</th>
-              <th className="text-left p-3 font-semibold">Asunto</th>
-              <th className="text-left p-3 font-semibold">Documento</th>
-              <th className="text-center p-3 font-semibold w-24">Quitar</th>
-            </tr>
-          </thead>
-          <tbody>
-            {vinculadas.length === 0 ? (
-              <tr><td colSpan="7" className="p-6 text-center text-slate-400 italic">Sin notas vinculadas.</td></tr>
-            ) : (
-              vinculadas.map((n) => (
-                <tr key={n.id} className="border-t border-slate-200 hover:bg-slate-50">
-                  <td className="p-3 font-mono text-xs">#{n.numero}</td>
-                  <td className="p-3">{n.tipo_etiqueta || n.tipo}</td>
-                  <td className="p-3">{fechaHora(n.fecha)}</td>
-                  <td className="p-3">{n.emisor_nombre || '—'}</td>
-                  <td className="p-3 text-slate-700">{n.asunto || '—'}</td>
-                  <td className="p-3">
-                    <button type="button" className="text-xs text-guinda font-semibold hover:underline whitespace-nowrap" onClick={() => onVerDocumento(n)} data-testid={`btn-doc-vinculada-${n.numero}`}>
-                      📄 Ver como documento
-                    </button>
-                  </td>
-                  <td className="p-3 text-center">
-                    {!soloLectura && (
-                      <button type="button" className="text-xs text-red-600 hover:underline" onClick={() => onQuitar(n.id)}>Quitar</button>
-                    )}
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
 
 // ------------------------------ Página ------------------------------------
 
@@ -545,7 +497,6 @@ export default function IntegracionEstimacion() {
 
   const [contratos, setContratos] = useState([]);
   const [contratoId, setContratoId] = useState('');
-  const [tipos, setTipos] = useState([]);
 
   const [avance, setAvance] = useState([]);
   // Etapa A: datos derivados (solo lectura) para el semáforo de plan + saldos + barras de avance.
@@ -561,8 +512,8 @@ export default function IntegracionEstimacion() {
   const [deductivas, setDeductivas] = useState('0');
   const [periodoInicio, setPeriodoInicio] = useState('');
   const [periodoFin, setPeriodoFin] = useState('');
-  const [notasVinculadas, setNotasVinculadas] = useState([]);
-  const [modalAbierto, setModalAbierto] = useState(false);
+  const [fotosAvance, setFotosAvance] = useState([]);
+  const [cargandoFotos, setCargandoFotos] = useState(false);
 
   const [integrando, setIntegrando] = useState(false);
   const [resultado, setResultado] = useState(null);
@@ -580,11 +531,10 @@ export default function IntegracionEstimacion() {
   const anticipoPct = selected && selected.anticipo_pct != null ? Number(selected.anticipo_pct) : 0;
   const esSuperintendente = selected && usuario && selected.superintendente_id === usuario.id;
 
-  // Carga inicial: contratos del usuario + catálogo de tipos de nota (para el modal).
+  // Carga inicial: contratos del usuario.
   useEffect(() => {
     if (sinSesion) return;
     api.listarContratos().then((l) => setContratos(Array.isArray(l) ? l : [])).catch(() => setContratos([]));
-    api.notaTipos().then((t) => setTipos(Array.isArray(t) ? t : [])).catch(() => setTipos([]));
   }, [sinSesion]);
 
   const recargarAvance = useCallback(async (id) => {
@@ -606,7 +556,7 @@ export default function IntegracionEstimacion() {
     setContratoId(id);
     setAvance([]); setPrep(null); setPrograma(null); setHistorial([]); setNotasContrato([]);
     setCantidades({}); setDeductivas('0'); setPeriodoInicio(''); setPeriodoFin('');
-    setNotasVinculadas([]); setResultado(null); setErrorIntegrar(null);
+    setFotosAvance([]); setResultado(null); setErrorIntegrar(null);
     setPaso(0); setCierreConfirmado(false); // wizard: vuelve al paso 1 al cambiar de contrato
     if (!id) return;
     setCargando(true);
@@ -788,28 +738,23 @@ export default function IntegracionEstimacion() {
     setPaso(target);
   }, [paso, pasoValido]);
 
-  const idsVinculados = useMemo(() => notasVinculadas.map((n) => n.id), [notasVinculadas]);
-  // O8 (a): solo se vinculan notas FIRMADAS del contrato ("notas que soportan esta estimación"). El
-  // estado 'firmada' lo deriva el backend (todo el roster firmó antes del plazo, art. 123 fr. III). Se
-  // excluye la APERTURA (nota #1): es el acta de apertura de la bitácora, no un soporte de la estimación.
-  const notasFirmadas = useMemo(
-    () => notasContrato.filter((n) => n.aceptacion === 'firmada' && n.tipo !== 'apertura'),
-    [notasContrato]
-  );
-  // O8 (b): abrir el documento de una nota. La nota vinculada/del detalle puede venir mínima (solo
-  // nota_id/numero); se resuelve a la nota COMPLETA (con firmas) desde notasContrato cuando existe.
+  // O8 (b): abrir el documento de una nota desde el ModalDetalle del historial.
+  // La nota puede venir mínima (nota_id/numero); se resuelve a la nota COMPLETA desde notasContrato.
   const verDocumentoNota = useCallback((n) => {
     const id = n.id ?? n.nota_id;
     setNotaDoc(notasContrato.find((x) => x.id === id) || n);
   }, [notasContrato]);
-  const confirmarNotas = (elegidas) => {
-    setNotasVinculadas((prev) => {
-      const existentes = new Set(prev.map((n) => n.id));
-      return [...prev, ...elegidas.filter((n) => !existentes.has(n.id))];
-    });
-    setModalAbierto(false);
-  };
-  const quitarNota = (id) => setNotasVinculadas((prev) => prev.filter((n) => n.id !== id));
+
+  // Carga el reporte fotográfico del avance al entrar al paso 4 (Soportes).
+  // La nota de bitácora la crea el backend automáticamente al integrar — no hay que vincularla.
+  useEffect(() => {
+    if (paso !== 3 || !contratoId || !periodoInicio || !periodoFin) return;
+    setCargandoFotos(true);
+    api.avanceFotosDelPeriodo(contratoId, periodoInicio, periodoFin)
+      .then((data) => setFotosAvance(Array.isArray(data) ? data : []))
+      .catch(() => setFotosAvance([]))
+      .finally(() => setCargandoFotos(false));
+  }, [paso, contratoId, periodoInicio, periodoFin]);
 
   const integrar = async () => {
     if (!contratoId || hayExceso || hayExcesoPlan || integrando) return;
@@ -824,13 +769,13 @@ export default function IntegracionEstimacion() {
         periodo_fin: periodoFin,
         deductivas: Number(deductivas) || 0,
         generadores,
-        notas: notasVinculadas.map((n) => n.id)
+        notas: []
       });
       setResultado(est);
       showToast(`Estimación #${est.numero} integrada`);
       // El acumulado y el historial cambiaron: recargar y limpiar el formulario.
       await Promise.all([recargarAvance(contratoId), recargarHistorial(contratoId)]);
-      setCantidades({}); setDeductivas('0'); setPeriodoInicio(''); setPeriodoFin(''); setNotasVinculadas([]);
+      setCantidades({}); setDeductivas('0'); setPeriodoInicio(''); setPeriodoFin(''); setFotosAvance([]);
     } catch (e) {
       // Errores localizados del backend tal cual (400 periodo>1 mes / neto<0; 409
       // exceso art.118 / solape; 403 no superintendente).
@@ -1051,11 +996,17 @@ export default function IntegracionEstimacion() {
             </div>
           )}
 
-          {/* PASO 4 · Soportes y notas (vincular notas firmadas + registro fotográfico). */}
+          {/* PASO 4 · Soportes — reporte fotográfico del avance del periodo (art. 132 fr. IV RLOPSRM).
+               La nota de bitácora se crea automáticamente en el backend al integrar; no hay que vincularla. */}
           {paso === 3 && (
             <div className="space-y-4" data-testid="wstep-soportes">
               {wrapTab(
-                <TabNotasVinculadas vinculadas={notasVinculadas} onAbrir={() => setModalAbierto(true)} onQuitar={quitarNota} onVerDocumento={verDocumentoNota} soloLectura={soloLectura} />
+                <div className="bg-white border border-slate-200 rounded-lg p-4" data-testid="fotos-avance-periodo-wrapper">
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-3">
+                    Reporte fotográfico del avance (art. 132 fr. IV RLOPSRM)
+                  </h3>
+                  <FotosAvancePeriodo fotos={fotosAvance} cargando={cargandoFotos} />
+                </div>
               )}
               {/* A2 — Checklist de los documentos de la estimación (art. 132 RLOPSRM). Lista ENUNCIATIVA
                   ("entre otros… los determinará cada dependencia"): se muestran las 7 fracciones, dónde vive
@@ -1066,9 +1017,9 @@ export default function IntegracionEstimacion() {
                 <ul className="space-y-1.5 text-sm">
                   {[
                     { fr: 'I', t: 'Números generadores', donde: 'Capturados en el paso 2 (Generadores).', estado: 'incluido' },
-                    { fr: 'II', t: 'Notas de bitácora', donde: notasVinculadas.length ? `${notasVinculadas.length} nota(s) firmada(s) vinculada(s) en este paso.` : 'Vincula aquí las notas de bitácora firmadas.', estado: notasVinculadas.length ? 'incluido' : 'pendiente' },
+                    { fr: 'II', t: 'Notas de bitácora', donde: 'Se genera automáticamente al integrar la estimación.', estado: 'incluido' },
                     { fr: 'III', t: 'Croquis', donde: 'Se adjunta en el Expediente del contrato (HU-04), si la obra lo amerita.', estado: 'dependencia' },
-                    { fr: 'IV', t: 'Controles de calidad, pruebas de laboratorio y fotografías', donde: 'Fotografías por generador en el Expediente, una vez integrada la estimación; controles/pruebas como soporte documental.', estado: 'dependencia' },
+                    { fr: 'IV', t: 'Controles de calidad, pruebas de laboratorio y fotografías', donde: fotosAvance.length ? `${fotosAvance.length} foto(s) del avance del periodo adjunta(s) en este paso.` : 'Reporte fotográfico del avance visible arriba; controles/pruebas como soporte documental adicional.', estado: fotosAvance.length ? 'incluido' : 'pendiente' },
                     { fr: 'V', t: 'Análisis, cálculo e integración de los importes', donde: 'Es la carátula de la estimación (paso 3).', estado: 'incluido' },
                     { fr: 'VI', t: 'Avances de obra (contratos a precio alzado)', donde: /alzado/i.test(selected?.tipo || '') ? 'Aplica: contrato a precio alzado.' : 'No aplica: contrato a base de precios unitarios.', estado: /alzado/i.test(selected?.tipo || '') ? 'dependencia' : 'na' },
                     { fr: 'VII', t: 'Informe de cumplimiento de operación y mantenimiento', donde: 'Según lo establezca el contrato.', estado: 'dependencia' },
@@ -1199,15 +1150,6 @@ export default function IntegracionEstimacion() {
         ]}
       />
 
-      {modalAbierto && (
-        <ModalVincularNotas
-          notas={notasFirmadas}
-          tipos={tipos}
-          yaVinculadas={idsVinculados}
-          onConfirmar={confirmarNotas}
-          onCerrar={() => setModalAbierto(false)}
-        />
-      )}
       {detalle && <ModalDetalle estimacion={detalle} onCerrar={() => setDetalle(null)} onVerDocumento={verDocumentoNota} onVerCaratula={setCaratulaDoc} />}
       {notaDoc && <DocumentoNota nota={notaDoc} contrato={selected} onCerrar={() => setNotaDoc(null)} />}
       {caratulaDoc && <DocumentoCaratula estimacion={caratulaDoc} contrato={selected} clavesPorConcepto={metaPorConcepto} onCerrar={() => setCaratulaDoc(null)} />}

@@ -128,4 +128,39 @@ async function eliminarFoto(req, res) {
   } catch (err) { console.error('[avance eliminarFoto]', err); return res.status(500).json({ error: 'Error interno' }); }
 }
 
-module.exports = { listarFotos, subirFoto, descargarFoto, editarFoto, eliminarFoto };
+// GET /api/avance-fotos/contrato/:contratoId/periodo?inicio=YYYY-MM-DD&fin=YYYY-MM-DD
+// Devuelve metadatos de avance_fotos para todos los concepto_avance vigentes del contrato en ese periodo.
+// Usado por el wizard de estimación (paso 4 Soportes) para mostrar el reporte fotográfico del avance.
+async function listarFotosDelPeriodo(req, res) {
+  try {
+    const contratoId = Number(req.params.contratoId);
+    const { inicio, fin } = req.query;
+    if (!Number.isInteger(contratoId) || contratoId <= 0) return res.status(400).json({ error: 'contrato inválido' });
+    if (!inicio || !fin) return res.status(400).json({ error: 'Faltan parámetros inicio y fin' });
+
+    const cr = await pool.query(
+      `SELECT id, created_by, residente_id, superintendente_id, supervision_id FROM contratos WHERE id = $1`,
+      [contratoId]
+    );
+    if (!cr.rowCount) return res.status(404).json({ error: 'Contrato no encontrado' });
+    if (!esParteOSupervision(req.user, cr.rows[0])) return res.status(403).json({ error: 'No tienes acceso a este contrato' });
+
+    const r = await pool.query(
+      `SELECT af.id, af.avance_id, af.nombre, af.descripcion, af.mime, af.tamano, af.subido_por, af.created_at,
+              ca.contrato_concepto_id, cc.concepto, cc.clave, cc.unidad
+         FROM avance_fotos af
+         JOIN concepto_avance ca ON ca.id = af.avance_id
+         JOIN contrato_conceptos cc ON cc.id = ca.contrato_concepto_id
+         JOIN contrato_periodos cp ON cp.id = ca.contrato_periodo_id
+        WHERE cc.contrato_id = $1
+          AND cp.inicio = $2
+          AND cp.fin = $3
+          AND ca.estado = 'vigente'
+        ORDER BY ca.contrato_concepto_id, af.id`,
+      [contratoId, inicio, fin]
+    );
+    return res.status(200).json(r.rows);
+  } catch (err) { console.error('[avance listarFotosDelPeriodo]', err); return res.status(500).json({ error: 'Error interno' }); }
+}
+
+module.exports = { listarFotos, subirFoto, descargarFoto, editarFoto, eliminarFoto, listarFotosDelPeriodo };
