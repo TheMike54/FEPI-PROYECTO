@@ -108,6 +108,7 @@ export default function ConveniosModificatorios() {
   const [errorRegistro, setErrorRegistro] = useState('');
   const [subiendoOficioId, setSubiendoOficioId] = useState(null); // FASE 0C: oficio de aprobación del convenio
   const [autorizandoId, setAutorizandoId] = useState(null); // ITEM 3.2: acto de autorización del servidor facultado
+  const [confirmarAutorizar, setConfirmarAutorizar] = useState(null); // M1 (01-jul): convenio a confirmar antes de autorizar
 
   // Detalle de versión expandido (snapshot del programa).
   const [verVersionId, setVerVersionId] = useState(null);
@@ -757,7 +758,7 @@ export default function ConveniosModificatorios() {
                                   type="button"
                                   className="w-fit text-sigecop-accent hover:underline font-semibold disabled:text-slate-400 disabled:no-underline"
                                   disabled={autorizandoId != null}
-                                  onClick={() => autorizar(c.id)}
+                                  onClick={() => setConfirmarAutorizar(c)}
                                   data-testid={`conv-autorizar-${c.id}`}
                                 >
                                   {autorizandoId === c.id ? 'Autorizando…' : '✔ Autorizar convenio'}
@@ -952,6 +953,25 @@ export default function ConveniosModificatorios() {
           </div>
         );
       })()}
+
+      {/* M1 (01-jul) — confirmación antes de AUTORIZAR el convenio (acto definitivo, art. 59 párr. 3 LOPSRM).
+          D1: la dependencia es la autoridad única (registra Y autoriza); la confirmación hace el acto consciente. */}
+      {confirmarAutorizar && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4" data-testid="modal-confirmar-autorizar">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md overflow-hidden">
+            <div className="bg-guinda text-white px-4 py-3 font-semibold flex items-center gap-2">⚠ Autorizar convenio modificatorio</div>
+            <div className="p-5 text-sm text-tinta space-y-3">
+              <p>Vas a <strong>AUTORIZAR</strong> el convenio <strong>{confirmarAutorizar.folio}</strong> (tipo: {confirmarAutorizar.tipo}{confirmarAutorizar.delta_monto_pct != null ? ` · Δ ${confirmarAutorizar.delta_monto_pct}%` : ''}).</p>
+              <p className="text-tinta-sec">Este acto es <strong>DEFINITIVO</strong> y queda asentado en bitácora (art. 59 párr. 3 LOPSRM). No se puede deshacer.</p>
+              <p className="text-xs text-tinta-ter">Oficio de aprobación: {confirmarAutorizar.tiene_oficio ? '✓ cargado' : '⚠ falta cargarlo (el backend lo exigirá)'}</p>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" className="sg-btn-secondary" onClick={() => setConfirmarAutorizar(null)} data-testid="modal-autorizar-cancelar">Cancelar</button>
+                <button type="button" className="sg-btn-primary disabled:opacity-40" disabled={autorizandoId != null} onClick={() => { const id = confirmarAutorizar.id; setConfirmarAutorizar(null); autorizar(id); }} data-testid="modal-autorizar-confirmar">Sí, autorizar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

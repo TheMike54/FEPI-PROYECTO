@@ -408,14 +408,13 @@ async function autorizarConvenio(req, res) {
       const conv = cv.rows[0];
       if (!esParteOSupervision(req.user, conv)) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'No tienes acceso a este convenio' }); }
       if (conv.estado !== 'registrado') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'El convenio ya está autorizado; el acto de autorización es único (art. 59 LOPSRM)' }); }
-      // BUG #13 (Oleada 3): SEPARACIÓN DE FUNCIONES — quien REGISTRÓ el convenio no puede AUTORIZARLO (ni el
-      // mismo servidor puede sustentar y autorizar). Legacy (registrado_por NULL) no bloquea. Fundamento:
-      // art. 99 RLOPSRM (el residente sustenta/registra) vs art. 59 párr. 3 LOPSRM (el servidor FACULTADO,
-      // distinto, autoriza).
-      if (conv.registrado_por != null && conv.registrado_por === req.user.id) {
-        await client.query('ROLLBACK');
-        return res.status(409).json({ error: 'No puedes autorizar un convenio que tú mismo registraste: la autorización la realiza un servidor facultado distinto (separación de funciones, art. 59 párr. 3 LOPSRM / art. 99 RLOPSRM).' });
-      }
+      // D1 (01-jul, DECISIÓN de Maiki) — la SEPARACIÓN DE FUNCIONES del bug #13 (oleada 3) se RELAJA: la
+      // DEPENDENCIA es la autoridad ÚNICA del convenio y puede REGISTRAR/promover Y AUTORIZAR el mismo
+      // convenio. Se ELIMINA el bloqueo `autorizado_por === registrado_por` que impedía a la dependencia
+      // autorizar lo que ella misma promovió. `registrado_por` se sigue persistiendo (rastro de auditoría:
+      // quién promovió), pero YA NO bloquea. El requisito real (art. 59 párr. 3 LOPSRM) se mantiene: solo el
+      // servidor facultado (rol 'dependencia') autoriza — ese gate de rol sigue arriba. La confirmación
+      // "¿estás seguro?" se pide en el frontend (Mockup M1) para que el acto definitivo sea consciente.
       // FIX #3 (22-jun) — contrato cerrado (finiquito) = SOLO-LECTURA (art. 64 LOPSRM).
       if (await contratoCerrado(client, conv.contrato_id)) { await client.query('ROLLBACK'); return res.status(409).json({ error: msgCerrado('no se autorizan convenios') }); }
 
