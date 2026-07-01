@@ -8,6 +8,18 @@ const { contratoCerrado, msgCerrado } = require('../lib/gateCierre');
 // firma de una nota ya venció (aceptación tácita, art. 123 fr. III RLOPSRM). Solo lo pasan los GET de
 // notas; NUNCA la firma (firmarNota usa NOW() real). No cambia el fix de vigencia art.125 (usa n.fecha).
 const { fechaRefDe } = require('../lib/fechaRef');
+// BUG #2 (Oleada 2): FECHA JURÍDICA/FORMAL de la nota, SEPARADA de firmado_en (firma real) y de `fecha`
+// (sello de emisión = NOW()). Para las notas de estimación se deriva del PERIODO (no del reloj), de modo
+// que una estimación de junio presentada el 1-jul quede timbrada formalmente en junio. Columna aditiva
+// idempotente (no se toca schema.sql; migracion en backend/scripts). NULL = la fecha formal cae a `fecha`.
+let _ensuredFechaNota = null;
+function ensureFechaNota() {
+  if (_ensuredFechaNota) return _ensuredFechaNota;
+  _ensuredFechaNota = pool.query('ALTER TABLE bitacora_notas ADD COLUMN IF NOT EXISTS fecha_nota DATE')
+    .catch((e) => { console.error('[bitacora ensureFechaNota]', e.message); _ensuredFechaNota = null; throw e; });
+  return _ensuredFechaNota;
+}
+ensureFechaNota().catch(() => {});
 
 // Construye el acta (primera nota): snapshot inmutable de los datos minimos del art. 123
 // fr. III RLOPSRM, tomados del contrato + el roster de firmantes (identidad por cuenta).
@@ -439,14 +451,18 @@ async function validarTipoParaRol(client, tipo, rolEnContrato) {
 
 // Inserta una nota con folio correlativo ATÓMICO por bitácora (advisory lock por
 // bitácora + MAX+1; el UNIQUE(bitacora_id,numero) es la red). Debe ir dentro de una tx.
-async function insertarNotaAtomica(client, { bitacoraId, tipo, asunto, contenido, emisorId, vinculadaA, tag }) {
+async function insertarNotaAtomica(client, { bitacoraId, tipo, asunto, contenido, emisorId, vinculadaA, tag, fechaNota }) {
+  await ensureFechaNota().catch(() => {}); // BUG #2: garantiza la columna fecha_nota (aditiva, idempotente)
   await client.query('SELECT pg_advisory_xact_lock($1)', [bitacoraId]);
+  // BUG #2: fecha_nota = fecha JURÍDICA/FORMAL (opcional). NULL si el llamador no la fija (la fecha formal
+  // cae a `fecha` en lectura). NO altera `firmado_en` (firma real) ni `fecha` (sello de emisión = NOW()),
+  // así el fix de vigencia de firma art.125 (que usa `fecha`) queda intacto.
   const ins = await client.query(
-    `INSERT INTO bitacora_notas (bitacora_id, numero, tipo, asunto, contenido, emisor_id, estado, firmado_en, vinculada_a, tag)
+    `INSERT INTO bitacora_notas (bitacora_id, numero, tipo, asunto, contenido, emisor_id, estado, firmado_en, vinculada_a, tag, fecha_nota)
      VALUES ($1, (SELECT COALESCE(MAX(numero),0)+1 FROM bitacora_notas WHERE bitacora_id = $1),
-             $2, $3, $4, $5, 'emitida', NOW(), $6, $7)
-     RETURNING id, bitacora_id, numero, tipo, asunto, contenido, emisor_id, estado, vinculada_a, fecha, firmado_en, tag`,
-    [bitacoraId, tipo, asunto || null, contenido, emisorId, vinculadaA || null, tag || null]
+             $2, $3, $4, $5, 'emitida', NOW(), $6, $7, $8::date)
+     RETURNING id, bitacora_id, numero, tipo, asunto, contenido, emisor_id, estado, vinculada_a, fecha, firmado_en, tag, fecha_nota`,
+    [bitacoraId, tipo, asunto || null, contenido, emisorId, vinculadaA || null, tag || null, fechaNota || null]
   );
   return ins.rows[0];
 }

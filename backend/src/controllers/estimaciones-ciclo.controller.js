@@ -23,6 +23,33 @@ const { insertarNotaAtomica } = require('./bitacora.controller');
 // (idempotente, memoizado) para que el INSERT ... SELECT no falle si la tabla aún no existía.
 const { ensureSchema: ensureSoportesSchema } = require('./estimacion-soportes.controller');
 
+// BUG #2 (Oleada 2): FECHA JURÍDICA/FORMAL de la nota de estimación. Se DERIVA del fin del periodo (mes de
+// la estimación) para que una estimación de junio presentada/autorizada el 1-jul quede timbrada
+// formalmente en JUNIO, no en el reloj del servidor. Si el body trae `fecha_nota`, se valida que caiga en
+// la MISMA mensualidad del periodo (art. 54 LOPSRM: la estimación corresponde a su periodo mensual); si no
+// concuerda, se rechaza (el caller devuelve 409). `firmado_en` (firma real) NO cambia.
+function normISOfecha(v) {
+  // pg entrega DATE como objeto Date (UTC medianoche). String(Date) da la cadena LOCAL ("Tue Mar 31…"),
+  // no ISO → hay que formatear por partes UTC para obtener 'YYYY-MM-DD' correcto y TZ-safe.
+  if (v instanceof Date) {
+    const z = (n) => String(n).padStart(2, '0');
+    return `${v.getUTCFullYear()}-${z(v.getUTCMonth() + 1)}-${z(v.getUTCDate())}`;
+  }
+  return String(v || '').slice(0, 10);
+}
+function fechaNotaDePeriodo(periodoFinISO, fechaNotaBody) {
+  const pf = normISOfecha(periodoFinISO); // 'YYYY-MM-DD'
+  if (fechaNotaBody != null && String(fechaNotaBody).trim() !== '') {
+    const fn = String(fechaNotaBody).slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(fn)) return { error: 'La fecha de la nota es inválida (formato YYYY-MM-DD).' };
+    if (fn.slice(0, 7) !== pf.slice(0, 7)) {
+      return { error: `La fecha de la nota (${fn}) no corresponde al mes del periodo de la estimación (${pf.slice(0, 7)}); una estimación se timbra en su mensualidad (art. 54 LOPSRM).` };
+    }
+    return { fechaNota: fn };
+  }
+  return { fechaNota: pf || null }; // deriva del fin del periodo (mes de la estimación)
+}
+
 // FIX 1.1 — FINIQUITO bloquea el ciclo. Con el contrato CERRADO (finiquito elaborado), el art. 64 LOPSRM
 // declara "extinguidos los derechos y obligaciones asumidos por ambas partes" (verificado en docs/legal):
 // el saldo se liquida por el finiquito, no por estimaciones nuevas. Gate reusable (espejo del que ya existe
@@ -177,6 +204,9 @@ async function enviarEstimacion(req, res) {
     if (e.rowCount === 0) return res.status(404).json({ error: 'Estimación no encontrada' });
     const row = e.rows[0];
     if (gateContratoCerrado(res, row, 'no se presentan estimaciones')) return; // FIX 1.1 — finiquito bloquea (art. 64 LOPSRM)
+    // BUG #2: fecha formal de la nota = mes del periodo (o body.fecha_nota validada). Se valida ANTES de la tx.
+    const fnRes = fechaNotaDePeriodo(row.periodo_fin, (req.body || {}).fecha_nota);
+    if (fnRes.error) return res.status(409).json({ error: fnRes.error });
 
     // (2) Acceso localizado: solo el superintendente del contrato PRESENTA sus estimaciones.
     if (row.superintendente_id !== req.user.id) {
@@ -230,7 +260,8 @@ async function enviarEstimacion(req, res) {
           `${String(row.periodo_inicio).slice(0, 10)} a ${String(row.periodo_fin).slice(0, 10)}. ` +
           `(art. 125 fr. II-b RLOPSRM; asiento automático del sistema al presentar la estimación.)`;
         nota = await insertarNotaAtomica(client, {
-          bitacoraId: bit.rows[0].id, tipo: 'sup_estimaciones', asunto, contenido, emisorId: req.user.id, tag: 'estimacion'
+          bitacoraId: bit.rows[0].id, tipo: 'sup_estimaciones', asunto, contenido, emisorId: req.user.id, tag: 'estimacion',
+          fechaNota: fnRes.fechaNota // BUG #2: fecha formal = mes del periodo
         });
         await client.query('INSERT INTO estimacion_notas (estimacion_id, nota_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [id, nota.id]);
       }
@@ -513,6 +544,9 @@ async function autorizarEstimacion(req, res) {
     if (!(await estaTurnada(id))) {
       return res.status(409).json({ error: 'La estimación aún no ha sido turnada por supervisión' });
     }
+    // BUG #2: fecha formal de la nota de autorización = mes del periodo (o body.fecha_nota validada).
+    const fnRes = fechaNotaDePeriodo(est.periodo_fin, (req.body || {}).fecha_nota);
+    if (fnRes.error) return res.status(409).json({ error: fnRes.error });
 
     // Atómico (endurecido): el WHERE serializa la doble resolución (estado='enviada') Y exige el TURNADO
     // previo DENTRO del UPDATE (EXISTS turnado_a='residencia'), cerrando el TOCTOU entre el chequeo y el
@@ -542,7 +576,8 @@ async function autorizarEstimacion(req, res) {
           `${String(est.periodo_inicio).slice(0, 10)} a ${String(est.periodo_fin).slice(0, 10)}, ` +
           `por la residencia. (art. 125 fr. I-b RLOPSRM; asiento automático del sistema al autorizar la estimación.)`;
         nota = await insertarNotaAtomica(client, {
-          bitacoraId: bit.rows[0].id, tipo: 'res_estimaciones', asunto, contenido, emisorId: req.user.id, tag: 'estimacion'
+          bitacoraId: bit.rows[0].id, tipo: 'res_estimaciones', asunto, contenido, emisorId: req.user.id, tag: 'estimacion',
+          fechaNota: fnRes.fechaNota // BUG #2: fecha formal = mes del periodo
         });
         await client.query('INSERT INTO estimacion_notas (estimacion_id, nota_id) VALUES ($1, $2) ON CONFLICT DO NOTHING', [id, nota.id]);
       }

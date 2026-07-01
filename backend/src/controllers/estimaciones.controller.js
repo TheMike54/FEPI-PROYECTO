@@ -284,6 +284,40 @@ async function integrarEstimacion(req, res) {
         }
       }
 
+      // (6c-bis) BUG #24 (Oleada 2): la CANTIDAD estimada de cada concepto debe IGUALAR el AVANCE FÍSICO
+      //   reportado (HU-06) de ESE concepto en ESE periodo. La estimación valoriza el avance realmente
+      //   ejecutado y reportado (art. 54 LOPSRM; los números generadores acreditan el pago, art. 132
+      //   RLOPSRM): no se estima "a mano" por encima ni por debajo de lo ejecutado. Se ata al MISMO cálculo
+      //   que la preparación usa para prellenar (estimacion-prep: contrato_periodo cuyo fin = periodo_fin +
+      //   Σ concepto_avance vigente de ESE periodo). Sin avance reportado del concepto en el periodo → no se
+      //   puede estimar. El periodo de la estimación que NO coincide con un periodo del programa (perSelId
+      //   null) queda fuera de esta atadura (caso borde: la estimación por periodo se opera sobre los
+      //   periodos del programa).
+      const perSel = await client.query(
+        "SELECT id FROM contrato_periodos WHERE contrato_id=$1 AND to_char(fin,'YYYY-MM-DD')=$2 LIMIT 1",
+        [contratoId, periodoFin]
+      );
+      const perSelId = perSel.rows[0]?.id || null;
+      if (perSelId) {
+        const av = await client.query(
+          "SELECT contrato_concepto_id AS cid, COALESCE(SUM(cantidad),0) AS q FROM concepto_avance WHERE contrato_periodo_id=$1 AND estado='vigente' AND contrato_concepto_id = ANY($2::int[]) GROUP BY contrato_concepto_id",
+          [perSelId, conceptoIds]
+        );
+        const avMap = new Map(av.rows.map((r) => [r.cid, Number(r.q)]));
+        const desalineados = [];
+        for (const g of generadores) {
+          const reportado = avMap.get(g.contrato_concepto_id) || 0;
+          if (Math.abs(g.cantidad_periodo - reportado) > EPS_CANT) {
+            const c = ccMap.get(g.contrato_concepto_id);
+            desalineados.push(`${c.concepto} (estimado ${g.cantidad_periodo}, avance reportado ${reportado})`);
+          }
+        }
+        if (desalineados.length) {
+          await client.query('ROLLBACK');
+          return res.status(409).json({ error: `La cantidad estimada debe coincidir con el avance físico reportado del periodo (HU-06, art. 54 LOPSRM). Registra o corrige el avance antes de estimar. Desalineados: ${desalineados.join('; ')}.` });
+        }
+      }
+
       // (6d) ETAPA C — ATRASO GLOBAL (en valor) + pagado acumulado, para la retención por atraso y el
       //      avance financiero. El contrato va ATRASADO si su EJECUTADO acumulado en valor
       //      (Σ ya_estimado×pu de toda la obra + esta estimación) es MENOR al PROGRAMADO acumulado al

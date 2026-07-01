@@ -313,11 +313,17 @@ function TabGeneradores({ filas, onCantidad, tienePlan }) {
                 {tienePlan && <td className={`px-3 py-2 text-right font-semibold ${f.excedePlan ? 'text-red-700' : 'text-sigecop-green-validation'}`} data-testid={`gen-disponible-${f.contrato_concepto_id}`}>{num(f.disponible)}</td>}
                 <td className="px-3 py-2 text-right font-mono text-xs text-slate-600">{moneda(f.pu)}</td>
                 <td className="px-3 py-2">
+                  {/* BUG #24 (Oleada 2): la cantidad estimada es SOLO LECTURA — se toma del avance físico
+                      reportado del periodo (HU-06). No se teclea a mano; para cambiarla, registra/corrige el
+                      avance. El backend rechaza (409) toda cantidad que no coincida con el avance reportado. */}
                   <input
                     type="number"
                     min="0"
                     step="any"
-                    className={`sg-input text-right ${malo ? 'border-red-500 ring-2 ring-red-200' : ''}`}
+                    readOnly
+                    tabIndex={-1}
+                    title="Se toma del avance físico reportado del periodo (HU-06). Para cambiarla, registra o corrige el avance."
+                    className={`sg-input text-right bg-slate-100 cursor-not-allowed ${malo ? 'border-red-500 ring-2 ring-red-200' : ''}`}
                     value={f.valor}
                     onChange={(e) => onCantidad(f.contrato_concepto_id, e.target.value)}
                     data-testid={`gen-cantidad-${f.contrato_concepto_id}`}
@@ -600,11 +606,13 @@ export default function IntegracionEstimacion() {
   // (c) FIX 22-jun (profe): al elegir el periodo, PRELLENA cada concepto del periodo con su AVANCE
   // terminado reportado en ese periodo (jalar de las notas/avance); el usuario solo MODIFICA. Solo
   // cuando prep ya trae los datos del periodo exacto (avance_periodo/programado_periodo).
+  // BUG #24: la cantidad estimada la RIGE el avance reportado del periodo (HU-06). Se prellena con
+  // avance_periodo (>0) y el input queda de solo lectura; el backend exige la coincidencia (409 si no).
   useEffect(() => {
     if (!periodoFin || !prep || !Array.isArray(prep.conceptos)) return;
     const next = {};
     prep.conceptos.forEach((p) => {
-      if (p.programado_periodo != null && p.programado_periodo > 0 && p.avance_periodo != null) {
+      if (p.avance_periodo != null && Number(p.avance_periodo) > 0) {
         next[p.contrato_concepto_id] = String(p.avance_periodo);
       }
     });
