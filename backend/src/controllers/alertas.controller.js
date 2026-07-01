@@ -18,6 +18,10 @@
 // - La config previa (umbral/canal) queda RETIRADA: la tabla alerta_atraso se conserva pero ya no se usa.
 const { pool } = require('../db/pool');
 const { esParteOSupervision } = require('../lib/acceso');
+// LENTE DE SIMULACIÓN — SOLO LECTURA: fecha de referencia opcional (?fecha_ref) para calcular el
+// "periodo actual" desde una fecha distinta a hoy. Solo la usan los GET; asentarAtraso (escritura) usa
+// la fecha real del servidor (no pasa fechaRef → COALESCE cae a CURRENT_DATE).
+const { fechaRefDe } = require('../lib/fechaRef');
 // O5: la nota de atraso reutiliza el folio atómico + la redacción del controller de bitácora (no se
 // duplica la lógica de inmutabilidad; la nota es append-only como todas).
 const { insertarNotaAtomica, textoNotaAtraso } = require('./bitacora.controller');
@@ -30,15 +34,16 @@ const EPS_CANT = 1e-6;
 function q3(n) { return Math.round((Number(n) + Number.EPSILON) * 1e3) / 1e3; }
 
 // El "periodo actual" del contrato: el de mayor número cuyo inicio ya ocurrió. null si ninguno arrancó.
-// `db` = pool o client (ambos exponen .query).
-async function periodoActualDe(db, contratoId) {
+// `db` = pool o client (ambos exponen .query). `fechaRef` (SOLO LECTURA) permite tomar como "hoy" una
+// fecha simulada; null → CURRENT_DATE real (comportamiento normal; el que usan las escrituras).
+async function periodoActualDe(db, contratoId, fechaRef = null) {
   const r = await db.query(
     `SELECT id, numero, inicio, fin
        FROM contrato_periodos
-      WHERE contrato_id = $1 AND inicio <= CURRENT_DATE
+      WHERE contrato_id = $1 AND inicio <= COALESCE($2::date, CURRENT_DATE)
       ORDER BY numero DESC
       LIMIT 1`,
-    [contratoId]
+    [contratoId, fechaRef]
   );
   return r.rowCount ? r.rows[0] : null;
 }
@@ -94,7 +99,8 @@ async function alertasDeContrato(req, res) {
       return res.status(403).json({ error: 'No tienes acceso al atraso de este contrato' });
     }
 
-    const periodo = await periodoActualDe(pool, contratoId);
+    const fechaRef = fechaRefDe(req); // SOLO LECTURA: "hoy" simulado o null (=> hoy real)
+    const periodo = await periodoActualDe(pool, contratoId, fechaRef);
     const paNum = periodo ? periodo.numero : 0;
     const todos = await deficitsDeContrato(pool, contratoId, paNum);
     const atrasos = todos.filter((f) => f.deficit > EPS_CANT);
@@ -120,6 +126,7 @@ async function resumenAtrasos(req, res) {
   try {
     const uid = req.user.id;
     const venTodo = req.user.rol === 'dependencia' || req.user.rol === 'finanzas';
+    const fechaRef = fechaRefDe(req); // SOLO LECTURA: "hoy" simulado o null (=> hoy real)
     const r = await pool.query(
       `WITH contratos_acc AS (
          SELECT id FROM contratos
@@ -129,7 +136,7 @@ async function resumenAtrasos(req, res) {
        pa AS (
          SELECT contrato_id, MAX(numero) AS pa_num
            FROM contrato_periodos
-          WHERE inicio <= CURRENT_DATE
+          WHERE inicio <= COALESCE($4::date, CURRENT_DATE)
           GROUP BY contrato_id
        ),
        defic AS (
@@ -149,7 +156,7 @@ async function resumenAtrasos(req, res) {
        SELECT COUNT(*)                    FILTER (WHERE deficit > $3) AS conceptos,
               COUNT(DISTINCT contrato_id) FILTER (WHERE deficit > $3) AS contratos
          FROM defic`,
-      [uid, venTodo, EPS_CANT]
+      [uid, venTodo, EPS_CANT, fechaRef]
     );
     const row = r.rows[0] || {};
     return res.status(200).json({
@@ -281,6 +288,7 @@ async function alertasDetalle(req, res) {
     if (contratoFiltro != null && (!Number.isInteger(contratoFiltro) || contratoFiltro <= 0)) {
       return res.status(400).json({ error: 'contrato inválido' });
     }
+    const fechaRef = fechaRefDe(req); // SOLO LECTURA: "hoy" simulado o null (=> hoy real)
     const r = await pool.query(
       `WITH contratos_acc AS (
          SELECT id, folio FROM contratos
@@ -290,7 +298,7 @@ async function alertasDetalle(req, res) {
        ),
        pa AS (
          SELECT contrato_id, MAX(numero) AS pa_num
-           FROM contrato_periodos WHERE inicio <= CURRENT_DATE GROUP BY contrato_id
+           FROM contrato_periodos WHERE inicio <= COALESCE($4::date, CURRENT_DATE) GROUP BY contrato_id
        )
        SELECT cc.contrato_id, ca_c.folio, cc.id AS contrato_concepto_id, cc.clave, cc.concepto, cc.unidad,
               ( COALESCE((SELECT SUM(po.cantidad) FROM programa_obra po
@@ -302,7 +310,7 @@ async function alertasDetalle(req, res) {
          JOIN contratos_acc ca_c ON ca_c.id = cc.contrato_id
          LEFT JOIN pa ON pa.contrato_id = cc.contrato_id
         ORDER BY cc.contrato_id, cc.orden`,
-      [uid, venTodo, contratoFiltro]
+      [uid, venTodo, contratoFiltro, fechaRef]
     );
     const filas = r.rows
       .map((row) => ({

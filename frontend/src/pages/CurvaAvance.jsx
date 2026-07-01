@@ -10,6 +10,7 @@ import LinkHU from '../components/LinkHU.jsx';
 import { useSesion } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
+import { getFechaRef } from '../lib/fechaSimulada.js';
 import { derivarEtapas } from '../utils/etapasAvance.js';
 import MatrizProgramaLectura from '../components/programa/MatrizProgramaLectura.jsx';
 
@@ -32,10 +33,12 @@ const dISO = (v) => (v == null ? '' : String(v).slice(0, 10)); // DATE/ISO -> 'A
 const mesCorto = (iso) => { const mm = Number(dISO(iso).slice(5, 7)); return MESES[mm - 1] || ''; };
 const num = (n) => (Number(n) || 0).toLocaleString('es-MX', { maximumFractionDigits: 3 });
 const fmtPct = (n) => (n == null ? '—' : `${Number(n).toFixed(1)}%`);
+// "Hoy" que usa la curva (marcador vertical, cortes de series ejecutado/financiero, colores de celda
+// atraso/pendiente). Respeta la FECHA DE SIMULACIÓN (lente de solo lectura): si hay una fecha simulada
+// activa devuelve esa; si no, la fecha real. Así la curva refleja el mismo "hoy" que el resto del
+// sistema bajo simulación, sin escribir nada. Ver lib/fechaSimulada.js.
 function hoyISO() {
-  const d = new Date();
-  const z = (x) => String(x).padStart(2, '0');
-  return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`;
+  return getFechaRef();
 }
 const fechaMXCorta = (s) => { const p = String(s || '').slice(0, 10).split('-'); return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : '—'; };
 const moneda = (n) => (n == null ? '—' : new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN', maximumFractionDigits: 2 }).format(Number(n) || 0));

@@ -4,6 +4,10 @@
 const { pool } = require('../db/pool');
 const { esParteOSupervision } = require('../lib/acceso');
 const { contratoCerrado, msgCerrado } = require('../lib/gateCierre');
+// LENTE DE SIMULACIÓN — SOLO LECTURA: "hoy" simulado opcional (?fecha_ref) para mostrar si el plazo de
+// firma de una nota ya venció (aceptación tácita, art. 123 fr. III RLOPSRM). Solo lo pasan los GET de
+// notas; NUNCA la firma (firmarNota usa NOW() real). No cambia el fix de vigencia art.125 (usa n.fecha).
+const { fechaRefDe } = require('../lib/fechaRef');
 
 // Construye el acta (primera nota): snapshot inmutable de los datos minimos del art. 123
 // fr. III RLOPSRM, tomados del contrato + el roster de firmantes (identidad por cuenta).
@@ -610,7 +614,7 @@ async function emitirNota(req, res) {
 // listarNotas (por aperturaId) y notasDeContrato (por contratoId, base de HU-10).
 // `apertura` trae id, contrato_id, plazo_firma_dias y el equipo del contrato
 // (residente_id/superintendente_id/supervision_id) para derivar mi_rol.
-async function construirPayloadNotas(apertura, userId) {
+async function construirPayloadNotas(apertura, userId, fechaRef = null) {
   // Rol del usuario EN ESTE contrato (null si solo es ve-todo: dependencia/finanzas).
   // Permite al UI filtrar los tipos emitibles sin exponer el equipo completo.
   let miRol = null;
@@ -622,7 +626,7 @@ async function construirPayloadNotas(apertura, userId) {
     `SELECT n.id, n.numero, n.tipo, tp.etiqueta AS tipo_etiqueta, tp.rol_emisor,
             n.asunto, n.contenido, n.tag, n.estado, n.vinculada_a, n.fecha, n.firmado_en,
             n.emisor_id, u.nombre AS emisor_nombre, u.email AS emisor_correo,
-            (NOW() > n.fecha + make_interval(days => $2::int)) AS plazo_vencido,
+            (COALESCE($3::timestamptz, NOW()) > n.fecha + make_interval(days => $2::int)) AS plazo_vencido,
             EXISTS (SELECT 1 FROM bitacora_notas m
                      WHERE m.vinculada_a = n.id AND m.emisor_id IS DISTINCT FROM n.emisor_id) AS respondida,
             -- FIX 2.1 (CONGELADO — diff para Maiki) — flags de vínculo: que la consulta de notas muestre si una
@@ -641,7 +645,7 @@ async function construirPayloadNotas(apertura, userId) {
        LEFT JOIN usuarios u ON u.id = n.emisor_id
       WHERE n.bitacora_id = $1
       ORDER BY n.numero`,
-    [apertura.id, apertura.plazo_firma_dias]
+    [apertura.id, apertura.plazo_firma_dias, fechaRef]
   );
 
   // Firmantes de la APERTURA (firma conjunta, art. 123 fr. III): los reusa la nota #1 para
@@ -712,7 +716,7 @@ async function listarNotas(req, res) {
     if (!esParteOSupervision(req.user, apertura)) {
       return res.status(403).json({ error: 'No tienes acceso a este contrato' });
     }
-    return res.status(200).json(await construirPayloadNotas(apertura, req.user.id));
+    return res.status(200).json(await construirPayloadNotas(apertura, req.user.id, fechaRefDe(req)));
   } catch (err) {
     console.error('[listarNotas]', err);
     return res.status(500).json({ error: 'Error interno' });
@@ -753,7 +757,7 @@ async function notasDeContrato(req, res) {
       superintendente_id: c.rows[0].superintendente_id,
       supervision_id: c.rows[0].supervision_id
     };
-    return res.status(200).json(await construirPayloadNotas(apertura, req.user.id));
+    return res.status(200).json(await construirPayloadNotas(apertura, req.user.id, fechaRefDe(req)));
   } catch (err) {
     console.error('[notasDeContrato]', err);
     return res.status(500).json({ error: 'Error interno' });

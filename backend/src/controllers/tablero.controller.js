@@ -15,6 +15,8 @@
 // que se enriquecen solas cuando el ciclo empiece a producir esos estados.
 const { pool } = require('../db/pool');
 const { esParteOSupervision } = require('../lib/acceso');
+// LENTE DE SIMULACIÓN — SOLO LECTURA: "hoy" simulado opcional (?fecha_ref) para la antigüedad en estado.
+const { fechaRefDe } = require('../lib/fechaRef');
 
 // Catálogo canónico de estados. Son EXACTAMENTE los del CHECK de
 // estimaciones.estado en schema.sql (integrada/enviada/autorizada/pagada/rechazada).
@@ -67,20 +69,22 @@ async function tableroEstimaciones(req, res) {
     // HU-17 (22-jun) — CA-5: a Finanzas el sistema le OCULTA el tablero. Antes solo se ocultaba en la UI
     // (permisos.js finanzas:null); ahora se bloquea también server-side (coherente con lo que ve el usuario).
     if (req.user.rol === 'finanzas') return res.status(403).json({ error: 'El tablero de estimaciones no está disponible para Finanzas.' });
+    const fechaRef = fechaRefDe(req); // SOLO LECTURA: "hoy" simulado o null (=> hoy real); no persiste nada
     // Trae las estimaciones con la carátula (montos congelados) + los punteros del
     // contrato para el acotamiento. dias_en_estado se DERIVA en SQL desde el sello
     // más reciente disponible (enviada_en si ya se envió; si no, integrada_en);
-    // GREATEST(0, ...) evita negativos por relojes.
+    // GREATEST(0, ...) evita negativos por relojes. El "hoy" del cálculo es fecha_ref (simulada) o real.
     const q = await pool.query(
       `SELECT e.id, e.contrato_id, e.numero, e.estado,
               e.subtotal, e.neto, e.periodo_inicio, e.periodo_fin,
               e.integrada_en, e.enviada_en,
-              GREATEST(0, (CURRENT_DATE - COALESCE(e.enviada_en::date, e.integrada_en::date))) AS dias_en_estado,
+              GREATEST(0, (COALESCE($1::date, CURRENT_DATE) - COALESCE(e.enviada_en::date, e.integrada_en::date))) AS dias_en_estado,
               c.folio, c.contratista,
               c.created_by, c.residente_id, c.superintendente_id, c.supervision_id
          FROM estimaciones e
          JOIN contratos c ON c.id = e.contrato_id
-        ORDER BY c.folio, e.numero`
+        ORDER BY c.folio, e.numero`,
+      [fechaRef]
     );
 
     // Acotamiento por participación: misma regla que los demás controllers.

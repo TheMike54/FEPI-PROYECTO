@@ -9,6 +9,7 @@ import SeccionCriterios from '../components/vista/SeccionCriterios.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
+import { ahoraRefMs } from '../lib/fechaSimulada.js';
 import { monedaMXN as moneda } from '../utils/formato.js';
 import { labelEstadoEstimacion } from '../data/estadoEstimacion.js';
 
@@ -63,7 +64,8 @@ function semaforoRevision(enviadaEnIso) {
   if (!enviadaEnIso) return null;
   const inicio = new Date(enviadaEnIso);
   if (Number.isNaN(inicio.getTime())) return null;
-  const transcurridos = Math.max(0, Math.floor((Date.now() - inicio.getTime()) / MS_DIA));
+  // "Ahora" respeta la FECHA DE SIMULACIÓN (lente de solo lectura); real si no hay simulación.
+  const transcurridos = Math.max(0, Math.floor((ahoraRefMs() - inicio.getTime()) / MS_DIA));
   const pct = Math.min(100, (transcurridos / PLAZO_REVISION_DIAS) * 100);
   // ≤7 verde, 8-12 amarillo, >12 rojo (reglas del prototipo).
   const color = transcurridos > 12 ? 'red' : transcurridos >= 8 ? 'amber' : 'green';

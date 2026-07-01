@@ -8,6 +8,7 @@ import Sidebar from '../layout/Sidebar.jsx';
 import { useContratoActivo } from '../../context/ContratoActivoContext.jsx';
 import ModalContratoActivo from '../ModalContratoActivo.jsx';
 import NotificacionesCentro from '../NotificacionesCentro.jsx';
+import SelectorFechaSimulacion from './SelectorFechaSimulacion.jsx';
 
 // BLOQUE 4 (navegación modo-sistema): indicador discreto de HU abajo-derecha + chip de empresa arriba
 // (mockup `docs/mockups/sigecop-modo-sistema.html`). Ambos son MARCO/navegación, no tocan contenido ni
@@ -266,6 +267,11 @@ export default function AppShell({ children }) {
               mostrar un control muerto en la demo; se recableará cuando exista la búsqueda global real. */}
 
           <div className="flex items-center gap-2 sm:gap-3 ml-auto flex-shrink-0">
+            {/* SELECTOR DE FECHA DE SIMULACIÓN (lente de SOLO LECTURA, siempre visible para todos los
+                roles). Permite "ver" el sistema desde otra fecha (alertas de atraso, vencimientos,
+                plazos) SIN escribir nada en la base de datos. Se resalta en dorado cuando la fecha
+                simulada ≠ hoy real. */}
+            <SelectorFechaSimulacion />
             {/* FIX 8 (3B) — notificaciones UNIFICADAS en la campana: se retiró el botón ✍️ "Por firmar"
                 separado (su badge duplicaba el conteo de la campana y confundía). El acceso a "Por firmar"
                 vive ahora dentro del pop-up de la campana (footer "Ir a «Por firmar» →"). */}

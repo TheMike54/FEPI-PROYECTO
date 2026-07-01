@@ -8,6 +8,7 @@ import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
 import { api } from '../services/api.js';
+import { ahoraRefMs } from '../lib/fechaSimulada.js';
 import { labelEstadoEstimacion } from '../data/estadoEstimacion.js';
 import { monedaMXN as moneda } from '../utils/formato.js';
 
@@ -72,7 +73,8 @@ function semaforo(selloIso, plazoDias) {
   if (!selloIso) return null;
   const inicio = new Date(selloIso);
   if (Number.isNaN(inicio.getTime())) return null;
-  const transcurridos = Math.max(0, Math.floor((Date.now() - inicio.getTime()) / MS_DIA));
+  // "Ahora" respeta la FECHA DE SIMULACIÓN (lente de solo lectura); real si no hay simulación.
+  const transcurridos = Math.max(0, Math.floor((ahoraRefMs() - inicio.getTime()) / MS_DIA));
   const restantes = plazoDias - transcurridos;
   let nivel = 'ok';
   if (restantes <= 0) nivel = 'vencido';
@@ -93,7 +95,8 @@ function presentacion(periodoFinIso) {
   const s = (periodoFinIso || '').slice(0, 10);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null;
   const corte = new Date(s + 'T00:00:00Z');
-  const transcurridos = Math.floor((Date.now() - corte.getTime()) / MS_DIA);
+  // "Ahora" respeta la FECHA DE SIMULACIÓN (lente de solo lectura); real si no hay simulación.
+  const transcurridos = Math.floor((ahoraRefMs() - corte.getTime()) / MS_DIA);
   const antesDelCorte = transcurridos < 0;
   return {
     transcurridos,

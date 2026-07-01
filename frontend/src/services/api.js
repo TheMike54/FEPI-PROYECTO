@@ -1,7 +1,20 @@
+import { getFechaSimulada } from '../lib/fechaSimulada.js';
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
 
 async function request(path, options = {}) {
-  const url = `${API_URL}${path}`;
+  // LENTE DE SIMULACIÓN DE FECHA — SOLO LECTURA: si hay una fecha simulada activa, se agrega como
+  // ?fecha_ref=YYYY-MM-DD ÚNICAMENTE a peticiones GET (lectura/cálculo: alertas, semáforos,
+  // vencimientos). NUNCA a escrituras (POST/PUT/PATCH/DELETE) → toda escritura usa la fecha REAL del
+  // servidor. El backend solo honra fecha_ref donde calcula "hoy" (lib/fechaRef.js); lo ignora en el
+  // resto, así que agregarlo a un GET que no lo usa es inerte. Sin simulación activa: nada cambia.
+  let ruta = path;
+  const metodo = (options.method || 'GET').toUpperCase();
+  if (metodo === 'GET') {
+    const fsim = getFechaSimulada();
+    if (fsim) ruta += `${path.includes('?') ? '&' : '?'}fecha_ref=${encodeURIComponent(fsim)}`;
+  }
+  const url = `${API_URL}${ruta}`;
   const headers = {
     'Content-Type': 'application/json',
     ...(options.headers || {})

@@ -1,5 +1,23 @@
 # SIGECOP — Estado actual del sistema (documento canónico)
 
+> **🔄 Actualización 2026-07-01 (SELECTOR DE FECHA DE SIMULACIÓN — lente de SOLO LECTURA).** Nueva pastilla
+> en la barra superior (visible para todos los roles) que permite "ver" el sistema desde una fecha distinta
+> a la real para probar **alertas de atraso, vencimientos de plazos/notas y semáforos** sin escribir NADA en
+> la BD. **Es un LENTE DE LECTURA, no un editor:** solo cambia la fecha de REFERENCIA con la que se CALCULA;
+> jamás altera `fecha_creacion`/`fecha_nota`/`integrada_en` ni ningún sello. **Mecánica:** el frontend agrega
+> `?fecha_ref=YYYY-MM-DD` **solo a peticiones GET** (nunca a escrituras); el backend lo honra únicamente en
+> handlers de LECTURA vía `COALESCE($N::date, CURRENT_DATE)` (null ⇒ hoy real ⇒ **cero regresión**). Las
+> ESCRITURAS (crear nota, integrar/enviar/autorizar estimación, registrar avance, firmar, pagar, generar
+> instrucción) **siempre** usan `NOW()`/`CURRENT_DATE` real. **El fix de vigencia de firma art. 125 (commit
+> `1ea4077`, `bitacora.controller::firmarNota`) queda INTACTO** (usa `n.fecha`, no "hoy"; es escritura, no
+> recibe `fecha_ref`). **Zona congelada NO tocada.** NUEVOS: `backend/src/lib/fechaRef.js`,
+> `frontend/src/lib/fechaSimulada.js`, `context/SimulacionFechaContext.jsx`,
+> `components/ui/SelectorFechaSimulacion.jsx`. EDITADOS (solo lecturas): `alertas`/`tablero`/`portafolio`/
+> `instruccion-pago`/`bitacora` controllers + `services/api.js` + `Layout.jsx` + `AppShell.jsx` +
+> `pages/CurvaAvance.jsx` (su `hoyISO()` respeta la fecha simulada). Build `vite build` verde. **LOCAL,
+> commit en `main` sin push.** **[para Maiki]** el selector es una utilidad de PRUEBA/demo transversal (no un
+> flujo de negocio LOPSRM); queda a tu criterio si merece una HU-25 formal o vive como herramienta interna.
+>
 > **🔄 Actualización 2026-06-26 (HU-06 avance).** Sobre el estado del 24-jun: **la foto de evidencia del avance
 > volvió a ser OBLIGATORIA** (decisión consciente del equipo/Maiki, no ley; el art. 132 fr. IV es discrecional) y ahora
 > el **backend la valida** (`trabajos.controller:registrarAvance` → 400 sin foto), no solo el frontend → **bug #22

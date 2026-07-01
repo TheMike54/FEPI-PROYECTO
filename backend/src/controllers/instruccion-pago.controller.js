@@ -23,6 +23,14 @@
 const { pool } = require('../db/pool');
 const { esParteOSupervision } = require('../lib/acceso');
 const { PLAZO_DIAS_VENCIDOS } = require('../lib/umbrales-semaforo');
+// LENTE DE SIMULACIÓN — SOLO LECTURA: "hoy" simulado opcional (?fecha_ref) para el semáforo de plazo
+// (art. 54) y la vigencia de la fianza. Solo lo pasa el GET de tránsito; las escrituras (cargar soporte,
+// generar instrucción) NO lo pasan → usan la fecha REAL del servidor. No persiste nada.
+const { fechaRefDe } = require('../lib/fechaRef');
+// "Hoy" efectivo (medianoche local) para los cálculos de lectura: fecha simulada si viene, real si no.
+function hoyRef(fechaRef) {
+  return fechaRef ? new Date(`${fechaRef}T00:00:00`) : new Date(new Date().toDateString());
+}
 
 // Plazo de pago: 20 días naturales — base legal LITERAL (art. 54 LOPSRM: "deberán pagarse… en un plazo no
 // mayor a veinte días naturales"). Si se excede, el art. 55 LOPSRM genera gastos financieros (mora).
@@ -105,7 +113,9 @@ async function calcularSuficiencia(dependenciaId, dependencia, ejercicio, estima
 }
 
 // Checklist de soportes (CA-3): factura + CFDI (metadatos) y fianza de cumplimiento (leída de garantías).
-async function leerSoportes(estimacionId, contratoId) {
+// `fechaRef` (SOLO LECTURA) = "hoy" simulado para evaluar la vigencia de la fianza; null => hoy real
+// (lo que usan las escrituras que no lo pasan).
+async function leerSoportes(estimacionId, contratoId, fechaRef = null) {
   const sop = await pool.query(
     'SELECT id, nombre, descripcion, created_at FROM estimacion_soportes WHERE estimacion_id = $1 ORDER BY created_at, id',
     [estimacionId]
@@ -122,7 +132,7 @@ async function leerSoportes(estimacionId, contratoId) {
   );
   const exigible = g.rowCount > 0; // exigible si hay garantía de cumplimiento registrada del contrato (art. 48 fr. II LOPSRM)
   const fila = g.rows[0] || null;
-  const vigente = exigible ? (fila.vigencia == null || new Date(fila.vigencia) >= new Date(new Date().toDateString())) : false;
+  const vigente = exigible ? (fila.vigencia == null || new Date(fila.vigencia) >= hoyRef(fechaRef)) : false;
 
   const facturaOk = !!factura;
   const cfdiOk = !!(cfdi && (cfdi.descripcion || '').trim()); // CFDI exige folio fiscal en descripcion
@@ -152,7 +162,8 @@ async function anclaAutorizacion(estimacionId) {
   return r.rows[0]?.autorizada_en || null;
 }
 
-function semaforoPlazo(anclaAutISO, facturaISO) {
+// `fechaRef` (SOLO LECTURA) = "hoy" simulado para contar días vencidos; null => hoy real.
+function semaforoPlazo(anclaAutISO, facturaISO, fechaRef = null) {
   if (!anclaAutISO) {
     return {
       disponible: false,
@@ -170,7 +181,7 @@ function semaforoPlazo(anclaAutISO, facturaISO) {
   }
   const anclaISO = new Date(anclaAutISO) >= new Date(facturaISO) ? anclaAutISO : facturaISO;
   const ancla = new Date(anclaISO);
-  const hoy = new Date(new Date().toDateString());
+  const hoy = hoyRef(fechaRef);
   const dias = Math.max(0, Math.floor((hoy - new Date(ancla.toDateString())) / 86400000));
   const diasVencidos = Math.max(0, dias - PLAZO_PAGO_DIAS); // días pasados del plazo de pago de 20 (art. 54)
   const color = diasVencidos <= PLAZO_DIAS_VENCIDOS.verde_max ? 'verde'
@@ -191,10 +202,11 @@ async function estadoTransito(req, res) {
     if (!est) return res.status(404).json({ error: 'Estimación no encontrada' });
     if (!esParteOSupervision(req.user, est)) return res.status(403).json({ error: 'No tienes acceso a esta estimación' });
 
+    const fechaRef = fechaRefDe(req); // SOLO LECTURA: "hoy" simulado o null (=> hoy real). No persiste.
     const ejercicio = ejercicioDe(est.fecha_inicio);
     const [suficiencia, soportes, ancla, ip, arch] = await Promise.all([
       calcularSuficiencia(est.dependencia_id, est.dependencia, ejercicio, est.id, est.neto),
-      leerSoportes(est.id, est.contrato_id),
+      leerSoportes(est.id, est.contrato_id, fechaRef),
       anclaAutorizacion(est.id),
       pool.query('SELECT * FROM instruccion_pago WHERE estimacion_id = $1', [est.id]),
       pool.query('SELECT id, tipo, nombre, mime, tamano, subido_por, created_at FROM cobro_soportes WHERE estimacion_id = $1 ORDER BY id', [est.id]),
@@ -212,7 +224,7 @@ async function estadoTransito(req, res) {
       contrato_cerrado: est.contrato_estado === 'cerrado',
       suficiencia,
       soportes,
-      semaforo_plazo: semaforoPlazo(ancla, soportes.factura?.fecha || null),
+      semaforo_plazo: semaforoPlazo(ancla, soportes.factura?.fecha || null, fechaRef),
       instruccion: ip.rowCount ? ip.rows[0] : null,
       // FOLLOW-ON b (22-jun): soportes binarios de cobro (CFDI/oficio) cargados (tabla cobro_soportes, BYTEA).
       archivos: arch.rows,

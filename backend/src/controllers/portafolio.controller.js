@@ -18,6 +18,9 @@
 // Todo el cálculo y el SEMÁFORO se hacen SERVER-SIDE (fuente única de verdad).
 const { pool } = require('../db/pool');
 const { ROLES_VEN_TODO, esParteOSupervision } = require('../lib/acceso');
+// LENTE DE SIMULACIÓN — SOLO LECTURA: "hoy" simulado opcional (?fecha_ref) para el semáforo (días
+// vencidos, desviación, atraso, cortes de mes). No persiste nada; null => CURRENT_DATE real.
+const { fechaRefDe } = require('../lib/fechaRef');
 
 // --- Umbrales del semáforo: CRITERIO DEL EQUIPO (defaults provisionales, configurables) -----------
 // No hay fundamento legal del número exacto (los puntos de corte son interpretativos, Nivel 1); son un
@@ -63,6 +66,7 @@ async function portafolio(req, res) {
   try {
     const uid = req.user.id;
     const venTodo = ROLES_VEN_TODO.includes(req.user.rol);
+    const fechaRef = fechaRefDe(req); // SOLO LECTURA: "hoy" simulado o null (=> hoy real). No persiste.
 
     // 1) Contratos accesibles (misma regla que listarContratos). ejercicio fiscal DERIVADO del
     //    año de fecha_inicio (no existe columna; criterio del equipo: año de inicio = ejercicio
@@ -71,7 +75,7 @@ async function portafolio(req, res) {
     const cq = await pool.query(
       `SELECT id, folio, contratista, tipo, monto, fecha_inicio, fecha_termino, estado,
               EXTRACT(YEAR FROM fecha_inicio)::int AS ejercicio,
-              GREATEST(0, CURRENT_DATE - fecha_termino) AS dias_post_termino,
+              GREATEST(0, COALESCE($3::date, CURRENT_DATE) - fecha_termino) AS dias_post_termino,
               created_by, residente_id, superintendente_id, supervision_id,
               (SELECT empresa_id FROM usuarios u WHERE u.id = contratos.dependencia_id) AS dependencia_empresa_id
          FROM contratos
@@ -79,7 +83,7 @@ async function portafolio(req, res) {
            OR created_by = $1 OR residente_id = $1
            OR superintendente_id = $1 OR supervision_id = $1
         ORDER BY created_at DESC`,
-      [uid, venTodo]
+      [uid, venTodo, fechaRef]
     );
     // (Acotamiento por empresa) mismo post-filtro que listarContratos: no cambia la forma de las filas,
     // solo quita las ajenas. Operativos pasan por participación; finanzas transversal; la dependencia se
@@ -102,17 +106,17 @@ async function portafolio(req, res) {
               COALESCE(SUM(CASE WHEN e.estado <> 'rechazada'
                                 THEN eg.cantidad_periodo * cc.pu ELSE 0 END), 0) AS fisico_total,
               COALESCE(SUM(CASE WHEN e.estado <> 'rechazada'
-                                 AND e.periodo_fin <= (date_trunc('month', CURRENT_DATE) + interval '1 month - 1 day')::date
+                                 AND e.periodo_fin <= (date_trunc('month', COALESCE($2::date, CURRENT_DATE)) + interval '1 month - 1 day')::date
                                 THEN eg.cantidad_periodo * cc.pu ELSE 0 END), 0) AS fisico_actual,
               COALESCE(SUM(CASE WHEN e.estado <> 'rechazada'
-                                 AND e.periodo_fin <= (date_trunc('month', CURRENT_DATE) - interval '1 day')::date
+                                 AND e.periodo_fin <= (date_trunc('month', COALESCE($2::date, CURRENT_DATE)) - interval '1 day')::date
                                 THEN eg.cantidad_periodo * cc.pu ELSE 0 END), 0) AS fisico_anterior
          FROM contrato_conceptos cc
          JOIN estimacion_generadores eg ON eg.contrato_concepto_id = cc.id
          JOIN estimaciones e ON e.id = eg.estimacion_id
         WHERE cc.contrato_id = ANY($1::int[])
         GROUP BY cc.contrato_id`,
-      [ids]
+      [ids, fechaRef]
     );
     const avMap = new Map(av.rows.map((r) => [r.contrato_id, r]));
 
@@ -149,11 +153,11 @@ async function portafolio(req, res) {
                   AND NOT EXISTS (SELECT 1 FROM estimaciones r WHERE r.reemplaza_a = e.id)
               ) AS rechazadas_sin_reingreso,
               COALESCE(MAX(CASE WHEN e.estado = 'enviada'
-                                THEN GREATEST(0, CURRENT_DATE - e.enviada_en::date) ELSE 0 END), 0) AS dias_enviada_max
+                                THEN GREATEST(0, COALESCE($2::date, CURRENT_DATE) - e.enviada_en::date) ELSE 0 END), 0) AS dias_enviada_max
          FROM estimaciones e
         WHERE e.contrato_id = ANY($1::int[])
         GROUP BY e.contrato_id`,
-      [ids]
+      [ids, fechaRef]
     );
     const esMap = new Map(es.rows.map((r) => [r.contrato_id, r]));
 
@@ -173,7 +177,7 @@ async function portafolio(req, res) {
     const defi = await pool.query(
       `WITH pa AS (
          SELECT contrato_id, MAX(numero) AS pa_num
-           FROM contrato_periodos WHERE inicio <= CURRENT_DATE GROUP BY contrato_id
+           FROM contrato_periodos WHERE inicio <= COALESCE($3::date, CURRENT_DATE) GROUP BY contrato_id
        ),
        defic AS (
          SELECT cc.contrato_id,
@@ -191,7 +195,7 @@ async function portafolio(req, res) {
        )
        SELECT contrato_id, COUNT(*) FILTER (WHERE deficit > $2) AS conceptos_atraso
          FROM defic GROUP BY contrato_id`,
-      [ids, EPS_CANT]
+      [ids, EPS_CANT, fechaRef]
     );
     const defiMap = new Map(defi.rows.map((r) => [r.contrato_id, Number(r.conceptos_atraso)]));
 
