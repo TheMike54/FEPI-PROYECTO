@@ -1,5 +1,37 @@
 # SIGECOP — Estado actual del sistema (documento canónico)
 
+> **🔄 Actualización 2026-07-01 (5 OLEADAS — 17 bugs reales del ciclo de estimación/pago/convenios/alertas).**
+> Se corrigieron los 17 bugs confirmados por `docs/auditoria/AUDITORIA_BUGS_ESTIMACION_2026-07-01.md`. **5
+> commits en `main` (LOCAL, sin push):** O1 `99b1751`, O2 `475a39c`, O3 `c11c8d2`, O4 `05bae6c`, O5 `a226d97`.
+> Cada oleada: `node -c` + `vite build` verdes + **smoke en vivo** contra el stack local. Autorización de
+> zona congelada de Maiki para fixes específicos (estimaciones/estimaciones-ciclo/server.js; **NO** se tocó
+> `permisos.js` ni `schema.sql`). **Tablas/columnas nuevas vía `ensureSchema()` idempotente + `backend/scripts/
+> migracion_*.sql`** (NO se editó `schema.sql`; Maiki las pliega): `estimacion_soportes_concepto`,
+> `contratista_datos_bancarios`, `bitacora_notas.fecha_nota`, `convenios_modificatorios.registrado_por`.
+> - **O1 — Expediente completo (#4,#7,#8,#9,#25,#26):** SOPORTES documentales por concepto (nuevo controller
+>   `estimacion-soportes` + tabla + upload en HU-12 paso 4); HU-15 y HU-14 ven el expediente COMPLETO
+>   (fotos+soportes+observaciones, componente compartido `ExpedienteEstimacion`); reingreso copia
+>   notas/fotos/soportes; foto de concepto ajeno → 400; notificación de rechazo al contratista (campana).
+> - **O2 — Reglas server-side (#2,#14,#24):** fecha jurídica de notas de estimación atada al PERIODO
+>   (`fecha_nota`, no `NOW()`; el fix art.125 intacto); cantidad estimada == avance reportado del periodo
+>   (HU-06); avance > programado del periodo = **BLOQUEO DURO** (409, adicional al art.118).
+> - **O3 — Convenios (#11,#13):** prohibido agregar conceptos NUEVOS (solo ajustar cantidad de existentes o
+>   plazo); separación de funciones (quien registra ≠ quien autoriza, `registrado_por`).
+> - **O4 — Pago (#10,#17,#18,#20):** datos bancarios a FINANZAS (tabla estructurada `contratista_datos_bancarios`,
+>   el contratista deja de capturarlos); FINANZAS genera la instrucción; CLABE 18 dígitos + control; CFDI XML
+>   (con guarda anti-XXE).
+> - **O5 — Pulido (#15,#16):** una sola curva vigente por defecto (histórico en detalle colapsable);
+>   alertas de atraso en **DÍAS** además del déficit físico.
+>
+> **⚠️ REPORTES A MAIKI (a medio camino):** (a) **#14** — 0 contratos con avance TOTAL sobre programa, pero
+> varios PRUEBA-*/DEMO tienen avance ADELANTADO a nivel acumulado-al-periodo (p.ej. "colado" 113 vs 100 al
+> periodo 1); los datos NO se tocan, el bloqueo solo impide capturar MÁS avance sobre esos conceptos ya
+> adelantados. (b) **#11** — solo 2 contratos con `es_adicional=true` (PRUEBA-TR-CURVA-HISTORICA, SOP-2026-001):
+> lectura histórica, no se rompe; solo se impide crear más. (c) **Decisiones documentadas:** #24 cantidades de
+> solo lectura (rige el avance); #13 PDF del convenio se mantiene AL AUTORIZAR (menos disruptivo).
+> **Historias afectadas a revisar por Maiki:** HU-06/07 (bloqueo avance), HU-12/13/15 (fecha nota, cantidad,
+> expediente), HU-03 (convenios), HU-20/21 (roles de pago). Detalle en `docs/reportes/REPORTE_5_OLEADAS_01jul.md`.
+
 > **🔄 Actualización 2026-07-01 (SELECTOR DE FECHA DE SIMULACIÓN — lente de SOLO LECTURA).** Nueva pastilla
 > en la barra superior (visible para todos los roles) que permite "ver" el sistema desde una fecha distinta
 > a la real para probar **alertas de atraso, vencimientos de plazos/notas y semáforos** sin escribir NADA en
