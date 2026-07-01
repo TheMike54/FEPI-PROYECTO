@@ -287,12 +287,12 @@ function TabGeneradores({ filas, onCantidad, tienePlan }) {
               <th className="text-right px-3 py-2 w-28" title="Cantidad contratada (según proyecto)">Según proyecto</th>
               <th className="text-right px-3 py-2 w-28" title="Estimado hasta la estimación anterior">Hasta est. anterior</th>
               {tienePlan && <th className="text-right px-3 py-2 w-28" title="Planeado en el programa hasta este periodo (curva S)">Planeado</th>}
-              {tienePlan && <th className="text-right px-3 py-2 w-28" title="Disponible para estimar este periodo = planeado − ya estimado">Disp. periodo</th>}
+              {tienePlan && <th className="text-right px-3 py-2 w-28" title="Disponible para estimar ESTE periodo = planeado hasta el periodo − ya estimado (curva S). No es lo mismo que 'Por ejecutar'.">Disp. este periodo</th>}
               <th className="text-right px-3 py-2 w-32">Precio unitario</th>
               <th className="text-right px-3 py-2 w-32">De esta estimación</th>
               <th className="text-right px-3 py-2 w-32">Importe</th>
               <th className="text-right px-3 py-2 w-28">Total estimado</th>
-              <th className="text-right px-3 py-2 w-28" title="Por ejecutar = según proyecto − total estimado">Por ejecutar</th>
+              <th className="text-right px-3 py-2 w-28" title="Por ejecutar = según proyecto − total estimado, sobre TODO el contrato. 0 = el concepto ya se estimó al 100% de lo contratado (no es un error).">Por ejecutar</th>
               <th className="text-right px-3 py-2 w-24">% avance</th>
             </tr>
           </thead>
@@ -332,13 +332,22 @@ function TabGeneradores({ filas, onCantidad, tienePlan }) {
                 </td>
                 <td className="px-3 py-2 text-right font-mono">{moneda(f.importe)}</td>
                 <td className={`px-3 py-2 text-right font-semibold ${malo ? 'text-red-700' : ''}`}>{num(f.acumulado)}</td>
-                <td className="px-3 py-2 text-right text-slate-600" data-testid={`gen-por-ejecutar-${f.contrato_concepto_id}`}>{num(Math.max(0, f.contratado - f.acumulado))}</td>
+                <td className="px-3 py-2 text-right text-slate-600" data-testid={`gen-por-ejecutar-${f.contrato_concepto_id}`}>
+                  {num(Math.max(0, f.contratado - f.acumulado))}
+                  {f.contratado > 0 && f.acumulado >= f.contratado - EPS && (
+                    <span className="ml-1 text-[10px] font-semibold text-sigecop-green-validation" title="Ya se estimó el 100% de lo contratado: no queda nada por ejecutar (no es un error).">✓ completo</span>
+                  )}
+                </td>
                 <td className={`px-3 py-2 text-right ${malo ? 'text-red-700 font-bold' : ''}`}>{f.avancePct.toFixed(1)}%</td>
               </tr>
             );})}
           </tbody>
         </table>
       </div>
+      <p className="text-xs text-slate-500 mb-2" data-testid="leyenda-columnas-generadores">
+        {tienePlan && <><strong>Disp. este periodo</strong> = cuánto puedes estimar en ESTE periodo según el programa (curva S). </>}
+        <strong>Por ejecutar</strong> = cuánto falta de TODO el contrato (según proyecto − total estimado); <strong>0 / “✓ completo” = el concepto ya se estimó al 100 %</strong>, no es un error.
+      </p>
       {hayExcesoPlan && (
         <div className="bg-red-50 border-l-4 border-red-500 px-4 py-3 text-sm text-red-800 rounded-r-md mb-2" data-testid="semaforo-plan-exceso">
           <strong>⚠ Excede lo planeado para el periodo</strong> en uno o más conceptos (programa de obra,
