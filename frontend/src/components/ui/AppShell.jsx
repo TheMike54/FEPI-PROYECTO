@@ -190,8 +190,17 @@ export default function AppShell({ children }) {
     api.porCobrar().then((l) => { if (vivo) setPorCobrar(Array.isArray(l) ? l : []); }).catch(() => { if (vivo) setPorCobrar([]); });
     return () => { vivo = false; };
   }, [token, esContratista, pathname]);
+  // BUG #8 (Oleada 1): notificación de RECHAZO de estimación al contratista (estimaciones rechazadas sin
+  // atender). Se limpia sola al reingresar/re-integrar el periodo (derivado del estado en el backend).
+  const [rechazadas, setRechazadas] = useState([]);
+  useEffect(() => {
+    if (!token || !esContratista) { setRechazadas([]); return; }
+    let vivo = true;
+    api.rechazadasContratista().then((l) => { if (vivo) setRechazadas(Array.isArray(l) ? l : []); }).catch(() => { if (vivo) setRechazadas([]); });
+    return () => { vivo = false; };
+  }, [token, esContratista, pathname]);
   const totalFirmas = pendientes.length + notasFirma.length;                       // aperturas + notas
-  const totalNotif = (sinAccesoAtraso ? 0 : atrasos) + totalFirmas + solicitudes + porCobrar.length;  // badge unificado de la campana
+  const totalNotif = (sinAccesoAtraso ? 0 : atrasos) + totalFirmas + solicitudes + porCobrar.length + rechazadas.length;  // badge unificado de la campana
 
   // FRENTE 4 — accesos DIRECTOS por ítem (acotados al contrato activo): cada uno lleva a su destino EXACTO.
   const scopeId = contratoId ? String(contratoId) : null;
@@ -215,7 +224,12 @@ export default function AppShell({ children }) {
       key: `pc-${e.estimacion_id}`, icono: '💸', texto: `Estimación #${e.estimacion_numero} autorizada — presenta documentos a cobro`,
       sub: `${e.folio || 'contrato'} · neto $${e.neto}`, to: `/pagos/ambiente?contrato=${e.contrato_id}`,
     })),
-  ].slice(0, 6);
+    // BUG #8: estimaciones RECHAZADAS del contratista — enlace a re-integrarlas (HU-12), con el motivo.
+    ...rechazadas.filter((e) => enContrato(e.contrato_id)).map((e) => ({
+      key: `rz-${e.estimacion_id}`, icono: '⛔', texto: `Estimación #${e.estimacion_numero} rechazada — corrige y vuelve a integrarla`,
+      sub: `${e.folio || 'contrato'} · ${e.motivo || 'ver observaciones'}`, to: `/estimaciones/integracion?contrato=${e.contrato_id}`,
+    })),
+  ].slice(0, 8);
 
   // Al cambiar de pantalla, cierra cualquier dropdown abierto.
   useEffect(() => { setDrop(null); }, [pathname]);
@@ -408,6 +422,12 @@ export default function AppShell({ children }) {
                     <li className="px-4 py-2.5" data-testid="drop-campana-solicitudes">
                       <div className="font-medium">{solicitudes > 0 ? `${solicitudes} solicitud${solicitudes === 1 ? '' : 'es'} de registro pendiente${solicitudes === 1 ? '' : 's'}` : 'Sin solicitudes de registro pendientes'}</div>
                       <div className="text-xs text-tinta-ter">Altas de cuenta por aprobar</div>
+                    </li>
+                  )}
+                  {esContratista && rechazadas.length > 0 && (
+                    <li className="px-4 py-2.5" data-testid="drop-campana-rechazadas">
+                      <div className="font-medium">{rechazadas.length} estimación{rechazadas.length === 1 ? '' : 'es'} rechazada{rechazadas.length === 1 ? '' : 's'} por corregir</div>
+                      <div className="text-xs text-tinta-ter">Corrige y vuelve a integrarlas (HU-12)</div>
                     </li>
                   )}
                   {!puedeFirmar && sinAccesoAtraso && !esDependencia && (

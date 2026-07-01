@@ -19,6 +19,9 @@ const { esParteOSupervision } = require('../lib/acceso');
 // confirmado por el profe): al PRESENTAR (sup_estimaciones, fr. II-b) y al AUTORIZAR (res_estimaciones,
 // fr. I-b). Reusa el folio atómico + inmutabilidad del controller de bitácora (no se duplica la lógica).
 const { insertarNotaAtomica } = require('./bitacora.controller');
+// Oleada 1 bug #25: al reingresar se copian los soportes documentales; se asegura su tabla antes de la tx
+// (idempotente, memoizado) para que el INSERT ... SELECT no falle si la tabla aún no existía.
+const { ensureSchema: ensureSoportesSchema } = require('./estimacion-soportes.controller');
 
 // FIX 1.1 — FINIQUITO bloquea el ciclo. Con el contrato CERRADO (finiquito elaborado), el art. 64 LOPSRM
 // declara "extinguidos los derechos y obligaciones asumidos por ambas partes" (verificado en docs/legal):
@@ -676,6 +679,10 @@ async function reingresarEstimacion(req, res) {
       return res.status(409).json({ error: `Solo se puede reingresar una estimación 'rechazada' (estado actual: '${est.estado}')` });
     }
 
+    // Oleada 1 bug #25: asegura la tabla de soportes ANTES de la tx (si aún no existía) para que la copia de
+    // soportes no rompa el reingreso (un error dentro de la tx la abortaría).
+    await ensureSoportesSchema().catch(() => {});
+
     await client.query('BEGIN');
     // Serializa numeración/no-duplicado por contrato (espejo de HU-12).
     await client.query('SELECT pg_advisory_xact_lock($1)', [est.contrato_id]);
@@ -721,6 +728,31 @@ async function reingresarEstimacion(req, res) {
       [rechazadaId, nueva.id]
     );
 
+    // (7-bis) BUG #25 — el expediente NO se pierde en el reingreso: se COPIAN al nuevo bloque las NOTAS
+    // vinculadas, las FOTOS de evidencia y los SOPORTES documentales de la versión rechazada. Append-only:
+    // se crean registros NUEVOS ligados a la estimación reingresada; la RECHAZADA queda intacta y trazable
+    // vía reemplaza_a. (Las notas de bitácora son inmutables/compartidas → se re-vincula el mismo nota_id.)
+    await client.query(
+      `INSERT INTO estimacion_notas (estimacion_id, nota_id)
+       SELECT $2, nota_id FROM estimacion_notas WHERE estimacion_id = $1
+       ON CONFLICT DO NOTHING`,
+      [rechazadaId, nueva.id]
+    );
+    await client.query(
+      `INSERT INTO estimacion_fotos
+         (estimacion_id, contrato_concepto_id, nombre, descripcion, mime, tamano, contenido, subido_por)
+       SELECT $2, contrato_concepto_id, nombre, descripcion, mime, tamano, contenido, subido_por
+         FROM estimacion_fotos WHERE estimacion_id = $1`,
+      [rechazadaId, nueva.id]
+    );
+    await client.query(
+      `INSERT INTO estimacion_soportes_concepto
+         (estimacion_id, contrato_concepto_id, nombre, descripcion, tipo, mime, tamano, contenido, subido_por)
+       SELECT $2, contrato_concepto_id, nombre, descripcion, tipo, mime, tamano, contenido, subido_por
+         FROM estimacion_soportes_concepto WHERE estimacion_id = $1`,
+      [rechazadaId, nueva.id]
+    );
+
     await client.query('COMMIT');
     return res.status(201).json({
       nueva,
@@ -740,6 +772,41 @@ async function reingresarEstimacion(req, res) {
   }
 }
 
+// GET /api/estimaciones-ciclo/rechazadas — BUG #8: notificación de RECHAZO al contratista, DERIVADA del
+// estado (sin tabla nueva, append-only por naturaleza). Lista las estimaciones RECHAZADAS de los contratos
+// donde el usuario es el superintendente (contratista) que AÚN NO fueron atendidas: sin reingreso
+// (reemplaza_a) y sin una estimación POSTERIOR del mismo periodo en estado ≠ rechazada (cubre también el
+// flujo "volver a integrar + presentar"). Trae el motivo del rechazo y datos para el enlace. Al atender el
+// rechazo (reingresar o re-integrar el periodo) la fila DESAPARECE de esta lista = "notificación atendida".
+async function rechazadasContratista(req, res) {
+  try {
+    const uid = req.user.id;
+    const r = await pool.query(
+      `SELECT e.id AS estimacion_id, e.numero AS estimacion_numero, e.contrato_id, c.folio,
+              e.periodo_inicio, e.periodo_fin, e.neto,
+              (SELECT o.descripcion FROM estimacion_observaciones o
+                WHERE o.estimacion_id = e.id AND o.tipo = 'rechazo'
+                ORDER BY o.created_at DESC, o.id DESC LIMIT 1) AS motivo,
+              (SELECT MIN(o.created_at) FROM estimacion_observaciones o
+                WHERE o.estimacion_id = e.id AND o.tipo = 'rechazo') AS rechazada_en
+         FROM estimaciones e
+         JOIN contratos c ON c.id = e.contrato_id
+        WHERE e.estado = 'rechazada'
+          AND c.superintendente_id = $1
+          AND NOT EXISTS (SELECT 1 FROM estimaciones r WHERE r.reemplaza_a = e.id)
+          AND NOT EXISTS (
+            SELECT 1 FROM estimaciones e2
+             WHERE e2.contrato_id = e.contrato_id
+               AND e2.periodo_inicio = e.periodo_inicio AND e2.periodo_fin = e.periodo_fin
+               AND e2.numero > e.numero AND e2.estado <> 'rechazada'
+          )
+        ORDER BY e.contrato_id, e.numero`,
+      [uid]
+    );
+    return res.status(200).json(r.rows);
+  } catch (err) { console.error('[rechazadasContratista]', err); return res.status(500).json({ error: 'Error interno' }); }
+}
+
 module.exports = {
   historialEstimaciones,
   enviarEstimacion,
@@ -749,5 +816,6 @@ module.exports = {
   turnarEstimacion,
   autorizarEstimacion,
   rechazarEstimacion,
-  reingresarEstimacion
+  reingresarEstimacion,
+  rechazadasContratista
 };

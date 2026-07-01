@@ -12,7 +12,8 @@ const {
   turnarEstimacion,
   autorizarEstimacion,
   rechazarEstimacion,
-  reingresarEstimacion
+  reingresarEstimacion,
+  rechazadasContratista
 } = require('../controllers/estimaciones-ciclo.controller');
 
 const router = express.Router();
@@ -20,6 +21,10 @@ const router = express.Router();
 // Toda la sección exige sesión válida. El acotamiento por participación se hace en el
 // controller (reusa lib/acceso: esParteOSupervision), igual que HU-12.
 router.use(authMiddleware);
+
+// BUG #8: notificación de RECHAZO al contratista (estimaciones rechazadas sin atender de sus contratos).
+// Derivada del estado (sin tabla nueva). Acotada al superintendente en el controller.
+router.get('/rechazadas', rechazadasContratista);
 
 // Historial del contrato: cada estimación con su estado y sus transiciones (cronológico).
 router.get('/contrato/:contratoId/historial', historialEstimaciones);

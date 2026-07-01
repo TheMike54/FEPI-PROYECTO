@@ -12,6 +12,7 @@ import { api } from '../services/api.js';
 import { ahoraRefMs } from '../lib/fechaSimulada.js';
 import { monedaMXN as moneda } from '../utils/formato.js';
 import { labelEstadoEstimacion } from '../data/estadoEstimacion.js';
+import { ContenidoFotos, ContenidoSoportes } from '../components/estimacion/ExpedienteEstimacion.jsx';
 
 // HU-15 (Equipo 3) — cableado al backend real. Recepción, revisión técnica y autorización/
 // rechazo de la estimación. Fuente de la verdad = backend; aquí NO se calcula dinero ni se
@@ -73,8 +74,10 @@ function semaforoRevision(enviadaEnIso) {
   return { transcurridos, pct, color, etiqueta };
 }
 
-const SECCIONES = ['caratula', 'generadores', 'notas']; // fotos/soportes ocultas (sin datos reales)
-const SECCION_LABEL = { caratula: 'Carátula', generadores: 'Números generadores', notas: 'Notas vinculadas' };
+// BUG #7 (Oleada 1): la revisión ahora muestra el expediente COMPLETO — se agregan 'fotos' y 'soportes'
+// (antes ocultas). El backend ya acepta observaciones en esas secciones (estimaciones-ciclo SECCIONES).
+const SECCIONES = ['caratula', 'generadores', 'fotos', 'soportes', 'notas'];
+const SECCION_LABEL = { caratula: 'Carátula', generadores: 'Números generadores', fotos: 'Registro fotográfico', soportes: 'Soportes documentales', notas: 'Notas vinculadas' };
 
 const ESTADO_CLASE = {
   enviada:    'bg-amber-100 text-sigecop-amber-attention',
@@ -540,6 +543,8 @@ export default function RevisionEstimacion() {
       <div>
         {key === 'caratula' && <ContenidoCaratula detalle={detalle} />}
         {key === 'generadores' && <ContenidoGeneradores detalle={detalle} />}
+        {key === 'fotos' && <ContenidoFotos estimacionId={estimacionId} contratoId={revision?.contrato_id} periodoInicio={revision?.periodo_inicio} periodoFin={revision?.periodo_fin} onError={showToast} />}
+        {key === 'soportes' && <ContenidoSoportes estimacionId={estimacionId} onError={showToast} />}
         {key === 'notas' && <ContenidoNotas detalle={detalle} />}
         <ObservacionesSeccion
           seccionKey={key}

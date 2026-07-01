@@ -12,6 +12,7 @@ import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
 import { labelEstadoEstimacion } from '../data/estadoEstimacion.js';
 import { monedaMXN as moneda } from '../utils/formato.js';
+import { ExpedienteEstimacionReadOnly } from '../components/estimacion/ExpedienteEstimacion.jsx';
 
 // HU-14 (Equipo 3) — cableado al backend real. Historial del ciclo de cobro: todas
 // las estimaciones del contrato (incl. rechazadas) en orden cronológico, con su estado
@@ -60,8 +61,11 @@ function FilaDetalle({ label, valor }) {
   );
 }
 
-// Drawer lateral con el expediente compacto de la estimación seleccionada.
-function PanelDetalle({ estimacion, onCerrar }) {
+// Drawer lateral con el expediente COMPLETO de la estimación seleccionada (bug #9: antes solo mostraba
+// periodo/estado/importe/fechas; ahora abre el expediente real —carátula, generadores, notas, fotos,
+// soportes y observaciones— en modo solo lectura, reusando el mismo componente que HU-15). Funciona en
+// todas las estimaciones, incluidas las rechazadas (muestra su motivo en la pestaña de observaciones).
+function PanelDetalle({ estimacion, onCerrar, onError }) {
   if (!estimacion) return null;
   return (
     <div className="fixed inset-0 z-50 flex" data-testid={`panel-detalle-estimacion-${estimacion.id}`}>
@@ -70,7 +74,7 @@ function PanelDetalle({ estimacion, onCerrar }) {
         onClick={onCerrar}
         data-testid="panel-detalle-backdrop"
       />
-      <div className="relative ml-auto w-full max-w-md h-full bg-white shadow-xl overflow-y-auto">
+      <div className="relative ml-auto w-full max-w-2xl h-full bg-white shadow-xl overflow-y-auto">
         <div className="flex items-center justify-between px-5 py-4 border-b border-borde">
           <div>
             <div className="text-xs uppercase tracking-wider text-slate-500 font-semibold">
@@ -101,21 +105,10 @@ function PanelDetalle({ estimacion, onCerrar }) {
           <FilaDetalle label="Fecha de revisión" valor={estimacion.fechaRevision} />
           <FilaDetalle label="Fecha de pago" valor={estimacion.fechaPago} />
 
-          <div>
-            <div className="text-[10px] uppercase tracking-wider text-slate-500 font-semibold mb-1">
-              Observaciones
-            </div>
-            {estimacion.observaciones.length === 0 ? (
-              <p className="text-sm text-slate-400 italic">
-                Sin observaciones registradas para esta versión.
-              </p>
-            ) : (
-              <ul className="list-disc list-inside text-sm text-slate-800 space-y-1">
-                {estimacion.observaciones.map((o, i) => (
-                  <li key={i}>{o}</li>
-                ))}
-              </ul>
-            )}
+          {/* BUG #9: expediente COMPLETO de solo lectura (carátula, generadores, notas, fotos, soportes y
+              observaciones), cargado del backend al abrir la fila. Reusa el componente compartido con HU-15. */}
+          <div className="pt-2 border-t border-borde">
+            <ExpedienteEstimacionReadOnly estimacionId={estimacion.id} onError={onError} />
           </div>
         </div>
       </div>
@@ -406,7 +399,7 @@ export default function HistorialEstimaciones() {
         </>
       )}
 
-      <PanelDetalle estimacion={seleccionada} onCerrar={() => setSeleccionada(null)} />
+      <PanelDetalle estimacion={seleccionada} onCerrar={() => setSeleccionada(null)} onError={showToast} />
 
       <SeccionCriterios
         huId="HU-14"

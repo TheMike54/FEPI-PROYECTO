@@ -72,10 +72,15 @@ async function subirFoto(req, res) {
     const descripcion = (req.body && typeof req.body.descripcion === 'string') ? req.body.descripcion.slice(0, 300) : null;
     // FIX 22-jun (profe): foto POR GENERADOR/concepto (formato GACM: una foto de actividad por concepto).
     // contrato_concepto_id es OPCIONAL; si se envía, se valida que sea un concepto del contrato de la estimación.
-    let conceptoId = Number(req.body?.contrato_concepto_id) || null;
-    if (conceptoId) {
+    // BUG #26 (Oleada 1): si se envía un concepto que NO pertenece al contrato, se RECHAZA con 400 explícito
+    // (antes se degradaba en SILENCIO a "foto general", ocultando el error: el generador quedaba sin su foto
+    // aunque el usuario sí la adjuntó). Solo se permite null cuando el usuario NO envía concepto (foto general).
+    let conceptoId = null;
+    if (req.body && req.body.contrato_concepto_id != null && String(req.body.contrato_concepto_id).trim() !== '') {
+      conceptoId = Number(req.body.contrato_concepto_id);
+      if (!Number.isInteger(conceptoId) || conceptoId <= 0) return res.status(400).json({ error: 'contrato_concepto_id inválido' });
       const ok = await pool.query('SELECT 1 FROM contrato_conceptos WHERE id=$1 AND contrato_id=$2', [conceptoId, est.contrato_id]);
-      if (ok.rowCount === 0) conceptoId = null; // no pertenece al contrato → se guarda como foto general
+      if (ok.rowCount === 0) return res.status(400).json({ error: 'El concepto indicado no pertenece a este contrato' });
     }
     const r = await pool.query(
       `INSERT INTO estimacion_fotos (estimacion_id, contrato_concepto_id, nombre, descripcion, mime, tamano, contenido, subido_por)

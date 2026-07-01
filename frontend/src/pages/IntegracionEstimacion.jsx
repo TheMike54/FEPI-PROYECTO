@@ -514,6 +514,9 @@ export default function IntegracionEstimacion() {
   const [periodoFin, setPeriodoFin] = useState('');
   const [fotosAvance, setFotosAvance] = useState([]);
   const [cargandoFotos, setCargandoFotos] = useState(false);
+  // BUG #4 (Oleada 1): soportes documentales (PDF/XLS/CSV/TXT/imagen) que se ADJUNTAN en el paso 4 y se
+  // SUBEN al integrar (la estimación —y su id— nacen al integrar). Se acumulan en memoria (File[]).
+  const [soportesStaged, setSoportesStaged] = useState([]);
 
   const [integrando, setIntegrando] = useState(false);
   const [resultado, setResultado] = useState(null);
@@ -773,9 +776,20 @@ export default function IntegracionEstimacion() {
       });
       setResultado(est);
       showToast(`Estimación #${est.numero} integrada`);
+      // BUG #4: sube los soportes documentales adjuntados en el paso 4 a la estimación recién creada.
+      const nuevaId = est?.id ?? est?.estimacion_id;
+      if (nuevaId && soportesStaged.length > 0) {
+        let ok = 0;
+        for (const f of soportesStaged) {
+          try { await api.subirSoporteEstimacion(nuevaId, f); ok += 1; } catch (_) { /* continúa con el resto */ }
+        }
+        showToast(ok === soportesStaged.length
+          ? `${ok} soporte(s) documental(es) adjuntado(s).`
+          : `Se adjuntaron ${ok} de ${soportesStaged.length} soportes; sube el resto desde el expediente.`);
+      }
       // El acumulado y el historial cambiaron: recargar y limpiar el formulario.
       await Promise.all([recargarAvance(contratoId), recargarHistorial(contratoId)]);
-      setCantidades({}); setDeductivas('0'); setPeriodoInicio(''); setPeriodoFin(''); setFotosAvance([]);
+      setCantidades({}); setDeductivas('0'); setPeriodoInicio(''); setPeriodoFin(''); setFotosAvance([]); setSoportesStaged([]);
     } catch (e) {
       // Errores localizados del backend tal cual (400 periodo>1 mes / neto<0; 409
       // exceso art.118 / solape; 403 no superintendente).
@@ -1006,6 +1020,43 @@ export default function IntegracionEstimacion() {
                     Reporte fotográfico del avance (art. 132 fr. IV RLOPSRM)
                   </h3>
                   <FotosAvancePeriodo fotos={fotosAvance} cargando={cargandoFotos} />
+                </div>
+              )}
+              {/* BUG #4: soportes documentales por concepto (PDF, XLS/XLSX, CSV/TXT, imagen). Se adjuntan
+                  aquí y se suben al integrar la estimación. Solo escritura para el superintendente (el
+                  backend revalida por participación). */}
+              {wrapTab(
+                <div className="bg-white border border-slate-200 rounded-lg p-4" data-testid="soportes-doc-wrapper">
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-1">Soportes documentales</h3>
+                  <p className="text-[11px] text-slate-500 mb-3">
+                    Documentos que respaldan los números generadores (art. 132 RLOPSRM): memorias de cálculo,
+                    controles de calidad, hojas de cálculo, etc. Formatos: PDF, XLS/XLSX, CSV/TXT, imagen. Máx 10 MB c/u.
+                    Se adjuntan al <strong>integrar</strong> la estimación.
+                  </p>
+                  <label className="sg-btn-secondary inline-block cursor-pointer">
+                    + Adjuntar soportes
+                    <input
+                      type="file" multiple className="hidden" data-testid="input-soportes"
+                      accept=".pdf,.xls,.xlsx,.csv,.txt,image/jpeg,image/png,application/pdf"
+                      onChange={(e) => {
+                        const nuevos = Array.from(e.target.files || []);
+                        if (nuevos.length) setSoportesStaged((prev) => [...prev, ...nuevos]);
+                        e.target.value = ''; // permite re-seleccionar el mismo archivo
+                      }}
+                    />
+                  </label>
+                  {soportesStaged.length > 0 && (
+                    <ul className="mt-3 space-y-1.5" data-testid="soportes-staged">
+                      {soportesStaged.map((f, i) => (
+                        <li key={`${f.name}-${i}`} className="flex items-center justify-between gap-2 text-sm border border-slate-200 rounded-md px-3 py-2">
+                          <span className="truncate">📎 {f.name} <span className="text-[11px] text-slate-400">({Math.ceil(f.size / 1024)} KB)</span></span>
+                          <button type="button" className="text-xs text-red-600 hover:underline shrink-0"
+                            onClick={() => setSoportesStaged((prev) => prev.filter((_, j) => j !== i))}
+                            data-testid={`soporte-staged-quitar-${i}`}>Quitar</button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               )}
               {/* A2 — Checklist de los documentos de la estimación (art. 132 RLOPSRM). Lista ENUNCIATIVA

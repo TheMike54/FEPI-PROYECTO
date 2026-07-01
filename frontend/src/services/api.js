@@ -226,6 +226,22 @@ export const api = {
   // Devuelve todas las fotos del avance vigente del contrato en el periodo indicado.
   avanceFotosDelPeriodo: (contratoId, inicio, fin) =>
     request(`/avance-fotos/contrato/${contratoId}/periodo?inicio=${inicio}&fin=${fin}`),
+  // Oleada 1 bug #4: SOPORTES documentales por concepto de la estimación (PDF/XLS/CSV/TXT/imagen, BYTEA).
+  listarSoportesEstimacion: (estId) => request(`/estimacion-soportes/estimacion/${estId}`),
+  subirSoporteEstimacion: (estId, file, descripcion, contratoConceptoId) => {
+    const fd = new FormData(); fd.append('documento', file); if (descripcion) fd.append('descripcion', descripcion);
+    if (contratoConceptoId) fd.append('contrato_concepto_id', String(contratoConceptoId));
+    const token = localStorage.getItem('sigecop_token');
+    return fetch(`${API_URL}/estimacion-soportes/estimacion/${estId}`, { method: 'POST', headers: token ? { Authorization: `Bearer ${token}` } : {}, body: fd })
+      .then(async (res) => { const t = await res.text(); const d = t ? JSON.parse(t) : null; if (!res.ok) { const e = new Error(d?.error || `HTTP ${res.status}`); e.status = res.status; throw e; } return d; });
+  },
+  descargarSoporteEstimacion: async (soporteId) => {
+    const token = localStorage.getItem('sigecop_token');
+    const res = await fetch(`${API_URL}/estimacion-soportes/archivo/${soporteId}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!res.ok) { let m = `HTTP ${res.status}`; try { m = JSON.parse(await res.text())?.error || m; } catch (_) { /* binario */ } const e = new Error(m); e.status = res.status; throw e; }
+    return URL.createObjectURL(await res.blob());
+  },
+  eliminarSoporteEstimacion: (soporteId) => request(`/estimacion-soportes/${soporteId}`, { method: 'DELETE' }),
   subirPdfMinuta: (minutaId, file) => {
     const fd = new FormData(); fd.append('documento', file);
     const token = localStorage.getItem('sigecop_token');
@@ -266,6 +282,8 @@ export const api = {
   // HU-14 (Equipo 3): historial del ciclo de cobro (cada estimación con su estado y transiciones,
   // orden cronológico). Acotado por participación en el backend.
   historialEstimaciones: (contratoId) => request(`/estimaciones-ciclo/contrato/${contratoId}/historial`),
+  // Oleada 1 bug #8: notificación de rechazo al contratista (estimaciones rechazadas sin atender).
+  rechazadasContratista: () => request('/estimaciones-ciclo/rechazadas'),
   // HU-06 v2 (O4): trabajos terminados (avance ejecutado por concepto). Lectura por participación;
   // escritura solo contratista (lo valida el backend). El periodo se SELECCIONA (payload.periodo_numero);
   // el backend BLOQUEA por art. 118 (acumulado > contratado) y AVISA (201 + aviso_programa, O-PROFE: ya no

@@ -28,6 +28,7 @@ const notasPendientesRoutes = require('./src/routes/notas-pendientes.routes');  
 const estimacionFotosRoutes = require('./src/routes/estimacion-fotos.routes');  // EVIDENCIA FOTOGRÁFICA (art. 132 fr. IV RLOPSRM) — montaje aditivo, diff para Maiki
 const avanceFotosRoutes = require('./src/routes/avance-fotos.routes');  // FIX 22-jun: evidencia fotográfica del AVANCE (HU-06) — montaje aditivo
 const estimacionNotasRoutes = require('./src/routes/estimacion-notas.routes');  // P1-2 (26-jun): vínculo nota↔generador — montaje aditivo
+const estimacionSoportesRoutes = require('./src/routes/estimacion-soportes.routes');  // Oleada 1 bug #4: SOPORTES documentales por concepto (PDF/XLS/CSV/imagen) — montaje aditivo, diff para Maiki
 const { initDb } = require('./src/db/init');
 
 const app = express();
@@ -83,6 +84,10 @@ app.use('/api/notas-pendientes', notasPendientesRoutes);  // OLEADA 2 (FIX 2.5 �
 app.use('/api/estimacion-fotos', estimacionFotosRoutes);
 app.use('/api/avance-fotos', avanceFotosRoutes);  // FIX 22-jun: evidencia fotográfica del avance (HU-06)
 app.use('/api/estimacion-notas', estimacionNotasRoutes);  // P1-2 (26-jun): vínculo nota↔generador de la estimación
+// Oleada 1 bug #4: SOPORTES documentales por concepto de la estimación (PDF/XLS/CSV/TXT/imagen, BYTEA).
+// Controller/route NUEVOS (no congelados). La tabla estimacion_soportes_concepto se asegura vía ensureSchema()
+// (aditiva idempotente); registro en backend/scripts/migracion_estimacion_soportes.sql para plegar al schema.
+app.use('/api/estimacion-soportes', estimacionSoportesRoutes);
 
 app.use((req, res) => {
   res.status(404).json({ error: 'Ruta no encontrada' });
