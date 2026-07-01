@@ -103,9 +103,13 @@ export default function TransitoPago() {
   const [cfdiFolio, setCfdiFolio] = useState('');
   const [techoVal, setTechoVal] = useState('');
   const [partidaVal, setPartidaVal] = useState('');
-  // FOLLOW-ON b (22-jun): carga binaria del CFDI / oficio (PDF) en la promoción de cobro.
+  // FOLLOW-ON b (22-jun): carga binaria del CFDI / oficio (PDF/XML) en la promoción de cobro.
   const [archTipo, setArchTipo] = useState('cfdi');
   const [subiendoArch, setSubiendoArch] = useState(false);
+  // BUG #10/#17/#18 (Oleada 4): datos bancarios del contratista — los captura/valida FINANZAS.
+  const [datosBancarios, setDatosBancarios] = useState(null);
+  const [dbForm, setDbForm] = useState({ clabe: '', banco: '', titular: '', cuenta: '' });
+  const [guardandoDb, setGuardandoDb] = useState(false);
 
   // FASE 4 (rediseño por bloques) — WIZARD del tránsito a pago: Suficiencia → Soportes → Instrucción
   // (patrón del Alta/Estimación). Reusa los MISMOS componentes/testids; navegación libre entre pasos
@@ -155,6 +159,31 @@ export default function TransitoPago() {
   }, [showToast]);
 
   const seleccionarEstimacion = (id) => { setEstimacionId(id); setFacturaDesc(''); setCfdiFolio(''); setPasoPago(0); cargarTransito(id); };
+
+  // BUG #10/#17: carga los datos bancarios vigentes de la empresa del contratista (finanzas o la propia empresa).
+  const empresaContratista = transito?.estimacion?.contratista_empresa_id ?? null;
+  useEffect(() => {
+    if (sinSesion || empresaContratista == null) { setDatosBancarios(null); return; }
+    let vivo = true;
+    api.leerDatosBancarios(empresaContratista)
+      .then((d) => { if (vivo) setDatosBancarios(d || null); })
+      .catch(() => { if (vivo) setDatosBancarios(null); });
+    return () => { vivo = false; };
+  }, [sinSesion, empresaContratista]);
+
+  const guardarDatosBancarios = async () => {
+    if (empresaContratista == null || guardandoDb) return;
+    setGuardandoDb(true);
+    try {
+      const guardado = await api.guardarDatosBancarios(empresaContratista, {
+        clabe: dbForm.clabe.replace(/\s/g, ''), banco: dbForm.banco.trim(), titular: dbForm.titular.trim(), cuenta: dbForm.cuenta.trim() || null,
+      });
+      setDatosBancarios(guardado);
+      setDbForm({ clabe: '', banco: '', titular: '', cuenta: '' });
+      showToast('Datos bancarios validados y guardados.');
+    } catch (e) { showToast(e.payload?.error || 'No se pudieron guardar los datos bancarios'); }
+    finally { setGuardandoDb(false); }
+  };
 
   const registrarSoporte = async (nombre, descripcion) => {
     try {
@@ -220,9 +249,12 @@ export default function TransitoPago() {
     if (suf?.sin_presupuesto) b.push('No hay techo presupuestal cargado para verificar la suficiencia (art. 24).');
     else if (suf?.excede) b.push('El neto excede el techo presupuestal disponible (art. 24 LOPSRM).');
     if (sop && !sop.obligatorios_ok) b.push('Faltan soportes obligatorios (factura, CFDI con folio, o fianza de cumplimiento vigente).');
+    // BUG #10/#17: Finanzas debe haber capturado/validado los datos bancarios del contratista antes de instruir.
+    if (!datosBancarios) b.push('Faltan los datos bancarios validados del contratista (los captura Finanzas).');
     return b;
-  }, [transito, suf, sop]);
-  const puedeGenerar = !soloLectura && transito && !instr && bloqueos.length === 0;
+  }, [transito, suf, sop, datosBancarios]);
+  // BUG #10 (Oleada 4): SOLO Finanzas genera la instrucción de pago (el contratista solo presenta soportes).
+  const puedeGenerar = rol === 'finanzas' && transito && !instr && bloqueos.length === 0;
 
   // BLOQUE 2 — gating secuencial del wizard de pago (igual que Alta/Estimación): no avanzas sin que el paso
   // ACTUAL esté correcto. Atrás libre. Solo aplica al stepper (Tipo A); no hay vistas TIPO B aquí.
@@ -422,8 +454,9 @@ export default function TransitoPago() {
                   </select>
                 </div>
                 <label className="text-sm font-semibold text-sigecop-accent hover:underline cursor-pointer pb-2" data-testid="btn-subir-archivo-cobro">
-                  {subiendoArch ? 'Subiendo…' : '⬆ Subir PDF'}
-                  <input type="file" accept="application/pdf" className="hidden" disabled={subiendoArch}
+                  {subiendoArch ? 'Subiendo…' : '⬆ Subir PDF / XML'}
+                  {/* BUG #20: se acepta PDF y XML (CFDI). */}
+                  <input type="file" accept="application/pdf,application/xml,text/xml,.pdf,.xml" className="hidden" disabled={subiendoArch}
                     onChange={(e) => { const f = e.target.files && e.target.files[0]; e.target.value = ''; subirArchivoCobro(f); }} />
                 </label>
               </div>
@@ -466,6 +499,38 @@ export default function TransitoPago() {
             )}
           </div>
 
+          {/* BUG #10/#17/#18 (Oleada 4): DATOS BANCARIOS del contratista — los captura/valida FINANZAS (antes
+              el contratista los ponía como texto libre). La instrucción los exige. Fuente estructurada. */}
+          {!instr && empresaContratista != null && (
+            <div className="bg-white border border-borde rounded-md p-5 mb-6" data-testid="datos-bancarios-panel">
+              <h2 className="text-lg font-bold text-guinda mb-1">Datos bancarios del contratista</h2>
+              <p className="text-xs text-tinta-sec mb-3">Los captura y valida <strong>Finanzas</strong> (CLABE de 18 dígitos con dígito de control). La instrucción de pago los usa; el contratista ya no los teclea.</p>
+              {datosBancarios ? (
+                <div className="text-sm bg-green-50 border border-exito/30 rounded-md p-3" data-testid="datos-bancarios-vigentes">
+                  <div className="font-semibold text-exito">✓ Datos bancarios validados</div>
+                  <div className="mt-1 font-mono">CLABE: {datosBancarios.clabe}</div>
+                  <div>Banco: {datosBancarios.banco} · Titular: {datosBancarios.titular}</div>
+                  <div className="text-[11px] text-tinta-ter mt-1">Validó: {datosBancarios.validado_por_nombre || '—'}</div>
+                </div>
+              ) : (
+                <p className="text-sm text-aviso" data-testid="datos-bancarios-faltan">Aún no hay datos bancarios validados para este contratista.</p>
+              )}
+              {rol === 'finanzas' && (
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div><label className="sg-label">CLABE (18 dígitos)</label><input className="sg-input font-mono" inputMode="numeric" maxLength={18} value={dbForm.clabe} onChange={(e) => setDbForm((f) => ({ ...f, clabe: e.target.value.replace(/[^\d]/g, '') }))} data-testid="db-clabe" placeholder="18 dígitos" /></div>
+                  <div><label className="sg-label">Banco</label><input className="sg-input" value={dbForm.banco} onChange={(e) => setDbForm((f) => ({ ...f, banco: e.target.value }))} data-testid="db-banco" /></div>
+                  <div><label className="sg-label">Titular</label><input className="sg-input" value={dbForm.titular} onChange={(e) => setDbForm((f) => ({ ...f, titular: e.target.value }))} data-testid="db-titular" /></div>
+                  <div><label className="sg-label">Cuenta (opcional)</label><input className="sg-input" value={dbForm.cuenta} onChange={(e) => setDbForm((f) => ({ ...f, cuenta: e.target.value }))} data-testid="db-cuenta" /></div>
+                  <div className="sm:col-span-2 flex justify-end">
+                    <Boton disabled={guardandoDb || dbForm.clabe.length !== 18 || !dbForm.banco.trim() || !dbForm.titular.trim()} onClick={guardarDatosBancarios} data-testid="btn-guardar-datos-bancarios">
+                      {guardandoDb ? 'Validando…' : (datosBancarios ? 'Actualizar datos bancarios' : 'Validar y guardar')}
+                    </Boton>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Bloqueos / generación. */}
           {!instr && bloqueos.length > 0 && (
             <div className="bg-amber-50 border-l-4 border-aviso px-4 py-3 mb-4 text-sm rounded-r-md" data-testid="aviso-bloqueo">
@@ -474,10 +539,14 @@ export default function TransitoPago() {
             </div>
           )}
 
-          {!soloLectura && !instr && (
+          {/* BUG #10: el botón lo ve SOLO Finanzas (genera la instrucción). El contratista solo presenta soportes. */}
+          {rol === 'finanzas' && !instr && (
             <div className="flex justify-end">
               <Boton disabled={!puedeGenerar} onClick={generar} data-testid="btn-generar-instruccion">💸 Generar instrucción de pago</Boton>
             </div>
+          )}
+          {rol === 'contratista' && !instr && (
+            <p className="text-xs text-tinta-ter text-right" data-testid="nota-genera-finanzas">La instrucción de pago la genera <strong>Finanzas</strong> tras validar tus soportes y los datos bancarios.</p>
           )}
 
           </div>

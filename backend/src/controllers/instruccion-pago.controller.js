@@ -45,13 +45,60 @@ const SOPORTE_CFDI = 'CFDI';
 
 const r2 = (n) => Math.round((Number(n || 0) + Number.EPSILON) * 100) / 100;
 
+// BUG #17 (Oleada 4): FUENTE ÚNICA ESTRUCTURADA de los datos bancarios del contratista (antes texto libre
+// del contratista en estimacion_soportes). Los CAPTURA/VALIDA finanzas; la instrucción de pago los LEE de
+// aquí. Por EMPRESA (la razón social que cobra); append-only con validado_por. Tabla aditiva idempotente
+// (no se toca schema.sql; migracion en backend/scripts/migracion_datos_bancarios.sql).
+let _ensuredBancarios = null;
+function ensureBancarios() {
+  if (_ensuredBancarios) return _ensuredBancarios;
+  _ensuredBancarios = pool.query(`
+    CREATE TABLE IF NOT EXISTS contratista_datos_bancarios (
+      id           SERIAL PRIMARY KEY,
+      empresa_id   INTEGER NOT NULL REFERENCES empresas(id) ON DELETE CASCADE,
+      clabe        VARCHAR(18) NOT NULL,
+      banco        TEXT NOT NULL,
+      titular      TEXT NOT NULL,
+      cuenta       TEXT,
+      vigente      BOOLEAN NOT NULL DEFAULT true,
+      validado_por INTEGER REFERENCES usuarios(id) ON DELETE SET NULL,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_datos_bancarios_vigente ON contratista_datos_bancarios(empresa_id) WHERE vigente;
+  `).catch((e) => { console.error('[instruccion-pago ensureBancarios]', e.message); _ensuredBancarios = null; throw e; });
+  return _ensuredBancarios;
+}
+ensureBancarios().catch(() => {});
+
+// BUG #18: CLABE mexicana = EXACTAMENTE 18 dígitos + dígito de control (algoritmo estándar, pesos 3-7-1).
+// No se confunde con la referencia/clave de rastreo SPEI (que tiene su propia forma).
+function clabeValida(clabe) {
+  if (!/^\d{18}$/.test(clabe)) return false;
+  const pesos = [3, 7, 1];
+  let suma = 0;
+  for (let i = 0; i < 17; i++) suma += (Number(clabe[i]) * pesos[i % 3]) % 10;
+  const control = (10 - (suma % 10)) % 10;
+  return control === Number(clabe[17]);
+}
+
+// BUG #20: ¿el buffer parece un XML (CFDI) bien formado en su inicio? Guarda contra XXE: rechaza DOCTYPE/
+// ENTITY (no se parsea el XML aquí; solo se ALMACENA como soporte, pero se protege el contenido).
+function esXml(buffer) {
+  if (!buffer || buffer.length < 5) return false;
+  const s = buffer.toString('utf8', 0, Math.min(buffer.length, 1024)).replace(/^﻿/, '').replace(/^\s+/, '');
+  if (!(s.startsWith('<?xml') || s.startsWith('<'))) return false;
+  if (/<!DOCTYPE/i.test(s) || /<!ENTITY/i.test(s)) return false; // anti-XXE
+  return true;
+}
+
 // Carga estimación + contrato (cols de acceso + dependencia/fecha para suficiencia).
 async function cargarEstimacionContrato(id) {
   const r = await pool.query(
     `SELECT e.id, e.contrato_id, e.numero, e.estado, e.neto, e.periodo_inicio, e.periodo_fin,
             c.folio, c.contratista, c.dependencia, c.dependencia_id, c.fecha_inicio, c.monto,
             c.estado AS contrato_estado, c.cerrado_en,
-            c.created_by, c.residente_id, c.superintendente_id, c.supervision_id
+            c.created_by, c.residente_id, c.superintendente_id, c.supervision_id,
+            (SELECT empresa_id FROM usuarios u WHERE u.id = c.superintendente_id) AS contratista_empresa_id
        FROM estimaciones e JOIN contratos c ON c.id = e.contrato_id
       WHERE e.id = $1`,
     [id]
@@ -218,6 +265,7 @@ async function estadoTransito(req, res) {
         contratista: est.contratista, dependencia: est.dependencia, dependencia_id: est.dependencia_id ?? null, ejercicio,
         estado: est.estado, neto: r2(est.neto).toFixed(2),
         periodo_inicio: est.periodo_inicio, periodo_fin: est.periodo_fin,
+        contratista_empresa_id: est.contratista_empresa_id ?? null, // BUG #10/#17: empresa para leer/validar datos bancarios
       },
       es_autorizada: est.estado === 'autorizada',
       // Cierre del contrato (art. 64 LOPSRM): si está finiquitado, no se generan nuevas instrucciones.
@@ -250,14 +298,14 @@ async function cargarSoporte(req, res) {
     const est = await cargarEstimacionContrato(id);
     if (!est) return res.status(404).json({ error: 'Estimación no encontrada' });
     if (!esParteOSupervision(req.user, est)) return res.status(403).json({ error: 'No tienes acceso a esta estimación' });
-    // FIX 22-jun (profe): el CONTRATISTA promueve su cobro (sube CFDI, oficio, datos bancarios SPEI);
-    // finanzas solo REVISA la cola y paga. La promoción es del contratista, no de finanzas.
+    // BUG #10/#17 (Oleada 4): el CONTRATISTA solo presenta CFDI / factura / oficio. Los DATOS BANCARIOS ya
+    // NO los captura aquí (texto libre) — los captura/valida FINANZAS en su fuente estructurada
+    // (contratista_datos_bancarios). Se rechaza intentar registrar datos bancarios como soporte.
     if (req.user.rol !== 'contratista') {
-      return res.status(403).json({ error: 'Solo el contratista promueve su cobro (sube CFDI, oficio y datos bancarios). Finanzas revisa la cola y paga.' });
+      return res.status(403).json({ error: 'Solo el contratista presenta sus soportes de cobro (CFDI, factura, oficio). Los datos bancarios los captura Finanzas.' });
     }
-    // FIX 22-jun: los datos bancarios SPEI son NUMÉRICOS (clave de rastreo / CLABE). Se validan al cargarlos.
-    if (/spei|bancari|clabe/i.test(nombre) && descripcion && !/^\d{6,30}$/.test(descripcion.replace(/\s/g, ''))) {
-      return res.status(400).json({ error: 'Los datos bancarios (SPEI/CLABE) deben ser numéricos.' });
+    if (/spei|bancari|clabe|cuenta/i.test(nombre)) {
+      return res.status(400).json({ error: 'Los datos bancarios (CLABE/SPEI) ya no se capturan como soporte del contratista: los captura y valida Finanzas en el registro de datos bancarios.' });
     }
     // Consistencia con generarInstruccion: si el contrato está cerrado (finiquito), no se cargan soportes
     // nuevos del tránsito a pago (art. 64 LOPSRM: derechos y obligaciones extinguidos).
@@ -286,9 +334,10 @@ async function generarInstruccion(req, res) {
     const est = await cargarEstimacionContrato(id);
     if (!est) return res.status(404).json({ error: 'Estimación no encontrada' });
     if (!esParteOSupervision(req.user, est)) return res.status(403).json({ error: 'No tienes acceso a esta estimación' });
-    // FIX 22-jun (profe): el CONTRATISTA promueve su cobro (genera la solicitud); finanzas la revisa en la cola y paga.
-    if (req.user.rol !== 'contratista') {
-      return res.status(403).json({ error: 'Solo el contratista promueve su cobro. Finanzas revisa la cola de solicitudes y paga.' });
+    // BUG #10 (Oleada 4, decisión de Maiki): FINANZAS genera la instrucción de pago (el contratista solo
+    // presenta CFDI/factura/oficio). Invierte el criterio previo "el contratista promueve".
+    if (req.user.rol !== 'finanzas') {
+      return res.status(403).json({ error: 'Solo Finanzas genera la instrucción de pago (tras validar los datos bancarios y revisar los soportes). El contratista solo presenta CFDI, factura y oficio.' });
     }
     // Gate de cierre: si el contrato ya tiene finiquito elaborado (estado 'cerrado'), NO se genera una
     // nueva instrucción de pago. Al determinarse el saldo del finiquito quedan "extinguidos los derechos y
@@ -307,6 +356,18 @@ async function generarInstruccion(req, res) {
     const sop = await leerSoportes(est.id, est.contrato_id);
     if (!sop.obligatorios_ok) {
       return res.status(409).json({ error: 'Faltan soportes obligatorios (factura, CFDI con folio, o fianza de cumplimiento vigente).', soportes: sop });
+    }
+    // BUG #10/#17 (Oleada 4): la instrucción LEE los datos bancarios de la fuente ESTRUCTURADA
+    // (contratista_datos_bancarios). Finanzas debe haberlos capturado/validado para la empresa del
+    // contratista ANTES de instruir el pago. Sin datos bancarios vigentes → 409 (no se paga a ciegas).
+    await ensureBancarios().catch(() => {});
+    const empresaContratista = est.contratista_empresa_id ?? null;
+    if (empresaContratista == null) {
+      return res.status(409).json({ error: 'El contratista del contrato no tiene empresa asociada; no se pueden validar los datos bancarios para el pago.' });
+    }
+    const db = await pool.query('SELECT id, clabe FROM contratista_datos_bancarios WHERE empresa_id = $1 AND vigente = true', [empresaContratista]);
+    if (db.rowCount === 0) {
+      return res.status(409).json({ error: 'Finanzas debe capturar y validar los datos bancarios (CLABE) del contratista antes de generar la instrucción de pago.', requiereDatosBancarios: true, empresa_id: empresaContratista });
     }
 
     // CA-1: suficiencia presupuestal (art. 24) DENTRO de una transacción que BLOQUEA la fila del techo
@@ -501,7 +562,7 @@ async function porCobrar(req, res) {
 // El profe: el CONTRATISTA promueve su cobro y SUBE sus soportes (CFDI + oficio de autorización que genera el
 // sistema); Finanzas los DESCARGA desde la cola y paga. Binario INLINE en BYTEA (tabla cobro_soportes, aditiva).
 // subido_por = JWT, nunca del body. Acceso por participación (finanzas transversal en lib/acceso).
-const TIPOS_ARCHIVO_COBRO = ['cfdi', 'oficio', 'otro'];
+const TIPOS_ARCHIVO_COBRO = ['cfdi', 'oficio', 'otro']; // BUG #20: el XML del CFDI se guarda como 'cfdi' con mime application/xml (soporta PDF y XML por CFDI, sin tocar el CHECK del schema)
 function esPdf(buffer) {
   return !!buffer && buffer.length > 4 && buffer[0] === 0x25 && buffer[1] === 0x50 && buffer[2] === 0x44 && buffer[3] === 0x46; // '%PDF'
 }
@@ -512,9 +573,14 @@ async function subirArchivoCobro(req, res) {
     const id = Number(req.params.id);
     if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'id inválido' });
     if (!req.file || !req.file.buffer) return res.status(400).json({ error: 'Falta el archivo (campo "documento")' });
-    if (!esPdf(req.file.buffer)) return res.status(400).json({ error: 'El archivo no es un PDF válido' });
+    // BUG #20: se acepta PDF o XML (CFDI). El XML se valida bien-formado en su inicio + guarda anti-XXE.
+    const isPdf = esPdf(req.file.buffer);
+    const isXml = esXml(req.file.buffer);
+    if (!isPdf && !isXml) return res.status(400).json({ error: 'El archivo debe ser un PDF o un XML (CFDI) válido.' });
     let tipo = typeof req.body?.tipo === 'string' ? req.body.tipo.trim().toLowerCase() : 'otro';
     if (!TIPOS_ARCHIVO_COBRO.includes(tipo)) tipo = 'otro';
+    // Un XML es el CFDI en formato XML: se clasifica como 'cfdi' (el mime application/xml lo distingue del PDF).
+    if (isXml && tipo !== 'oficio') tipo = 'cfdi';
 
     const est = await cargarEstimacionContrato(id);
     if (!est) return res.status(404).json({ error: 'Estimación no encontrada' });
@@ -577,4 +643,62 @@ async function descargarArchivoCobro(req, res) {
   } catch (err) { console.error('[descargarArchivoCobro]', err); return res.status(500).json({ error: 'Error interno' }); }
 }
 
-module.exports = { estadoTransito, cargarSoporte, generarInstruccion, consultarPresupuesto, crearPresupuesto, colaCobro, porCobrar, subirArchivoCobro, listarArchivosCobro, descargarArchivoCobro };
+// GET /api/instruccion-pago/datos-bancarios/empresa/:empresaId — datos bancarios VIGENTES del contratista
+// (por empresa). Lectura: finanzas (transversal) o un usuario de esa misma empresa. BUG #17.
+async function leerDatosBancarios(req, res) {
+  try {
+    await ensureBancarios();
+    const empresaId = Number(req.params.empresaId);
+    if (!Number.isInteger(empresaId) || empresaId <= 0) return res.status(400).json({ error: 'empresa inválida' });
+    if (req.user.rol !== 'finanzas' && req.user.empresa_id !== empresaId) {
+      return res.status(403).json({ error: 'No tienes acceso a los datos bancarios de esta empresa' });
+    }
+    const r = await pool.query(
+      `SELECT db.id, db.empresa_id, db.clabe, db.banco, db.titular, db.cuenta, db.validado_por,
+              u.nombre AS validado_por_nombre, db.created_at
+         FROM contratista_datos_bancarios db LEFT JOIN usuarios u ON u.id = db.validado_por
+        WHERE db.empresa_id = $1 AND db.vigente = true ORDER BY db.id DESC LIMIT 1`,
+      [empresaId]
+    );
+    return res.status(200).json(r.rowCount ? r.rows[0] : null);
+  } catch (err) { console.error('[leerDatosBancarios]', err); return res.status(500).json({ error: 'Error interno' }); }
+}
+
+// POST /api/instruccion-pago/datos-bancarios/empresa/:empresaId — FINANZAS captura/valida los datos
+// bancarios del contratista (BUG #10/#17/#18). CLABE = 18 dígitos + control (#18). Append-only: la anterior
+// deja de ser vigente. body: { clabe, banco, titular, cuenta? }.
+async function guardarDatosBancarios(req, res) {
+  try {
+    await ensureBancarios();
+    const empresaId = Number(req.params.empresaId);
+    if (!Number.isInteger(empresaId) || empresaId <= 0) return res.status(400).json({ error: 'empresa inválida' });
+    if (req.user.rol !== 'finanzas') return res.status(403).json({ error: 'Solo Finanzas captura y valida los datos bancarios del contratista.' });
+    const b = req.body || {};
+    const clabe = String(b.clabe || '').replace(/\s/g, '');
+    const banco = typeof b.banco === 'string' ? b.banco.trim() : '';
+    const titular = typeof b.titular === 'string' ? b.titular.trim() : '';
+    const cuenta = typeof b.cuenta === 'string' ? (b.cuenta.trim() || null) : null;
+    // BUG #18: CLABE exactamente 18 dígitos (no se confunde con la referencia SPEI) + dígito de control.
+    if (!/^\d{18}$/.test(clabe)) return res.status(400).json({ error: 'La CLABE debe tener exactamente 18 dígitos.' });
+    if (!clabeValida(clabe)) return res.status(400).json({ error: 'La CLABE tiene 18 dígitos pero su dígito de control no es válido; revisa el número.' });
+    if (!banco) return res.status(400).json({ error: 'El banco es obligatorio.' });
+    if (!titular) return res.status(400).json({ error: 'El titular de la cuenta es obligatorio.' });
+    const emp = await pool.query('SELECT 1 FROM empresas WHERE id = $1', [empresaId]);
+    if (emp.rowCount === 0) return res.status(404).json({ error: 'La empresa indicada no existe' });
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('UPDATE contratista_datos_bancarios SET vigente = false WHERE empresa_id = $1 AND vigente = true', [empresaId]);
+      const ins = await client.query(
+        `INSERT INTO contratista_datos_bancarios (empresa_id, clabe, banco, titular, cuenta, vigente, validado_por)
+         VALUES ($1,$2,$3,$4,$5,true,$6)
+         RETURNING id, empresa_id, clabe, banco, titular, cuenta, validado_por, created_at`,
+        [empresaId, clabe, banco, titular, cuenta, req.user.id]
+      );
+      await client.query('COMMIT');
+      return res.status(201).json(ins.rows[0]);
+    } catch (e) { await client.query('ROLLBACK').catch(() => {}); throw e; } finally { client.release(); }
+  } catch (err) { console.error('[guardarDatosBancarios]', err); return res.status(500).json({ error: 'Error interno' }); }
+}
+
+module.exports = { estadoTransito, cargarSoporte, generarInstruccion, consultarPresupuesto, crearPresupuesto, colaCobro, porCobrar, subirArchivoCobro, listarArchivosCobro, descargarArchivoCobro, leerDatosBancarios, guardarDatosBancarios };

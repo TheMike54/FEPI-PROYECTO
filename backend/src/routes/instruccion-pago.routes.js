@@ -3,17 +3,19 @@ const multer = require('multer');
 const { authMiddleware, requireRole } = require('../middlewares/auth.middleware');
 const {
   estadoTransito, cargarSoporte, generarInstruccion, consultarPresupuesto, crearPresupuesto, colaCobro, porCobrar,
-  subirArchivoCobro, listarArchivosCobro, descargarArchivoCobro,
+  subirArchivoCobro, listarArchivosCobro, descargarArchivoCobro, leerDatosBancarios, guardarDatosBancarios,
 } = require('../controllers/instruccion-pago.controller');
 
 const router = express.Router();
 
 // FOLLOW-ON b (22-jun): carga binaria del CFDI / oficio en la promoción de cobro. multer en MEMORIA (Render
-// efímero → BYTEA en BD), solo PDF, tope 10 MB. El magic-bytes %PDF se revalida en el controller.
+// efímero → BYTEA en BD), tope 10 MB. BUG #20 (Oleada 4): se acepta PDF y XML (CFDI); el tipo real (magic
+// bytes %PDF / inicio XML + guarda anti-XXE) se revalida en el controller.
+const MIMES_COBRO = new Set(['application/pdf', 'application/xml', 'text/xml', 'application/octet-stream']);
 const uploadPdf = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => (file.mimetype === 'application/pdf' ? cb(null, true) : cb(new Error('Solo se permiten archivos PDF'))),
+  fileFilter: (req, file, cb) => (MIMES_COBRO.has(file.mimetype) ? cb(null, true) : cb(new Error('Solo se permiten archivos PDF o XML (CFDI)'))),
 });
 function subirPdfCobro(req, res, next) {
   uploadPdf.single('documento')(req, res, (err) => {
@@ -39,6 +41,11 @@ router.get('/por-cobrar', porCobrar);
 // Presupuesto (techo art. 24). Carga = finanzas; consulta = cualquier sesión (acota la UI).
 router.get('/presupuesto', consultarPresupuesto);
 router.post('/presupuesto', requireRole('finanzas'), crearPresupuesto);
+
+// BUG #10/#17/#18 (Oleada 4): datos bancarios del contratista (por empresa). Lectura = finanzas o la
+// propia empresa; captura/validación = SOLO finanzas.
+router.get('/datos-bancarios/empresa/:empresaId', leerDatosBancarios);
+router.post('/datos-bancarios/empresa/:empresaId', requireRole('finanzas'), guardarDatosBancarios);
 
 // Tránsito por estimación.
 router.get('/estimacion/:id', estadoTransito);

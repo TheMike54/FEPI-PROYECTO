@@ -130,6 +130,9 @@ export const api = {
   transitoEstimacion: (estimacionId) => request(`/instruccion-pago/estimacion/${estimacionId}`),
   cargarSoporteTransito: (estimacionId, payload) => request(`/instruccion-pago/estimacion/${estimacionId}/soportes`, { method: 'POST', body: JSON.stringify(payload) }),
   generarInstruccionPago: (estimacionId) => request(`/instruccion-pago/estimacion/${estimacionId}`, { method: 'POST' }),
+  // Oleada 4 bug #10/#17/#18: datos bancarios del contratista (por empresa). Los captura/valida FINANZAS.
+  leerDatosBancarios: (empresaId) => request(`/instruccion-pago/datos-bancarios/empresa/${empresaId}`),
+  guardarDatosBancarios: (empresaId, payload) => request(`/instruccion-pago/datos-bancarios/empresa/${empresaId}`, { method: 'POST', body: JSON.stringify(payload) }),
   // FIX 22-jun (profe): cola GLOBAL de solicitudes de cobro para finanzas (todas las instrucciones 'emitida').
   colaCobro: () => request('/instruccion-pago/cola'),
   // G5 (23-jun): estimaciones autorizadas sin instrucción aún (notificación al contratista "ve a cobrar").
