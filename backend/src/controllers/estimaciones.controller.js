@@ -13,6 +13,10 @@
 //   millar art. 191 LFD.
 const { pool } = require('../db/pool');
 const { esParteOSupervision } = require('../lib/acceso');
+// LENTE DE SIMULACIÓN — SOLO ELEGIBILIDAD: fecha simulada opcional (body.fecha_ref) para evaluar si el
+// periodo ya VENCIÓ (¿es estimable?). Los SELLOS que se persisten (integrada_en, etc.) siguen usando la
+// fecha REAL del servidor; fecha_ref NO se escribe en la BD. Separa "elegibilidad" de "sello temporal".
+const { fechaRefDeValor } = require('../lib/fechaRef');
 
 const PATRON_FECHA = /^\d{4}-\d{2}-\d{2}$/;
 function fechaValida(s) {
@@ -75,8 +79,15 @@ async function integrarEstimacion(req, res) {
 
   // FIX 22-jun (profe): SOLO se estima un periodo VENCIDO (mes ya terminado). No se integra una estimación
   // de un periodo que AÚN NO CIERRA — "esa mes vencido tú trabajas y te pagan el mes que trabajaste" (art.
-  // 54 LOPSRM). Comparación contra CURRENT_DATE (TZ-safe): el periodo cierra en periodo_fin → debe ser < hoy.
-  const cierreR = await pool.query("SELECT ($1::date < CURRENT_DATE) AS cerrado, to_char(CURRENT_DATE,'YYYY-MM-DD') AS hoy", [periodoFin]);
+  // 54 LOPSRM). LENTE DE SIMULACIÓN (fix 01-jul): la ELEGIBILIDAD (¿el periodo ya venció?) se evalúa con la
+  // fecha simulada si viene en el body (para demostrar el ciclo avanzando en el tiempo); sin fecha_ref usa
+  // CURRENT_DATE real (comportamiento normal). El "hoy" del cálculo NO se persiste — todos los sellos de la
+  // estimación (integrada_en, etc.) siguen siendo la fecha REAL del servidor (ver abajo, INSERT). TZ-safe.
+  const fechaRefElegibilidad = fechaRefDeValor((req.body || {}).fecha_ref); // simulada o null (=> hoy real)
+  const cierreR = await pool.query(
+    "SELECT ($1::date < COALESCE($2::date, CURRENT_DATE)) AS cerrado, to_char(COALESCE($2::date, CURRENT_DATE),'YYYY-MM-DD') AS hoy",
+    [periodoFin, fechaRefElegibilidad]
+  );
   if (!cierreR.rows[0].cerrado) {
     return res.status(409).json({ error: `No se puede estimar el periodo aún: cierra el ${periodoFin} (hoy es ${cierreR.rows[0].hoy}). Solo se estima un periodo ya VENCIDO al terminar el mes (art. 54 LOPSRM).`, periodoNoCerrado: true });
   }

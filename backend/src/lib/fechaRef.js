@@ -11,8 +11,8 @@
 // Validación estricta anti-basura/anti-inyección: solo se acepta una fecha calendario real en formato
 // YYYY-MM-DD; cualquier otra cosa devuelve null → se cae a la fecha real del servidor (comportamiento
 // normal, sin cambios). El string ya validado es seguro para pasar como parámetro `$N::date`.
-function fechaRefDe(req) {
-  const raw = req && req.query ? req.query.fecha_ref : null;
+// Valida un VALOR crudo (string) como fecha de referencia YYYY-MM-DD real; null si inválido.
+function fechaRefDeValor(raw) {
   if (typeof raw !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(raw)) return null;
   const [y, m, d] = raw.split('-').map(Number);
   if (m < 1 || m > 12 || d < 1 || d > 31) return null;
@@ -22,4 +22,13 @@ function fechaRefDe(req) {
   return raw;
 }
 
-module.exports = { fechaRefDe };
+// Lee ?fecha_ref de la QUERY (handlers GET de lectura).
+function fechaRefDe(req) {
+  return fechaRefDeValor(req && req.query ? req.query.fecha_ref : null);
+}
+
+// ⚠️ Para el LENTE DE SIMULACIÓN en escrituras: `fechaRefDeValor` permite que un handler de ESCRITURA
+// evalúe la ELEGIBILIDAD por tiempo (¿el periodo ya venció?) con la fecha simulada del body, PERO los
+// SELLOS temporales que se persisten (integrada_en, enviada_en, firmado_en, fecha_nota…) SIEMPRE usan la
+// fecha REAL del servidor (NOW()/CURRENT_DATE). Se separa "elegibilidad" (puede usar simulada) de "sello".
+module.exports = { fechaRefDe, fechaRefDeValor };

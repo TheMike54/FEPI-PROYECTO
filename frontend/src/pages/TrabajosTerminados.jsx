@@ -9,6 +9,7 @@ import PestanasCiclo from '../components/PestanasCiclo.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
+import { getFechaRef, getFechaSimulada } from '../lib/fechaSimulada.js';
 import { redimensionarImagen } from '../utils/imagen.js';
 
 // HU-06 v2 (O4, 10-jun) — registro de avance POR PERIODO + NOTA automática + validación contra el
@@ -238,7 +239,7 @@ export default function TrabajosTerminados() {
     setPrograma(Array.isArray(data?.programa) ? data.programa : []);
     // FIX 22-jun (profe): preselecciona el periodo EN CURSO (el que contiene hoy) o, si el contrato ya
     // terminó, el último que ya inició. El avance se reporta sobre el periodo vigente, no uno libre.
-    const hoy = new Date().toISOString().slice(0, 10);
+    const hoy = getFechaRef(); // LENTE DE SIMULACIÓN: "hoy" simulado o real (preselección del periodo en curso)
     const vig = pers.find((p) => String(p.inicio).slice(0, 10) <= hoy && hoy <= String(p.fin).slice(0, 10))
       || [...pers].reverse().find((p) => String(p.inicio).slice(0, 10) <= hoy) || null;
     if (vig) setForm((f) => (f.periodoNumero ? f : { ...f, periodoNumero: String(vig.numero) }));
@@ -274,7 +275,7 @@ export default function TrabajosTerminados() {
   const periodoSel = form.periodoNumero ? periodos.find((p) => String(p.numero) === String(form.periodoNumero)) || null : null;
   // FIX 22-jun: número del periodo EN CURSO (para marcarlo en el selector).
   const periodoVigenteNum = (() => {
-    const hoy = new Date().toISOString().slice(0, 10);
+    const hoy = getFechaRef(); // LENTE DE SIMULACIÓN: marca el periodo en curso según la fecha simulada o real
     const v = periodos.find((p) => String(p.inicio).slice(0, 10) <= hoy && hoy <= String(p.fin).slice(0, 10))
       || [...periodos].reverse().find((p) => String(p.inicio).slice(0, 10) <= hoy);
     return v ? v.numero : null;
@@ -348,6 +349,9 @@ export default function TrabajosTerminados() {
         descripciones.push(f.descripcion || '');
       }
       fd.append('descripciones', JSON.stringify(descripciones));
+      // LENTE DE SIMULACIÓN (elegibilidad): envía fecha_ref SOLO cuando hay simulación, para que el gate de
+      // "periodo futuro/cerrado" se evalúe con la fecha simulada. El sello del avance (fecha=periodo.fin) es real.
+      if (getFechaSimulada()) fd.append('fecha_ref', getFechaSimulada());
       const r = await api.registrarAvance(fd);
       const baseMsg = r?.nota_diferida ? 'Avance registrado. La nota de bitácora se asentará al abrir la bitácora.' : 'Avance registrado y nota de bitácora asentada.';
       const avisos = [r?.aviso_periodo, r?.aviso_programa].filter(Boolean);

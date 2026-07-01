@@ -24,6 +24,10 @@
 const { pool } = require('../db/pool');
 const { esParteOSupervision } = require('../lib/acceso');
 const { contratoCerrado, msgCerrado } = require('../lib/gateCierre');
+// LENTE DE SIMULACIÓN — SOLO ELEGIBILIDAD: fecha simulada opcional (body.fecha_ref) para evaluar si el
+// periodo ya inició/cerró (¿se puede reportar avance en él?). El SELLO del avance (`fecha` = periodo.fin,
+// fecha fija del programa) y la nota (NOW() real) NO cambian; fecha_ref no se persiste.
+const { fechaRefDeValor } = require('../lib/fechaRef');
 // O4: nota automática de avance (folio atómico + texto), reutilizada del controller de bitácora.
 const { insertarNotaAtomica, textoNotaAvance } = require('./bitacora.controller');
 // Cuantiza a 3 decimales = escala REAL de concepto_avance.cantidad (NUMERIC(14,3)) y del
@@ -282,9 +286,12 @@ async function registrarAvance(req, res) {
       // FIX 22-jun (profe): "validar periodo = ACTUAL". NO se reporta avance de un periodo que AÚN NO
       // INICIA (trabajo no ejecutado) → bloqueo. Un periodo YA CERRADO se permite (registro tardío) pero
       // con AVISO; el "periodo en curso" es el que contiene hoy. Comparación en SQL (evita zona horaria).
+      // LENTE DE SIMULACIÓN: la ELEGIBILIDAD por tiempo (futuro/cerrado) usa la fecha simulada si viene en
+      // el body; sin fecha_ref usa CURRENT_DATE real. El sello del avance (fecha=periodo.fin) NO cambia.
+      const fechaRefAvance = fechaRefDeValor((req.body || {}).fecha_ref); // simulada o null (=> hoy real)
       const posPer = await client.query(
-        "SELECT (inicio > CURRENT_DATE) AS futuro, (fin < CURRENT_DATE) AS cerrado, to_char(inicio,'YYYY-MM-DD') AS inicio_iso FROM contrato_periodos WHERE id = $1",
-        [periodo.id]
+        "SELECT (inicio > COALESCE($2::date, CURRENT_DATE)) AS futuro, (fin < COALESCE($2::date, CURRENT_DATE)) AS cerrado, to_char(inicio,'YYYY-MM-DD') AS inicio_iso FROM contrato_periodos WHERE id = $1",
+        [periodo.id, fechaRefAvance]
       );
       const pp = posPer.rows[0] || {};
       if (pp.futuro) {

@@ -9,6 +9,7 @@ import RegionEditable from '../components/vista/RegionEditable.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
+import { getFechaRef, getFechaSimulada } from '../lib/fechaSimulada.js';
 import { labelEstadoEstimacion } from '../data/estadoEstimacion.js';
 import { monedaMXN as moneda, round2 } from '../utils/formato.js';
 import DocumentoNota from '../components/notas/DocumentoNota.jsx';
@@ -644,7 +645,8 @@ export default function IntegracionEstimacion() {
       const exacto = ps.find((p) => String(p.fin).slice(0, 10) === periodoFin);
       if (exacto) return exacto.numero;
     }
-    return periodoQueContiene(ps, periodoFin || periodoInicio || new Date().toISOString().slice(0, 10));
+    // LENTE DE SIMULACIÓN: el "hoy" de referencia respeta la fecha simulada (getFechaRef); real si no hay.
+    return periodoQueContiene(ps, periodoFin || periodoInicio || getFechaRef());
   }, [programa, periodoFin, periodoInicio]);
 
   const filas = useMemo(() => avance
@@ -780,7 +782,11 @@ export default function IntegracionEstimacion() {
         periodo_fin: periodoFin,
         deductivas: Number(deductivas) || 0,
         generadores,
-        notas: []
+        notas: [],
+        // LENTE DE SIMULACIÓN (fix 01-jul): SOLO para la ELEGIBILIDAD por tiempo (¿el periodo ya venció?).
+        // Se envía únicamente cuando hay simulación activa. El backend lo usa para el gate de "periodo
+        // vencido"; los sellos que persiste (integrada_en, etc.) siguen siendo la fecha REAL del servidor.
+        ...(getFechaSimulada() ? { fecha_ref: getFechaSimulada() } : {}),
       });
       setResultado(est);
       showToast(`Estimación #${est.numero} integrada`);
@@ -944,7 +950,10 @@ export default function IntegracionEstimacion() {
                       // en curso / futuros se muestran deshabilitados con su estado.
                       const fin = String(p.fin).slice(0, 10);
                       const ini = String(p.inicio).slice(0, 10);
-                      const hoy = new Date().toISOString().slice(0, 10);
+                      // LENTE DE SIMULACIÓN (fix 01-jul): la ELEGIBILIDAD del periodo (¿ya venció?) se evalúa
+                      // con la fecha simulada (getFechaRef); real si no hay simulación. El sello temporal al
+                      // integrar sigue siendo la fecha real del servidor (backend).
+                      const hoy = getFechaRef();
                       const vencido = fin < hoy;
                       const enCurso = ini <= hoy && hoy <= fin;
                       const etiqueta = vencido ? 'vencido · estimable' : enCurso ? 'en curso · aún no cierra' : 'futuro';
