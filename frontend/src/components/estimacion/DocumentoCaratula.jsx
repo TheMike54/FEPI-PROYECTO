@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { monedaMXN as moneda } from '../../utils/formato.js';
 import { api } from '../../services/api.js';
+import DocumentoResumenPartida from './DocumentoResumenPartida.jsx';
+import DocumentoHojaGeneradora from './DocumentoHojaGeneradora.jsx';
 
 // DOCUMENTO DE ESTIMACIÓN COMPLETO (formato GACM, art. 132 RLOPSRM) — 4 bloques del mockup APROBADO
 // (docs/mockups/estimacion_completa_25jun.html):
@@ -61,7 +63,11 @@ export default function DocumentoCaratula({ estimacion, contrato, clavesPorConce
   };
   const sinIva = e.acumulados?.sin_iva || null;
   const anticipo = e.acumulados?.anticipo || null;
-  const meta = clavesPorConcepto || {};
+  // Claves por concepto: se usan las que pasa el padre (wizard); si no vienen (p.ej. abierto desde Revisión,
+  // donde el detalle frozen no trae clave), se completan desde estimacion-prep para agrupar por partida.
+  const metaProp = clavesPorConcepto || {};
+  const [clavesFetched, setClavesFetched] = useState({});
+  const meta = Object.keys(metaProp).length > 0 ? metaProp : clavesFetched;
   const claveDe = (g) => (meta[g.contrato_concepto_id]?.clave) || g.clave || '—';
   const esAdic = (g) => !!(meta[g.contrato_concepto_id]?.es_adicional);
   const porEjecutar = (g) => r4(Number(g.cantidad_contratada || 0) - Number(g.acumulado || 0));
@@ -120,6 +126,25 @@ export default function DocumentoCaratula({ estimacion, contrato, clavesPorConce
     })();
     return () => { vivo = false; };
   }, [e.id]);
+
+  // ── Claves por partida (solo si el padre no las pasó): estimacion-prep del contrato/periodo. Tolerante:
+  //    si falla o faltan, el generador cae a su propia clave o '—' (el subtotal/neto NO dependen de la clave). ──
+  useEffect(() => {
+    if (Object.keys(metaProp).length > 0) return; // el wizard ya las pasó
+    const cid = e.contrato_id || c.id;
+    if (!cid) return;
+    let vivo = true;
+    (async () => {
+      try {
+        const pf = e.periodo_fin ? String(e.periodo_fin).slice(0, 10) : undefined;
+        const prep = await api.preparacionEstimacion(cid, pf);
+        const o = {};
+        (prep?.conceptos || []).forEach((p) => { o[p.contrato_concepto_id] = { clave: p.clave, es_adicional: p.es_adicional }; });
+        if (vivo) setClavesFetched(o);
+      } catch { /* sin prep: se usan las claves que traiga el generador */ }
+    })();
+    return () => { vivo = false; };
+  }, [e.contrato_id, e.periodo_fin]);
 
   // ── Derivaciones financieras (sobre los montos congelados de la carátula; todo en 2 decimales) ──
   const subtotal = Number(e.subtotal || 0);
@@ -507,6 +532,12 @@ export default function DocumentoCaratula({ estimacion, contrato, clavesPorConce
               de la estimación.
             </p>
           </div>
+
+          {/* ════════════ BLOQUE 5 · RESUMEN POR PARTIDA (H5) ════════════ */}
+          <DocumentoResumenPartida estimacion={e} contrato={c} clavesPorConcepto={meta} />
+
+          {/* ════════════ BLOQUE 6 · HOJAS GENERADORAS (H4 / M3) ════════════ */}
+          <DocumentoHojaGeneradora estimacion={e} contrato={c} clavesPorConcepto={meta} fotos={fotos} urls={urls} />
 
           <p className="text-[11px] text-slate-400 border-t border-borde pt-2">
             Documento generado por SIGECOP · formato art. 132 RLOPSRM. Importes de obra sin IVA (art. 2 fr. XIX
