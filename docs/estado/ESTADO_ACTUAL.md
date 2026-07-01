@@ -1,5 +1,26 @@
 # SIGECOP — Estado actual del sistema (documento canónico)
 
+> **🔄 Actualización 2026-07-01 (SELECTOR: elegibilidad por tiempo respeta la fecha simulada — patrón
+> elegibilidad-vs-sello).** El selector de fecha simulada NO dejaba estimar aunque avanzaras el tiempo: la
+> ELEGIBILIDAD del periodo (¿ya venció?) se calculaba con la fecha REAL en la integración (escritura). Se
+> aplicó el patrón **elegibilidad (usa fecha simulada) vs sello (siempre fecha real)** y se auditó TODO el
+> sistema. **Commits `a94d3e4` (integración HU-12 + avance HU-06) y `75f9a64` (notas por firmar + caducidad
+> de fianzas + reporte de auditoría).** Reporte: `docs/reportes/AUDITORIA_SELECTOR_FECHA_01jul.md`.
+> - **Arreglados (❌→✅):** `integrarEstimacion` (gate "periodo vencido" usa `COALESCE(body.fecha_ref,
+>   CURRENT_DATE)`; sello `integrada_en=NOW()` real), `registrarAvance` (gate futuro/cerrado; sello
+>   `fecha=periodo.fin` fijo), `notas-pendientes` (campana "por firmar"→tácita con `fecha_ref`),
+>   `RegistroFianzas.jsx` (badges de vencimiento con `getFechaRef`), `IntegracionEstimacion`/`TrabajosTerminados`
+>   (desplegables/marcadores de periodo). Nuevo helper `lib/fechaRef.js::fechaRefDeValor` (valida `fecha_ref`
+>   del body en escrituras, solo para elegibilidad).
+> - **Ya respetaban la simulada (✅):** alertas, portafolio, tablero, plazo art.54 y fianza en tránsito,
+>   `plazo_vencido` de notas (consulta), curva, semáforos de revisión/envío, días de atraso.
+> - **NO se tocan (⚠️ sellos reales / validaciones de escritura):** `firmarNota` (art.125, usa `n.fecha`
+>   real → **PRUEBA-TR-FIRMA-VIGENCIA intacto**), `garantias.vigenciaVencida`, convenios (adicional pasado),
+>   `AltaContrato` (fecha_inicio/vigencia ≥ hoy), y todos los `NOW()`/`CURRENT_DATE` de sellos. **🛑 Detenido
+>   para Maiki: NINGUNO.** **REGLA:** la fecha simulada JAMÁS se persiste; los sellos son siempre fecha real.
+> **LOCAL, sin push.** (Nota de proceso: por un enredo de git, los fixes de integración y de avance quedaron
+> en el mismo commit `a94d3e4`; el código está completo y probado.)
+
 > **🔄 Actualización 2026-07-01 (5 OLEADAS — 17 bugs reales del ciclo de estimación/pago/convenios/alertas).**
 > Se corrigieron los 17 bugs confirmados por `docs/auditoria/AUDITORIA_BUGS_ESTIMACION_2026-07-01.md`. **5
 > commits en `main` (LOCAL, sin push):** O1 `99b1751`, O2 `475a39c`, O3 `c11c8d2`, O4 `05bae6c`, O5 `a226d97`.
