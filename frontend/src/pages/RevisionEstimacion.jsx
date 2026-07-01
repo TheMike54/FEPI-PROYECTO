@@ -13,6 +13,7 @@ import { ahoraRefMs } from '../lib/fechaSimulada.js';
 import { monedaMXN as moneda } from '../utils/formato.js';
 import { labelEstadoEstimacion } from '../data/estadoEstimacion.js';
 import { ContenidoFotos, ContenidoSoportes } from '../components/estimacion/ExpedienteEstimacion.jsx';
+import DocumentoCaratula from '../components/estimacion/DocumentoCaratula.jsx';
 
 // HU-15 (Equipo 3) — cableado al backend real. Recepción, revisión técnica y autorización/
 // rechazo de la estimación. Fuente de la verdad = backend; aquí NO se calcula dinero ni se
@@ -381,6 +382,7 @@ export default function RevisionEstimacion() {
   const [accion, setAccion] = useState(false);       // acción en curso (deshabilita botones)
   const [sinObservaciones, setSinObservaciones] = useState(false);
   const [motivoRechazo, setMotivoRechazo] = useState('');
+  const [docAbierto, setDocAbierto] = useState(false); // documento de estimación con firmas del ciclo (M4)
 
   const contratoSel = useMemo(() => contratos.find((c) => String(c.id) === String(contratoId)) || null, [contratos, contratoId]);
 
@@ -630,6 +632,19 @@ export default function RevisionEstimacion() {
 
           <IndicadorFlujo estado={estado} turnada={turnada} />
           <SemaforoPlazoRevision enviadaEn={revision.enviada_en} />
+
+          {/* H7 (M4): documento de la estimación con las FIRMAS DEL CICLO que se van llenando (formuló →
+              revisó → autorizó). Se abre sobre el detalle real; las firmas leen el estado del ciclo. */}
+          {detalle && (
+            <div className="mb-4">
+              <button type="button" className="sg-btn-secondary text-sm" onClick={() => setDocAbierto(true)} data-testid="btn-ver-documento-estimacion">
+                📄 Ver documento de estimación (firmas del ciclo)
+              </button>
+            </div>
+          )}
+          {docAbierto && detalle && (
+            <DocumentoCaratula estimacion={detalle} contrato={contratoSel} soloLectura onCerrar={() => setDocAbierto(false)} />
+          )}
 
           {/* Banners de estado. */}
           {estado === 'enviada' && turnada && (

@@ -26,6 +26,15 @@ const fechaMX = (s) => {
   const p = String(s).slice(0, 10).split('-');
   return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : String(s);
 };
+// Fecha + hora del sello (si el valor trae componente horario). Usa las partes crudas del ISO (sin
+// conversión de zona) para que la fecha y la hora provengan de la MISMA cadena y no se desfasen.
+const fechaHoraMX = (s) => {
+  if (!s) return '—';
+  const iso = String(s);
+  const f = fechaMX(iso);
+  const m = iso.match(/T(\d{2}):(\d{2})/);
+  return m ? `${f} ${m[1]}:${m[2]}` : f;
+};
 const num = (n) => (n == null ? '—' : Number(n).toLocaleString('es-MX', { maximumFractionDigits: 2 }));
 const pctTxt = (v) => (v == null ? '—' : `${Number(v).toFixed(1)}%`);
 const r4 = (n) => Math.round((Number(n || 0) + Number.EPSILON) * 1e4) / 1e4;
@@ -38,6 +47,7 @@ export default function DocumentoCaratula({ estimacion, contrato, clavesPorConce
   // P1-2: las notas se mantienen en estado para poder re-asignarlas a un generador sin recargar el documento.
   const [notas, setNotas] = useState(Array.isArray(e.notas) ? e.notas : []);
   const [asignando, setAsignando] = useState(null);
+  const [ciclo, setCiclo] = useState(null); // estado del ciclo para las firmas M4 (H7)
   useEffect(() => { setNotas(Array.isArray(estimacion?.notas) ? estimacion.notas : []); }, [estimacion?.id]);
   const asignarNota = async (notaId, conceptoIdRaw) => {
     if (!e.id) return;
@@ -84,6 +94,33 @@ export default function DocumentoCaratula({ estimacion, contrato, clavesPorConce
   }, [e.id]);
   const fotosDe = (cid) => fotos.filter((f) => Number(f.contrato_concepto_id) === Number(cid));
 
+  // ── Firmas del CICLO (M4, H7): lee el estado del ciclo para llenar cada firma con la fecha REAL de su
+  //    acto (presentar/turnar/autorizar). No inventa fechas: si el acto no ocurrió, la firma queda
+  //    'pendiente'. No bloquea el documento si el ciclo no está disponible (403/red → firmas pendientes). ──
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      if (!e.id) { setCiclo(null); return; }
+      try {
+        const rev = await api.revisionEstimacion(e.id); // { estado, enviada_en, turnada, observaciones }
+        let autorizadaEn = null;
+        const cid = e.contrato_id || c.id;
+        if (cid && (rev.estado === 'autorizada' || rev.estado === 'pagada')) {
+          try {
+            const hist = await api.historialEstimaciones(cid);
+            const mi = (Array.isArray(hist) ? hist : []).find((h) => Number(h.id) === Number(e.id));
+            autorizadaEn = mi?.transiciones?.find((t) => t.estado === 'autorizada')?.en || null;
+          } catch { /* sin historial: la autorización queda sin fecha visible, no se inventa */ }
+        }
+        // REVISÓ (turnar) = created_at de la última observación turnada, si existe (sello real).
+        const turnadas = (rev.observaciones || []).filter((o) => o.turnado_a === 'residencia');
+        const revisadaEn = turnadas.length ? turnadas[turnadas.length - 1].created_at : null;
+        if (vivo) setCiclo({ estado: rev.estado, enviada_en: rev.enviada_en, turnada: !!rev.turnada, revisada_en: revisadaEn, autorizada_en: autorizadaEn });
+      } catch { if (vivo) setCiclo(null); } // sin acceso al ciclo: firmas pendientes
+    })();
+    return () => { vivo = false; };
+  }, [e.id]);
+
   // ── Derivaciones financieras (sobre los montos congelados de la carátula; todo en 2 decimales) ──
   const subtotal = Number(e.subtotal || 0);
   const amort = Number(e.amortizacion || 0);
@@ -102,6 +139,18 @@ export default function DocumentoCaratula({ estimacion, contrato, clavesPorConce
   const netoARecibir = r2(totalEst - totalAmort - ret5 - retAtraso - deduc);
   // Total de la columna Importe del resumen (Σ ROUND(cant×pu,2)); cuadra con el subtotal de la carátula.
   const totalImporte = generadores.reduce((s, g) => s + Number(g.importe || 0), 0);
+
+  // ── M4 · Firmas del ciclo (art. 54 LOPSRM): se llenan conforme avanza la estimación. El estado sale del
+  //    ciclo (fetch) o, mientras carga, del embebido en la estimación. Vo.Bo. de dependencia es informativo
+  //    (no es acto del art. 54). Fechas = sellos reales de cada acto. ──
+  const estCiclo = ciclo?.estado || e.estado || 'integrada';
+  const yaPresentada = !!(ciclo?.enviada_en) || ['enviada', 'autorizada', 'pagada', 'rechazada'].includes(estCiclo);
+  const firmasCiclo = [
+    { rol: 'Formuló', sub: 'Contratista · superintendente', nombre: c.superintendente_nombre || c.contratista, firmada: yaPresentada, fecha: ciclo?.enviada_en },
+    { rol: 'Revisó', sub: 'Supervisión externa', nombre: c.supervision_nombre, firmada: !!(ciclo?.turnada), fecha: ciclo?.revisada_en },
+    { rol: 'Autorizó', sub: 'Residencia de obra', nombre: c.residente_nombre, firmada: ['autorizada', 'pagada'].includes(estCiclo), fecha: ciclo?.autorizada_en },
+    { rol: 'Vo.Bo.', sub: 'Dependencia', nombre: c.dependencia, firmada: false, fecha: null, opcional: true },
+  ];
 
   // print-color-adjust local (los navegadores omiten fondos al imprimir). Acotado al documento.
   const printColor = { printColorAdjust: 'exact', WebkitPrintColorAdjust: 'exact' };
@@ -248,25 +297,30 @@ export default function DocumentoCaratula({ estimacion, contrato, clavesPorConce
             La carátula materializada es <strong>inmutable</strong> una vez integrada (art. 132 RLOPSRM).
           </p>
 
-          {/* Firmas (formato GACM): Presenta / Revisó / Autorizó / Vo.Bo. — empresa + persona */}
-          <div className="pt-2" style={noCortar}>
-            <p className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-3">Firmas (art. 54 LOPSRM: el contratista presenta, la residencia autoriza)</p>
+          {/* Firmas del CICLO (M4, art. 54 LOPSRM): FORMULÓ (presenta el contratista) → REVISÓ (turna la
+              supervisión) → AUTORIZÓ (la residencia) → Vo.Bo. (dependencia, informativo). Cada casillero se
+              marca firmado/pendiente según el estado del ciclo y muestra la fecha REAL del acto (jamás inventada). */}
+          <div className="pt-2" style={noCortar} data-testid="caratula-firmas-ciclo">
+            <p className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-3">Firmas del ciclo (art. 54 LOPSRM: el contratista presenta, la supervisión revisa, la residencia autoriza)</p>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center text-xs">
-              {[
-                { rol: 'Presenta', sub: 'Superintendente · contratista', nombre: c.superintendente_nombre, emp: c.contratista },
-                { rol: 'Revisó', sub: 'Supervisión externa', nombre: c.supervision_nombre, emp: null },
-                { rol: 'Autorizó', sub: 'Residente de obra', nombre: c.residente_nombre, emp: null },
-                { rol: 'Vo.Bo.', sub: 'Dependencia', nombre: c.dependencia, emp: null },
-              ].map((f, i) => (
-                <div key={i}>
-                  <div className="border-t border-tinta h-10 mb-1" />
+              {firmasCiclo.map((f, i) => (
+                <div key={i} data-testid={`firma-ciclo-${i}`}>
+                  <div className="border-t border-tinta h-10 mb-1 flex items-end justify-center pb-1">
+                    {f.firmada
+                      ? <span className="text-emerald-600 font-semibold text-[11px]">✓ firmada</span>
+                      : <span className="text-amber-500 text-[11px]">⏳ {f.opcional ? 'opcional' : 'pendiente'}</span>}
+                  </div>
                   <div className="font-bold text-guinda uppercase tracking-wider text-[11px]">{f.rol}</div>
                   <div className="font-semibold text-slate-700">{f.nombre || '—'}</div>
                   <div className="text-[11px] text-slate-500">{f.sub}</div>
-                  {f.emp ? <div className="text-[10px] text-slate-400 italic">{f.emp}</div> : null}
+                  {f.firmada && f.fecha ? <div className="text-[10px] text-slate-400" data-testid={`firma-ciclo-fecha-${i}`}>{fechaHoraMX(f.fecha)}</div> : null}
                 </div>
               ))}
             </div>
+            <p className="text-[10px] text-slate-400 mt-2">
+              Cada firma se sella con la fecha real de su acto en el ciclo (presentar → turnar → autorizar). El
+              Vo.Bo. de la dependencia es informativo; la autorización corre en la residencia (art. 54 LOPSRM).
+            </p>
           </div>
 
           {/* ════════════ BLOQUE 2 · RESUMEN DE GENERADORES ════════════ */}
