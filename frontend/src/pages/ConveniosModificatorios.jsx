@@ -370,6 +370,8 @@ export default function ConveniosModificatorios() {
       const cambios = [];
       if (res.plazo_anterior_dias !== res.plazo_nuevo_dias) cambios.push(`plazo ${res.plazo_anterior_dias}→${res.plazo_nuevo_dias} días`);
       if (String(res.monto_anterior) !== String(res.monto_nuevo)) cambios.push(`monto ${moneda(res.monto_anterior)}→${moneda(res.monto_nuevo)}`);
+      // D4 (B8): un convenio de plazo AÑADE periodos al final del programa; se pueden reacomodar en ellos.
+      if (res.periodos_anadidos > 0) cambios.push(`+${res.periodos_anadidos} periodo${res.periodos_anadidos === 1 ? '' : 's'} al programa`);
       // O6: el convenio asentó su nota en la bitácora (en vivo) o quedó diferida si aún no hay bitácora.
       const notaMsg = res.nota_diferida
         ? ' · su nota de bitácora se asentará al abrir la bitácora'
@@ -527,6 +529,13 @@ export default function ConveniosModificatorios() {
                         </option>
                       ))}
                     </select>
+                    {/* B8 — semántica por tipo (espeja crearConvenio): qué modifica cada convenio (art. 59 LOPSRM). */}
+                    <div className="text-[11px] text-slate-600 bg-pagina border border-borde rounded-md px-3 py-2 mt-2 max-w-2xl" data-testid="cm-tipo-ayuda">
+                      {tipo === 'monto' && <><strong>Monto:</strong> ajusta (amplía o reduce) la CANTIDAD de conceptos existentes; el monto se re-deriva. No agrega claves nuevas.</>}
+                      {tipo === 'plazo' && <><strong>Plazo:</strong> prorroga el plazo y <strong>AÑADE periodos al final</strong> del programa; el volumen no ejecutado se reacomoda en esos periodos. No cambia cantidades ni monto.</>}
+                      {tipo === 'programa' && <><strong>Programa:</strong> solo <strong>REACOMODA</strong> el volumen entre periodos; NO cambia cantidades ni monto (para eso usa Monto o Mixto).</>}
+                      {tipo === 'mixto' && <><strong>Mixto:</strong> combina cantidad (monto) y plazo: ajusta cantidades de existentes y prorroga el plazo añadiendo periodos.</>}
+                    </div>
                   </div>
 
                   {tocaPlazo && (
@@ -669,11 +678,23 @@ export default function ConveniosModificatorios() {
                   <p className="text-xs text-tinta-sec mt-1">Si dice «ya hay N estimado», ese es el mínimo de ese concepto: no puedes reducirlo por debajo de lo ya estimado en estimaciones integradas. Súbelo a ≥ N o registra un convenio que no lo reduzca.</p>
                 </div>
               )}
-              <div className="mt-6 flex justify-end">
+              <div className="mt-6 flex justify-between items-center gap-4">
+                {/* B8/Brecha 4 — razón visible de por qué el botón está deshabilitado (que no parezca "trabado"). */}
+                <p className="text-xs text-slate-500" data-testid="cm-registrar-motivo">
+                  {registrando ? '' : (() => {
+                    if (soloLectura) return 'Solo lectura: no puedes promover convenios en esta vista.';
+                    if (cargandoEditor) return 'Cargando el programa vigente…';
+                    if (!motivo.trim()) return 'Falta el motivo (razones fundadas, art. 99 RLOPSRM).';
+                    if (!oficioRef.trim()) return 'Falta la referencia del oficio de soporte (art. 99 RLOPSRM).';
+                    if (tocaPlazo && !plazoCambiaOk) return 'Captura un nuevo plazo distinto al vigente.';
+                    if (tocaPrograma && !programaOk) return 'Ajusta el programa hasta que cada concepto cuadre al 100%.';
+                    return '';
+                  })()}
+                </p>
                 <button
                   type="button"
-                  className="sg-btn-primary disabled:bg-slate-300 disabled:cursor-not-allowed"
-                  disabled={!puedeRegistrar}
+                  className="sg-btn-primary disabled:bg-slate-300 disabled:cursor-not-allowed shrink-0"
+                  disabled={!puedeRegistrar || !motivo.trim() || !oficioRef.trim()}
                   onClick={handleRegistrar}
                   data-testid="btn-registrar-convenio"
                 >

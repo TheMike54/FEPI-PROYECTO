@@ -15,7 +15,7 @@
 const { pool } = require('../db/pool');
 const { esParteOSupervision } = require('../lib/acceso');
 const { contratoCerrado, msgCerrado } = require('../lib/gateCierre');
-const { guardarMatriz } = require('../lib/programa');
+const { guardarMatriz, masUnMes, addDias, derivarTermino } = require('../lib/programa');
 // O6: el convenio asienta su nota en la bitácora (art. 123 fr. III RLOPSRM). Reutiliza el folio atómico
 // + la redacción del controller de bitácora (no se duplica la lógica de inmutabilidad de notas).
 const { insertarNotaAtomica, textoNotaConvenio } = require('./bitacora.controller');
@@ -78,6 +78,52 @@ async function snapshotVersion(client, contratoId, numero, convenioId, vigente) 
     [verId, contratoId]
   );
   return verId;
+}
+
+// D4 (B8) — un convenio de PLAZO/MIXTO que amplía el plazo AÑADE periodos al final del programa (art. 59
+// LOPSRM: se prorroga el plazo de ejecución). REGLA DURA de seguridad: es APPEND-ONLY — NUNCA modifica ni
+// borra periodos existentes (los que ya tienen avance/estimación quedan intactos; los fixes #14/#24 no se
+// tocan). Solo INSERTA periodos nuevos tras el último, con la MISMA cadencia inferida del mosaico vigente,
+// hasta el nuevo término. Devuelve cuántos añadió (no lanza; si no hay mosaico o no avanza el término, 0).
+async function extenderPeriodosPorPlazo(client, contratoId, _fechaInicioIgnorado, plazoNuevo) {
+  const per = await client.query(
+    'SELECT numero, inicio::text AS inicio, fin::text AS fin FROM contrato_periodos WHERE contrato_id=$1 ORDER BY numero', [contratoId]);
+  if (per.rowCount === 0) return { anadidos: 0, motivo: 'sin_periodos' }; // contrato sin programa: nada que extender
+  const rows = per.rows;
+  const maxNumero = Number(rows[rows.length - 1].numero);
+  const lastFin = String(rows[rows.length - 1].fin).slice(0, 10);
+  // fecha_inicio como TEXTO ISO desde SQL (pg devuelve DATE como objeto Date; String(Date) NO es ISO y
+  // rompería el cálculo del término → antes generaba periodos hasta el tope de seguridad).
+  const ci = await client.query('SELECT fecha_inicio::text AS fi FROM contratos WHERE id=$1', [contratoId]);
+  const ini0 = String(ci.rows[0]?.fi || '').slice(0, 10);
+  const nuevoTermino = derivarTermino(ini0, plazoNuevo);
+  const ISO = /^\d{4}-\d{2}-\d{2}$/;
+  // Guarda dura: sin fechas ISO válidas NO se agrega nada (evita cualquier bucle desbocado).
+  if (!ISO.test(ini0) || !ISO.test(lastFin) || !ISO.test(nuevoTermino)) return { anadidos: 0, motivo: 'fecha_invalida' };
+  if (lastFin >= nuevoTermino) return { anadidos: 0, motivo: 'sin_extension' }; // el término no avanzó
+  // Inferir la cadencia (mensual/quincenal) de un periodo NO recortado del mosaico vigente.
+  let ciclo = 'mensual';
+  for (const r of rows) {
+    const ini = String(r.inicio).slice(0, 10);
+    const fin = String(r.fin).slice(0, 10);
+    if (addDias(masUnMes(ini), -1) === fin) { ciclo = 'mensual'; break; }
+    if (addDias(ini, 14) === fin) { ciclo = 'quincenal'; break; }
+  }
+  // Extensión contigua (sin hueco): arranca el día siguiente al último fin vigente.
+  let numero = maxNumero;
+  let inicio = addDias(lastFin, 1);
+  let anadidos = 0;
+  const MAX = 1000; // tope de seguridad
+  while (inicio <= nuevoTermino && anadidos < MAX) {
+    numero += 1;
+    const corte = ciclo === 'mensual' ? masUnMes(inicio) : addDias(inicio, 15);
+    let fin = addDias(corte, -1);
+    if (fin > nuevoTermino) fin = nuevoTermino;
+    await client.query('INSERT INTO contrato_periodos (contrato_id, numero, inicio, fin) VALUES ($1,$2,$3,$4)', [contratoId, numero, inicio, fin]);
+    anadidos += 1;
+    inicio = addDias(fin, 1);
+  }
+  return { anadidos, motivo: 'ok', ciclo };
 }
 
 // GET /api/convenios/contrato/:id — convenios + versiones del programa. Acotado por participación.
@@ -223,14 +269,21 @@ async function crearConvenio(req, res) {
       // (C) Aplicar la modificación al estado VIVO.
       let montoNuevo = montoAnterior;
       let plazoNuevoFinal = plazoAnterior;
+      let periodosAnadidos = null; // D4 (B8): resultado del append de periodos por ampliación de plazo
       const idPorClave = new Map();
       const clavesAdicionales = new Set(); // FIX 22-jun: claves de conceptos NUEVOS (adicionales del convenio)
       if (tocaPlazo) {
         plazoNuevoFinal = plazoNuevo;
         const ft = contrato.fecha_inicio ? new Date(new Date(contrato.fecha_inicio).getTime() + (plazoNuevoFinal - 1) * 86400000).toISOString().slice(0, 10) : null;
         await client.query('UPDATE contratos SET plazo_dias=$1, fecha_termino=COALESCE($2,fecha_termino) WHERE id=$3', [plazoNuevoFinal, ft, contratoId]);
-        // NOTA: la regeneración de periodos por cambio de plazo queda como follow-on (E3 coordina el
-        // re-mapeo de celdas a periodos nuevos); el programa conserva los periodos vigentes.
+        // D4 (B8): si el plazo AUMENTA, se AÑADEN periodos al final del programa (append-only). Nunca se
+        // modifican/borran periodos existentes: los que ya tienen avance/estimación quedan intactos (los
+        // fixes #14/#24 no se tocan). Los periodos nuevos quedan disponibles para reacomodar en ellos el
+        // volumen NO ejecutado (vía el programa / un convenio de programa posterior). Si el plazo se reduce
+        // o el término no avanza, no se agrega nada (los periodos pasados con avance nunca se eliminan).
+        if (plazoNuevoFinal > plazoAnterior && contrato.fecha_inicio) {
+          periodosAnadidos = await extenderPeriodosPorPlazo(client, contratoId, contrato.fecha_inicio, plazoNuevoFinal);
+        }
       }
       if (tocaPrograma) {
         const existing = await client.query('SELECT id, clave, cantidad, pu FROM contrato_conceptos WHERE contrato_id = $1', [contratoId]);
@@ -250,6 +303,12 @@ async function crearConvenio(req, res) {
             }
             // La CANTIDAD sí se ajusta (la reducción por debajo de lo ya estimado ya se bloqueó en (A)).
             if (Math.abs(Number(c.cantidad) - orig.cantidad) > 1e-6) {
+              // BRECHA 3 (B8) — semántica por tipo: un convenio de PROGRAMA NO cambia los totales (solo
+              // reacomoda el volumen entre periodos); MONTO/MIXTO sí ajustan cantidades (art. 59 LOPSRM).
+              if (tipo === 'programa') {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: `Un convenio de PROGRAMA no cambia cantidades (solo reacomoda el volumen entre periodos): el concepto "${c.clave}" pasa de ${orig.cantidad} a ${c.cantidad}. Usa un convenio de MONTO o MIXTO para modificar cantidades.`, conceptoCantidadCambia: String(c.clave) });
+              }
               await client.query('UPDATE contrato_conceptos SET cantidad=$1::numeric(14,3) WHERE id=$2', [c.cantidad, idPorClave.get(String(c.clave))]);
             }
             // Sin cambios → NO-OP.
@@ -354,6 +413,8 @@ async function crearConvenio(req, res) {
         monto_anterior: montoAnterior, monto_nuevo: montoNuevo, plazo_anterior_dias: plazoAnterior, plazo_nuevo_dias: plazoNuevoFinal,
         delta_monto_pct: deltaMontoPct != null ? Number(deltaMontoPct) : null, delta_plazo_pct: deltaPlazoPct != null ? Number(deltaPlazoPct) : null,
         requiere_revision_sfp: reqSfp, requiere_ajuste_costos: reqAjuste, programa_version_id: nuevaVerId,
+        periodos_anadidos: periodosAnadidos ? periodosAnadidos.anadidos : 0, // D4 (B8): periodos añadidos al final
+
         // ITEM 3.2: el convenio queda REGISTRADO; el acto de autorización del servidor facultado es posterior.
         estado: 'registrado',
         aviso_autorizacion: 'El convenio quedó REGISTRADO; pendiente de AUTORIZACIÓN del servidor facultado (dependencia) — art. 59 párr. 3 LOPSRM.',
