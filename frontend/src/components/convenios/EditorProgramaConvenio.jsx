@@ -50,8 +50,8 @@ export default function EditorProgramaConvenio({
         <h3 className="text-base font-bold text-sigecop-blue mb-1">Catálogo de conceptos (nuevo)</h3>
         <p className="text-xs text-slate-600 mb-3">
           El <strong>monto se DERIVA</strong> = Σ ROUND(cantidad × P.U., 2), al centavo (art. 45 fr. IX RLOPSRM).
-          Los conceptos <strong>originales se CONGELAN</strong>; para más volumen del mismo concepto usa
-          <strong> «Ampliar»</strong> (hereda el P.U., art. 59 LOPSRM), o agrega conceptos <strong>ADICIONALES</strong> nuevos.
+          Por convenio se <strong>AJUSTA la CANTIDAD</strong> de los conceptos existentes (ampliar/reducir); el
+          <strong> P.U. y la clave NO cambian</strong> (art. 59 LOPSRM). <strong>No se agregan conceptos nuevos.</strong>
         </p>
         <div className="overflow-x-auto border border-borde rounded-md">
           <table className="w-full text-sm">
@@ -100,8 +100,9 @@ export default function EditorProgramaConvenio({
                       <input className="sg-input" maxLength={20} value={c.unidad || ''} onChange={(e) => onConceptoField(i, 'unidad', e.target.value)} disabled={bloqueado} data-testid={`cm-concepto-unidad-${i}`} />
                     </td>
                     <td className="px-2 py-1 align-top">
-                      {/* FIX 22-jun (profe): los conceptos ORIGINALES se CONGELAN; el extra va por «Ampliar» (B4) o como adicional. */}
-                      <input type="number" min="0" step="0.001" className="sg-input text-right" value={c.cantidad} onChange={(e) => onConceptoField(i, 'cantidad', e.target.value)} disabled={bloqueado} title={c.existente ? 'Concepto original CONGELADO: usa «Ampliar» para más cantidad' : esAmpl ? 'Cantidad de la ampliación (definida en el panel «Ampliar»)' : undefined} data-testid={`cm-concepto-cantidad-${i}`} />
+                      {/* BUG #11 (Oleada 3): por convenio se AJUSTA la CANTIDAD del concepto existente
+                          (ampliar/reducir). El P.U. y la clave quedan congelados (art. 59 LOPSRM). */}
+                      <input type="number" min="0" step="0.001" className="sg-input text-right" value={c.cantidad} onChange={(e) => onConceptoField(i, 'cantidad', e.target.value)} disabled={soloLectura} title={c.existente ? 'Cantidad del concepto: se puede ampliar o reducir por convenio (art. 59 LOPSRM); el P.U. no cambia.' : undefined} data-testid={`cm-concepto-cantidad-${i}`} />
                     </td>
                     <td className="px-2 py-1 align-top">
                       <div className="flex items-center justify-end gap-1">
@@ -114,13 +115,9 @@ export default function EditorProgramaConvenio({
                     </td>
                     <td className="px-2 py-1 align-top text-right font-semibold text-slate-700" data-testid={`cm-concepto-importe-${i}`}>{fmtMXN.format(importe)}</td>
                     <td className="px-2 py-1 text-center align-top whitespace-nowrap">
-                      {/* B4: «Ampliar» en los originales; ✕ en los conceptos nuevos (adicionales y ampliaciones). */}
-                      {c.existente && !soloLectura && hayPeriodos && (
-                        <button type="button" onClick={() => onAmpliar(c.rid)} className="text-xs font-semibold text-guinda hover:underline" title="Agregar más cantidad de este concepto (art. 59 LOPSRM)" data-testid={`cm-ampliar-${i}`}>+ Ampliar</button>
-                      )}
-                      {!c.existente && (
-                        <button type="button" onClick={() => onRemoveConcepto(i)} disabled={soloLectura} className="text-red-500 hover:text-red-700 disabled:opacity-30" title={esAmpl ? 'Quitar ampliación' : 'Quitar concepto nuevo'} data-testid={`cm-concepto-quitar-${i}`}>✕</button>
-                      )}
+                      {/* BUG #11 (Oleada 3): se RETIRARON «+ Ampliar» y «✕ quitar»: por convenio no se agregan
+                          ni quitan conceptos; solo se AJUSTA la cantidad de los existentes (o el plazo). */}
+                      <span className="text-[11px] text-slate-400">—</span>
                     </td>
                   </tr>
                 );
@@ -140,11 +137,8 @@ export default function EditorProgramaConvenio({
             )}
           </table>
         </div>
-        {!soloLectura && (
-          <button type="button" onClick={onAddConcepto} className="mt-3 text-sm text-sigecop-accent hover:underline" data-testid="cm-agregar-concepto">
-            + Agregar concepto adicional (nuevo)
-          </button>
-        )}
+        {/* BUG #11 (Oleada 3): se RETIRÓ «+ Agregar concepto adicional (nuevo)». Un convenio no introduce
+            conceptos fuera del catálogo (art. 59 LOPSRM): solo ajusta la cantidad de los existentes o el plazo. */}
       </div>
 
       {/* --- Matriz editable concepto × periodo (cuadre 100% por concepto) --- */}
@@ -195,8 +189,8 @@ export default function EditorProgramaConvenio({
                             className="sg-input text-right text-xs w-20"
                             value={celdas[`${c.rid}:${p.numero}`] || ''}
                             onChange={(e) => onCelda(c.rid, p.numero, e.target.value)}
-                            disabled={bloqueado}
-                            title={c.existente ? 'Programa del concepto original CONGELADO' : esAmpl ? 'Programa de la ampliación (definido en el panel «Ampliar»)' : undefined}
+                            disabled={soloLectura}
+                            title={c.existente ? 'Reparte la cantidad (ajustada) del concepto en los periodos; la suma debe cuadrar con la cantidad.' : undefined}
                             data-testid={`cm-celda-${i}-${p.numero}`}
                           />
                         </td>

@@ -28,6 +28,18 @@ const LIMITE_PCT = Number(process.env.CONVENIO_LIMITE_VARIACION_PCT ?? 25);
 const UMBRAL_SFP = 25;    // RLOPSRM art. 102 (revisión indirectos/SFP)
 const UMBRAL_AJUSTE = 50; // LOPSRM art. 59 Bis (ajuste de costos)
 
+// BUG #13 (Oleada 3): SEPARACIÓN DE FUNCIONES — quién REGISTRA un convenio no puede AUTORIZARLO. Requiere
+// persistir el autor del registro. Columna aditiva idempotente (no se toca schema.sql; migracion en
+// backend/scripts). Legacy (NULL) = sin bloqueo de autoconflicto (no hay a quién comparar).
+let _ensuredRegistradoPor = null;
+function ensureRegistradoPor() {
+  if (_ensuredRegistradoPor) return _ensuredRegistradoPor;
+  _ensuredRegistradoPor = pool.query('ALTER TABLE convenios_modificatorios ADD COLUMN IF NOT EXISTS registrado_por INTEGER REFERENCES usuarios(id) ON DELETE SET NULL')
+    .catch((e) => { console.error('[convenios ensureRegistradoPor]', e.message); _ensuredRegistradoPor = null; throw e; });
+  return _ensuredRegistradoPor;
+}
+ensureRegistradoPor().catch(() => {});
+
 // Σ ROUND(cant×pu,2) con la MISMA fórmula/escala que crearContrato (cuadre al centavo, art. 45 fr. IX).
 async function montoDesdeConceptos(client, conceptos) {
   if (!conceptos.length) return '0.00';
@@ -153,6 +165,7 @@ async function crearConvenio(req, res) {
   try {
     client = await pool.connect();
     try {
+      await ensureRegistradoPor().catch(() => {}); // BUG #13: garantiza la columna registrado_por (aditiva)
       await client.query('BEGIN');
       // Lock al INICIO (mismo classid 2 que guardarMatriz/HU-12) → catálogo + re-cuadre atómicos.
       await client.query('SELECT pg_advisory_xact_lock(2, $1::int)', [contratoId]);
@@ -226,30 +239,26 @@ async function crearConvenio(req, res) {
         let maxOrden = (await client.query('SELECT COALESCE(MAX(orden),0) AS m FROM contrato_conceptos WHERE contrato_id = $1', [contratoId])).rows[0].m;
         for (const c of conceptos) {
           if (idPorClave.has(String(c.clave))) {
-            // FIX 22-jun (profe): los conceptos ORIGINALES se CONGELAN. No se modifican por convenio (nada de
-            // "524 → 1500"); los cambios se agregan como conceptos ADICIONALES (es_adicional). Solo se permite
-            // re-enviarlos IGUAL (el front manda el catálogo completo); cualquier cambio se RECHAZA.
+            // BUG #11 (Oleada 3, decisión de Maiki): por convenio se AJUSTAN (amplían/reducen) los conceptos
+            // EXISTENTES. El P.U. NO cambia (las cantidades se pagan al precio unitario pactado, art. 59
+            // LOPSRM); solo la CANTIDAD. (Invierte el criterio previo "congelar original + adicional": ahora
+            // se prohíben los conceptos nuevos y se permite ajustar la cantidad del existente.)
             const orig = datosPorClave.get(String(c.clave));
-            if (Math.abs(Number(c.cantidad) - orig.cantidad) > 1e-6 || Math.abs(Number(c.pu) - orig.pu) > 1e-4) {
+            if (Math.abs(Number(c.pu) - orig.pu) > 1e-4) {
               await client.query('ROLLBACK');
-              return res.status(409).json({ error: `El concepto original "${c.clave}" no se modifica por convenio (se congela): cantidad ${orig.cantidad}, PU ${orig.pu}. Los cambios se agregan como conceptos ADICIONALES, no editando el original.`, conceptoCongelado: String(c.clave) });
+              return res.status(409).json({ error: `El P.U. del concepto "${c.clave}" no se modifica por convenio (se paga al precio unitario pactado, art. 59 LOPSRM): PU ${orig.pu}. Por convenio solo se ajusta la CANTIDAD o el plazo.`, conceptoPuCongelado: String(c.clave) });
             }
-            // Sin cambios → NO-OP: el original queda congelado (no se reescribe ni cantidad/pu ni texto).
+            // La CANTIDAD sí se ajusta (la reducción por debajo de lo ya estimado ya se bloqueó en (A)).
+            if (Math.abs(Number(c.cantidad) - orig.cantidad) > 1e-6) {
+              await client.query('UPDATE contrato_conceptos SET cantidad=$1::numeric(14,3) WHERE id=$2', [c.cantidad, idPorClave.get(String(c.clave))]);
+            }
+            // Sin cambios → NO-OP.
           } else {
-            // B4 (Opción 1): si es una AMPLIACIÓN (amplia_a), el P.U. se HEREDA del original (art. 59 LOPSRM:
-            // las cantidades adicionales se pagan al precio unitario pactado). Se valida SERVER-SIDE que el
-            // P.U. coincida con el del concepto original; no se teclea libre.
-            if (c.amplia_a != null) {
-              const base = datosPorClave.get(String(c.amplia_a));
-              if (!base) { await client.query('ROLLBACK'); return res.status(400).json({ error: `La ampliación "${c.clave}" referencia un concepto original inexistente ("${c.amplia_a}")` }); }
-              if (Math.abs(Number(c.pu) - base.pu) > 1e-4) { await client.query('ROLLBACK'); return res.status(400).json({ error: `La ampliación de "${c.amplia_a}" debe heredar su P.U. (${base.pu}): las cantidades adicionales se pagan al precio unitario pactado (art. 59 LOPSRM).` }); }
-            }
-            // Concepto NUEVO = ADICIONAL: se INSERTA etiquetado es_adicional=true (se estima/paga aparte).
-            maxOrden += 1;
-            const ins = await client.query('INSERT INTO contrato_conceptos (contrato_id, orden, concepto, unidad, cantidad, pu, clave, es_adicional) VALUES ($1,$2,$3,$4,$5::numeric(14,3),$6::numeric(16,4),$7,true) RETURNING id',
-              [contratoId, maxOrden, c.concepto ?? '', c.unidad ?? '', c.cantidad, c.pu, c.clave]);
-            idPorClave.set(String(c.clave), ins.rows[0].id);
-            clavesAdicionales.add(String(c.clave));
+            // BUG #11 — PROHIBIDO agregar conceptos NUEVOS por convenio (decisión de Maiki): un convenio
+            // modifica el contrato existente (art. 59 LOPSRM: dentro del objeto contratado), no introduce
+            // conceptos fuera del catálogo. Solo se ajustan los existentes (cantidad) o el plazo.
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: `El convenio no puede agregar el concepto nuevo "${c.clave}": por convenio solo se AJUSTAN (ampliar/reducir la cantidad) los conceptos existentes o se cambia el plazo (art. 59 LOPSRM). No se agregan conceptos nuevos.`, conceptoNuevoProhibido: String(c.clave) });
           }
         }
         // Monto CANÓNICO desde el catálogo VIVO (fuente única, al centavo) y sincroniza la cabecera.
@@ -303,11 +312,11 @@ async function crearConvenio(req, res) {
         `INSERT INTO convenios_modificatorios
            (contrato_id, numero, folio, tipo, fundamento, motivo, monto_anterior, monto_nuevo,
             plazo_anterior_dias, plazo_nuevo_dias, delta_monto_pct, delta_plazo_pct,
-            requiere_revision_sfp, requiere_ajuste_costos, estado, autorizado_por, nota_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'registrado',NULL,$15) RETURNING id`,
+            requiere_revision_sfp, requiere_ajuste_costos, estado, autorizado_por, nota_id, registrado_por)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,'registrado',NULL,$15,$16) RETURNING id`,
         [contratoId, numeroConv, folioFinal, tipo, fundamento, motivo,
          montoAnterior, montoNuevo, plazoAnterior, plazoNuevoFinal, deltaMontoPct, deltaPlazoPct, reqSfp, reqAjuste,
-         notaConv ? notaConv.id : null]
+         notaConv ? notaConv.id : null, req.user.id] // BUG #13: registrado_por = JWT (separación de funciones)
       );
       const convenioId = conv.rows[0].id;
 
@@ -389,8 +398,9 @@ async function autorizarConvenio(req, res) {
     client = await pool.connect();
     try {
       await client.query('BEGIN');
+      await ensureRegistradoPor().catch(() => {}); // BUG #13: la columna registrado_por debe existir para el chequeo
       const cv = await client.query(
-        `SELECT cm.id, cm.contrato_id, cm.estado, cm.delta_monto_pct, cm.delta_plazo_pct,
+        `SELECT cm.id, cm.contrato_id, cm.estado, cm.delta_monto_pct, cm.delta_plazo_pct, cm.registrado_por,
                 c.created_by, c.residente_id, c.superintendente_id, c.supervision_id
            FROM convenios_modificatorios cm JOIN contratos c ON c.id = cm.contrato_id
           WHERE cm.id = $1 FOR UPDATE OF cm`, [convenioId]);
@@ -398,6 +408,14 @@ async function autorizarConvenio(req, res) {
       const conv = cv.rows[0];
       if (!esParteOSupervision(req.user, conv)) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'No tienes acceso a este convenio' }); }
       if (conv.estado !== 'registrado') { await client.query('ROLLBACK'); return res.status(409).json({ error: 'El convenio ya está autorizado; el acto de autorización es único (art. 59 LOPSRM)' }); }
+      // BUG #13 (Oleada 3): SEPARACIÓN DE FUNCIONES — quien REGISTRÓ el convenio no puede AUTORIZARLO (ni el
+      // mismo servidor puede sustentar y autorizar). Legacy (registrado_por NULL) no bloquea. Fundamento:
+      // art. 99 RLOPSRM (el residente sustenta/registra) vs art. 59 párr. 3 LOPSRM (el servidor FACULTADO,
+      // distinto, autoriza).
+      if (conv.registrado_por != null && conv.registrado_por === req.user.id) {
+        await client.query('ROLLBACK');
+        return res.status(409).json({ error: 'No puedes autorizar un convenio que tú mismo registraste: la autorización la realiza un servidor facultado distinto (separación de funciones, art. 59 párr. 3 LOPSRM / art. 99 RLOPSRM).' });
+      }
       // FIX #3 (22-jun) — contrato cerrado (finiquito) = SOLO-LECTURA (art. 64 LOPSRM).
       if (await contratoCerrado(client, conv.contrato_id)) { await client.query('ROLLBACK'); return res.status(409).json({ error: msgCerrado('no se autorizan convenios') }); }
 
