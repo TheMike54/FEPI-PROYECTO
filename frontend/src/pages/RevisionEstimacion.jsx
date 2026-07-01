@@ -533,8 +533,10 @@ export default function RevisionEstimacion() {
   const esResidencia = !!revision?.es_residencia;
 
   // Gating de acciones (el backend revalida por id de usuario y máquina de estados).
-  const puedeRegistrar = !soloLectura && esSupervision && estado === 'enviada' && !turnada;
-  const puedeTurnar = puedeRegistrar && (totalObs > 0 || sinObservaciones);
+  // H8 (01-jul, profe): observaciones = SUPERVISIÓN (antes de turnar) O RESIDENCIA (su fase). El TURNAR sigue
+  // siendo solo de la supervisión (antes de turnar); el residente NO turna, resuelve.
+  const puedeRegistrar = !soloLectura && estado === 'enviada' && ((esSupervision && !turnada) || esResidencia);
+  const puedeTurnar = !soloLectura && esSupervision && !turnada && (totalObs > 0 || sinObservaciones);
   const puedeResolver = !soloLectura && esResidencia && estado === 'enviada' && turnada;
 
   const tabs = SECCIONES.map((key) => ({

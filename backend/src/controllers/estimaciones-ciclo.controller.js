@@ -392,14 +392,19 @@ async function crearObservacion(req, res) {
 
     const est = await cargarEstimacionConContrato(id);
     if (!est) return res.status(404).json({ error: 'Estimación no encontrada' });
-    if (est.supervision_id !== req.user.id) {
-      return res.status(403).json({ error: 'Solo la supervisión asignada al contrato puede registrar observaciones' });
+    // H8 (01-jul, profe): las OBSERVACIONES las hace la SUPERVISIÓN o la RESIDENCIA (antes solo supervisión).
+    // "supervisión y residente hacen las observaciones" (New Recording 78).
+    const esSupervision = est.supervision_id === req.user.id;
+    const esResidencia = est.residente_id === req.user.id;
+    if (!esSupervision && !esResidencia) {
+      return res.status(403).json({ error: 'Solo la supervisión o la residencia asignada al contrato pueden registrar observaciones' });
     }
     if (gateContratoCerrado(res, est, 'no se registran observaciones')) return; // FIX 1.1
     if (est.estado !== 'enviada') {
       return res.status(409).json({ error: `No se pueden registrar observaciones en una estimación '${est.estado}'` });
     }
-    if (await estaTurnada(id)) {
+    // La revisión de la SUPERVISIÓN se cierra al TURNAR; la RESIDENCIA observa en su fase (tras el turnado).
+    if (esSupervision && !esResidencia && await estaTurnada(id)) {
       return res.status(409).json({ error: 'La estimación ya fue turnada a residencia; la revisión de supervisión está cerrada' });
     }
 
@@ -427,14 +432,17 @@ async function eliminarObservacion(req, res) {
 
     const est = await cargarEstimacionConContrato(id);
     if (!est) return res.status(404).json({ error: 'Estimación no encontrada' });
-    if (est.supervision_id !== req.user.id) {
-      return res.status(403).json({ error: 'Solo la supervisión asignada al contrato puede eliminar observaciones' });
+    // H8: supervisión O residencia eliminan SU propia observación (el DELETE filtra autor_id = uid).
+    const esSupervision = est.supervision_id === req.user.id;
+    const esResidencia = est.residente_id === req.user.id;
+    if (!esSupervision && !esResidencia) {
+      return res.status(403).json({ error: 'Solo la supervisión o la residencia asignada al contrato pueden eliminar observaciones' });
     }
     if (gateContratoCerrado(res, est, 'no se eliminan observaciones')) return; // FIX 1.1
     if (est.estado !== 'enviada') {
       return res.status(409).json({ error: `No se pueden eliminar observaciones en una estimación '${est.estado}'` });
     }
-    if (await estaTurnada(id)) {
+    if (esSupervision && !esResidencia && await estaTurnada(id)) {
       return res.status(409).json({ error: 'La estimación ya fue turnada a residencia; la revisión de supervisión está cerrada' });
     }
 
