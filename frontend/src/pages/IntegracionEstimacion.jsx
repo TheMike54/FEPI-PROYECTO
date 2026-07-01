@@ -257,6 +257,100 @@ function ModalDetalle({ estimacion, onCerrar, onVerDocumento, onVerCaratula }) {
 
 // --------------------------- Tabs internos --------------------------------
 
+// ---------------------------------------------------------------------------
+// M2 (B7): Soportes de la estimación POR GENERADOR. Cada concepto con cantidad en el periodo se expande y
+// deja adjuntar su FOTO DE ACTIVIDAD y sus SOPORTES documentales (se suben al integrar, con su
+// contrato_concepto_id), y referencia su reporte fotográfico del avance. La nota de entrega se liga en el
+// documento tras integrar. Se conserva una fila "Generales" para adjuntos sin concepto. Reusa endpoints de
+// oleada 1 (estimacion-fotos / estimacion-soportes por contrato_concepto_id). Presentación + staging; el
+// backend revalida por participación al subir.
+// ---------------------------------------------------------------------------
+function SoportesPorGenerador({ conceptos, fotosAvance, staged, onStage, onUnstage }) {
+  const [abierto, setAbierto] = useState(null);
+  const fotosDe = (cid) => (fotosAvance || []).filter((f) => Number(f.contrato_concepto_id) === Number(cid));
+  const stagedDe = (cid, tipo) => staged.filter((s) =>
+    (cid == null ? s.contrato_concepto_id == null : Number(s.contrato_concepto_id) === Number(cid)) && (!tipo || s.tipo === tipo));
+
+  const listaStaged = (items) => items.length === 0 ? null : (
+    <ul className="mt-2 space-y-1">
+      {items.map((s, i) => (
+        <li key={`${s.file.name}-${i}`} className="flex items-center justify-between gap-2 text-[11px] border border-slate-200 rounded px-2 py-1">
+          <span className="truncate">{s.tipo === 'foto' ? '🖼' : '📎'} {s.file.name} <span className="text-slate-400">({Math.ceil(s.file.size / 1024)} KB)</span></span>
+          <button type="button" className="text-red-600 hover:underline shrink-0" onClick={() => onUnstage(s)}>Quitar</button>
+        </li>
+      ))}
+    </ul>
+  );
+
+  const inputStage = (cid, tipo, label, accept, testid) => (
+    <label className="text-xs sg-btn-secondary inline-block cursor-pointer py-1 px-2">
+      {label}
+      <input type="file" multiple accept={accept} className="hidden" data-testid={testid}
+        onChange={(ev) => { Array.from(ev.target.files || []).forEach((file) => onStage(file, cid, tipo)); ev.target.value = ''; }} />
+    </label>
+  );
+
+  const card = (cid, encabezado, periodo, unidad) => {
+    const key = cid == null ? 'generales' : cid;
+    const exp = abierto === key;
+    const fa = cid == null ? [] : fotosDe(cid);
+    const nFoto = stagedDe(cid, 'foto').length;
+    const nSop = stagedDe(cid, 'soporte').length;
+    return (
+      <div key={key} className="border border-slate-200 rounded-md" data-testid={`gen-soporte-${key}`}>
+        <button type="button" className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left hover:bg-slate-50"
+          onClick={() => setAbierto(exp ? null : key)} aria-expanded={exp}>
+          <span className="text-sm truncate">{encabezado}</span>
+          <span className="text-[11px] text-slate-500 shrink-0 flex items-center gap-2">
+            {cid != null && periodo != null && <span>este periodo: {num(periodo)} {unidad}</span>}
+            {cid != null && <span title="Fotos del reporte fotográfico del avance">📷 {fa.length}</span>}
+            <span title="Fotos de actividad por subir">🖼 {nFoto}</span>
+            <span title="Soportes documentales por subir">📎 {nSop}</span>
+            <span>{exp ? '▾' : '▸'}</span>
+          </span>
+        </button>
+        {exp && (
+          <div className="grid md:grid-cols-3 gap-3 px-3 pb-3 border-t border-slate-100 pt-3">
+            <div>
+              <div className="text-[11px] font-semibold uppercase text-slate-500 mb-1">Reporte fotográfico</div>
+              {cid == null
+                ? <p className="text-[11px] text-slate-400 italic">Los adjuntos generales no se ligan a un generador.</p>
+                : fa.length === 0
+                  ? <p className="text-[11px] text-slate-400 italic">Sin fotos del avance de este concepto.</p>
+                  : <p className="text-[11px] text-slate-600">{fa.length} foto(s) del avance del periodo (ver el reporte de arriba).</p>}
+            </div>
+            <div>
+              <div className="text-[11px] font-semibold uppercase text-slate-500 mb-1">Foto de actividad</div>
+              {inputStage(cid, 'foto', '+ Foto', 'image/jpeg,image/png', `input-foto-${key}`)}
+              {listaStaged(stagedDe(cid, 'foto'))}
+            </div>
+            <div>
+              <div className="text-[11px] font-semibold uppercase text-slate-500 mb-1">Soportes documentales</div>
+              {inputStage(cid, 'soporte', '+ Soporte', '.pdf,.xls,.xlsx,.csv,.txt,image/jpeg,image/png,application/pdf', `input-soporte-${key}`)}
+              {listaStaged(stagedDe(cid, 'soporte'))}
+            </div>
+            <div className="md:col-span-3 text-[11px] text-slate-500 border-t border-slate-100 pt-2">
+              📝 Nota de entrega: la nota de bitácora se crea al integrar; podrás ligarla a este generador en el documento de estimación (art. 132 fr. II / 125 RLOPSRM).
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-2" data-testid="soportes-por-generador">
+      {conceptos.length === 0
+        ? <p className="text-[11px] text-slate-400 italic">Captura cantidades en el paso 2 para adjuntar soportes por generador.</p>
+        : conceptos.map((c) => card(
+            c.contrato_concepto_id,
+            <><span className="font-mono text-sigecop-blue">{c.clave || '—'}</span> · {c.concepto} <span className="text-slate-400">({c.unidad})</span></>,
+            c.periodo, c.unidad))}
+      {card(null, <span className="font-semibold text-slate-600">Generales (sin concepto)</span>, null, null)}
+    </div>
+  );
+}
+
 function TabGeneradores({ filas, onCantidad, tienePlan }) {
   if (filas.length === 0) {
     return (
@@ -799,16 +893,22 @@ export default function IntegracionEstimacion() {
       });
       setResultado(est);
       showToast(`Estimación #${est.numero} integrada`);
-      // BUG #4: sube los soportes documentales adjuntados en el paso 4 a la estimación recién creada.
+      // BUG #4 + M2 (B7): sube a la estimación recién creada las FOTOS DE ACTIVIDAD y los SOPORTES
+      // documentales staged POR GENERADOR (cada uno lleva su contrato_concepto_id; null = general).
       const nuevaId = est?.id ?? est?.estimacion_id;
       if (nuevaId && soportesStaged.length > 0) {
         let ok = 0;
-        for (const f of soportesStaged) {
-          try { await api.subirSoporteEstimacion(nuevaId, f); ok += 1; } catch (_) { /* continúa con el resto */ }
+        for (const s of soportesStaged) {
+          try {
+            const cid = s.contrato_concepto_id ?? undefined; // por generador (o general si null)
+            if (s.tipo === 'foto') await api.subirFotoEstimacion(nuevaId, s.file, undefined, cid);
+            else await api.subirSoporteEstimacion(nuevaId, s.file, undefined, cid);
+            ok += 1;
+          } catch (_) { /* continúa con el resto */ }
         }
         showToast(ok === soportesStaged.length
-          ? `${ok} soporte(s) documental(es) adjuntado(s).`
-          : `Se adjuntaron ${ok} de ${soportesStaged.length} soportes; sube el resto desde el expediente.`);
+          ? `${ok} adjunto(s) por generador subido(s).`
+          : `Se subieron ${ok} de ${soportesStaged.length} adjuntos; sube el resto desde el expediente.`);
       }
       // El acumulado y el historial cambiaron: recargar y limpiar el formulario.
       await Promise.all([recargarAvance(contratoId), recargarHistorial(contratoId)]);
@@ -1048,41 +1148,25 @@ export default function IntegracionEstimacion() {
                   <FotosAvancePeriodo fotos={fotosAvance} cargando={cargandoFotos} />
                 </div>
               )}
-              {/* BUG #4: soportes documentales por concepto (PDF, XLS/XLSX, CSV/TXT, imagen). Se adjuntan
-                  aquí y se suben al integrar la estimación. Solo escritura para el superintendente (el
-                  backend revalida por participación). */}
+              {/* BUG #4 + M2 (B7): FOTO DE ACTIVIDAD y SOPORTES documentales POR GENERADOR. Cada concepto con
+                  cantidad en el periodo se expande y deja adjuntar sus fotos/soportes (se suben al integrar,
+                  con su contrato_concepto_id). Solo escritura para el superintendente (el backend revalida). */}
               {wrapTab(
                 <div className="bg-white border border-slate-200 rounded-lg p-4" data-testid="soportes-doc-wrapper">
-                  <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-1">Soportes documentales</h3>
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-1">Soportes por generador</h3>
                   <p className="text-[11px] text-slate-500 mb-3">
-                    Documentos que respaldan los números generadores (art. 132 RLOPSRM): memorias de cálculo,
-                    controles de calidad, hojas de cálculo, etc. Formatos: PDF, XLS/XLSX, CSV/TXT, imagen. Máx 10 MB c/u.
-                    Se adjuntan al <strong>integrar</strong> la estimación.
+                    Por cada concepto del periodo: su <strong>foto de actividad</strong>, sus <strong>soportes
+                    documentales</strong> (memorias de cálculo, controles de calidad, hojas de cálculo — PDF,
+                    XLS/XLSX, CSV/TXT, imagen; máx 10 MB c/u) y su nota de entrega (art. 132 RLOPSRM). Los
+                    adjuntos se suben al <strong>integrar</strong> la estimación.
                   </p>
-                  <label className="sg-btn-secondary inline-block cursor-pointer">
-                    + Adjuntar soportes
-                    <input
-                      type="file" multiple className="hidden" data-testid="input-soportes"
-                      accept=".pdf,.xls,.xlsx,.csv,.txt,image/jpeg,image/png,application/pdf"
-                      onChange={(e) => {
-                        const nuevos = Array.from(e.target.files || []);
-                        if (nuevos.length) setSoportesStaged((prev) => [...prev, ...nuevos]);
-                        e.target.value = ''; // permite re-seleccionar el mismo archivo
-                      }}
-                    />
-                  </label>
-                  {soportesStaged.length > 0 && (
-                    <ul className="mt-3 space-y-1.5" data-testid="soportes-staged">
-                      {soportesStaged.map((f, i) => (
-                        <li key={`${f.name}-${i}`} className="flex items-center justify-between gap-2 text-sm border border-slate-200 rounded-md px-3 py-2">
-                          <span className="truncate">📎 {f.name} <span className="text-[11px] text-slate-400">({Math.ceil(f.size / 1024)} KB)</span></span>
-                          <button type="button" className="text-xs text-red-600 hover:underline shrink-0"
-                            onClick={() => setSoportesStaged((prev) => prev.filter((_, j) => j !== i))}
-                            data-testid={`soporte-staged-quitar-${i}`}>Quitar</button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
+                  <SoportesPorGenerador
+                    conceptos={filas.filter((f) => Number(f.periodo) > 0).map((f) => ({ contrato_concepto_id: f.contrato_concepto_id, clave: f.clave, concepto: f.concepto, unidad: f.unidad, periodo: f.periodo }))}
+                    fotosAvance={fotosAvance}
+                    staged={soportesStaged}
+                    onStage={(file, cid, tipo) => setSoportesStaged((prev) => [...prev, { file, contrato_concepto_id: cid ?? null, tipo }])}
+                    onUnstage={(item) => setSoportesStaged((prev) => prev.filter((x) => x !== item))}
+                  />
                 </div>
               )}
               {/* A2 — Checklist de los documentos de la estimación (art. 132 RLOPSRM). Lista ENUNCIATIVA
