@@ -5,6 +5,7 @@ import BannerContratoActivo from '../components/BannerContratoActivo.jsx';
 import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
+import { getFechaRef } from '../lib/fechaSimulada.js';
 
 // HU-02 (sesión E2 18-jun) — REGISTRO DE FIANZAS Y GARANTÍAS, cableado al backend real (antes era maqueta).
 // Las garantías ya persistían desde el alta HU-01; aquí se gestionan/leen/endosan por esta pantalla, con su
@@ -29,7 +30,10 @@ const moneda = (n) => `$ ${(Number(n) || 0).toLocaleString('en-US', { minimumFra
 const fechaLabel = (iso) => { const p = soloFecha(iso).split('-'); return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : '—'; };
 function diasHasta(iso) {
   if (!iso) return null;
-  const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+  // LENTE DE SIMULACIÓN: los badges de vencimiento (Vencida/Vence en/Vigente) se calculan contra la fecha
+  // simulada (getFechaRef) para poder demostrar la caducidad avanzando el tiempo. Es SOLO LECTURA (badge);
+  // la validación de vigencia al CREAR/EDITAR la fianza sigue usando la fecha real del servidor (backend).
+  const hoy = new Date(getFechaRef() + 'T00:00:00');
   const d = new Date(soloFecha(iso) + 'T00:00:00');
   return Math.round((d - hoy) / 86400000);
 }

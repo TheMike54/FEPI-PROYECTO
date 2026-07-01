@@ -4,10 +4,16 @@
 // no es el emisor, no la ha firmado, la nota no está anulada, no es la apertura (esa va por su propia vía) y
 // su plazo de firma no ha vencido (art. 123 fr. III RLOPSRM). Solo lectura, acotado al propio usuario.
 const { pool } = require('../db/pool');
+// LENTE DE SIMULACIÓN — SOLO LECTURA: "hoy" simulado opcional (?fecha_ref) para decidir qué notas siguen
+// DENTRO del plazo de firma (art. 123 fr. III RLOPSRM). Al avanzar el tiempo simulado, las notas cuyo plazo
+// ya venció salen de "por firmar" (se tienen por aceptadas tácitamente). No hay sello aquí: la firma real
+// (firmarNota) usa NOW() real; esto solo cambia la LECTURA de la campana.
+const { fechaRefDe } = require('../lib/fechaRef');
 
 // GET /api/notas-pendientes
 async function notasPendientes(req, res) {
   try {
+    const fechaRef = fechaRefDe(req); // simulada o null (=> hoy real)
     const r = await pool.query(
       `SELECT n.id, n.numero, n.tipo, tp.etiqueta AS tipo_etiqueta, n.asunto, n.fecha,
               c.id AS contrato_id, c.folio AS contrato_folio
@@ -20,9 +26,9 @@ async function notasPendientes(req, res) {
           AND $1 IN (c.residente_id, c.superintendente_id, c.supervision_id)
           AND n.emisor_id IS DISTINCT FROM $1
           AND NOT EXISTS (SELECT 1 FROM bitacora_nota_firmas nf WHERE nf.nota_id = n.id AND nf.usuario_id = $1)
-          AND NOW() <= n.fecha + make_interval(days => ba.plazo_firma_dias)
+          AND COALESCE($2::timestamptz, NOW()) <= n.fecha + make_interval(days => ba.plazo_firma_dias)
         ORDER BY n.fecha DESC`,
-      [req.user.id]
+      [req.user.id, fechaRef]
     );
     return res.status(200).json(r.rows);
   } catch (err) {
