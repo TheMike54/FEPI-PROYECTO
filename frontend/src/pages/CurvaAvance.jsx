@@ -595,11 +595,16 @@ export default function CurvaAvance() {
           {/* B (Propuesta B) — AVANCE POR ETAPAS (versión del programa). Solo si hay convenio (≥ 2 versiones):
               el % del plan ORIGINAL queda CONGELADO (histórico, no se re-escala) y la etapa VIGENTE arranca un %
               nuevo sobre el plan modificado. El ejecutado se parte por la fecha del convenio (art. 59/101). */}
+          {/* BUG #15 (Oleada 5): por defecto se muestra UNA sola curva vigente/consolidada (abajo). El
+              desglose «Avance por etapas» (histórico congelado + vigente, modo técnico) queda en un
+              detalle COLAPSABLE para no mostrar dos curvas a la vez. */}
           {etapas.length >= 2 && (
-            <div className="bg-white border border-borde rounded-lg p-5 mb-6" data-testid="avance-etapas">
-              <h2 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-1">
-                Avance por etapas (versión del programa)
-              </h2>
+            <details className="bg-white border border-borde rounded-lg mb-6" data-testid="avance-etapas">
+              <summary className="px-5 py-3 cursor-pointer text-sm font-bold uppercase tracking-wider text-slate-700 flex items-center justify-between">
+                <span>📊 Avance por etapas del programa (histórico · modo técnico)</span>
+                <span className="text-tinta-ter">▾</span>
+              </summary>
+              <div className="px-5 pb-5">
               <p className="text-xs text-slate-500 mb-4">
                 Al entrar un convenio modificatorio, el avance del <strong>plan original</strong> se congela como
                 histórico (no se re-escala) y arranca una etapa <strong>vigente</strong> sobre el plan modificado
@@ -660,7 +665,8 @@ export default function CurvaAvance() {
                   </div>
                 ))}
               </div>
-            </div>
+              </div>
+            </details>
           )}
 
           {/* Curva S (criterio 2). */}
@@ -670,8 +676,8 @@ export default function CurvaAvance() {
             </h2>
             {etapas.length >= 2 && (
               <p className="text-xs text-amber-800 bg-amber-50 border-l-4 border-sigecop-amber-attention px-4 py-2 mb-3 rounded-r-md" data-testid="curva-consolidado-aviso">
-                Esta curva es el <strong>consolidado sobre el plan vigente</strong> (denominador actual). El avance del
-                plan original <strong>sin re-escalar</strong> se ve arriba, en <strong>«Avance por etapas»</strong>.
+                Esta es la <strong>curva vigente consolidada</strong> (denominador actual). El desglose del
+                plan original <strong>sin re-escalar</strong> está en el detalle colapsable <strong>«Avance por etapas»</strong> (modo técnico).
               </p>
             )}
             <CurvaSVG datos={datosCurva} hoyIndex={hoyIndex} contratoQ={contratoQ} />

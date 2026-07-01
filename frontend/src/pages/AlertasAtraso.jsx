@@ -179,13 +179,15 @@ export default function AlertasAtraso() {
                     <th className="text-right p-3 font-semibold">Programado acum.</th>
                     <th className="text-right p-3 font-semibold">Ejecutado acum.</th>
                     <th className="text-right p-3 font-semibold">Déficit</th>
+                    {/* BUG #16 (Oleada 5): además del déficit físico (unidades), se muestran los DÍAS de atraso. */}
+                    <th className="text-right p-3 font-semibold">Días de atraso</th>
                     {!soloLectura && <th className="text-right p-3 font-semibold">Acciones</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {atrasos.length === 0 ? (
                     <tr>
-                      <td colSpan={soloLectura ? 5 : 6} className="p-8 text-center text-slate-500" data-testid="sin-atrasos">
+                      <td colSpan={soloLectura ? 6 : 7} className="p-8 text-center text-slate-500" data-testid="sin-atrasos">
                         {data.periodo_actual
                           ? <span className="font-medium text-exito">Sin atrasos: lo ejecutado va al día con el programa al periodo vigente.</span>
                           : <span className="italic text-slate-400">El contrato aún no inicia su primer periodo; no hay atraso que medir todavía.</span>}
@@ -204,6 +206,9 @@ export default function AlertasAtraso() {
                         <td className="p-3 text-right font-mono">{fmt(a.ejecutado_acumulado)}</td>
                         <td className="p-3 text-right font-mono font-bold text-sigecop-amber-attention" data-testid={`deficit-${a.contrato_concepto_id}`}>
                           {fmt(a.deficit)} {a.unidad || ''}
+                        </td>
+                        <td className="p-3 text-right font-mono font-semibold text-red-700" data-testid={`dias-atraso-${a.contrato_concepto_id}`}>
+                          {a.dias_atraso > 0 ? `${a.dias_atraso} día${a.dias_atraso === 1 ? '' : 's'}` : '—'}
                         </td>
                         {!soloLectura && (
                           <td className="p-3 text-right whitespace-nowrap">

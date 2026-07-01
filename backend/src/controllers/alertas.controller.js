@@ -49,8 +49,13 @@ async function periodoActualDe(db, contratoId, fechaRef = null) {
 }
 
 // Déficit por concepto del contrato al periodo `paNum` (0 = ningún periodo arrancó). Devuelve TODAS
-// las filas (con programado_acum, ejecutado_acum, deficit ya cuantizado); el llamador filtra > 0.
-async function deficitsDeContrato(db, contratoId, paNum) {
+// las filas (con programado_acum, ejecutado_acum, deficit y DÍAS DE ATRASO); el llamador filtra > 0.
+// BUG #16 (Oleada 5): `dias_atraso` = días transcurridos desde el fin del ÚLTIMO periodo YA VENCIDO cuyo
+// programa acumulado el avance ejecutado total AÚN cubría (= el último momento en que el concepto estuvo al
+// día). "Estás al nivel que debías tener el {fin}; hoy es N días después → N días de atraso." Si el concepto
+// nunca estuvo al día (atrasado desde el primer periodo vencido), se mide desde el fin de ese primer periodo.
+// `fechaRef` (SOLO LECTURA, lente de simulación) = "hoy"; null => CURRENT_DATE real.
+async function deficitsDeContrato(db, contratoId, paNum, fechaRef = null) {
   const r = await db.query(
     `SELECT cc.id AS contrato_concepto_id, cc.clave, cc.concepto, cc.unidad,
             cc.cantidad AS cantidad_contratada,
@@ -60,11 +65,21 @@ async function deficitsDeContrato(db, contratoId, paNum) {
                        WHERE po.contrato_concepto_id = cc.id AND cp.numero <= $2), 0) AS programado_acum,
             COALESCE((SELECT SUM(ca.cantidad)
                         FROM concepto_avance ca
-                       WHERE ca.contrato_concepto_id = cc.id AND ca.estado = 'vigente'), 0) AS ejecutado_acum
+                       WHERE ca.contrato_concepto_id = cc.id AND ca.estado = 'vigente'), 0) AS ejecutado_acum,
+            GREATEST(0, COALESCE($3::date, CURRENT_DATE) - COALESCE(
+              (SELECT MAX(cp.fin) FROM contrato_periodos cp
+                WHERE cp.contrato_id = cc.contrato_id AND cp.fin <= COALESCE($3::date, CURRENT_DATE)
+                  AND COALESCE((SELECT SUM(po.cantidad) FROM programa_obra po JOIN contrato_periodos p2 ON p2.id = po.contrato_periodo_id
+                                 WHERE po.contrato_concepto_id = cc.id AND p2.numero <= cp.numero), 0)
+                      <= COALESCE((SELECT SUM(ca2.cantidad) FROM concepto_avance ca2
+                                    WHERE ca2.contrato_concepto_id = cc.id AND ca2.estado = 'vigente'), 0)),
+              (SELECT MIN(cp.fin) FROM contrato_periodos cp
+                WHERE cp.contrato_id = cc.contrato_id AND cp.fin <= COALESCE($3::date, CURRENT_DATE))
+            )) AS dias_atraso
        FROM contrato_conceptos cc
       WHERE cc.contrato_id = $1
       ORDER BY cc.orden`,
-    [contratoId, paNum]
+    [contratoId, paNum, fechaRef]
   );
   return r.rows.map((row) => {
     const programado = q3(row.programado_acum);
@@ -79,7 +94,8 @@ async function deficitsDeContrato(db, contratoId, paNum) {
       cantidad_contratada: q3(row.cantidad_contratada),
       programado_acumulado: programado,
       ejecutado_acumulado: ejecutado,
-      deficit
+      deficit,
+      dias_atraso: Number(row.dias_atraso) || 0
     };
   });
 }
@@ -102,7 +118,7 @@ async function alertasDeContrato(req, res) {
     const fechaRef = fechaRefDe(req); // SOLO LECTURA: "hoy" simulado o null (=> hoy real)
     const periodo = await periodoActualDe(pool, contratoId, fechaRef);
     const paNum = periodo ? periodo.numero : 0;
-    const todos = await deficitsDeContrato(pool, contratoId, paNum);
+    const todos = await deficitsDeContrato(pool, contratoId, paNum, fechaRef);
     const atrasos = todos.filter((f) => f.deficit > EPS_CANT);
 
     return res.status(200).json({
