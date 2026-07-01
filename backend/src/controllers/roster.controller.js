@@ -164,28 +164,32 @@ async function sustituirPersona(req, res) {
 
       if (anteriorUsuarioId === nuevoUsuarioId) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'La persona indicada ya ocupa ese rol' }); }
 
-      // FIX 22-jun (profe): NO se puede sustituir a una persona con PENDIENTES. Si la sustituyes, ya no
-      // podrá firmar lo que le corresponde. "Pendiente" = nota emitida por OTRA parte que el saliente aún
-      // DEBE firmar y todavía está dentro de su plazo de firma (no aceptada tácitamente por vencimiento).
-      // Interpretativo [validar]: el art. 125 fr. I g RLOPSRM no fija la regla; es criterio del equipo.
+      // D2 (01-jul, DECISIÓN de Maiki) — la sustitución YA NO se BLOQUEA por notas pendientes del saliente:
+      // se convierte en AVISO no bloqueante. La consulta SIEMPRE estuvo ACOTADA a ESTE contrato
+      // (ba.contrato_id = $1) — NO era global. Fundamento del cambio: (a) las notas sin firmar se tienen por
+      // ACEPTADAS TÁCITAMENTE al vencer su plazo (art. 123 fr. III RLOPSRM); (b) por el fix de vigencia
+      // art. 125 (commit 1ea4077), el ENTRANTE no puede firmar notas previas a su alta, así que bloquear no
+      // protege nada. Se calcula la LISTA (folio + tipo) SOLO de ESTE contrato para devolverla como
+      // advertencia; la sustitución procede. `bitacora.controller`/`firmarNota` NO se tocan.
+      let avisoPendientes = null;
       if (anteriorUsuarioId != null) {
         const pend = await client.query(
-          `SELECT COUNT(*)::int AS n
+          `SELECT bn.numero, bn.tipo
              FROM bitacora_notas bn
              JOIN bitacora_aperturas ba ON ba.id = bn.bitacora_id
             WHERE ba.contrato_id = $1
               AND bn.emisor_id IS DISTINCT FROM $2
               AND NOT EXISTS (SELECT 1 FROM bitacora_nota_firmas f WHERE f.nota_id = bn.id AND f.usuario_id = $2)
-              AND now() <= bn.fecha + (ba.plazo_firma_dias || ' days')::interval`,
+              AND now() <= bn.fecha + (ba.plazo_firma_dias || ' days')::interval
+            ORDER BY bn.numero`,
           [contratoId, anteriorUsuarioId]
         );
-        const nPend = pend.rows[0]?.n || 0;
-        if (nPend > 0) {
-          await client.query('ROLLBACK');
-          return res.status(409).json({
-            error: `No se puede sustituir: la persona saliente tiene ${nPend} nota(s) de bitácora pendiente(s) de su firma. Debe firmarlas (o vencer su plazo) antes de ser sustituida (art. 125 RLOPSRM).`,
-            pendientes: nPend
-          });
+        if (pend.rowCount > 0) {
+          avisoPendientes = {
+            n: pend.rowCount,
+            notas: pend.rows,
+            mensaje: `La persona saliente tenía ${pend.rowCount} nota(s) de bitácora de ESTE contrato sin firmar; se tendrán por ACEPTADAS TÁCITAMENTE al vencer su plazo (art. 123 fr. III RLOPSRM). La sustitución se realizó de todos modos (art. 125 fr. I g RLOPSRM).`,
+          };
         }
       }
 
@@ -270,7 +274,9 @@ async function sustituirPersona(req, res) {
         nota_diferida: notaDiferida,
         aviso: notaDiferida
           ? 'La sustitución quedó registrada; su nota de bitácora se asentará automáticamente al abrir la bitácora.'
-          : null
+          : null,
+        // D2: advertencia NO bloqueante si el saliente tenía notas sin firmar en ESTE contrato (tácitas al vencer).
+        aviso_pendientes: avisoPendientes
       });
     } catch (e) {
       try { await client.query('ROLLBACK'); } catch (_) { /* el client pudo morir */ }

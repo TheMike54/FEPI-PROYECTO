@@ -84,8 +84,14 @@ export default function RosterContrato() {
     if (!rolSust || !nuevoId || !motivo.trim()) { showToast('Elige rol, nueva persona y captura el motivo.'); return; }
     setEnviando(true);
     try {
-      await api.sustituirPersona(contratoId, { rol: rolSust, nuevoUsuarioId: Number(nuevoId), motivo: motivo.trim() });
-      showToast('Sustitución registrada. La persona anterior queda en el histórico (no se borra).');
+      const r = await api.sustituirPersona(contratoId, { rol: rolSust, nuevoUsuarioId: Number(nuevoId), motivo: motivo.trim() });
+      // D2 (01-jul): la sustitución YA NO se bloquea por notas pendientes del saliente; si las había en ESTE
+      // contrato, el backend las devuelve como advertencia (se aceptan tácitamente al vencer su plazo).
+      if (r?.aviso_pendientes?.n > 0) {
+        showToast(`Sustitución registrada. ⚠ ${r.aviso_pendientes.mensaje}`);
+      } else {
+        showToast('Sustitución registrada. La persona anterior queda en el histórico (no se borra).');
+      }
       setRolSust(''); setNuevoId(''); setMotivo('');
       await cargarRoster(contratoId);
     } catch (e) { showToast(e.message || 'No se pudo registrar la sustitución'); }
