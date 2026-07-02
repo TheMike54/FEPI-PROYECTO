@@ -192,9 +192,20 @@ async function crearConvenio(req, res) {
   // queda asentada en el motivo (sin columna nueva en el esquema congelado).
   if (!oficio) return res.status(409).json({ error: 'Sube/indica primero el oficio de solicitud o autorización del convenio: el soporte es previo a capturarlo (art. 99 RLOPSRM).', requiereOficio: true });
   motivo = `[Oficio de soporte: ${oficio}] ${motivo}`;
-  const tocaPrograma = ['monto', 'programa', 'mixto'].includes(tipo);
-  const tocaPlazo = ['plazo', 'mixto'].includes(tipo);
-  if (tocaPrograma && (conceptos.length === 0 || celdas.length === 0)) return res.status(400).json({ error: 'Para un convenio de monto/programa, envía el catálogo (conceptos) y el programa (celdas) NUEVOS completos' });
+  // ── MATRIZ POR TIPO (art. 59 LOPSRM) ────────────────────────────────────────────────────────────────
+  //   programa: catálogo CONGELADO · reacomoda calendario · NO añade periodos
+  //   monto   : ajusta CANTIDAD (cajita +/−) · reacomoda · NO añade periodos
+  //   plazo   : catálogo CONGELADO · reacomoda · AÑADE periodos
+  //   mixto   : ajusta CANTIDAD · reacomoda · AÑADE periodos
+  // Diferencias reales: solo monto/mixto cambian cantidades; solo plazo/mixto añaden periodos; los 4
+  // reacomodan el calendario (y en los 4 los periodos ACTUAL/PASADOS son intocables — regla de oro, abajo).
+  const ajustaCantidad = ['monto', 'mixto'].includes(tipo); // la cajita cambia la CANTIDAD (totales)
+  const tocaPlazo = ['plazo', 'mixto'].includes(tipo);       // extiende plazo → añade periodos (D4)
+  // El PROGRAMA (catálogo + calendario) se envía para REACOMODAR — los 4 tipos pueden. Obligatorio para
+  // monto/programa/mixto; OPCIONAL para plazo (si viene, reacomoda con el catálogo congelado).
+  const traePrograma = conceptos.length > 0 && celdas.length > 0;
+  const requierePrograma = ['monto', 'programa', 'mixto'].includes(tipo);
+  if (requierePrograma && !traePrograma) return res.status(400).json({ error: 'Para un convenio de monto/programa/mixto, envía el catálogo (conceptos) y el programa (celdas) NUEVOS completos' });
   if (tocaPlazo && plazoNuevo == null) return res.status(400).json({ error: 'Para un convenio de plazo, envía plazo_nuevo_dias (> 0)' });
   // P4 (22-jun) — cota máxima de plazo: la ley NO fija tope numérico (art. 59 / 59 Bis no fijan máximo) → criterio
   // de diseño. Evita el RangeError de Date (JS desborda ~100M días) devolviendo 400 claro en lugar de 500.
@@ -233,10 +244,21 @@ async function crearConvenio(req, res) {
       const montoAnterior = contrato.monto;   // string NUMERIC
       const plazoAnterior = contrato.plazo_dias;
 
+      // REGLA DE ORO (B8.2, transversal a los 4 tipos): los periodos ACTUAL y PASADOS son INTOCABLES; solo el
+      // FUTURO es editable. Protege lo ya ejecutado/estimado (#14/#24) y las FKs. Se snapshotea el programa
+      // VIGENTE por concepto×periodo ANTES de mutar; en (F) se exige que las celdas de periodos no-futuros
+      // (inicio <= CURRENT_DATE, fecha REAL del servidor) NO cambien respecto a este snapshot.
+      const storedCeldas = new Map(); // `${contrato_concepto_id}:${contrato_periodo_id}` -> cantidad vigente
+
       // (A) Pre-validación del programa ANTES de mutar (rechazo temprano sin tocar datos).
-      if (tocaPrograma) {
+      if (traePrograma) {
         const conNull = await client.query('SELECT 1 FROM contrato_conceptos WHERE contrato_id=$1 AND clave IS NULL LIMIT 1', [contratoId]);
         if (conNull.rowCount > 0) { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Este contrato tiene conceptos sin clave; no es modificable por convenio hasta clasificarlos' }); }
+        const progVig = await client.query(
+          `SELECT po.contrato_concepto_id AS cc, po.contrato_periodo_id AS pid, po.cantidad
+             FROM programa_obra po JOIN contrato_conceptos cc ON cc.id = po.contrato_concepto_id
+            WHERE cc.contrato_id = $1`, [contratoId]);
+        for (const r of progVig.rows) storedCeldas.set(`${r.cc}:${r.pid}`, Number(r.cantidad));
         // Criterio de diseño del equipo (sin cita legal directa; el art. 118 trata trabajos excedentes, no
         // reducciones): una cantidad contratada NUEVA no puede quedar por debajo de lo YA estimado.
         const acum = await client.query(
@@ -264,7 +286,7 @@ async function crearConvenio(req, res) {
 
       // (B) Snapshot perezoso de v1 (estado VIVO ORIGINAL) ANTES de mutar — solo si toca el programa.
       let numeroVer = Number((await client.query('SELECT COALESCE(MAX(numero),0) AS m FROM programa_version WHERE contrato_id = $1', [contratoId])).rows[0].m);
-      if (tocaPrograma && numeroVer === 0) { await snapshotVersion(client, contratoId, 1, null, true); numeroVer = 1; }
+      if (traePrograma && numeroVer === 0) { await snapshotVersion(client, contratoId, 1, null, true); numeroVer = 1; }
 
       // (C) Aplicar la modificación al estado VIVO.
       let montoNuevo = montoAnterior;
@@ -285,7 +307,7 @@ async function crearConvenio(req, res) {
           periodosAnadidos = await extenderPeriodosPorPlazo(client, contratoId, contrato.fecha_inicio, plazoNuevoFinal);
         }
       }
-      if (tocaPrograma) {
+      if (traePrograma) {
         const existing = await client.query('SELECT id, clave, cantidad, pu FROM contrato_conceptos WHERE contrato_id = $1', [contratoId]);
         const datosPorClave = new Map();
         for (const r of existing.rows) { idPorClave.set(String(r.clave), r.id); datosPorClave.set(String(r.clave), { cantidad: Number(r.cantidad), pu: Number(r.pu) }); }
@@ -301,13 +323,12 @@ async function crearConvenio(req, res) {
               await client.query('ROLLBACK');
               return res.status(409).json({ error: `El P.U. del concepto "${c.clave}" no se modifica por convenio (se paga al precio unitario pactado, art. 59 LOPSRM): PU ${orig.pu}. Por convenio solo se ajusta la CANTIDAD o el plazo.`, conceptoPuCongelado: String(c.clave) });
             }
-            // La CANTIDAD sí se ajusta (la reducción por debajo de lo ya estimado ya se bloqueó en (A)).
+            // La CANTIDAD solo la ajustan MONTO y MIXTO (la "cajita" +/−). En PROGRAMA y PLAZO el catálogo va
+            // CONGELADO: solo se reacomoda el calendario, los totales no cambian (matriz por tipo, art. 59 LOPSRM).
             if (Math.abs(Number(c.cantidad) - orig.cantidad) > 1e-6) {
-              // BRECHA 3 (B8) — semántica por tipo: un convenio de PROGRAMA NO cambia los totales (solo
-              // reacomoda el volumen entre periodos); MONTO/MIXTO sí ajustan cantidades (art. 59 LOPSRM).
-              if (tipo === 'programa') {
+              if (!ajustaCantidad) {
                 await client.query('ROLLBACK');
-                return res.status(400).json({ error: `Un convenio de PROGRAMA no cambia cantidades (solo reacomoda el volumen entre periodos): el concepto "${c.clave}" pasa de ${orig.cantidad} a ${c.cantidad}. Usa un convenio de MONTO o MIXTO para modificar cantidades.`, conceptoCantidadCambia: String(c.clave) });
+                return res.status(400).json({ error: `Un convenio de ${tipo.toUpperCase()} no cambia cantidades: el catálogo va CONGELADO (solo se reacomoda el calendario). El concepto "${c.clave}" pasa de ${orig.cantidad} a ${c.cantidad}. Usa un convenio de MONTO o MIXTO para modificar cantidades.`, conceptoCantidadCambia: String(c.clave) });
               }
               await client.query('UPDATE contrato_conceptos SET cantidad=$1::numeric(14,3) WHERE id=$2', [c.cantidad, idPorClave.get(String(c.clave))]);
             }
@@ -379,26 +400,38 @@ async function crearConvenio(req, res) {
       );
       const convenioId = conv.rows[0].id;
 
-      // (F) Re-cuadre del programa + nueva versión (solo si toca el programa).
+      // (F) Re-cuadre del programa + nueva versión (solo si trae programa).
       let nuevaVerId = null;
-      if (tocaPrograma) {
-        // FIX 22-jun (profe): (c) no se ADICIONA a un periodo PASADO (solo de hoy en adelante). Se marca qué
-        // periodos ya cerraron (fin < hoy) para bloquear celdas de conceptos ADICIONALES en periodos vencidos.
-        const periodos = await client.query('SELECT id, numero, (fin < CURRENT_DATE) AS cerrado FROM contrato_periodos WHERE contrato_id = $1', [contratoId]);
+      if (traePrograma) {
+        // Periodos vigentes (incluye los recién añadidos por plazo). es_futuro = inicio > HOY REAL del servidor
+        // (nunca la fecha simulada del selector: las escrituras usan la fecha real).
+        const periodos = await client.query('SELECT id, numero, (inicio > CURRENT_DATE) AS es_futuro FROM contrato_periodos WHERE contrato_id = $1', [contratoId]);
         const idPorPeriodo = new Map(periodos.rows.map((r) => [Number(r.numero), r.id]));
-        const cerradoPorPeriodo = new Map(periodos.rows.map((r) => [Number(r.numero), r.cerrado]));
+        const esFuturoPorId = new Map(periodos.rows.map((r) => [Number(r.id), r.es_futuro]));
+        const numeroPorId = new Map(periodos.rows.map((r) => [Number(r.id), Number(r.numero)]));
         const celdasResueltas = [];
+        const incoming = new Map(); // `${ccId}:${pId}` -> cantidad entrante
         for (const cel of celdas) {
           const ccId = idPorClave.get(String(cel.clave));
           const pId = idPorPeriodo.get(Number(cel.periodoNumero));
           if (!ccId) { await client.query('ROLLBACK'); return res.status(400).json({ error: `Celda de clave inexistente "${cel.clave}"` }); }
           if (!pId) { await client.query('ROLLBACK'); return res.status(400).json({ error: `Celda de periodo inexistente #${cel.periodoNumero}` }); }
-          // (c) un concepto ADICIONAL no puede programarse en un periodo YA CERRADO (no se adiciona al pasado).
-          if (clavesAdicionales.has(String(cel.clave)) && Number(cel.cantidad) > 0 && cerradoPorPeriodo.get(Number(cel.periodoNumero))) {
-            await client.query('ROLLBACK');
-            return res.status(409).json({ error: `No se puede adicionar el concepto "${cel.clave}" al periodo #${cel.periodoNumero}: ese periodo ya cerró. Los conceptos adicionales solo se programan de hoy en adelante.`, periodoCerrado: Number(cel.periodoNumero) });
-          }
           celdasResueltas.push({ contrato_concepto_id: ccId, contrato_periodo_id: pId, cantidad: cel.cantidad });
+          incoming.set(`${ccId}:${pId}`, Number(cel.cantidad));
+        }
+        // REGLA DE ORO: en los periodos ACTUAL/PASADOS (no-futuros) las celdas NO pueden cambiar respecto al
+        // programa vigente (solo se reacomoda el trabajo FUTURO). Protege lo ya ejecutado/estimado y las FKs;
+        // vale para los 4 tipos (incluida la cajita de monto/mixto: el delta va a periodos futuros).
+        const claves = new Set([...storedCeldas.keys(), ...incoming.keys()]);
+        for (const key of claves) {
+          const pId = Number(key.split(':')[1]);
+          if (esFuturoPorId.get(pId)) continue; // el FUTURO sí es editable
+          const antes = storedCeldas.get(key) || 0;
+          const ahora = incoming.get(key) || 0;
+          if (Math.abs(ahora - antes) > 1e-6) {
+            await client.query('ROLLBACK');
+            return res.status(409).json({ error: `No se puede modificar el periodo #${numeroPorId.get(pId)}: es un periodo ACTUAL o PASADO. Solo se reacomoda el trabajo de periodos FUTUROS (protege lo ya ejecutado/estimado).`, periodoNoFuturo: numeroPorId.get(pId) });
+          }
         }
         await guardarMatriz(client, contratoId, celdasResueltas, { convenioId });  // re-cuadre, exento del freeze
         await client.query('UPDATE programa_version SET vigente=false, supersedido_en=NOW() WHERE contrato_id=$1 AND vigente', [contratoId]);

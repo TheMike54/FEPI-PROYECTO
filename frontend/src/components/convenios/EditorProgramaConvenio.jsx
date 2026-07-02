@@ -34,8 +34,8 @@ const fechaCorta = (iso) => {
 
 export default function EditorProgramaConvenio({
   conceptos, periodos, celdas, soloLectura,
-  onConceptoField, onAddConcepto, onRemoveConcepto, onCelda, onAmpliar,
-  resumen, montoNuevo, cuadra,
+  onConceptoField, onAddConcepto, onRemoveConcepto, onCelda, onAmpliar, onAjuste,
+  resumen, montoNuevo, cuadra, permiteAjuste = false,
 }) {
   const hayPeriodos = periodos.length > 0;
 
@@ -48,10 +48,18 @@ export default function EditorProgramaConvenio({
       {/* --- Catálogo editable (monto derivado al centavo) --- */}
       <div>
         <h3 className="text-base font-bold text-sigecop-blue mb-1">Catálogo de conceptos (nuevo)</h3>
-        <p className="text-xs text-slate-600 mb-3">
+        <p className="text-xs text-slate-600 mb-3" data-testid="cm-catalogo-ayuda">
           El <strong>monto se DERIVA</strong> = Σ ROUND(cantidad × P.U., 2), al centavo (art. 45 fr. IX RLOPSRM).
-          Por convenio se <strong>AJUSTA la CANTIDAD</strong> de los conceptos existentes (ampliar/reducir); el
-          <strong> P.U. y la clave NO cambian</strong> (art. 59 LOPSRM). <strong>No se agregan conceptos nuevos.</strong>
+          {permiteAjuste ? (
+            <> Con la <strong>cajita de Ajuste (+/−)</strong> amplías o reduces la CANTIDAD de un concepto
+              existente; la <em>Cant. original</em> queda congelada y la <em>Cant. final</em> = original + ajuste.
+              El <strong>P.U. y la clave NO cambian</strong> (art. 59 LOPSRM). El delta afecta SOLO trabajo
+              FUTURO (regla de oro). <strong>No se agregan conceptos nuevos.</strong></>
+          ) : (
+            <> Este tipo de convenio deja el <strong>catálogo CONGELADO</strong>: las cantidades NO se
+              modifican, solo se <strong>reacomoda el calendario</strong> (usa un convenio de Monto o Mixto
+              para cambiar cantidades).</>
+          )}
         </p>
         <div className="overflow-x-auto border border-borde rounded-md">
           <table className="w-full text-sm">
@@ -100,9 +108,43 @@ export default function EditorProgramaConvenio({
                       <input className="sg-input" maxLength={20} value={c.unidad || ''} onChange={(e) => onConceptoField(i, 'unidad', e.target.value)} disabled={bloqueado} data-testid={`cm-concepto-unidad-${i}`} />
                     </td>
                     <td className="px-2 py-1 align-top">
-                      {/* BUG #11 (Oleada 3): por convenio se AJUSTA la CANTIDAD del concepto existente
-                          (ampliar/reducir). El P.U. y la clave quedan congelados (art. 59 LOPSRM). */}
-                      <input type="number" min="0" step="0.001" className="sg-input text-right" value={c.cantidad} onChange={(e) => onConceptoField(i, 'cantidad', e.target.value)} disabled={soloLectura} title={c.existente ? 'Cantidad del concepto: se puede ampliar o reducir por convenio (art. 59 LOPSRM); el P.U. no cambia.' : undefined} data-testid={`cm-concepto-cantidad-${i}`} />
+                      {permiteAjuste && !esAmpl ? (
+                        // CAJITA (monto/mixto): Cant. original CONGELADA · Ajuste (+/−) editable · Cant. final calculada.
+                        // El delta lo reparte el usuario en periodos FUTUROS (regla de oro; el backend lo revalida).
+                        (() => {
+                          const orig = round3(Number(c.cantidadOriginal ?? c.cantidad) || 0);
+                          const final = round3(Number(c.cantidad) || 0);
+                          const ajusteNum = round3(final - orig);
+                          return (
+                            <div className="space-y-1 min-w-[7rem]">
+                              <div className="flex items-center justify-between gap-1 text-[11px]">
+                                <span className="text-slate-400">orig.</span>
+                                <span className="font-mono text-slate-500 bg-slate-100 border border-borde rounded px-1.5 py-0.5" title="Cantidad original CONGELADA (no editable)" data-testid={`cm-cant-original-${i}`}>{orig}</span>
+                              </div>
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="text-[11px] text-guinda font-semibold">±</span>
+                                <input
+                                  type="number" step="0.001"
+                                  className="sg-input text-right w-24"
+                                  placeholder="0"
+                                  value={c.ajuste ?? ''}
+                                  onChange={(e) => onAjuste(i, e.target.value)}
+                                  disabled={soloLectura}
+                                  title="Ajuste (+/−) a la cantidad. El delta solo puede ejecutarse en periodos FUTUROS (protege lo ya ejecutado/estimado, art. 59 LOPSRM)."
+                                  data-testid={`cm-concepto-ajuste-${i}`}
+                                />
+                              </div>
+                              <div className="flex items-center justify-between gap-1 text-xs border-t border-borde pt-1">
+                                <span className="text-slate-500">final</span>
+                                <span className={`font-mono font-bold ${Math.abs(ajusteNum) > 1e-6 ? 'text-guinda' : 'text-sigecop-blue'}`} data-testid={`cm-cant-final-${i}`}>{final}</span>
+                              </div>
+                            </div>
+                          );
+                        })()
+                      ) : (
+                        // Catálogo CONGELADO (programa/plazo) o fila de ampliación: cantidad en SOLO LECTURA.
+                        <input type="number" className="sg-input text-right bg-slate-100 text-slate-600" value={c.cantidad} readOnly disabled title={permiteAjuste ? 'Ampliación: cantidad heredada' : 'Catálogo CONGELADO: este convenio no cambia cantidades, solo reacomoda el calendario (art. 59 LOPSRM).'} data-testid={`cm-concepto-cantidad-${i}`} />
+                      )}
                     </td>
                     <td className="px-2 py-1 align-top">
                       <div className="flex items-center justify-end gap-1">
@@ -145,8 +187,12 @@ export default function EditorProgramaConvenio({
       <div>
         <h3 className="text-base font-bold text-sigecop-blue mb-1">Programa de obra (catálogo × periodos)</h3>
         <p className="text-xs text-slate-600 mb-3">
-          Reparte cada concepto en los periodos vigentes del contrato. La suma por concepto debe
+          Reparte cada concepto en los periodos del contrato. La suma por concepto debe
           <strong> cuadrar al 100%</strong> de lo contratado (restante = 0); el backend lo revalida en SQL.
+          <br />
+          <span className="inline-flex items-center gap-1"><span>🔒</span> Los periodos <strong>ACTUAL y PASADOS</strong> están congelados (intocables); solo el <strong>FUTURO</strong> se reacomoda —
+          protege lo ya ejecutado/estimado.</span>
+          <span className="ml-2 text-emerald-700">Las columnas <strong>NUEVO</strong> aparecen cuando el convenio amplía el plazo (periodos añadidos al final).</span>
         </p>
 
         {!hayPeriodos ? (
@@ -161,9 +207,13 @@ export default function EditorProgramaConvenio({
                   <th className="text-left px-3 py-2 sticky left-0 bg-sigecop-blue-light w-28">Clave</th>
                   <th className="text-left px-3 py-2 w-48">Concepto</th>
                   {periodos.map((p) => (
-                    <th key={p.numero} className="text-right px-2 py-2 w-24" title={`${fechaCorta(p.inicio)} – ${fechaCorta(p.fin)}`}>
-                      P{p.numero}
+                    <th key={p.numero} className={`text-right px-2 py-2 w-24 ${!p.esFuturo ? 'bg-slate-200/70' : p.esNuevo ? 'bg-emerald-50' : ''}`} title={`${fechaCorta(p.inicio)} – ${fechaCorta(p.fin)}${!p.esFuturo ? ' · periodo ACTUAL/PASADO (intocable)' : p.esNuevo ? ' · periodo NUEVO (por ampliación de plazo)' : ' · periodo FUTURO (editable)'}`}>
+                      <span className="inline-flex items-center gap-1 justify-end">
+                        {!p.esFuturo && <span title="Periodo ACTUAL o PASADO: intocable">🔒</span>}
+                        P{p.numero}
+                      </span>
                       <div className="text-[10px] font-normal text-sigecop-accent">{fechaCorta(p.inicio)}</div>
+                      {p.esNuevo && <div className="text-[9px] font-bold text-emerald-700" data-testid={`cm-periodo-nuevo-${p.numero}`}>NUEVO</div>}
                     </th>
                   ))}
                   <th className="text-right px-2 py-2 w-24">Σ planeado</th>
@@ -182,19 +232,26 @@ export default function EditorProgramaConvenio({
                     <tr key={c.rid} className={`border-t border-borde ${esAmpl ? 'bg-guinda-soft/60' : ''} ${!ok ? (r.restante < 0 ? 'bg-red-50' : 'bg-amber-50') : ''}`}>
                       <td className="px-3 py-1 font-mono text-xs sticky left-0 bg-white">{c.clave || '—'}</td>
                       <td className="px-3 py-1 truncate max-w-[12rem]" title={c.concepto}>{c.concepto || '—'}{esAmpl && <span className="ml-1 text-[10px] text-guinda">(ampl.)</span>}</td>
-                      {periodos.map((p) => (
-                        <td key={p.numero} className="px-1 py-1">
-                          <input
-                            type="number" min="0" step="0.001"
-                            className="sg-input text-right text-xs w-20"
-                            value={celdas[`${c.rid}:${p.numero}`] || ''}
-                            onChange={(e) => onCelda(c.rid, p.numero, e.target.value)}
-                            disabled={soloLectura}
-                            title={c.existente ? 'Reparte la cantidad (ajustada) del concepto en los periodos; la suma debe cuadrar con la cantidad.' : undefined}
-                            data-testid={`cm-celda-${i}-${p.numero}`}
-                          />
-                        </td>
-                      ))}
+                      {periodos.map((p) => {
+                        // REGLA DE ORO: los periodos ACTUAL/PASADOS son intocables (protegen lo ya
+                        // ejecutado/estimado); solo el FUTURO se reacomoda. El backend lo revalida (409).
+                        const congelado = soloLectura || !p.esFuturo;
+                        return (
+                          <td key={p.numero} className={`px-1 py-1 ${!p.esFuturo ? 'bg-slate-100' : p.esNuevo ? 'bg-emerald-50/50' : ''}`}>
+                            <input
+                              type="number" min="0" step="0.001"
+                              className={`sg-input text-right text-xs w-20 ${!p.esFuturo ? 'bg-slate-200 text-slate-500 cursor-not-allowed' : ''}`}
+                              value={celdas[`${c.rid}:${p.numero}`] || ''}
+                              onChange={(e) => onCelda(c.rid, p.numero, e.target.value)}
+                              disabled={congelado}
+                              title={!p.esFuturo
+                                ? `Periodo ${p.numero} ACTUAL o PASADO: intocable. Solo se reacomoda el trabajo de periodos FUTUROS (protege lo ya ejecutado/estimado).`
+                                : 'Reparte la cantidad del concepto en los periodos FUTUROS; la suma por concepto debe cuadrar al 100%.'}
+                              data-testid={`cm-celda-${i}-${p.numero}`}
+                            />
+                          </td>
+                        );
+                      })}
                       <td className="px-2 py-1 text-right font-semibold" data-testid={`cm-planeado-${i}`}>{r.planeado}</td>
                       <td className="px-2 py-1 text-right text-slate-600">{r.contratado}</td>
                       <td className={`px-2 py-1 text-right ${restCls}`} data-testid={`cm-restante-${i}`}>{r.restante}</td>

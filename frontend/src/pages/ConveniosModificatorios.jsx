@@ -12,6 +12,7 @@ import { useSesion, useVistaHU } from '../context/SesionContext.jsx';
 import { useToast } from '../components/ui/Toast.jsx';
 import { api } from '../services/api.js';
 import { round2 } from '../utils/formato.js';
+import { periodosAgregadosPorPlazo } from '../utils/periodosConvenio.js';
 
 // HU-03 (Fundación) — cableado al backend REAL de convenios modificatorios (art. 59 LOPSRM).
 // El backend YA EXISTE (tabla convenios_modificatorios inmutable + versionado del programa de
@@ -133,9 +134,16 @@ export default function ConveniosModificatorios() {
   const plazoVigente = detalle?.plazo_dias != null ? Number(detalle.plazo_dias) : null;
   const montoVigente = detalle?.monto != null ? Number(detalle.monto) : null;
 
-  // Qué toca el convenio según el tipo (mismo criterio que el backend: crearConvenio).
-  const tocaPrograma = tipo === 'monto' || tipo === 'programa' || tipo === 'mixto';
+  // Qué toca el convenio según el tipo (matriz por tipo, espejo del backend: crearConvenio).
+  //   · permiteAjuste (cajita +/− sobre la CANTIDAD): SOLO monto y mixto.
+  //   · tocaPlazo (prorroga + añade periodos al final): SOLO plazo y mixto.
+  //   · muestraEditor (reacomoda el calendario): los 4 tipos → el editor SIEMPRE se muestra (con el
+  //     catálogo congelado en programa/plazo y editable-por-cajita en monto/mixto).
+  const permiteAjuste = tipo === 'monto' || tipo === 'mixto';
   const tocaPlazo = tipo === 'plazo' || tipo === 'mixto';
+  const muestraEditor = true; // los 4 tipos reacomodan el programa (regla de oro: solo periodos futuros)
+  // Compat: el programa (catálogo + celdas) se envía en los 4 tipos (todos reacomodan).
+  const tocaPrograma = muestraEditor;
 
   useEffect(() => {
     if (sinSesion) return;
@@ -204,7 +212,10 @@ export default function ConveniosModificatorios() {
         return {
           rid, conceptoId: c.id, existente: true,
           clave: c.clave || '', concepto: c.concepto || '', unidad: c.unidad || '',
+          // cantidad = Cant. FINAL (fuente de la verdad para monto/cuadre/payload). Arranca == original.
           cantidad: c.cantidad != null ? String(c.cantidad) : '',
+          cantidadOriginal: c.cantidad != null ? String(c.cantidad) : '', // CONGELADA (cajita monto/mixto)
+          ajuste: '', // delta +/− de la cajita (vacío = 0); solo se usa en monto/mixto
           pu: c.pu != null ? String(c.pu) : '',
         };
       });
@@ -230,11 +241,21 @@ export default function ConveniosModificatorios() {
     }
   }, [contratoId, detalle]);
 
-  // Al pasar a un tipo que toca el programa (con contrato + detalle cargados), precarga el editor.
+  // El editor se muestra en los 4 tipos: precarga el programa vigente en cuanto haya contrato + detalle.
   useEffect(() => {
-    if (tocaPrograma && contratoId && detalle) precargarEditor();
+    if (contratoId && detalle) precargarEditor();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tocaPrograma, contratoId, detalle]);
+  }, [contratoId, detalle]);
+
+  // Al cambiar a un tipo que NO ajusta cantidades (programa/plazo), el catálogo va CONGELADO: se descarta
+  // cualquier ajuste de la cajita y la Cant. FINAL vuelve a la original (evita mandar un cambio que el
+  // backend rechazaría). Al volver a monto/mixto la cajita arranca de nuevo en 0 (ajuste vacío).
+  useEffect(() => {
+    if (permiteAjuste) return;
+    setCmConceptos((prev) => prev.some((c) => c.ajuste || (c.cantidadOriginal != null && String(c.cantidad) !== String(c.cantidadOriginal)))
+      ? prev.map((c) => ({ ...c, ajuste: '', cantidad: c.cantidadOriginal != null ? c.cantidadOriginal : c.cantidad }))
+      : prev);
+  }, [permiteAjuste]);
 
   // --- Handlers del editor ---
   const setCmConceptoField = useCallback((idx, field, value) => {
@@ -256,6 +277,17 @@ export default function ConveniosModificatorios() {
   }, [cmConceptos]);
   const setCmCelda = useCallback((rid, numero, value) => {
     setCmCeldas((prev) => ({ ...prev, [`${rid}:${numero}`]: value }));
+  }, []);
+  // CAJITA (monto/mixto): el usuario teclea el AJUSTE (+/−); la Cant. FINAL = original + ajuste (fuente
+  // de la verdad para monto/cuadre/payload). El delta debe repartirse en periodos FUTUROS (regla de oro).
+  const setCmAjuste = useCallback((idx, value) => {
+    setCmConceptos((prev) => prev.map((c, i) => {
+      if (i !== idx) return c;
+      const orig = Number(c.cantidadOriginal ?? c.cantidad) || 0;
+      const delta = value === '' || value == null ? 0 : Number(value);
+      const final = Number.isFinite(delta) ? round3(orig + delta) : orig;
+      return { ...c, ajuste: value, cantidad: String(final) };
+    }));
   }, []);
 
   // B4 — abrir/confirmar el panel «Ampliar». Genera una fila ADICIONAL (Opción 1) con clave derivada que
@@ -291,6 +323,23 @@ export default function ConveniosModificatorios() {
     ? round2(((plazoNuevoNum - plazoVigente) / plazoVigente) * 100)
     : null;
 
+  // HOY REAL (regla de oro): un periodo es FUTURO sii inicio > hoy. Se usa la fecha REAL del navegador
+  // (NO la simulada del selector): las escrituras usan la fecha real del servidor, así el freeze de la UI
+  // coincide con lo que el backend aceptará. UTC para casar con CURRENT_DATE del servidor (Render = UTC).
+  const hoyISO = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  // TASK #3 — periodos que el backend AÑADIRÁ al final si el plazo se amplía (plazo/mixto). Se predicen en
+  // el cliente (espejo exacto de extenderPeriodosPorPlazo) para pintarlos como columnas FUTURAS y dejar
+  // reacomodar volumen en ellas dentro del MISMO convenio. Si el plazo no crece, no hay periodos nuevos.
+  const periodosNuevos = useMemo(() => {
+    if (!tocaPlazo || plazoVigente == null || plazoNuevoNum <= plazoVigente) return [];
+    return periodosAgregadosPorPlazo(cmPeriodos, detalle?.fecha_inicio, plazoNuevoNum);
+  }, [tocaPlazo, plazoVigente, plazoNuevoNum, cmPeriodos, detalle]);
+  // Periodos MOSTRADOS = vigentes (con esFuturo derivado de HOY) + los nuevos predichos (siempre futuros).
+  const cmPeriodosView = useMemo(() => {
+    const base = cmPeriodos.map((p) => ({ ...p, esFuturo: String(p.inicio || '').slice(0, 10) > hoyISO }));
+    return [...base, ...periodosNuevos];
+  }, [cmPeriodos, periodosNuevos, hoyISO]);
+
   // Derivaciones del editor (monto al centavo + cuadre 100% por concepto). El backend revalida.
   const cmMontoNuevo = useMemo(
     () => round2(cmConceptos.reduce((s, c) => s + round2((Number(c.cantidad) || 0) * (Number(c.pu) || 0)), 0)),
@@ -299,12 +348,14 @@ export default function ConveniosModificatorios() {
   const cmResumen = useMemo(
     () => cmConceptos.map((c) => {
       const contratado = round3(Number(c.cantidad) || 0);
-      const planeado = round3(cmPeriodos.reduce((s, p) => s + (Number(cmCeldas[`${c.rid}:${p.numero}`]) || 0), 0));
+      // Suma sobre TODOS los periodos mostrados (incluye los nuevos): así el reacomodo del delta a un
+      // periodo futuro/nuevo cuenta en el cuadre.
+      const planeado = round3(cmPeriodosView.reduce((s, p) => s + (Number(cmCeldas[`${c.rid}:${p.numero}`]) || 0), 0));
       return { rid: c.rid, contratado, planeado, restante: round3(contratado - planeado) };
     }),
-    [cmConceptos, cmPeriodos, cmCeldas]
+    [cmConceptos, cmPeriodosView, cmCeldas]
   );
-  const cmCuadra = cmResumen.length > 0 && cmPeriodos.length > 0 && cmResumen.every((r) => Math.abs(r.restante) <= TOL_PROGRAMA);
+  const cmCuadra = cmResumen.length > 0 && cmPeriodosView.length > 0 && cmResumen.every((r) => Math.abs(r.restante) <= TOL_PROGRAMA);
   // Cada concepto requiere clave + cantidad > 0 + P.U. > 0. El > 0 (no >= 0) impide poner en CERO
   // un concepto EXISTENTE (que el backend no puede borrar): un 0 accidental sería pérdida de dato.
   const cmCamposOk = cmConceptos.length > 0 && cmConceptos.every((c) => String(c.clave).trim() && Number(c.cantidad) > 0 && Number(c.pu) > 0);
@@ -316,7 +367,7 @@ export default function ConveniosModificatorios() {
   // Avisos EN VIVO de los umbrales (informativos; el backend bloquea con el guardrail). Toma el
   // mayor |delta| aplicable según el tipo: plazo (tocaPlazo) y/o monto (tocaPrograma).
   const absPlazo = (tocaPlazo && deltaPlazoPct != null) ? Math.abs(deltaPlazoPct) : null;
-  const absMonto = (tocaPrograma && cmDeltaMontoPct != null) ? Math.abs(cmDeltaMontoPct) : null;
+  const absMonto = (permiteAjuste && cmDeltaMontoPct != null) ? Math.abs(cmDeltaMontoPct) : null;
   const hayDelta = absPlazo != null || absMonto != null;
   const absDeltaMax = Math.max(absPlazo ?? 0, absMonto ?? 0);
   const superaSfp = hayDelta && absDeltaMax > 25;    // art. 102 RLOPSRM (+ guardrail bloquea)
@@ -330,11 +381,10 @@ export default function ConveniosModificatorios() {
   // guardrail 25% que es aviso + rechazo server-side, como en el plazo de Fase 1).
   const plazoCambiaOk = plazoNuevoNum > 0 && plazoVigente != null && plazoNuevoNum !== plazoVigente;
   const programaOk = cmCamposOk && cmSinDup && cmCuadra;
-  const datosOk = motivo.trim().length > 0 && oficioRef.trim().length > 0 && (
-    tipo === 'plazo' ? plazoCambiaOk
-      : tipo === 'mixto' ? (programaOk && plazoCambiaOk)
-        : programaOk // monto | programa
-  );
+  // Los 4 tipos reacomodan → todos exigen que el programa cuadre al 100%. plazo/mixto exigen además
+  // un plazo nuevo distinto. (En plazo/programa el catálogo va congelado, así que cuadra por defecto.)
+  const datosOk = motivo.trim().length > 0 && oficioRef.trim().length > 0 && programaOk
+    && (tocaPlazo ? plazoCambiaOk : true);
   const puedeRegistrar = !soloLectura && !registrando && !cargandoEditor && datosOk;
 
   const handleRegistrar = useCallback(async () => {
@@ -352,10 +402,12 @@ export default function ConveniosModificatorios() {
           // B4: marca de ampliación (Opción 1) → el backend valida que el P.U. se herede del original (art. 59 LOPSRM).
           ...(c.amplia_a ? { amplia_a: String(c.amplia_a).trim() } : {}),
         }));
-        // Programa NUEVO completo (solo celdas > 0; el backend revalida cuadre 100%).
+        // Programa NUEVO completo (solo celdas > 0; el backend revalida cuadre 100%). Incluye los periodos
+        // NUEVOS predichos: si el usuario reacomodó volumen en ellos, el backend ya los habrá creado (mismo
+        // numero) para cuando resuelva las celdas.
         const celdas = [];
         for (const c of cmConceptos) {
-          for (const p of cmPeriodos) {
+          for (const p of cmPeriodosView) {
             const v = Number(cmCeldas[`${c.rid}:${p.numero}`]) || 0;
             if (v > 0) celdas.push({ clave: String(c.clave).trim(), periodoNumero: p.numero, cantidad: v });
           }
@@ -391,7 +443,7 @@ export default function ConveniosModificatorios() {
     } finally {
       setRegistrando(false);
     }
-  }, [puedeRegistrar, tipo, motivo, folio, tocaPlazo, tocaPrograma, plazoNuevoNum, cmConceptos, cmPeriodos, cmCeldas, contratoId, showToast, cargarContrato]);
+  }, [puedeRegistrar, tipo, motivo, folio, tocaPlazo, tocaPrograma, plazoNuevoNum, cmConceptos, cmPeriodosView, cmCeldas, contratoId, showToast, cargarContrato]);
 
   // FASE 0C (profe 16-jun) — OFICIO DE APROBACIÓN del convenio: subir (PDF, append-only) y verlo.
   const subirOficio = useCallback(async (convenioId, file) => {
@@ -571,8 +623,9 @@ export default function ConveniosModificatorios() {
                     </div>
                   )}
 
-                  {/* Editor de catálogo + matriz (convenios de monto/programa/mixto). */}
-                  {tocaPrograma && (
+                  {/* Editor de catálogo + matriz — los 4 tipos (reacomodan el calendario). En monto/mixto la
+                      cajita ajusta cantidades; en programa/plazo el catálogo va CONGELADO. */}
+                  {muestraEditor && (
                     <div>
                       {cargandoEditor && <p className="text-sm text-slate-500">Cargando programa vigente…</p>}
                       {editorError && (
@@ -584,13 +637,15 @@ export default function ConveniosModificatorios() {
                         <>
                           <EditorProgramaConvenio
                             conceptos={cmConceptos}
-                            periodos={cmPeriodos}
+                            periodos={cmPeriodosView}
                             celdas={cmCeldas}
                             soloLectura={soloLectura}
+                            permiteAjuste={permiteAjuste}
                             onConceptoField={setCmConceptoField}
                             onAddConcepto={addCmConcepto}
                             onRemoveConcepto={removeCmConcepto}
                             onCelda={setCmCelda}
+                            onAjuste={setCmAjuste}
                             onAmpliar={abrirAmpliar}
                             resumen={cmResumen}
                             montoNuevo={cmMontoNuevo}
