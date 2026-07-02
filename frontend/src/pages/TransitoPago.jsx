@@ -53,10 +53,17 @@ function SuficienciaPresupuestal({ suf }) {
           </span>
         )}
       </div>
+      {/* H1 (01-jul): la FUENTE del techo es visible — partida capturada (art. 24) o, sin partida, el
+          monto vigente del contrato (fallback, regla del equipo). Evita techos de prueba "invisibles". */}
+      <p className="text-xs text-tinta-sec mb-2" data-testid="suf-fuente">
+        {suf.fuente === 'contrato'
+          ? <>Fuente del techo: <strong>monto vigente del contrato</strong> (no hay partida capturada para este ejercicio; Finanzas puede capturarla abajo — art. 24 LOPSRM).</>
+          : <>Fuente del techo: <strong>partida presupuestal capturada</strong> (ejercicio {suf.ejercicio} — art. 24 LOPSRM).</>}
+      </p>
       <div className="overflow-x-auto border border-borde rounded-md bg-white">
         <table className="w-full text-sm">
           <tbody>
-            <tr className="border-b border-borde"><td className="px-4 py-2 text-tinta-sec">Techo anual (ejercicio {suf.ejercicio})</td><td className="px-4 py-2 text-right font-mono">{moneda(suf.techo)}</td></tr>
+            <tr className="border-b border-borde"><td className="px-4 py-2 text-tinta-sec">{suf.fuente === 'contrato' ? 'Techo (monto vigente del contrato)' : `Techo anual (ejercicio ${suf.ejercicio})`}</td><td className="px-4 py-2 text-right font-mono">{moneda(suf.techo)}</td></tr>
             <tr className="border-b border-borde"><td className="px-4 py-2 text-tinta-sec">(−) Comprometido (autorizadas + pagadas)</td><td className="px-4 py-2 text-right font-mono">{moneda(suf.comprometido)}</td></tr>
             <tr className="border-b border-borde bg-pagina"><td className="px-4 py-2 font-semibold">(=) Disponible antes de esta estimación</td><td className="px-4 py-2 text-right font-mono font-semibold">{moneda(suf.disponible_antes)}</td></tr>
             <tr className="border-b border-borde"><td className="px-4 py-2 text-tinta-sec">(−) Esta estimación (neto)</td><td className="px-4 py-2 text-right font-mono">{moneda(suf.neto)}</td></tr>

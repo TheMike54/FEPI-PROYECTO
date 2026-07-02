@@ -112,44 +112,71 @@ function ejercicioDe(fechaInicio) {
   return Number.isFinite(y) ? y : null;
 }
 
-// Suficiencia presupuestal (art. 24 párr. 2 LOPSRM). Excluye la estimación actual del "comprometido"
+// Suficiencia presupuestal (art. 24 párrs. 1-2 LOPSRM: el GASTO se sujeta al PEF/LFPRH y la suficiencia
+// en la partida específica es requisito PREVIO). Excluye la estimación actual del "comprometido"
 // para mostrar el disponible ANTES de este pago. ITEM 3.1: el join contrato↔presupuesto se hace por la
 // FK `dependencia_id` (estable), no por el texto `dependencia` (que se rompe al renombrar la cuenta).
 // Etapa 1 mantiene el invariante de 1 partida por (ejercicio, dependencia_id); si hubiera varias, el
 // techo de la dependencia = Σ de sus partidas (el comprometido es a nivel dependencia porque los
 // contratos aún no portan partida_id → multi-partida real por contrato = follow-on para Maiki).
-// techo=null si no hay techo cargado.
-async function calcularSuficiencia(dependenciaId, dependencia, ejercicio, estimacionId, neto) {
+//
+// H1 (01-jul, regla de Maiki): FUENTE del techo en dos niveles —
+//   · 'partida'  = techo capturado por finanzas en presupuesto_anual (la fuente legal: el presupuesto
+//     autorizado con suficiencia en la partida específica, art. 24 párr. 2). Preferente si existe.
+//   · 'contrato' = FALLBACK cuando NO hay partida capturada: techo = monto vigente del contrato y
+//     comprometido = Σ neto autorizadas+pagadas DEL CONTRATO. Base: el monto pactado se contrató con
+//     suficiencia previa (art. 24 párr. 2) y pagar por encima de él carece de soporte contractual (las
+//     ampliaciones van por convenio, art. 59 LOPSRM). Criterio del equipo [validar profe].
+// Con el fallback la verificación SIEMPRE opera (antes: sin techo cargado → "no verificable").
+async function calcularSuficiencia(dependenciaId, dependencia, ejercicio, estimacionId, neto, contrato = null) {
   const out = {
     ejercicio, dependencia, dependencia_id: dependenciaId ?? null,
-    techo: null, presupuesto_id: null,
+    techo: null, presupuesto_id: null, fuente: null,
     comprometido: '0.00', disponible_antes: null, neto: r2(neto).toFixed(2),
     disponible_despues: null, excede: null, sin_presupuesto: true,
-    nota: 'comprometido = Σ neto autorizadas+pagadas de la dependencia (por FK dependencia_id) + ejercicio (suficiencia previa, art. 24 párr. 2 LOPSRM). Techo por (ejercicio, dependencia_id, partida); Etapa 1 = 1 partida por dependencia.',
+    nota: 'Techo: partida capturada (ejercicio, dependencia_id) o, sin partida, el monto vigente del contrato (regla del equipo). Comprometido = Σ neto autorizadas+pagadas del ámbito de la fuente (suficiencia previa, art. 24 párr. 2 LOPSRM).',
   };
-  if (dependenciaId == null || ejercicio == null) return out; // sin FK/fecha → no se puede ubicar la partida (legacy)
-  const p = await pool.query(
-    'SELECT id, techo, partida FROM presupuesto_anual WHERE ejercicio = $1 AND dependencia_id = $2 ORDER BY id',
-    [ejercicio, dependenciaId]
-  );
-  if (p.rowCount === 0) return out; // sin techo cargado → CA-1 no verificable (sin inventar)
-
-  // Techo de la dependencia/ejercicio (Σ de sus partidas; en Etapa 1 hay exactamente una).
-  const techo = p.rows.reduce((s, r) => s + Number(r.techo), 0);
-  const cq = await pool.query(
-    `SELECT COALESCE(SUM(e.neto),0) AS comprometido
-       FROM estimaciones e JOIN contratos c ON c.id = e.contrato_id
-      WHERE c.dependencia_id = $1 AND EXTRACT(YEAR FROM c.fecha_inicio) = $2
-        AND e.estado IN ('autorizada','pagada') AND e.id <> $3`,
-    [dependenciaId, ejercicio, estimacionId]
-  );
-  const comprometido = Number(cq.rows[0].comprometido);
-  const disponibleAntes = r2(techo - comprometido);
   const netoR = r2(neto);
+  let techo = null; let comprometido = null; let fuente = null; let presupuestoId = null;
+  if (dependenciaId != null && ejercicio != null) {
+    const p = await pool.query(
+      'SELECT id, techo, partida FROM presupuesto_anual WHERE ejercicio = $1 AND dependencia_id = $2 ORDER BY id',
+      [ejercicio, dependenciaId]
+    );
+    if (p.rowCount > 0) {
+      // Techo de la dependencia/ejercicio (Σ de sus partidas; en Etapa 1 hay exactamente una).
+      techo = p.rows.reduce((s, r) => s + Number(r.techo), 0);
+      presupuestoId = p.rows[0].id;
+      fuente = 'partida';
+      const cq = await pool.query(
+        `SELECT COALESCE(SUM(e.neto),0) AS comprometido
+           FROM estimaciones e JOIN contratos c ON c.id = e.contrato_id
+          WHERE c.dependencia_id = $1 AND EXTRACT(YEAR FROM c.fecha_inicio) = $2
+            AND e.estado IN ('autorizada','pagada') AND e.id <> $3`,
+        [dependenciaId, ejercicio, estimacionId]
+      );
+      comprometido = Number(cq.rows[0].comprometido);
+    }
+  }
+  if (fuente == null && contrato && contrato.id != null && contrato.monto != null) {
+    // FALLBACK 'contrato' (H1): sin partida capturada, el techo es el monto vigente del contrato.
+    techo = Number(contrato.monto);
+    fuente = 'contrato';
+    const cq = await pool.query(
+      `SELECT COALESCE(SUM(neto),0) AS comprometido FROM estimaciones
+        WHERE contrato_id = $1 AND estado IN ('autorizada','pagada') AND id <> $2`,
+      [contrato.id, estimacionId]
+    );
+    comprometido = Number(cq.rows[0].comprometido);
+  }
+  if (fuente == null) return out; // ni partida ni datos del contrato (no debería ocurrir)
+
+  const disponibleAntes = r2(techo - comprometido);
   return {
     ...out,
     techo: techo.toFixed(2),
-    presupuesto_id: p.rows[0].id,
+    presupuesto_id: presupuestoId,
+    fuente,
     comprometido: r2(comprometido).toFixed(2),
     disponible_antes: disponibleAntes.toFixed(2),
     neto: netoR.toFixed(2),
@@ -252,7 +279,8 @@ async function estadoTransito(req, res) {
     const fechaRef = fechaRefDe(req); // SOLO LECTURA: "hoy" simulado o null (=> hoy real). No persiste.
     const ejercicio = ejercicioDe(est.fecha_inicio);
     const [suficiencia, soportes, ancla, ip, arch] = await Promise.all([
-      calcularSuficiencia(est.dependencia_id, est.dependencia, ejercicio, est.id, est.neto),
+      calcularSuficiencia(est.dependencia_id, est.dependencia, ejercicio, est.id, est.neto,
+        { id: est.contrato_id, monto: est.monto }), // H1: fallback 'contrato' si no hay partida capturada
       leerSoportes(est.id, est.contrato_id, fechaRef),
       anclaAutorizacion(est.id),
       pool.query('SELECT * FROM instruccion_pago WHERE estimacion_id = $1', [est.id]),
@@ -373,40 +401,52 @@ async function generarInstruccion(req, res) {
     // CA-1: suficiencia presupuestal (art. 24) DENTRO de una transacción que BLOQUEA la fila del techo
     // (SELECT ... FOR UPDATE) y recomputa el comprometido y el INSERT en la MISMA tx. Cierra la carrera
     // TOCTOU: dos instrucciones de la misma dependencia/ejercicio se serializan, no pueden exceder el techo.
+    // H1 (01-jul, regla de Maiki): si NO hay partida capturada, el techo cae al MONTO VIGENTE del contrato
+    // (fallback 'contrato'); la verificación SIEMPRE opera (antes: sin techo cargado → 409 "cárgalo").
     const ejercicio = ejercicioDe(est.fecha_inicio);
     const neto = r2(est.neto);
-    // ITEM 3.1: si el contrato no porta dependencia_id (legacy), no se puede ubicar la partida por FK
-    // → 409 controlado (NO 500), igual que "sin techo cargado".
-    if (est.dependencia_id == null) {
-      return res.status(409).json({ error: `El contrato no tiene dependencia asociada por FK (dato legacy); no se puede verificar la suficiencia presupuestal por partida (art. 24 LOPSRM).` });
-    }
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const p = await client.query(
-        'SELECT id, techo FROM presupuesto_anual WHERE ejercicio = $1 AND dependencia_id = $2 ORDER BY id FOR UPDATE',
-        [ejercicio, est.dependencia_id]
-      );
-      if (p.rowCount === 0) {
-        await client.query('ROLLBACK');
-        return res.status(409).json({ error: `No hay techo presupuestal cargado para (${est.dependencia || 's/dependencia'}, ejercicio ${ejercicio || 's/ejercicio'}); carga la partida específica para verificar la suficiencia (art. 24 LOPSRM).` });
+      let techo = null; let presupuestoId = null; let comprometido = null; let fuente = null;
+      if (est.dependencia_id != null && ejercicio != null) {
+        const p = await client.query(
+          'SELECT id, techo FROM presupuesto_anual WHERE ejercicio = $1 AND dependencia_id = $2 ORDER BY id FOR UPDATE',
+          [ejercicio, est.dependencia_id]
+        );
+        if (p.rowCount > 0) {
+          // Techo de la dependencia/ejercicio (Σ de sus partidas; en Etapa 1 hay exactamente una). La
+          // instrucción se liga a la primera partida (presupuesto_anual_id); multi-partida = follow-on.
+          techo = p.rows.reduce((s, r) => s + Number(r.techo), 0);
+          presupuestoId = p.rows[0].id;
+          fuente = 'partida';
+          const cq = await client.query(
+            `SELECT COALESCE(SUM(e.neto),0) AS comprometido
+               FROM estimaciones e JOIN contratos c ON c.id = e.contrato_id
+              WHERE c.dependencia_id = $1 AND EXTRACT(YEAR FROM c.fecha_inicio) = $2
+                AND e.estado IN ('autorizada','pagada') AND e.id <> $3`,
+            [est.dependencia_id, ejercicio, est.id]
+          );
+          comprometido = Number(cq.rows[0].comprometido);
+        }
       }
-      // Techo de la dependencia/ejercicio (Σ de sus partidas; en Etapa 1 hay exactamente una). La
-      // instrucción se liga a la primera partida (presupuesto_anual_id); multi-partida = follow-on.
-      const techo = p.rows.reduce((s, r) => s + Number(r.techo), 0);
-      const presupuestoId = p.rows[0].id;
-      const cq = await client.query(
-        `SELECT COALESCE(SUM(e.neto),0) AS comprometido
-           FROM estimaciones e JOIN contratos c ON c.id = e.contrato_id
-          WHERE c.dependencia_id = $1 AND EXTRACT(YEAR FROM c.fecha_inicio) = $2
-            AND e.estado IN ('autorizada','pagada') AND e.id <> $3`,
-        [est.dependencia_id, ejercicio, est.id]
-      );
-      const comprometido = Number(cq.rows[0].comprometido);
+      if (fuente == null) {
+        // FALLBACK 'contrato' (H1): lock del contrato (serializa el disponible) y techo = monto vigente.
+        const c = await client.query('SELECT id, monto FROM contratos WHERE id = $1 FOR UPDATE', [est.contrato_id]);
+        techo = Number(c.rows[0].monto);
+        fuente = 'contrato';
+        const cq = await client.query(
+          `SELECT COALESCE(SUM(neto),0) AS comprometido FROM estimaciones
+            WHERE contrato_id = $1 AND estado IN ('autorizada','pagada') AND id <> $2`,
+          [est.contrato_id, est.id]
+        );
+        comprometido = Number(cq.rows[0].comprometido);
+      }
       const disponibleAntes = r2(techo - comprometido);
       if (neto > disponibleAntes) {
         await client.query('ROLLBACK');
-        return res.status(409).json({ error: `El neto ($${neto.toFixed(2)}) excede el disponible ($${disponibleAntes.toFixed(2)}); requiere ampliación presupuestal (art. 24 LOPSRM).`, suficiencia: { techo: techo.toFixed(2), comprometido: r2(comprometido).toFixed(2), disponible_antes: disponibleAntes.toFixed(2), neto: neto.toFixed(2) } });
+        const fuenteTxt = fuente === 'partida' ? 'el techo de la partida capturada' : 'el monto vigente del contrato (sin partida capturada)';
+        return res.status(409).json({ error: `El neto ($${neto.toFixed(2)}) excede el disponible ($${disponibleAntes.toFixed(2)}) contra ${fuenteTxt}; requiere ampliación/adecuación presupuestal (art. 24 LOPSRM).`, suficiencia: { techo: techo.toFixed(2), comprometido: r2(comprometido).toFixed(2), disponible_antes: disponibleAntes.toFixed(2), neto: neto.toFixed(2), fuente } });
       }
 
       // Inserta la instrucción (UNIQUE estimacion_id evita doble). monto = neto snapshot (ROUND al centavo).
@@ -421,7 +461,7 @@ async function generarInstruccion(req, res) {
       return res.status(201).json({
         ok: true,
         instruccion: ins.rows[0],
-        suficiencia: { techo: techo.toFixed(2), comprometido: r2(comprometido).toFixed(2), disponible_antes: disponibleAntes.toFixed(2), disponible_despues: r2(disponibleAntes - neto).toFixed(2), neto: neto.toFixed(2) },
+        suficiencia: { techo: techo.toFixed(2), comprometido: r2(comprometido).toFixed(2), disponible_antes: disponibleAntes.toFixed(2), disponible_despues: r2(disponibleAntes - neto).toFixed(2), neto: neto.toFixed(2), fuente },
       });
     } catch (e) {
       await client.query('ROLLBACK').catch(() => {});

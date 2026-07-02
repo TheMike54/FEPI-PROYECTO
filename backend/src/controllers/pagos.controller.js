@@ -59,8 +59,11 @@ async function registrarPago(req, res) {
     client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const c = await client.query('SELECT id FROM contratos WHERE id = $1', [contratoId]);
+      // H1 (01-jul): FOR UPDATE del contrato — serializa la verificación de suficiencia (abajo) contra
+      // otros pagos/instrucciones concurrentes; además trae monto/dependencia/fecha para calcular el techo.
+      const c = await client.query('SELECT id, monto, dependencia_id, fecha_inicio FROM contratos WHERE id = $1 FOR UPDATE', [contratoId]);
       if (c.rowCount === 0) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'El contrato indicado no existe' }); }
+      const contrato = c.rows[0];
       // #2 (gate art. 64): un contrato cerrado (finiquito elaborado) es SOLO-LECTURA; el saldo se liquida
       // por el finiquito. NO se registran pagos por separado (evita doble liquidación). Coherente con
       // instruccion-pago/convenios/garantías que ya bloquean por art. 64.
@@ -114,6 +117,57 @@ async function registrarPago(req, res) {
         if (fechaPago < diaIntegracion) {
           await client.query('ROLLBACK');
           return res.status(400).json({ error: `La fecha de pago (${fechaPago}) no puede ser anterior a la fecha de integración de la estimación (${diaIntegracion})` });
+        }
+      }
+
+      // H1 (01-jul) — SUFICIENCIA PRESUPUESTAL TAMBIÉN AL PAGAR (art. 24 párrs. 1-2 LOPSRM: el GASTO se
+      // sujeta al PEF/LFPRH; la suficiencia en la partida específica es requisito PREVIO). Antes este
+      // gate solo vivía en generarInstruccion (HU-20) y el "pago directo sin tránsito" (HU-21) lo
+      // brincaba — el pago procedía aunque el techo estuviera excedido. Fuente del techo (regla de
+      // Maiki): la PARTIDA capturada (presupuesto_anual) si existe; sin partida, el MONTO VIGENTE del
+      // contrato (fallback 'contrato': pagar por encima del monto pactado carece de soporte contractual;
+      // las ampliaciones van por convenio, art. 59 LOPSRM) [validar profe]. Comprometido = Σ neto
+      // autorizadas+pagadas del ámbito de la fuente, EXCLUYENDO esta estimación (que está 'autorizada').
+      {
+        const ejercicioPago = contrato.fecha_inicio ? new Date(contrato.fecha_inicio).getUTCFullYear() : null;
+        let techo = null; let comprometido = null; let fuente = null;
+        if (contrato.dependencia_id != null && Number.isFinite(ejercicioPago)) {
+          const p = await client.query(
+            'SELECT id, techo FROM presupuesto_anual WHERE ejercicio = $1 AND dependencia_id = $2 ORDER BY id FOR UPDATE',
+            [ejercicioPago, contrato.dependencia_id]
+          );
+          if (p.rowCount > 0) {
+            techo = p.rows.reduce((s, r) => s + Number(r.techo), 0);
+            fuente = 'partida';
+            const cq = await client.query(
+              `SELECT COALESCE(SUM(e.neto),0) AS comprometido
+                 FROM estimaciones e JOIN contratos ct ON ct.id = e.contrato_id
+                WHERE ct.dependencia_id = $1 AND EXTRACT(YEAR FROM ct.fecha_inicio) = $2
+                  AND e.estado IN ('autorizada','pagada') AND e.id <> $3`,
+              [contrato.dependencia_id, ejercicioPago, estimacionId]
+            );
+            comprometido = Number(cq.rows[0].comprometido);
+          }
+        }
+        if (fuente == null) {
+          techo = Number(contrato.monto);
+          fuente = 'contrato';
+          const cq = await client.query(
+            `SELECT COALESCE(SUM(neto),0) AS comprometido FROM estimaciones
+              WHERE contrato_id = $1 AND estado IN ('autorizada','pagada') AND id <> $2`,
+            [contratoId, estimacionId]
+          );
+          comprometido = Number(cq.rows[0].comprometido);
+        }
+        const disponible = Math.round((techo - comprometido + Number.EPSILON) * 100) / 100;
+        const netoPago = Math.round((Number(est.neto) + Number.EPSILON) * 100) / 100;
+        if (netoPago > disponible) {
+          await client.query('ROLLBACK');
+          const fuenteTxt = fuente === 'partida' ? 'el techo de la partida capturada' : 'el monto vigente del contrato (sin partida capturada)';
+          return res.status(409).json({
+            error: `No se puede registrar el pago: el neto ($${netoPago.toFixed(2)}) excede el disponible ($${disponible.toFixed(2)}) contra ${fuenteTxt}; requiere ampliación/adecuación presupuestal (art. 24 LOPSRM).`,
+            suficiencia: { techo: techo.toFixed(2), comprometido: comprometido.toFixed(2), disponible: disponible.toFixed(2), neto: netoPago.toFixed(2), fuente },
+          });
         }
       }
 

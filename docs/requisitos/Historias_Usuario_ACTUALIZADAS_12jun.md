@@ -581,7 +581,7 @@ lista los documentos de la estimación).
 - **A fin de** ejecutar el tránsito a pago con los controles legales reales (art. 24 y art. 54 LOPSRM), cuadrados al centavo
 
 **Criterios de aceptación (comportamiento actual del sistema):**
-1. **(art. 24 párr. 2)** El sistema calcula, del lado del servidor, 'disponible = techo anual − comprometido' —el comprometido suma el neto de las estimaciones ya autorizadas y pagadas de esa dependencia y ejercicio, sin contar la actual— y **bloquea** la generación si el neto excede lo disponible. Si no hay techo cargado, también la bloquea e indica que falta el presupuesto (no inventa una cifra). Al cargar el techo, la **partida presupuestal específica es obligatoria** (la ley ata la suficiencia a la *"partida o partidas específicas"*, art. 24 párr. 2 LOPSRM): Finanzas captura la partida y el techo en la propia pantalla, y el sistema vincula el techo a la dependencia por su **cuenta**. Un contrato sin dependencia asociada no puede verificar la suficiencia y lo indica sin error.
+1. **(art. 24 párrs. 1-2)** El sistema calcula, del lado del servidor, 'disponible = techo − comprometido' y **bloquea** la generación si el neto excede lo disponible. La **fuente del techo** tiene dos niveles y es visible en pantalla: **(a) la partida presupuestal capturada** por Finanzas (la ley ata la suficiencia a la *"partida o partidas específicas"*, art. 24 párr. 2 LOPSRM; se captura partida y techo en la propia pantalla, vinculados a la dependencia por su **cuenta** y ejercicio) — si existe, es la que rige; **(b) sin partida capturada, el techo cae al monto vigente del contrato** (comprometido = neto de las estimaciones autorizadas y pagadas del propio contrato): pagar por encima del monto pactado carece de soporte contractual — las ampliaciones van por convenio (art. 59 LOPSRM); criterio del equipo **[validar]**. Con el nivel (b) la verificación **siempre opera** (antes, sin techo cargado simplemente se bloqueaba pidiendo capturarlo).
 2. **(art. 54)** Un semáforo del plazo de pago de 20 días naturales, anclado en la fecha real de autorización (tomada de la nota de autorización que queda en la bitácora). El plazo del semáforo arranca cuando hay autorización **y** la factura está presentada. Se mide en **días vencidos** (días pasados de los 20): verde mientras está dentro del plazo (0 vencidos), ámbar de 1 a 10 días vencidos y rojo pasados los 10, con aviso al entrar en ámbar. Si el contrato no tenía bitácora al autorizar y no hay esa fecha, el semáforo queda **deshabilitado** con una etiqueta (no inventa la fecha).
 3. La instrucción solo se genera cuando los soportes obligatorios están completos: factura y CFDI (se registra el número de folio, sin subir el archivo) y la **fianza de cumplimiento vigente**, que el sistema lee de las garantías del contrato. La subida del archivo en sí está deshabilitada con una etiqueta (todavía no hay dónde almacenarlo).
 4. La generación exige que la estimación esté **autorizada** (verificado en el servidor), guarda la instrucción de pago (monto = neto, redondeado al centavo, con la notificación a Finanzas sellada) y **no permite duplicarla**: el sistema solo admite una instrucción por estimación y rechaza un segundo intento.
@@ -608,12 +608,13 @@ lista los documentos de la estimación).
 2. El importe del pago no se teclea: el sistema lo fija igual al neto de la estimación; en la pantalla se muestra de solo-lectura.
 3. No se paga dos veces la misma estimación: un segundo intento se rechaza.
 4. Solo se paga una estimación AUTORIZADA por la residencia (art. 54 LOPSRM); cualquier otro estado (Integrada / Presentada / Rechazada / Pagada) se rechaza.
-5. La fecha de pago no puede ser anterior al día en que la estimación fue integrada; si lo es, se rechaza.
-6. Son obligatorios la fecha de pago, la referencia bancaria SPEI, el folio fiscal CFDI y la fecha de factura; quien registra se toma de la sesión y se muestra por su nombre en la lista.
-7. El pago es definitivo: una vez registrado ya no se puede modificar.
-8. La consulta de pagos está limitada a quien participa en el contrato y muestra un indicador del plazo de 20 días (art. 54) sin almacenarlo.
+5. **(art. 24 párrs. 1-2 LOPSRM — suficiencia también al pagar)** El registro del pago verifica la **suficiencia presupuestal** con la misma regla que el tránsito a pago (HU-20): si el neto excede el disponible —contra la partida capturada o, sin partida, contra el monto vigente del contrato— el pago se **rechaza** indicando que requiere ampliación/adecuación presupuestal. El "pago directo sin tránsito" ya no brinca este control.
+6. La fecha de pago no puede ser anterior al día en que la estimación fue integrada; si lo es, se rechaza.
+7. Son obligatorios la fecha de pago, la referencia bancaria SPEI, el folio fiscal CFDI y la fecha de factura; quien registra se toma de la sesión y se muestra por su nombre en la lista.
+8. El pago es definitivo: una vez registrado ya no se puede modificar.
+9. La consulta de pagos está limitada a quien participa en el contrato y muestra un indicador del plazo de 20 días (art. 54) sin almacenarlo.
 
-**Fundamento legal:** art. 54 LOPSRM (medios electrónicos de pago / plazo de pago); art. 191 LFD.
+**Fundamento legal:** art. 54 LOPSRM (medios electrónicos de pago / plazo de pago); art. 24 párrs. 1-2 LOPSRM (el gasto se sujeta al PEF/LFPRH; suficiencia en la partida específica); art. 191 LFD.
 
 ---
 
