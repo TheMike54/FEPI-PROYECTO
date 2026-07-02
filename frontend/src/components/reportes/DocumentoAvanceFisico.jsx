@@ -74,7 +74,7 @@ export default function DocumentoAvanceFisico({ datos, contrato, periodo, onCerr
   const hayCurva = curva.length > 0;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-start justify-center bg-black bg-opacity-40 p-4 overflow-auto" data-testid="documento-avance-fisico">
+    <div className="fixed inset-0 z-[60] flex items-start justify-center bg-black bg-opacity-40 p-4 overflow-auto" data-print-overlay data-testid="documento-avance-fisico">
       <div className="bg-white rounded-md shadow-lg max-w-4xl w-full my-6" data-print-area style={printColor}>
         {/* Barra de acciones (NO se imprime) */}
         <div className="px-6 py-3 border-b border-borde flex items-center justify-between" data-print-ocultar>

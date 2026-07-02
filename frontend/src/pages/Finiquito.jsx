@@ -40,7 +40,7 @@ function DocumentoFiniquito({ contrato, desglose, finiquito, onCerrar }) {
   }, []);
   const d = desglose;
   return (
-    <div className="fixed inset-0 z-[60] flex items-start justify-center bg-black bg-opacity-40 p-4 overflow-auto" data-testid="documento-finiquito">
+    <div className="fixed inset-0 z-[60] flex items-start justify-center bg-black bg-opacity-40 p-4 overflow-auto" data-print-overlay data-testid="documento-finiquito">
       <div className="bg-white rounded-md shadow-lg max-w-3xl w-full my-6" data-print-area>
         <div className="px-6 py-3 border-b border-borde flex items-center justify-between" data-print-ocultar>
           <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700">Documento de finiquito (art. 170 RLOPSRM)</h3>
