@@ -923,7 +923,14 @@ export default function ConveniosModificatorios() {
                     versiones.map((v) => (
                       <tr key={v.id} className="border-t border-borde" data-testid={`fila-version-${v.id}`}>
                         <td className="p-3 font-semibold">
-                          v{v.numero}{v.convenio_id == null ? <span className="ml-1 text-[11px] font-normal text-slate-400">(original)</span> : null}
+                          v{v.numero}
+                          {v.convenio_id == null
+                            ? <span className="ml-1 text-[11px] font-normal text-slate-400">(original)</span>
+                            // H0 (01-jul): la versión dice QUÉ convenio la creó (folio + tipo) — el
+                            // reflejo convenio→versión queda evidente en la lista.
+                            : <span className="ml-1 text-[11px] font-normal text-slate-500" data-testid={`version-convenio-${v.id}`}>
+                                · {v.convenio_folio || `convenio ${v.convenio_id}`}{v.convenio_tipo ? ` (${TIPO_LABEL[v.convenio_tipo] || v.convenio_tipo})` : ''}
+                              </span>}
                         </td>
                         <td className="p-3 text-center">
                           {v.vigente

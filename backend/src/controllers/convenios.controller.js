@@ -148,7 +148,13 @@ async function listarConvenios(req, res) {
          LEFT JOIN bitacora_notas bn ON bn.id = cm.nota_id
         WHERE cm.contrato_id = $1 ORDER BY cm.numero`, [contratoId]);
     const versiones = await pool.query(
-      'SELECT id, numero, convenio_id, monto, plazo_dias, vigente, created_at, supersedido_en FROM programa_version WHERE contrato_id = $1 ORDER BY numero', [contratoId]);
+      // H0 (01-jul): cada versión dice QUÉ convenio la creó (folio + tipo) para que el reflejo
+      // convenio→versión sea evidente en la pantalla (antes solo se veía el número de versión).
+      `SELECT pv.id, pv.numero, pv.convenio_id, pv.monto, pv.plazo_dias, pv.vigente, pv.created_at, pv.supersedido_en,
+              cm.folio AS convenio_folio, cm.tipo AS convenio_tipo
+         FROM programa_version pv
+         LEFT JOIN convenios_modificatorios cm ON cm.id = pv.convenio_id
+        WHERE pv.contrato_id = $1 ORDER BY pv.numero`, [contratoId]);
     return res.status(200).json({ contrato_id: contratoId, convenios: convenios.rows, versiones: versiones.rows });
   } catch (err) { console.error('[listarConvenios]', err); return res.status(500).json({ error: 'Error interno' }); }
 }
