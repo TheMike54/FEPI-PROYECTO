@@ -640,24 +640,39 @@ otro rol que intente registrar ve la pantalla en modo solo consulta para su rol.
 **Criterios de aceptación:**
 1. Solo la Dependencia, el residente asignado o quien creó el contrato puede registrar convenios; las demás
    partes solo consultan. Cualquier otro rol que lo intente ve la pantalla en modo solo consulta para su rol.
-2. Al registrar un convenio que toca el programa (monto/programa/mixto), el sistema guarda una versión
-   nueva del programa que ya no se puede modificar, la marca como vigente y deja la anterior como sustituida
-   sin alterarla. Un convenio de plazo puro actualiza el plazo y la fecha de término del contrato, pero no
-   crea una nueva versión del programa.
-3. El monto y los porcentajes de variación los calcula el sistema (suma de cantidad × precio unitario, al
-   centavo); el usuario nunca teclea el monto. El sistema rechaza el convenio si el catálogo nuevo no
+2. **Cada tipo de convenio se comporta según su matriz** (art. 59 LOPSRM):
+   - **Programa:** el catálogo (cantidades) va **congelado**; solo se **reacomoda el calendario** entre
+     periodos. No cambia el monto ni añade periodos.
+   - **Monto:** con una **cajita de ajuste (+/−)** se **amplía o reduce la cantidad** de conceptos existentes
+     (la cantidad original se muestra congelada y la final = original + ajuste; el sistema re-deriva el
+     monto); reacomoda el calendario. No añade periodos.
+   - **Plazo:** el catálogo va **congelado**; actualiza el plazo y la fecha de término y **añade periodos
+     nuevos al final** del programa (nunca modifica ni borra los existentes) para reacomodar en ellos el
+     trabajo no ejecutado.
+   - **Mixto:** combina Monto (cajita) y Plazo (añade periodos): ajusta cantidades, reacomoda y prorroga.
+   En los cuatro casos, si el convenio toca el programa el sistema guarda una **versión nueva** del programa
+   que ya no se puede modificar, la marca como vigente y deja la anterior como sustituida sin alterarla.
+3. **Regla de oro (los cuatro tipos):** los periodos **actual y pasados son intocables**; solo se reacomoda
+   el trabajo de periodos **futuros** (protege lo ya ejecutado/estimado y las referencias del programa). El
+   sistema rechaza cualquier cambio a una celda de un periodo no-futuro. El delta de la cajita (monto/mixto)
+   solo puede ejecutarse en periodos futuros o en los periodos nuevos que añade la ampliación de plazo. La
+   "hoy" que decide qué periodo es futuro es la **fecha real del servidor** (nunca la fecha simulada del
+   selector).
+4. El monto y los porcentajes de variación los calcula el sistema (suma de cantidad × precio unitario, al
+   centavo); el usuario nunca teclea el monto. El P.U. y la clave no cambian por convenio, y **no se agregan
+   conceptos nuevos** (solo se ajustan los existentes). El sistema rechaza el convenio si el catálogo nuevo no
    incluye todos los conceptos, tiene claves repetidas, descuadra el programa o reduce un concepto por
    debajo de lo ya estimado (art. 118 RLOPSRM). Si la variación de monto o plazo supera el límite
    configurable (25% por defecto), el sistema **avisa, no bloquea**: registra el convenio y marca el aviso de
    variación (referido al art. 59 LOPSRM; el 25% es referencia administrativa de revisión, art. 102 RLOPSRM).
-4. Cada convenio queda guardado de forma definitiva con número de folio (capturado o asignado), tipo,
+5. Cada convenio queda guardado de forma definitiva con número de folio (capturado o asignado), tipo,
    motivo/dictamen (art. 99 RLOPSRM), fecha y hora, autor (tomado de la sesión) y las marcas de "requiere
    revisión de la SFP" (más del 25%, art. 102 RLOPSRM) y "requiere ajuste de costos" (más del 50%, art. 59
    Bis); ya no se puede modificar ni anular (corregir = convenio nuevo).
-5. Al registrar el convenio se asienta una nota automática en la bitácora del contrato (de inmediato si
+6. Al registrar el convenio se asienta una nota automática en la bitácora del contrato (de inmediato si
    está abierta, diferida si todavía no); las versiones del programa se pueden consultar revisando su
    contenido concepto × periodo.
-6. **(art. 59 párr. 3 + art. 99 p5 RLOPSRM — acto de autorización)** Registrar y autorizar son actos
+7. **(art. 59 párr. 3 + art. 99 p5 RLOPSRM — acto de autorización)** Registrar y autorizar son actos
    distintos. El convenio nace en estado **"registrado / pendiente de autorización"** (lo sustenta el
    residente/dependencia, art. 99 p1). La **AUTORIZACIÓN** la realiza después el **servidor facultado**
    (rol Dependencia): el sistema la sella de forma definitiva (quién autoriza y cuándo) y solo entonces el

@@ -1,5 +1,24 @@
 # SIGECOP — Estado actual del sistema (documento canónico)
 
+> **🔄 Actualización 2026-07-01 (CONVENIOS — matriz por tipo + cajita +/− + regla de oro). Commit `70ee939`.**
+> Se auditaron los 4 tipos de convenio (art. 59 LOPSRM) contra la matriz correcta y se corrigió todo lo que
+> no cumplía. **Matriz:** `programa` = catálogo CONGELADO · reacomoda · sin periodos; `monto` = **cajita +/−**
+> (ajuste de cantidad) · reacomoda · sin periodos; `plazo` = catálogo CONGELADO · reacomoda · **añade
+> periodos**; `mixto` = **cajita +/−** · reacomoda · **añade periodos**. **Regla de oro (transversal a los 4):**
+> los periodos ACTUAL y PASADOS son **intocables** (solo el FUTURO se reacomoda; protege lo ya
+> ejecutado/estimado y las FKs — #14/#24). Archivos NO congelados: `convenios.controller.js` (flags
+> desacoplados `ajustaCantidad`/`tocaPlazo`/`traePrograma`; catálogo congelado 400 en programa/plazo; regla de
+> oro server-side con snapshot `storedCeldas` → 409 en periodo no-futuro; fecha REAL del servidor),
+> `EditorProgramaConvenio.jsx` (cajita Cant. original→Ajuste→Cant. final; freeze visual de periodos
+> pasados), `ConveniosModificatorios.jsx` (editor en los 4 tipos) y `utils/periodosConvenio.js` **NUEVO**
+> (espejo EXACTO de `extenderPeriodosPorPlazo` con guarda ISO — predice las columnas de periodo NUEVO al
+> ampliar plazo; casa 1:1 con el backend, sin reaparecer el bug de 1000 periodos). Smoke en vivo por tipo
+> (contrato 7021): programa/monto/plazo/mixto **201** con la matriz correcta; catálogo congelado **400**;
+> regla de oro **409** en periodos pasados; Playwright 4/4. Se conservan #11/D3 (sin claves nuevas), P.U.
+> congelado, no-reducir bajo lo estimado, append-only y el fix de 1000 periodos. `vite build`/`node -c`
+> verdes; cero regresiones (baseline idéntico). Reporte: `docs/reportes/REPORTE_CONVENIOS_MATRIZ_01jul.md`.
+> LOCAL, sin push.
+
 > **🔄 Actualización 2026-07-01 (SELECTOR: elegibilidad por tiempo respeta la fecha simulada — patrón
 > elegibilidad-vs-sello).** El selector de fecha simulada NO dejaba estimar aunque avanzaras el tiempo: la
 > ELEGIBILIDAD del periodo (¿ya venció?) se calculaba con la fecha REAL en la integración (escritura). Se
