@@ -441,6 +441,11 @@ function TabGeneradores({ filas, onCantidad, tienePlan }) {
       <p className="text-xs text-slate-500 mb-2" data-testid="leyenda-columnas-generadores">
         {tienePlan && <><strong>Disp. este periodo</strong> = cuánto puedes estimar en ESTE periodo según el programa (curva S). </>}
         <strong>Por ejecutar</strong> = cuánto falta de TODO el contrato (según proyecto − total estimado); <strong>0 / “✓ completo” = el concepto ya se estimó al 100 %</strong>, no es un error.
+        {/* H2 (01-jul, verificado en ley): la estimación es DE LOS TRABAJOS EJECUTADOS — estimar solo
+            algunos conceptos es lo normal; un concepto sin avance en el periodo simplemente no se estima. */}
+        {' '}La estimación cubre <strong>solo los conceptos con trabajo ejecutado</strong> en el periodo
+        (art. 54 LOPSRM; art. 130 fr. I RLOPSRM): dejar un concepto en 0 <strong>no es un error</strong> —
+        se estimará en el periodo en que avance.
       </p>
       {hayExcesoPlan && (
         <div className="bg-red-50 border-l-4 border-red-500 px-4 py-3 text-sm text-red-800 rounded-r-md mb-2" data-testid="semaforo-plan-exceso">
