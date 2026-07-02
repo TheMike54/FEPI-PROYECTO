@@ -1,5 +1,25 @@
 # SIGECOP — Estado actual del sistema (documento canónico)
 
+> **🔄 Actualización 2026-07-01 noche (HALLAZGOS de pruebas de Maiki — 4 verificados, 2 bugs reales).**
+> Reporte: `docs/reportes/REPORTE_HALLAZGOS_RENDER_01jul.md`. Un commit por hallazgo, sin push.
+> - **H0 versiones tras convenio:** NO reproducible con `70ee939` (verificado en vivo: monto/programa/mixto
+>   crean versión, actualizan valores y aparecen en el historial igual que plazo); el síntoma era del código
+>   viejo en Render (sin B8/70ee939: plazo no versionaba y el editor sin cajita no dejaba cuadrar). Mejora:
+>   cada versión muestra el **folio y tipo del convenio** que la creó (`listarConvenios` + fila de versión).
+> - **H1 techo presupuestal (BUG real):** `registrarPago` (HU-21) no verificaba suficiencia — el "pago
+>   directo sin tránsito" brincaba el gate del art. 24. Ahora el pago también **bloquea (409)** si el neto
+>   excede el disponible (art. 24 párrs. 1-2 LOPSRM, misma tx con FOR UPDATE). **Fuente del techo en dos
+>   niveles:** partida capturada (primaria, art. 24) o, sin partida, **monto vigente del contrato**
+>   (fallback, regla de Maiki [validar]); visible en pantalla (`suf-fuente`). El $1,000 del síntoma era una
+>   captura de prueba (presupuesto_anual id=101, corregible por upsert). HU-20/21 actualizadas.
+> - **H2 estimar solo algunos conceptos: NO es bug** (art. 54 LOPSRM "estimaciones DE LOS TRABAJOS
+>   EJECUTADOS"; art. 130 fr. I RLOPSRM): un concepto sin avance no se estima. Nota informativa en la
+>   leyenda del paso Generadores (HU-12); #24 intacto.
+> - **H3 impresión del documento (BUG real):** el overlay `fixed` de los 5 documentos imprimibles recortaba
+>   la impresión a UNA página. Fix CSS print (`data-print-overlay` → absolute/altura libre) en carátula,
+>   nota, avance físico, bitácora y finiquito. Verificado con PDF real de 7 páginas completas (carátula con
+>   IVA, firmas del ciclo, generadores, soportes, resumen por partida, hoja generadora).
+
 > **🔄 Actualización 2026-07-01 (CONVENIOS — matriz por tipo + cajita +/− + regla de oro). Commit `70ee939`.**
 > Se auditaron los 4 tipos de convenio (art. 59 LOPSRM) contra la matriz correcta y se corrigió todo lo que
 > no cumplía. **Matriz:** `programa` = catálogo CONGELADO · reacomoda · sin periodos; `monto` = **cajita +/−**
